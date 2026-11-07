@@ -62,7 +62,7 @@ Bir akorun ilk tuşu ikincisini beklerken satır ikinci tuşun ne olabileceğini
 | `1` `2` `3` `4` `5` | `:salon` · `:board` pano · `:code` harita · `:timeline` zaman şeridi · [`:home`](home.md) ana ekran |
 | `[`  `]` | zaman şeridinde: bir sütun 5 sn · 30 sn · 1 dk |
 | `↑` `↓`  `j` `k` | seç |
-| `gg`  `G` | ilk / son satır |
+| `gg`  `G`  `gd`  `gw` | ilk / son satır · ana ekranda: karar bekleyen ilk satır · çalışan ilk satır |
 | `^d` `^u` `^f` `^b` | yarım sayfa / tam sayfa |
 | `^o` | olduğunuz yere geri: görünüm, panel, odak, kart (vim'in atlama listesi, elli yer; açık konuşma önce kapanır) |
 | `enter` | derine in: odak, sonra ham akış |
@@ -92,7 +92,7 @@ Bir akorun ilk tuşu ikincisini beklerken satır ikinci tuşun ne olabileceğini
 | Tuş | Ne yapar |
 | --- | --- |
 | `w`  `:waiting` | doğrudan sizi bekleyenlere |
-| `W`  `S` | `:next` bekleyen, her yerden · `:defer` bunu ertele ve sıradakini aç |
+| `W`  `S` | `:next` bekleyen, her yerden · `:defer` bunu ertele ve sıradakini aç; bir betiğin penceresinde önce onu kapatırlar |
 | `a`  `r` | onayla / bir kez izin ver · geri gönder / reddet (karar bekleyenlerde, bir de odakta: aşağıda) |
 | `A`  `:allow` | sizi bekleyenlerdeki bir istekte ya da ajanının odağında: proje için komutlarına artık hep evet (başka yerde `A` arşivlerdir) |
 | `e`  `:yes` | sizi bekleyenlerdeki bir istekte ya da ajanının odağında: o ajan turunu bitirene dek ne isterse evet; bu arada satırında `✓ tur` yazar |

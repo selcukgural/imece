@@ -2418,6 +2418,34 @@ pub fn patch_sum(patch: &str) -> String {
 }
 
 impl Change {
+    /// What was proved on the tree the change makes: the repository's
+    /// check when it ran, else imece's runs; true when every one ended
+    /// clean, false when one did not, none when nothing ran.
+    pub fn proof(&self) -> Option<bool> {
+        match &self.check {
+            Check::Ran(d) => Some(d.ok),
+            _ if self.runs.is_empty() => None,
+            _ => Some(self.runs.iter().all(Ran::ok)),
+        }
+    }
+
+    /// The files the change touches outside the paths `card` owns
+    /// (record 114); none without a card, or when it owns no paths.
+    pub fn outside<'a>(&'a self, card: Option<&Card>) -> Vec<&'a str> {
+        let Some(card) = card else {
+            return Vec::new();
+        };
+        (self.files.iter())
+            .filter(|f| crate::paths::strays(&card.paths, &f.path))
+            .map(|f| f.path.as_str())
+            .collect()
+    }
+
+    /// Easy to approve: proved clean and inside its card's paths.
+    pub fn easy(&self, card: Option<&Card>) -> bool {
+        self.proof() == Some(true) && self.outside(card).is_empty()
+    }
+
     /// Lines added and removed over all files.
     pub fn counts(&self) -> (u32, u32) {
         self.files
@@ -7513,5 +7541,116 @@ mod tests {
         assert_eq!(open.len(), 2, "{open:?}");
         assert!(open.contains(&(InboxKind::Change, 1)));
         assert!(open.contains(&(InboxKind::Question, 2)));
+    }
+}
+
+#[cfg(test)]
+mod change_proof_tests {
+    use super::*;
+
+    fn ran(code: i32) -> Ran {
+        Ran {
+            line: "cargo test".into(),
+            code: Some(code),
+            timed_out: false,
+        }
+    }
+
+    fn change(runs: Vec<Ran>, check: Check) -> Change {
+        Change {
+            agent: 0,
+            title: "t".into(),
+            files: vec![
+                ChangedFile {
+                    path: "src/a.rs".into(),
+                    added: 1,
+                    removed: 0,
+                    binary: false,
+                },
+                ChangedFile {
+                    path: "docs/b.md".into(),
+                    added: 1,
+                    removed: 0,
+                    binary: false,
+                },
+            ],
+            patch: String::new(),
+            runs,
+            check,
+            spend: None,
+        }
+    }
+
+    fn checked(ok: bool) -> Check {
+        Check::Ran(Checked {
+            ok,
+            end: "exit".into(),
+            lines: Vec::new(),
+        })
+    }
+
+    fn card(paths: &[&str]) -> Card {
+        let v = serde_json::json!(paths);
+        Card {
+            id: 3,
+            project: 0,
+            title: "c".into(),
+            column: Column::Waiting,
+            owner: None,
+            symbols: Vec::new(),
+            story: Vec::new(),
+            paths: crate::paths::parse(&v).unwrap(),
+            started: 0,
+            finished: 0,
+        }
+    }
+
+    #[test]
+    fn the_proof_is_the_check_when_it_ran_else_the_runs_else_nothing() {
+        assert_eq!(change(Vec::new(), Check::None).proof(), None);
+        assert_eq!(change(Vec::new(), Check::Asked).proof(), None);
+        assert_eq!(change(Vec::new(), Check::Running).proof(), None);
+        assert_eq!(change(Vec::new(), Check::Failed("x".into())).proof(), None);
+        assert_eq!(change(vec![ran(0)], Check::None).proof(), Some(true));
+        assert_eq!(
+            change(vec![ran(0), ran(0)], Check::None).proof(),
+            Some(true)
+        );
+        assert_eq!(
+            change(vec![ran(0), ran(1)], Check::None).proof(),
+            Some(false)
+        );
+        assert_eq!(change(vec![ran(1)], Check::Asked).proof(), Some(false));
+        assert_eq!(change(Vec::new(), checked(true)).proof(), Some(true));
+        assert_eq!(change(Vec::new(), checked(false)).proof(), Some(false));
+        // The check speaks over the runs, either way.
+        assert_eq!(change(vec![ran(1)], checked(true)).proof(), Some(true));
+        assert_eq!(change(vec![ran(0)], checked(false)).proof(), Some(false));
+    }
+
+    #[test]
+    fn the_files_outside_are_those_the_card_s_paths_do_not_name() {
+        let c = change(Vec::new(), Check::None);
+        assert!(c.outside(None).is_empty(), "no card");
+        assert!(c.outside(Some(&card(&[]))).is_empty(), "owns no paths");
+        assert_eq!(c.outside(Some(&card(&["src/"]))), ["docs/b.md"]);
+        assert_eq!(
+            c.outside(Some(&card(&["tests/"]))),
+            ["src/a.rs", "docs/b.md"]
+        );
+        assert!(c.outside(Some(&card(&["src/", "docs/"]))).is_empty());
+    }
+
+    #[test]
+    fn easy_means_proved_clean_and_inside() {
+        let inside = card(&["src/", "docs/"]);
+        let part = card(&["src/"]);
+        assert!(change(vec![ran(0)], Check::None).easy(Some(&inside)));
+        assert!(change(vec![ran(0)], Check::None).easy(None));
+        assert!(!change(vec![ran(0)], Check::None).easy(Some(&part)));
+        assert!(!change(Vec::new(), Check::None).easy(Some(&inside)));
+        assert!(!change(vec![ran(1)], Check::None).easy(Some(&inside)));
+        assert!(change(Vec::new(), checked(true)).easy(Some(&inside)));
+        assert!(!change(Vec::new(), checked(false)).easy(None));
     }
 }

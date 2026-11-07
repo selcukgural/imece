@@ -62,7 +62,7 @@ While the first key of a chord waits for its second, the row lists what the seco
 | `1` `2` `3` `4` `5` | `:salon` · `:board` · `:code` map · `:timeline` · [`:home`](home.md) |
 | `[`  `]` | on the timeline: a column of 5 s · 30 s · 1 min |
 | `↑` `↓`  `j` `k` | select |
-| `gg`  `G` | first / last line |
+| `gg`  `G`  `gd`  `gw` | first / last line · on Home: the first row to decide · the first at work |
 | `^d` `^u` `^f` `^b` | half a page / a page |
 | `^o` | back where you were: view, panel, focus, card (vim's jump list, fifty places; an open conversation closes first) |
 | `enter` | look deeper: focus, then the raw stream |
@@ -92,7 +92,7 @@ While the first key of a chord waits for its second, the row lists what the seco
 | Key | What it does |
 | --- | --- |
 | `w`  `:waiting` | straight to TO DECIDE |
-| `W`  `S` | `:next` waiting, from anywhere · `:defer` this one and open the next |
+| `W`  `S` | `:next` waiting, from anywhere · `:defer` this one and open the next; in a script's window they close it first |
 | `a`  `r` | approve / allow once · send back / refuse (in TO DECIDE, and on a focus: below) |
 | `A`  `:allow` | on an ask in TO DECIDE or on its agent's focus: yes from now on to its commands for the project (elsewhere `A` is the archives) |
 | `e`  `:yes` | on an ask in TO DECIDE or on its agent's focus: yes to everything that agent asks until its turn ends; its row says `✓ turn` meanwhile |

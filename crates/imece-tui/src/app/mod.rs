@@ -48,7 +48,7 @@ mod talk;
 mod waiting;
 mod windows;
 
-pub use home::{Home, HomeGroup, HomeRow};
+pub use home::{Heading, Home, HomeGroup, HomeRow};
 
 /// What drives the agents.
 pub enum Engine {

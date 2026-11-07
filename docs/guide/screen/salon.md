@@ -5,10 +5,10 @@ description: The default screen of imece - the header, the guild tree grouped by
 
 # The team
 
-The team screen is `1` or `:salon`; imece opens on [Home](home.md). It shows the whole team at a glance: a header with the pot and the fleet, the guild tree on the left (every project, its leader, its workers and their helpers), and on the right the two side panels, TO DECIDE and the [story](journal.md#the-story) (what happened, by card; `J` shows the journal line by line). The board and the code map are one key away (`2`, `3`); everything else opens over the team and `esc` brings it back.
+The team screen is `1` or `:salon`; imece opens on [Home](home.md). It shows the whole team at a glance: a header with the projects and the pot, the guild tree on the left (every project, its leader, its workers and their helpers), and on the right the two side panels, TO DECIDE and the [story](journal.md#the-story) (what happened, by card; `J` shows the journal line by line). The board and the code map are one key away (`2`, `3`); everything else opens over the team and `esc` brings it back.
 
 ```text
- imece   ! 2 to decide  │ ● 2 working  ✓ 1 done │ spent $3.10 of $20.00  14:02
+ imece  shop-api │  ! 2 to decide  │ $3.10 of $20.00  14:02
 ┌ TEAM ───────────────────────────────────────────┐┌ TO DECIDE (2) ─────────────────────────┐
 │▾ ▴ shop-api  ▓▓▓░░░░░ 3/8  ! 2 waiting  2 working││Δ 13:58 claude-1 finished: parser (3 files, +41 −6) · ✓ ran clean on this tree: cargo test
 │  ● ▎lead      coordinating                       ││⚑ 14:01 claude-5 asks to run Bash: npm install left-pad
@@ -26,17 +26,17 @@ The team screen is `1` or `:salon`; imece opens on [Home](home.md). It shows the
 
 ## The header
 
-One line, four things, parts separated by `│`, the most wanted first: what waits for you, the fleet, the pot, the clock; a usage window joins them only when it is nearly full. When the screen is narrower than the line, the least wanted part goes first, so its edge never cuts off what waits for you: the clock, then the fleet. What waits for you, the pot, the pause and a window nearly full always stay.
+One line, four things, parts separated by `│`: the projects, what waits for you, the pot, the clock; a usage window joins them only when it is nearly full. When the screen is narrower than the line, the least wanted part goes first, so its edge never cuts off what waits for you: the clock, then the projects. What waits for you, the pot, the pause and a window nearly full always stay.
 
 | Part | What it says |
 | --- | --- |
+| `shop-api · mobile-app` | the open projects. On [Home](home.md) the one the list is narrowed to is lit. |
 | `! 2 to decide` | open items in TO DECIDE, in the attention colour. The terminal's title carries the same count, `! imece · 2 to decide`, so a tab in the background shows it, after the top of the ladder of the open projects: `■` something is stuck, `!` something waits for you, `●` something works or starts, imece's mark `⁙` when all is calm (a turn done, not seen, is calm). Windows Terminal, kitty 0.39+, Ghostty 1.2+ and iTerm2 3.6.6+ also show it as the tab's progress bar (OSC 9;4): red full when stuck, yellow full when waiting, moving while working, none when calm. imece asks the terminal its name at start (XTVERSION) and goes by its answer, not by `TERM_PROGRAM`, which a terminal started from another inherits; other terminals are not sent it, since some take that sequence for a notice. Inside tmux it is sent: tmux 3.8 passes it on to Ghostty and iTerm2, an older tmux drops it. `IMECE_PROGRESS=on` or `off` decides it yourself. Your shell's title comes back, and the bar goes, when imece ends or hands the terminal to a `!` command. |
-| `● 2 working  ✓ 1 done  ■ 1 stuck` | the fleet: agents mid-turn (spending tokens), agents that finished a turn you have not opened since, agents blocked or whose session stopped. A count of zero is left out; with none at all it says `all idle`. What waits for you is not in the fleet: it has its own count. |
-| `spent $3.10 of $20.00` | the pot: what all agents together have spent of the budget. With under half an hour left at the current rate the part turns the attention colour and says how long is left, `spent $19.60 of $20.00, ~25 min left`, and the journal says so once. The rate and the time left at any other time are in the `:budget` menu's note. |
+| `$3.10 of $20.00` | the pot: what all agents together have spent of the budget. With under half an hour left at the current rate the part turns the attention colour and says how long is left, `$19.60 of $20.00, ~25 min left`, and the journal says so once. The rate and the time left at any other time are in the `:budget` menu's note. |
 | `claude 5h: 10% left, resets in 1 h 59 min` | your plan's usage window nearest to full, only from 90% used, in the attention colour: a subscription's limit can stop the team before the pot does. Below that it is in the `:budget` note. Not kept between runs: a session says it again on its first turn. |
 | `14:02` | the clock; the demo's `‖ PAUSED` or `×4` glued to it. |
 
-What happened in the last ten minutes, the count of cards and the researchers' cap left the header with record 125: the board has the cards, the journal has what happened.
+What happened in the last ten minutes, the count of cards and the researchers' cap left the header with record 125: the board has the cards, the journal has what happened. The fleet (`● 2 working  ✓ 1 done  ■ 1 stuck`) left it with step 2: Home's AT WORK heading counts who works, who is stuck and who is idle, and each row says what its agent does.
 
 See [budget and limits](../concepts/budget-and-limits.md) for how the pot and the windows are counted.
 
@@ -119,7 +119,7 @@ Every glyph the `?` help lists, as the screen draws them:
 | `✱` | a line you marked with `m`; `'` goes to the next |
 | `▁▃▅` | what it did lately: its trace lines in each of the last five ticks, 5 s a column |
 
-The fleet in the header uses the same shapes, so it reads in the mono theme too.
+Home's AT WORK rows use the same shapes, so they read in the mono theme too.
 
 ## Moving and folding
 

@@ -1,7 +1,9 @@
-//! Home (record 124): the person's turn across projects, what is stuck
-//! and what is at work, in one list, with what is at hand read beside it.
-//! On a narrow screen the list takes the width and the row at hand opens
-//! under itself.
+//! Home (records 124 and 125): the triage list. What is to decide,
+//! grouped by what deciding costs (permissions, then questions, then
+//! changes), then who is at work; every row says the whole ask, the keys
+//! that decide it stand at its end, and a yes moves down. On a wide
+//! screen the row at hand is read beside the list; on a narrow one the
+//! list takes the width.
 
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
@@ -10,17 +12,24 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
 use super::*;
-use crate::app::{App, HomeGroup, HomeRow};
+use crate::app::{App, Heading, HomeGroup, HomeRow};
 use crate::i18n::Text;
 
 /// From this wide the preview stands beside the list.
-pub(crate) const WIDE: u16 = 100;
+pub(crate) const WIDE: u16 = 120;
 /// The list's narrowest beside the preview.
-const LIST_MIN: u16 = 52;
-/// Rows of the preview under the row at hand on a narrow screen.
-const OPENED: usize = 5;
+const LIST_MIN: u16 = 60;
+/// How much of a row the title takes, at most.
+const TITLE: usize = 24;
+/// The title's narrowest, on a narrow screen.
+const TITLE_MIN: usize = 10;
+/// An ask gets at least this many cells on a line, under its title if
+/// need be.
+const ASK_MIN: usize = 20;
 /// Files named in a preview.
 const FILES: usize = 6;
+/// Lines of a script shown in a preview.
+const SCRIPT_ROWS: usize = 12;
 
 /// How wide the list is on a screen `width` wide, the preview beside it.
 fn list_width(width: u16) -> u16 {
@@ -30,20 +39,16 @@ fn list_width(width: u16) -> u16 {
 pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     let lonca = lonca_line(app);
     let tall = u16::from(lonca.is_some());
-    let [bar, store, body] = Layout::vertical([
-        Constraint::Length(1),
-        Constraint::Length(tall),
-        Constraint::Min(0),
-    ])
-    .areas(area);
-    f.render_widget(Paragraph::new(project_bar(app, bar.width)), bar);
+    let [store, body] =
+        Layout::vertical([Constraint::Length(tall), Constraint::Min(0)]).areas(area);
     if let Some(line) = lonca {
         f.render_widget(Paragraph::new(line), store);
     }
     let at = app.home_at();
     if body.width < WIDE {
-        let lines = list_lines(app, usize::from(body.width), at, true);
-        f.render_widget(Paragraph::new(lines.0).scroll((lines.1, 0)), body);
+        let (lines, scroll) = list_lines(app, usize::from(body.width), at);
+        let scroll = scroll.min(lines.len().saturating_sub(1) as u16);
+        f.render_widget(Paragraph::new(lines).scroll((scroll, 0)), body);
         return;
     }
     let [list, gap, preview] = Layout::horizontal([
@@ -52,7 +57,7 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
         Constraint::Min(0),
     ])
     .areas(body);
-    let (lines, scroll) = list_lines(app, usize::from(list.width), at, false);
+    let (lines, scroll) = list_lines(app, usize::from(list.width), at);
     let scroll = scroll.min(lines.len().saturating_sub(1) as u16);
     f.render_widget(Paragraph::new(lines).scroll((scroll, 0)), list);
     let rule = vec![Line::from(Span::styled("│", dim())); usize::from(gap.height)];
@@ -68,55 +73,6 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
         |row| preview_lines(app, row, room, usize::from(preview.height)),
     );
     f.render_widget(Paragraph::new(text), preview);
-}
-
-/// The first of Home's rows: every project with what it holds, the one
-/// it is narrowed to lit, and whom `/` writes to.
-fn project_bar(app: &App, width: u16) -> Line<'static> {
-    let w = &app.world;
-    let t = app.lang.text();
-    let lit = |on: bool| {
-        if on {
-            Style::new().add_modifier(Modifier::REVERSED)
-        } else {
-            dim()
-        }
-    };
-    let mut spans = vec![
-        Span::styled(
-            format!(" {} ", t.home_all),
-            lit(app.at_home.scope.is_none()),
-        ),
-        Span::raw(" "),
-    ];
-    for p in w.open_projects() {
-        let rows = app.home_rows_in(Some(p.id));
-        let many = |g| rows.iter().filter(|r| r.0 == g).count();
-        spans.push(Span::styled(
-            format!(" {} ", clean(&p.name)),
-            lit(app.at_home.scope == Some(p.id)),
-        ));
-        for (group, mark, colour) in [
-            (HomeGroup::Turn, "!", pal().warn),
-            (HomeGroup::Stuck, "■", pal().bad),
-            (HomeGroup::Work, "●", pal().ok),
-        ] {
-            let n = many(group);
-            if n > 0 {
-                spans.push(Span::styled(format!("{mark}{n} "), fg(colour)));
-            }
-        }
-        spans.push(Span::raw(" "));
-    }
-    let lead = w.projects[app.current_project()].leader;
-    let writes = fill(t.home_writes, &[&w.agents[lead].name]);
-    let used: usize = spans.iter().map(Span::width).sum();
-    let free = usize::from(width).saturating_sub(used + writes.chars().count() + 1);
-    if free > 0 {
-        spans.push(Span::raw(" ".repeat(free)));
-        spans.push(Span::styled(writes, dim()));
-    }
-    Line::from(spans)
 }
 
 /// How the projects in view stand on Lonca; none when none is on it.
@@ -135,60 +91,141 @@ fn lonca_line(app: &App) -> Option<Line<'static>> {
     (!spans.is_empty()).then(|| Line::from(spans))
 }
 
-/// The words of a group's heading.
-fn group_word(t: &Text, group: HomeGroup) -> (&'static str, Style) {
-    match group {
-        HomeGroup::Turn => (t.home_turn, bold(pal().warn)),
-        HomeGroup::Stuck => (t.home_stuck, bold(pal().bad)),
-        HomeGroup::Work => (t.home_work, bold(pal().ok)),
-        HomeGroup::Quiet => (t.home_quiet, dim()),
+/// The list's rows with their groups, the group word of each decide
+/// group, and the counts the two headings say.
+struct Listed {
+    rows: Vec<(HomeGroup, HomeRow)>,
+}
+
+impl Listed {
+    fn many(&self, group: HomeGroup) -> usize {
+        self.rows.iter().filter(|r| r.0 == group).count()
+    }
+
+    fn under(&self, heading: Heading) -> usize {
+        self.rows
+            .iter()
+            .filter(|r| r.0.heading() == heading)
+            .count()
     }
 }
 
-/// The list in rows `width` wide and how far to scroll it for the row at
-/// hand to show; with `open`, the row at hand has its preview under it.
-fn list_lines(
-    app: &App,
-    width: usize,
-    at: Option<HomeRow>,
-    open: bool,
-) -> (Vec<Line<'static>>, u16) {
+/// `TO DECIDE  2 permissions · 1 question · 3 changes`: the heading and
+/// what is under it, each kind counted, a count of none left out.
+fn decide_heading(t: &Text, listed: &Listed) -> Line<'static> {
+    let mut spans = vec![Span::styled(format!(" {} ", t.home_turn), bold(pal().warn))];
+    let counts: Vec<String> = [
+        HomeGroup::Permission,
+        HomeGroup::Question,
+        HomeGroup::Change,
+        HomeGroup::Later,
+    ]
+    .into_iter()
+    .zip(t.home_counts)
+    .filter_map(|(group, (one, many))| match listed.many(group) {
+        0 => None,
+        1 => Some(one.to_string()),
+        n => Some(fill(many, &[&n.to_string()])),
+    })
+    .collect();
+    spans.push(Span::styled(counts.join(" · "), dim()));
+    Line::from(spans)
+}
+
+/// `AT WORK  12 · stuck 2 · idle 1`: who works, and how many of them are
+/// stuck or idle, when any are.
+fn work_heading(t: &Text, listed: &Listed) -> Line<'static> {
+    let mut spans = vec![Span::styled(format!(" {} ", t.home_work), bold(pal().ok))];
+    let mut words = vec![listed.under(Heading::Work).to_string()];
+    for (group, word) in [
+        (HomeGroup::Stuck, t.home_stuck_count),
+        (HomeGroup::Quiet, t.home_idle_count),
+    ] {
+        let n = listed.many(group);
+        if n > 0 {
+            words.push(fill(word, &[&n.to_string()]));
+        }
+    }
+    spans.push(Span::styled(words.join(" · "), dim()));
+    Line::from(spans)
+}
+
+/// A decide group's own line under the heading: its word, and at the
+/// right what makes its rows cheap (`one key each`, `3 ready to approve`).
+fn group_line(app: &App, group: HomeGroup, listed: &Listed, width: usize) -> Line<'static> {
     let t = app.lang.text();
-    let rows = app.home_rows();
+    let w = &app.world;
+    let word = match group {
+        HomeGroup::Permission => t.home_groups[0],
+        HomeGroup::Question => t.home_groups[1],
+        HomeGroup::Change => t.home_groups[2],
+        _ => t.home_groups[3],
+    };
+    let note = match group {
+        HomeGroup::Permission => Some(t.home_one_key.to_string()),
+        HomeGroup::Change => {
+            let ready = (listed.rows.iter())
+                .filter(|r| r.0 == group)
+                .filter(|r| match r.1 {
+                    HomeRow::Item(i) => {
+                        let item = &w.inbox[i];
+                        item.kind == InboxKind::Change
+                            && w.change_of(item.agent)
+                                .is_some_and(|c| c.easy(item.card.and_then(|c| w.cards.get(c))))
+                    }
+                    HomeRow::Agent(_) => false,
+                })
+                .count();
+            (ready > 0).then(|| fill(t.home_ready, &[&ready.to_string()]))
+        }
+        _ => None,
+    };
+    let mut spans = vec![Span::styled(format!(" {word}"), dim())];
+    if let Some(note) = note {
+        let used = word.chars().count() + 1;
+        let free = width.saturating_sub(used + note.chars().count() + 1);
+        if free > 1 {
+            spans.push(Span::raw(" ".repeat(free)));
+            spans.push(Span::styled(note, dim()));
+        }
+    }
+    Line::from(spans)
+}
+
+/// The list in rows `width` wide and how far to scroll it for the row at
+/// hand to show.
+fn list_lines(app: &App, width: usize, at: Option<HomeRow>) -> (Vec<Line<'static>>, u16) {
+    let t = app.lang.text();
+    let listed = Listed {
+        rows: app.home_rows(),
+    };
     let mut lines = Vec::new();
     let mut scroll = 0;
-    let mut last = None;
-    for &(group, row) in &rows {
+    let mut last: Option<HomeGroup> = None;
+    for &(group, row) in &listed.rows {
         if last != Some(group) {
-            if last.is_some() {
-                lines.push(Line::default());
+            let heading = last.is_none_or(|l| l.heading() != group.heading());
+            if heading {
+                if last.is_some() {
+                    lines.push(Line::default());
+                }
+                lines.push(match group.heading() {
+                    Heading::Decide => decide_heading(t, &listed),
+                    Heading::Work => work_heading(t, &listed),
+                });
             }
-            let (word, style) = group_word(t, group);
-            let many = rows.iter().filter(|r| r.0 == group).count();
-            lines.push(Line::from(vec![
-                Span::styled(format!(" {word} "), style),
-                Span::styled(many.to_string(), dim()),
-            ]));
+            if group.heading() == Heading::Decide {
+                lines.push(group_line(app, group, &listed, width));
+            }
             last = Some(group);
         }
         let here = at == Some(row);
         if here {
             scroll = lines.len().saturating_sub(4) as u16;
         }
-        lines.push(row_line(app, row, width, here));
-        if open && here {
-            let room = width.saturating_sub(4);
-            for line in preview_lines(app, row, room, OPENED + 2)
-                .into_iter()
-                .skip(2)
-            {
-                let mut spans = vec![Span::raw("    ")];
-                spans.extend(line.spans);
-                lines.push(Line::from(spans));
-            }
-        }
+        lines.extend(row_lines(app, row, width, here));
     }
-    if rows.is_empty() {
+    if listed.rows.is_empty() {
         lines.push(Line::from(Span::styled(t.home_nothing, dim())));
     }
     (lines, scroll)
@@ -204,8 +241,8 @@ fn card_of(w: &World, row: HomeRow) -> Option<&Card> {
 }
 
 /// What a row is called: its change's title, else its card's, else the
-/// words of its item or the agent's name.
-fn title_of(lang: Lang, w: &World, row: HomeRow) -> String {
+/// agent's name.
+fn title_of(w: &World, row: HomeRow) -> String {
     let change = match row {
         HomeRow::Item(i) if w.inbox[i].kind == InboxKind::Change => w.change_of(w.inbox[i].agent),
         _ => None,
@@ -216,10 +253,7 @@ fn title_of(lang: Lang, w: &World, row: HomeRow) -> String {
     if let Some(c) = card_of(w, row) {
         return clean(&c.title);
     }
-    match row {
-        HomeRow::Item(i) => words::inbox(lang, w, &w.inbox[i]),
-        HomeRow::Agent(a) => clean(&w.agents[a].name),
-    }
+    clean(&w.agents[agent_of(w, row)].name)
 }
 
 /// The agent a row belongs to.
@@ -230,119 +264,307 @@ fn agent_of(w: &World, row: HomeRow) -> AgentId {
     }
 }
 
-/// How an item is shown on the list, and what it is called at the row's end.
-fn item_mark(t: &Text, kind: InboxKind) -> (Span<'static>, &'static str) {
-    let tails = t.home_tails;
-    let (glyph, colour, tail) = match kind {
-        InboxKind::Change => ("Δ", pal().strong, ""),
-        InboxKind::Question => ("?", pal().warn, tails[0]),
-        InboxKind::Approval => ("⚑", pal().warn, tails[1]),
-        InboxKind::Script | InboxKind::Check => ("▶", pal().warn, tails[2]),
-        InboxKind::Plan => ("▤", pal().warn, tails[3]),
-        InboxKind::Fault => ("■", pal().bad, tails[4]),
-        InboxKind::Reply => ("»", pal().info, tails[5]),
-        InboxKind::Sensitive => ("!", pal().warn, tails[6]),
-        InboxKind::Research => ("?", pal().research, tails[6]),
-    };
-    (Span::styled(glyph, bold(colour)), tail)
+/// The commands of a script, for the row that asks about it: its lines
+/// that are not comments, one after the other; the whole is one `enter`
+/// away.
+pub(crate) fn commands_of(text: &str) -> String {
+    let lines: Vec<&str> = text
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .collect();
+    clean(&lines.join("; "))
 }
 
-/// A change's end of a row: its lines and how its runs went.
-fn change_tail(c: &Change) -> Vec<Span<'static>> {
-    let added: u32 = c.files.iter().map(|f| f.added).sum();
-    let removed: u32 = c.files.iter().map(|f| f.removed).sum();
-    let mut spans = vec![Span::styled(format!("+{added} −{removed}"), dim())];
-    if !c.runs.is_empty() {
-        let good = c.runs.iter().all(Ran::ok);
-        let (mark, colour) = if good {
-            ("✓", pal().ok)
-        } else {
-            ("✗", pal().bad)
-        };
-        spans.push(Span::styled(format!(" {mark}"), fg(colour)));
+/// What a row asks or says, after its title: words that wrap, a
+/// change's figures in their colours (a part that does not fit goes
+/// under the first), or one line that is cut, an agent's.
+enum Tail {
+    Words(String),
+    Spans(Vec<Span<'static>>),
+    Cut(String),
+}
+
+/// What an item's row says: the whole ask, in the person's words, without
+/// the agent's name (the preview has it).
+fn item_tail(app: &App, i: usize) -> Tail {
+    let w = &app.world;
+    let t = app.lang.text();
+    let item = &w.inbox[i];
+    let text = match item.kind {
+        InboxKind::Approval => fill(t.row_run, &[&words::one_line(&item.detail)]),
+        InboxKind::Script | InboxKind::Check => {
+            let commands = app.script_text(i).map(|s| commands_of(&s.text()));
+            let words = if item.kind == InboxKind::Check {
+                t.row_check
+            } else {
+                t.row_script
+            };
+            fill(words, &[&item.detail, commands.as_deref().unwrap_or("")])
+        }
+        InboxKind::Question => plain(&item.detail),
+        InboxKind::Research => {
+            let by = item.researcher.map_or("?", |r| w.agents[r].name.as_str());
+            fill(t.row_research, &[by, &item.detail])
+        }
+        InboxKind::Reply => fill(t.row_reply, &[&item.detail]),
+        InboxKind::Fault => fill(t.row_fault, &[&item.detail]),
+        InboxKind::Plan => {
+            let (cards, cost) = words::plan_figures(w, item.agent);
+            fill(
+                t.row_plan,
+                &[&cards.to_string(), &dollars(cost), &item.detail],
+            )
+        }
+        InboxKind::Sensitive => fill(t.row_sensitive, &[&item.detail]),
+        InboxKind::Change => {
+            return match w.change_of(item.agent) {
+                Some(c) => Tail::Spans(change_spans(
+                    app.lang,
+                    c,
+                    item.card.and_then(|c| w.cards.get(c)),
+                )),
+                None => Tail::Words(clean(&item.detail)),
+            };
+        }
+    };
+    Tail::Words(text)
+}
+
+/// A change's figures: its files and lines, what was proved on its tree
+/// (the check, else the runs, else that nothing ran), and the files
+/// outside its card's paths.
+pub(crate) fn change_spans(lang: Lang, c: &Change, card: Option<&Card>) -> Vec<Span<'static>> {
+    let t = lang.text();
+    let (added, removed) = c.counts();
+    let files = match c.files.len() {
+        1 => t.row_file.to_string(),
+        n => fill(t.row_files, &[&n.to_string()]),
+    };
+    let mut spans = vec![Span::styled(format!("{files} +{added} −{removed}"), dim())];
+    let proof = match c.proof() {
+        Some(ok) => {
+            let what = match &c.check {
+                Check::Ran(_) => t.row_check_word.to_string(),
+                _ => c
+                    .runs
+                    .iter()
+                    .map(|r| r.line.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", "),
+            };
+            let (mark, colour) = if ok {
+                ("✓", pal().ok)
+            } else {
+                ("✗", pal().bad)
+            };
+            Span::styled(format!(" · {mark} {}", clean(&what)), fg(colour))
+        }
+        None => Span::styled(format!(" · {}", t.row_not_run), fg(pal().warn)),
+    };
+    spans.push(proof);
+    let outside = c.outside(card);
+    if let (false, Some(card)) = (outside.is_empty(), card) {
+        spans.push(Span::styled(
+            format!(
+                " · {}",
+                fill(
+                    t.row_outside,
+                    &[&outside.len().to_string(), &words::card_ref(card.id)]
+                )
+            ),
+            fg(pal().bad),
+        ));
     }
     spans
 }
 
-/// One row of the list: its mark, project, card and title, and what it
-/// comes to at the end, with how long.
-fn row_line(app: &App, row: HomeRow, width: usize, here: bool) -> Line<'static> {
+/// What an agent's row says: the step it is on, else its status, then
+/// how long, from a minute on; the row's own glyph is not said twice.
+fn agent_tail(app: &App, id: AgentId, glyph: &str) -> Tail {
     let w = &app.world;
-    let t = app.lang.text();
     let lang = app.lang;
-    let agent = &w.agents[agent_of(w, row)];
-    let (mark, tail) = match row {
-        HomeRow::Item(i) => {
-            let (mark, word) = item_mark(t, w.inbox[i].kind);
-            let change = (w.inbox[i].kind == InboxKind::Change)
-                .then(|| w.change_of(agent.id))
-                .flatten();
-            let tail = match change {
-                Some(c) => change_tail(c),
-                None => vec![Span::styled(word, fg(pal().warn))],
-            };
-            (mark, tail)
-        }
-        HomeRow::Agent(_) => {
-            let (glyph, colour) = glyph(agent);
-            let doing = on_step(w, agent).map_or_else(
-                || {
-                    let text: String = doing_status(lang, w, agent)
-                        .iter()
-                        .map(|s| s.content.as_ref())
-                        .collect();
-                    text
-                },
-                str::to_string,
-            );
-            (
-                Span::styled(glyph, fg(colour)),
-                vec![Span::styled(fit(&doing, 24).trim_end().to_string(), dim())],
-            )
-        }
-    };
-    let from = match row {
-        HomeRow::Item(i) => w.inbox[i].tick,
-        HomeRow::Agent(id) => app.since(id),
-    };
-    let since = w.tick.saturating_sub(from) * SECONDS_PER_TICK;
-    let mut end = tail;
-    if since >= 60 {
-        end.push(Span::styled(format!(" {}", words::ago(lang, since)), dim()));
+    let a = &w.agents[id];
+    let mut text = on_step(w, a).map_or_else(
+        || {
+            let text: String = status_spans(lang, w, a)
+                .iter()
+                .map(|s| s.content.as_ref())
+                .collect();
+            text
+        },
+        str::to_string,
+    );
+    if let Some(rest) = text.strip_prefix(glyph) {
+        text = rest.trim_start().to_string();
     }
-    let end_width: usize = end.iter().map(Span::width).sum();
-    let mut spans = vec![
-        Span::styled(if here { "▸ " } else { "  " }, bold(pal().strong)),
-        mark,
+    if text.trim().is_empty() {
+        text = lang.text().home_idle.to_string();
+    }
+    let since = w.tick.saturating_sub(app.since(id)) * SECONDS_PER_TICK;
+    if since >= 60 {
+        text.push_str(&format!(" · {}", words::ago(lang, since)));
+    }
+    Tail::Cut(text)
+}
+
+/// The keys that decide the row at hand, at its end: the two that
+/// decide, in a word each; the status line has the rest.
+fn row_keys(app: &App) -> Vec<Span<'static>> {
+    let t = app.lang.text();
+    let keys: Vec<(&str, &str)> = match app.home_at() {
+        Some(HomeRow::Item(i)) => match app.world.inbox[i].kind {
+            InboxKind::Change => vec![("a", t.apply), ("r", t.reject)],
+            InboxKind::Question | InboxKind::Fault | InboxKind::Reply => {
+                vec![("a", t.home_answer), ("enter", t.home_open)]
+            }
+            _ => vec![("a", t.home_yes), ("r", t.home_no)],
+        },
+        Some(HomeRow::Agent(_)) => vec![("enter", t.home_open)],
+        None => Vec::new(),
+    };
+    let mut spans = hint_spans(&keys);
+    for s in &mut spans {
+        if s.style != key_style() {
+            s.style = dim();
+        }
+    }
+    spans
+}
+
+/// The rows of one entry of the list: its glyph, project (when several
+/// are open and the list is not narrowed), card and title, then what it
+/// asks or says, whole: the words wrap under their own column, and the
+/// row at hand ends with the keys that decide it.
+fn row_lines(app: &App, row: HomeRow, width: usize, here: bool) -> Vec<Line<'static>> {
+    let w = &app.world;
+    let agent = &w.agents[agent_of(w, row)];
+    let (glyph, colour) = match row {
+        HomeRow::Item(_) => ("!", pal().warn),
+        HomeRow::Agent(_) => glyph(agent),
+    };
+    let tail = match row {
+        HomeRow::Item(i) => item_tail(app, i),
+        HomeRow::Agent(id) => agent_tail(app, id, glyph),
+    };
+    let mut head = vec![
+        Span::styled(if here { "▸" } else { " " }, bold(pal().strong)),
+        Span::styled(glyph, fg(colour)),
         Span::raw(" "),
     ];
     let many = w.open_projects().count() > 1;
     if many && app.at_home.scope.is_none() {
-        spans.push(Span::styled(
+        head.push(Span::styled(
             fit(&w.projects[agent.project].name, 11),
             dim(),
         ));
-        spans.push(Span::raw(" "));
+        head.push(Span::raw(" "));
     }
-    let card = card_of(w, row).map_or(String::new(), |c| format!("#{}", c.id + 1));
-    spans.push(Span::styled(format!("{card:<5}"), dim()));
-    let used: usize = spans.iter().map(Span::width).sum();
-    let room = width.saturating_sub(used + end_width + 1);
-    let title = fit(&title_of(lang, w, row), room);
+    let card = card_of(w, row).map_or(String::new(), |c| words::card_ref(c.id));
+    head.push(Span::styled(format!("{card:<5}"), dim()));
+    let title_width = TITLE.min(width.saturating_sub(40)).max(TITLE_MIN);
     let style = if here {
         Style::new().add_modifier(Modifier::BOLD)
     } else {
         Style::new()
     };
-    spans.push(Span::styled(title, style));
-    spans.push(Span::raw(" "));
-    spans.extend(end);
-    let line = Line::from(spans);
-    if here {
-        line.style(Style::new().bg(pal().selection))
+    head.push(Span::styled(
+        format!("{:<title_width$}  ", fit(&title_of(w, row), title_width)),
+        style,
+    ));
+    let used: usize = head.iter().map(Span::width).sum();
+    let keys = if here { row_keys(app) } else { Vec::new() };
+    let keys_width: usize = keys.iter().map(Span::width).sum();
+    // The ask gets at least `ASK_MIN` on the first line: when the keys
+    // would leave less, they go, the status line still has them.
+    let keys = if keys_width > 0 && width.saturating_sub(used + keys_width + 2) >= ASK_MIN {
+        keys
     } else {
-        line
+        Vec::new()
+    };
+    let keys_width: usize = keys.iter().map(Span::width).sum();
+    let first_room = width.saturating_sub(used + keys_width + if keys_width > 0 { 2 } else { 1 });
+    let mut lines = Vec::new();
+    let selection = |line: Line<'static>| {
+        if here {
+            line.style(Style::new().bg(pal().selection))
+        } else {
+            line
+        }
+    };
+    let end_first = |mut spans: Vec<Span<'static>>, lines: &mut Vec<Line<'static>>| {
+        if !keys.is_empty() {
+            let filled: usize = spans.iter().map(Span::width).sum();
+            spans.push(Span::raw(
+                " ".repeat(width.saturating_sub(filled + keys_width + 1)),
+            ));
+            spans.extend(keys.iter().cloned());
+        }
+        lines.push(selection(Line::from(spans)));
+    };
+    let rest_room = width.saturating_sub(used + 1);
+    match tail {
+        Tail::Cut(text) => {
+            let mut line = head;
+            line.push(Span::raw(fit(&text, first_room).trim_end().to_string()));
+            end_first(line, &mut lines);
+        }
+        Tail::Spans(spans) => {
+            // Each part whole on a line, the first line's room first; a
+            // part wider than a whole line is cut.
+            let mut line = head;
+            let mut room = first_room;
+            let mut first = true;
+            for s in spans {
+                let n = s.width();
+                if n > room && !(first && line.len() == 3) {
+                    if first {
+                        end_first(std::mem::take(&mut line), &mut lines);
+                        first = false;
+                    } else {
+                        lines.push(selection(Line::from(std::mem::take(&mut line))));
+                    }
+                    line.push(Span::raw(" ".repeat(used)));
+                    room = rest_room;
+                }
+                let s = if line.len() == 1 {
+                    // First on its line: no separator before it.
+                    let text = s.content.trim_start_matches(" · ").to_string();
+                    Span::styled(fit(&text, room).trim_end().to_string(), s.style)
+                } else if n > room {
+                    Span::styled(fit(&s.content, room).trim_end().to_string(), s.style)
+                } else {
+                    s
+                };
+                room = room.saturating_sub(s.width());
+                line.push(s);
+            }
+            if first {
+                end_first(line, &mut lines);
+            } else {
+                lines.push(selection(Line::from(line)));
+            }
+        }
+        Tail::Words(text) => {
+            let mut rows = overlay::wrap_words(&text, first_room.max(1)).into_iter();
+            let mut line = head.clone();
+            line.push(Span::raw(rows.next().unwrap_or_default()));
+            end_first(line, &mut lines);
+            let left: Vec<String> = rows.collect();
+            if left.is_empty() {
+                return lines;
+            }
+            // The rest of the words, as wide as the row lets them.
+            let whole: String = left.join(" ");
+            for row in overlay::wrap_words(&whole, rest_room.max(1)) {
+                lines.push(selection(Line::from(vec![
+                    Span::raw(" ".repeat(used)),
+                    Span::raw(row),
+                ])));
+            }
+        }
     }
+    lines
 }
 
 /// A row of the preview: a dim label in its own column, then the text.
@@ -441,6 +663,32 @@ fn patch_lines(patch: &str, room: usize, rows: usize) -> Vec<Line<'static>> {
         .collect()
 }
 
+/// A script's lines as the person reads them before a yes: numbered, the
+/// first `SCRIPT_ROWS`, the rest counted; the window has them all.
+fn script_lines(t: &Text, text: &str, room: usize) -> Vec<Line<'static>> {
+    let all: Vec<&str> = text.lines().collect();
+    let mut lines: Vec<Line<'static>> = all
+        .iter()
+        .take(SCRIPT_ROWS)
+        .enumerate()
+        .map(|(n, l)| {
+            Line::from(vec![
+                Span::styled(format!("{:>3} ", n + 1), dim()),
+                Span::raw(
+                    fit(&clean(l), room.saturating_sub(4))
+                        .trim_end()
+                        .to_string(),
+                ),
+            ])
+        })
+        .collect();
+    if all.len() > SCRIPT_ROWS {
+        let rest = (all.len() - SCRIPT_ROWS).to_string();
+        lines.push(Line::from(Span::styled(fill(t.home_more, &[&rest]), dim())));
+    }
+    lines
+}
+
 /// What an agent is at: its status, its steps, its newest lines.
 fn agent_lines(app: &App, id: AgentId, lines: &mut Vec<Line<'static>>, room: usize, rows: usize) {
     let w = &app.world;
@@ -463,15 +711,16 @@ fn agent_lines(app: &App, id: AgentId, lines: &mut Vec<Line<'static>>, room: usi
 /// What a row holds, read without a key: a heading, then what it is.
 fn preview_lines(app: &App, row: HomeRow, room: usize, rows: usize) -> Vec<Line<'static>> {
     let w = &app.world;
+    let t = app.lang.text();
     let id = agent_of(w, row);
     let a = &w.agents[id];
     let project = clean(&w.projects[a.project].name);
     let mut head = Vec::new();
     if let Some(c) = card_of(w, row) {
-        head.push(Span::styled(format!("#{} ", c.id + 1), dim()));
+        head.push(Span::styled(format!("{} ", words::card_ref(c.id)), dim()));
     }
     head.push(Span::styled(
-        fit(&title_of(app.lang, w, row), room.saturating_sub(30).max(10))
+        fit(&title_of(w, row), room.saturating_sub(30).max(10))
             .trim_end()
             .to_string(),
         bold(pal().strong),
@@ -502,6 +751,13 @@ fn preview_lines(app: &App, row: HomeRow, room: usize, rows: usize) -> Vec<Line<
                     for row in overlay::wrap_words(&clean(&item.detail), room) {
                         lines.push(Line::from(Span::styled(row, bold(pal().strong))));
                     }
+                }
+                // A script's bytes are what the yes is to: read here.
+                if matches!(item.kind, InboxKind::Script | InboxKind::Check)
+                    && let Some(script) = app.script_text(i)
+                {
+                    lines.push(Line::default());
+                    lines.extend(script_lines(t, &script.text(), room));
                 }
             }
         }
@@ -540,13 +796,15 @@ mod tests {
         app
     }
 
+    fn workers(app: &App) -> Vec<AgentId> {
+        (app.world.agents.iter())
+            .filter(|a| a.role == Role::Worker)
+            .map(|a| a.id)
+            .collect()
+    }
+
     fn worker(app: &App) -> AgentId {
-        app.world
-            .agents
-            .iter()
-            .find(|a| a.role == Role::Worker)
-            .unwrap()
-            .id
+        workers(app)[0]
     }
 
     fn item(kind: InboxKind, agent: AgentId, detail: &str) -> InboxItem {
@@ -558,6 +816,14 @@ mod tests {
             open: true,
             tick: 0,
             card: None,
+        }
+    }
+
+    fn ran(line: &str, code: i32) -> Ran {
+        Ran {
+            line: line.into(),
+            code: Some(code),
+            timed_out: false,
         }
     }
 
@@ -579,26 +845,555 @@ mod tests {
         }
     }
 
-    #[test]
-    fn a_question_is_read_whole_where_it_waits() {
-        let mut app = home(Lang::En);
-        let a = worker(&app);
-        let long = "May paging change the shape of the API's response?";
-        app.world.inbox.push(item(InboxKind::Question, a, long));
-        let s = render(&app, 150, 40);
-        assert!(s.contains(long), "{s}");
-        assert!(s.contains("TO DECIDE 1"), "{s}");
+    fn text(line: &Line) -> String {
+        line.spans.iter().map(|s| s.content.as_ref()).collect()
+    }
+
+    fn lines(app: &App, width: usize) -> Vec<String> {
+        list_lines(app, width, app.home_at())
+            .0
+            .iter()
+            .map(text)
+            .collect()
+    }
+
+    /// The demo stepped until the repository's check asks for its yes.
+    fn demo_with_check() -> (App, usize) {
+        let (world, sim) = crate::sim::world(1, 3, 0, 1, Lang::En);
+        let mut app = App::with(world, Engine::Sim(sim), Lang::En);
+        app.view = View::Home;
+        for _ in 0..400 {
+            app.step();
+            if let Some(i) =
+                (app.world.inbox.iter()).position(|i| i.kind == InboxKind::Check && i.open)
+            {
+                return (app, i);
+            }
+        }
+        panic!("the demo never asked about its check");
     }
 
     #[test]
-    fn a_change_says_what_it_comes_to_and_its_patch_without_git_s_lines() {
+    fn to_decide_counts_each_kind_and_the_groups_say_what_makes_them_cheap() {
+        let mut app = home(Lang::En);
+        let w = workers(&app);
+        app.world
+            .inbox
+            .push(item(InboxKind::Approval, w[0], "cargo test"));
+        app.world
+            .inbox
+            .push(item(InboxKind::Question, w[1], "Which?"));
+        app.world.inbox.push(item(InboxKind::Reply, w[2], "done"));
+        app.world
+            .changes
+            .push(change(w[3], vec![ran("cargo test", 0)]));
+        app.world.inbox.push(item(InboxKind::Change, w[3], ""));
+        let got = lines(&app, 100);
+        assert_eq!(got[0], " TO DECIDE 1 permission · 2 questions · 1 change");
+        assert!(got[1].starts_with(" permissions"), "{}", got[1]);
+        assert!(got[1].ends_with("one key each"), "{}", got[1]);
+        assert_eq!(
+            got[1].chars().count(),
+            99,
+            "the note a cell short of the edge"
+        );
+        assert_eq!(got[3], " questions");
+        assert!(got[6].starts_with(" changes"), "{}", got[6]);
+        assert!(got[6].ends_with("1 ready to approve"), "{}", got[6]);
+        // A change that was not proved clean is not ready: no note.
+        app.world.changes[0].runs.clear();
+        let got = lines(&app, 100);
+        assert_eq!(got[6], " changes");
+        // The note needs a cell between it and the word, and one at the
+        // end: 12 + 1 + 12 + 1 + 1 columns.
+        assert!(
+            lines(&app, 27)[1].ends_with(" one key each"),
+            "{}",
+            lines(&app, 27)[1]
+        );
+        assert_eq!(lines(&app, 26)[1], " permissions");
+        // What was put off stands last, in its own group, counted.
+        app.deferred.push(0);
+        let got = lines(&app, 100);
+        assert_eq!(got[0], " TO DECIDE 2 questions · 1 change · 1 put off");
+        assert_eq!(got[1], " questions");
+        assert_eq!(got[6], " later");
+        assert!(got[7].contains("run cargo test?"), "{}", got[7]);
+        app.deferred.clear();
+        // One of a kind, many of another, in Turkish.
+        app.lang = Lang::Tr;
+        let got = lines(&app, 100);
+        assert_eq!(got[0], " KARAR BEKLEYEN 1 izin · 2 soru · 1 değişiklik");
+        assert!(got[1].ends_with("her biri tek tuş"), "{}", got[1]);
+        app.deferred.push(0);
+        let got = lines(&app, 100);
+        assert!(got[0].ends_with("· 1 ertelenen"), "{}", got[0]);
+        assert_eq!(got[6], " sonraya");
+    }
+
+    #[test]
+    fn at_work_counts_who_is_stuck_and_idle_only_when_some_are() {
+        let mut app = home(Lang::En);
+        let w = workers(&app);
+        app.world.agents[w[0]].status = Status::Working;
+        app.world.agents[w[1]].status = Status::Working;
+        let got = lines(&app, 100);
+        assert_eq!(got[0], " AT WORK 4 · idle 2");
+        app.world.agents[w[2]].status = Status::Blocked;
+        assert_eq!(lines(&app, 100)[0], " AT WORK 4 · stuck 1 · idle 1");
+        for &a in &w[2..] {
+            app.world.agents[a].status = Status::Working;
+        }
+        assert_eq!(lines(&app, 100)[0], " AT WORK 4");
+        app.lang = Lang::Tr;
+        app.world.agents[w[2]].status = Status::Stopped;
+        assert_eq!(lines(&app, 100)[0], " ÇALIŞAN 4 · takılan 1");
+    }
+
+    #[test]
+    fn a_permission_row_says_the_whole_ask_and_a_check_s_row_its_commands() {
+        let mut app = home(Lang::En);
+        let a = worker(&app);
+        app.world
+            .inbox
+            .push(item(InboxKind::Approval, a, "Bash: cargo test\nmore"));
+        let got = lines(&app, 100);
+        assert!(
+            got[2].contains("run Bash: cargo test ↵ more?"),
+            "{}",
+            got[2]
+        );
+        app.world.inbox[0] = item(InboxKind::Script, a, ".imece/worktree-setup.sh");
+        let got = lines(&app, 100);
+        // The row at hand ends with its keys; the ask goes on under it.
+        let whole: Vec<String> = got[2..4]
+            .iter()
+            .map(|l| l.replace("a  yes   r  no", ""))
+            .flat_map(|l| l.split_whitespace().map(str::to_string).collect::<Vec<_>>())
+            .collect();
+        assert!(
+            whole
+                .join(" ")
+                .contains("run .imece/worktree-setup.sh in its new worktrees?"),
+            "{got:?}"
+        );
+        let (mut app, i) = demo_with_check();
+        let got = lines(&app, 120);
+        let at = got
+            .iter()
+            .position(|l| l.contains("run .imece/check on its changes?"))
+            .expect("the check's row");
+        // With the row's keys at its end, the commands go on under it.
+        let row = got[at..at + 2]
+            .iter()
+            .map(|l| l.replace("a  yes   r  no", "").trim().to_string())
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert!(
+            row.contains("set -e; cd \"$IMECE_WORKTREE\"; npm run build; npm test -- --silent"),
+            "{row}"
+        );
+        assert!(
+            !row.contains("#!/bin/sh") && !row.contains("Builds"),
+            "{row}"
+        );
+        // The card the change was made for, not the one its worker has now.
+        let card = app.world.inbox[i].card.expect("about a card");
+        assert!(row.contains(&format!("#{}", card + 1)), "{row}");
+        app.lang = Lang::Tr;
+        let got = lines(&app, 120);
+        assert!(
+            got.iter()
+                .any(|l| l.contains("değişikliklerinde çalışsın mı?")),
+            "{got:?}"
+        );
+    }
+
+    #[test]
+    fn commands_of_a_script_leave_out_its_comments_and_blanks() {
+        let script = "#!/bin/sh\n# says\n\n  set -e  \ncargo build\n\ncargo test\n";
+        assert_eq!(commands_of(script), "set -e; cargo build; cargo test");
+        assert_eq!(commands_of("# only\n"), "");
+        assert!(!commands_of("echo \u{7}x").contains('\u{7}'), "cleaned");
+    }
+
+    #[test]
+    fn a_question_is_read_whole_and_wraps_under_its_own_column() {
+        let mut app = home(Lang::En);
+        let a = worker(&app);
+        let long = "May paging change the shape of the API's response, or must it keep every field as it is today?";
+        app.world.inbox.push(item(InboxKind::Question, a, long));
+        let got = lines(&app, 80);
+        let first = got.iter().position(|l| l.contains("May paging")).unwrap();
+        let joined: String = got[first..first + 3]
+            .iter()
+            .map(|l| l.trim().to_string())
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert!(joined.contains(long), "{joined}");
+        // The second line starts where the ask does.
+        let column = got[first].find("May").unwrap();
+        let cells = got[first][..column].chars().count();
+        let next: Vec<char> = got[first + 1].chars().collect();
+        assert!(
+            next[..cells].iter().all(|&c| c == ' '),
+            "{}",
+            got[first + 1]
+        );
+        assert_ne!(next[cells], ' ', "{}", got[first + 1]);
+        assert!(got[first + 1].chars().count() <= 80);
+        let s = render(&app, 80, 24);
+        assert!(s.contains("May paging change"), "{s}");
+        assert!(
+            !s.lines().skip(1).any(|l| l.contains('│')),
+            "one column: {s}"
+        );
+    }
+
+    #[test]
+    fn every_other_kind_of_item_says_what_it_is() {
+        let mut app = home(Lang::En);
+        let w = workers(&app);
+        let researcher = app.world.projects[0].leader;
+        let mut report = item(InboxKind::Research, w[0], "serde");
+        report.researcher = Some(researcher);
+        app.world.inbox.push(report);
+        app.world
+            .inbox
+            .push(item(InboxKind::Reply, w[1], "yes it does"));
+        app.world.inbox.push(item(InboxKind::Fault, w[2], "401"));
+        app.world
+            .inbox
+            .push(item(InboxKind::Sensitive, w[3], "adds a crate"));
+        let lead = app.world.projects[1].leader;
+        app.world
+            .inbox
+            .push(item(InboxKind::Plan, lead, "First card"));
+        let got = lines(&app, 140).join("\n");
+        let by = app.world.agents[researcher].name.clone();
+        for want in [
+            format!("{by}'s report proposes a new package: serde"),
+            "answered: yes it does".into(),
+            "API error, write to it once mended: 401".into(),
+            "sensitive change: adds a crate".into(),
+            "plans 0 cards for $0.00: First card".into(),
+        ] {
+            assert!(got.contains(&want), "{want}:\n{got}");
+        }
+        assert!(got.contains("TO DECIDE 4 questions · 1 change"), "{got}");
+    }
+
+    #[test]
+    fn a_change_s_row_says_its_files_its_proof_and_what_is_outside_its_card() {
+        let t = |c: &Change, card: Option<&Card>| -> String {
+            change_spans(Lang::En, c, card)
+                .iter()
+                .map(|s| s.content.as_ref())
+                .collect()
+        };
+        let mut c = change(0, Vec::new());
+        assert_eq!(t(&c, None), "1 file +19 −6 · nothing ran");
+        c.runs = vec![ran("dotnet build", 0), ran("dotnet test", 0)];
+        assert_eq!(t(&c, None), "1 file +19 −6 · ✓ dotnet build, dotnet test");
+        c.runs.push(ran("lint", 1));
+        assert_eq!(
+            t(&c, None),
+            "1 file +19 −6 · ✗ dotnet build, dotnet test, lint"
+        );
+        let spans = change_spans(Lang::En, &c, None);
+        assert_eq!(spans[1].style, fg(pal().bad));
+        // The repository's check speaks over the runs.
+        c.check = Check::Ran(Checked {
+            ok: true,
+            end: "exit 0".into(),
+            lines: Vec::new(),
+        });
+        assert_eq!(t(&c, None), "1 file +19 −6 · ✓ check");
+        assert_eq!(change_spans(Lang::En, &c, None)[1].style, fg(pal().ok));
+        c.files.push(ChangedFile {
+            path: "tests/paging.rs".into(),
+            added: 2,
+            removed: 0,
+            binary: false,
+        });
+        let app = home(Lang::En);
+        let mut card = app.world.cards[0].clone();
+        card.paths = crate::paths::parse(&serde_json::json!(["src/"])).unwrap();
+        assert_eq!(
+            t(&c, Some(&card)),
+            format!("2 files +21 −6 · ✓ check · 1 outside #{}", card.id + 1)
+        );
+        assert_eq!(
+            change_spans(Lang::En, &c, Some(&card))[2].style,
+            fg(pal().bad)
+        );
+        card.paths.clear();
+        assert_eq!(t(&c, Some(&card)), "2 files +21 −6 · ✓ check");
+        assert_eq!(
+            change_spans(Lang::Tr, &c, None)
+                .iter()
+                .map(|s| s.content.as_ref())
+                .collect::<String>(),
+            "2 dosya +21 −6 · ✓ kontrol"
+        );
+    }
+
+    #[test]
+    fn a_part_of_a_change_s_row_that_does_not_fit_goes_under_without_its_dot() {
+        let mut app = home(Lang::En);
+        let a = worker(&app);
+        app.world.changes.push(change(
+            a,
+            vec![ran("dotnet build", 0), ran("dotnet test", 0)],
+        ));
+        // A question comes first and is the row at hand: the change's row
+        // has no keys at its end.
+        app.world.inbox.push(item(InboxKind::Question, a, "Which?"));
+        app.world.inbox.push(item(InboxKind::Change, a, ""));
+        app.at_home.scope = Some(app.world.agents[a].project);
+        let wide = lines(&app, 100);
+        let row = wide.iter().position(|l| l.contains("+19 −6")).unwrap();
+        assert!(wide[row].contains("+19 −6 · ✓ dotnet build, dotnet test"));
+        let narrow = lines(&app, 62);
+        assert!(narrow[row].ends_with("1 file +19 −6"), "{}", narrow[row]);
+        assert_eq!(narrow[row + 1].trim(), "✓ dotnet build, dotnet test");
+        let column = narrow[row].find("1 file").unwrap();
+        let cells = narrow[row][..column].chars().count();
+        let next: Vec<char> = narrow[row + 1].chars().collect();
+        assert!(
+            next[..cells].iter().all(|&c| c == ' '),
+            "{}",
+            narrow[row + 1]
+        );
+        assert_eq!(next[cells], '✓', "{}", narrow[row + 1]);
+        // A part wider than a whole line is cut, never dropped.
+        let tiny = lines(&app, 50);
+        assert!(
+            tiny[row + 1].trim().starts_with("✓ dotnet"),
+            "{}",
+            tiny[row + 1]
+        );
+        assert!(tiny[row + 1].chars().count() <= 50);
+    }
+
+    #[test]
+    fn the_row_at_hand_ends_with_its_keys_unless_they_would_crowd_the_ask() {
+        let mut app = home(Lang::En);
+        let a = worker(&app);
+        app.world
+            .inbox
+            .push(item(InboxKind::Approval, a, "cargo test"));
+        app.world.inbox.push(item(InboxKind::Question, a, "Which?"));
+        app.home_settle();
+        let got = lines(&app, 100);
+        let row = &got[2];
+        assert!(row.starts_with("▸!"), "{row}");
+        assert!(row.contains("run cargo test?"), "{row}");
+        assert!(row.ends_with(" a  yes   r  no  "), "{row}");
+        assert_eq!(row.chars().count(), 99, "a cell short of the edge: {row}");
+        assert!(!row.contains("help") && !row.contains("turn"), "{row}");
+        assert!(!got[4].contains("answer"), "not at hand: {}", got[4]);
+        // The keys dim, their badges as the status line's.
+        let line = &list_lines(&app, 100, app.home_at()).0[2];
+        let badge = line.spans.iter().find(|s| s.content == " a ").unwrap();
+        assert_eq!(badge.style, key_style());
+        let word = line
+            .spans
+            .iter()
+            .find(|s| s.content.contains("yes"))
+            .unwrap();
+        assert_eq!(word.style, dim());
+        // Each kind its two words.
+        app.home_go(1);
+        assert!(lines(&app, 100)[4].ends_with(" a  answer   enter  open  "));
+        app.world.changes.push(change(a, Vec::new()));
+        app.world.inbox.push(item(InboxKind::Change, a, ""));
+        app.home_go(2);
+        assert!(lines(&app, 100)[6].ends_with(" a  approve   r  send back  "));
+        app.world.agents[a].status = Status::Working;
+        app.home_go(3);
+        assert!(
+            lines(&app, 100)[9].ends_with(" enter  open  "),
+            "{}",
+            lines(&app, 100)[9]
+        );
+        // Too narrow for the ask beside them: the keys go, the status line
+        // still has them.
+        app.home_go(0);
+        let narrow = lines(&app, 62);
+        assert!(!narrow[2].contains("yes"), "{}", narrow[2]);
+        assert!(narrow[2].contains("run cargo test?"), "{}", narrow[2]);
+        assert!(render(&app, 62, 20).contains("allow once"));
+    }
+
+    #[test]
+    fn the_keys_stay_while_the_ask_keeps_its_least_cells_and_each_kind_has_its_two() {
+        let mut app = home(Lang::En);
+        let a = worker(&app);
+        app.at_home.scope = Some(app.world.agents[a].project);
+        app.world.inbox.push(item(InboxKind::Fault, a, "401"));
+        app.home_settle();
+        // The head is 34 cells: the ask keeps `ASK_MIN` at 34 + the keys
+        // + 2 + ASK_MIN columns, one less drops the keys.
+        let head = 34;
+        let keys = " a  answer   enter  open  ";
+        let t = Lang::En.text();
+        let keys_width: usize = hint_spans(&[("a", t.home_answer), ("enter", t.home_open)])
+            .iter()
+            .map(Span::width)
+            .sum();
+        let at = |app: &App, width: usize| lines(app, width)[2].clone();
+        let exact = head + keys_width + 2 + ASK_MIN;
+        assert!(at(&app, exact).ends_with(keys), "{}", at(&app, exact));
+        assert!(
+            !at(&app, exact - 1).contains("answer"),
+            "{}",
+            at(&app, exact - 1)
+        );
+        assert!(
+            at(&app, exact - 1).contains("API error"),
+            "{}",
+            at(&app, exact - 1)
+        );
+        for (kind, want) in [
+            (InboxKind::Reply, " a  answer   enter  open  "),
+            (InboxKind::Plan, " a  yes   r  no  "),
+            (InboxKind::Sensitive, " a  yes   r  no  "),
+            (InboxKind::Script, " a  yes   r  no  "),
+        ] {
+            app.world.inbox[0].kind = kind;
+            assert!(at(&app, 120).ends_with(want), "{kind:?}: {}", at(&app, 120));
+        }
+    }
+
+    #[test]
+    fn the_list_scrolls_to_keep_the_row_at_hand_four_lines_from_the_top() {
+        let mut app = home(Lang::En);
+        let a = worker(&app);
+        for n in 0..12 {
+            app.world
+                .inbox
+                .push(item(InboxKind::Question, a, &format!("q{n}")));
+        }
+        let scroll = |app: &App| list_lines(app, 100, app.home_at()).1;
+        app.home_go(0);
+        assert_eq!(scroll(&app), 0);
+        app.home_go(3);
+        assert_eq!(
+            scroll(&app),
+            1,
+            "row 3 is line 5: TO DECIDE, questions, then rows"
+        );
+        app.home_go(11);
+        assert_eq!(scroll(&app), 9);
+    }
+
+    #[test]
+    fn an_agent_s_row_is_one_line_cut_with_how_long_and_its_glyph_said_once() {
+        let mut app = home(Lang::En);
+        let a = worker(&app);
+        app.at_home.scope = Some(app.world.agents[a].project);
+        app.world.agents[a].status = Status::Working;
+        app.world.agents[a].plan = vec![Step {
+            text: "Write the tests for the paging of every product list there is".into(),
+            state: StepState::Doing,
+        }];
+        app.world.tick = 36;
+        app.world.agents[a].changed_at = 0;
+        let got = lines(&app, 70);
+        let row = got.iter().find(|l| l.contains("● ")).unwrap();
+        assert!(row.contains("Write the tests for"), "{row}");
+        assert!(row.contains("…  enter  open"), "cut, then the keys: {row}");
+        assert!(row.chars().count() <= 70);
+        assert!(
+            !got.iter().any(|l| l.trim().starts_with("every")),
+            "{got:?}"
+        );
+        app.world.agents[a].plan.clear();
+        app.world.agents[a].status = Status::Stopped;
+        let got = lines(&app, 100);
+        let row = got.iter().find(|l| l.contains("■ ")).unwrap();
+        assert_eq!(row.matches('■').count(), 1, "{row}");
+        assert!(row.contains("session ended"), "{row}");
+        assert!(row.contains("· 3 min"), "{row}");
+        app.world.tick = 11;
+        let got = lines(&app, 100);
+        assert!(
+            !got.iter().any(|l| l.contains(" min")),
+            "under a minute: {got:?}"
+        );
+        app.world.tick = 12;
+        let got = lines(&app, 100);
+        assert!(
+            got.iter().any(|l| l.contains("· 1 min")),
+            "from the minute: {got:?}"
+        );
+        // An idle one says so.
+        app.world.agents[a].status = Status::Idle;
+        let got = lines(&app, 100);
+        let row = got.iter().find(|l| l.contains("○ ")).unwrap();
+        assert!(row.contains("  idle · 1 min"), "{row}");
+    }
+
+    #[test]
+    fn the_preview_stands_beside_the_list_from_120_columns() {
+        let mut app = home(Lang::En);
+        let a = worker(&app);
+        app.world.agents[a].card = Some(0);
+        app.world
+            .inbox
+            .push(item(InboxKind::Question, a, "Which index?"));
+        let wide = render(&app, WIDE, 30);
+        let narrow = render(&app, WIDE - 1, 30);
+        let rule = |s: &str| s.lines().skip(1).any(|l| l.contains('│'));
+        assert!(rule(&wide), "{wide}");
+        assert!(!rule(&narrow), "{narrow}");
+        assert!(narrow.contains("Which index?"), "{narrow}");
+        let name = app.world.agents[a].name.clone();
+        assert!(wide.contains("asks you: Which index?"), "{wide}");
+        assert!(wide.contains(&name), "the agent in the preview: {wide}");
+        assert!(!narrow.contains(&name), "not on the row: {narrow}");
+    }
+
+    #[test]
+    fn the_list_takes_under_half_and_never_less_than_its_narrowest() {
+        assert_eq!(list_width(WIDE), LIST_MIN);
+        assert_eq!(list_width(133), LIST_MIN);
+        assert_eq!(list_width(134), 60);
+        assert_eq!(list_width(150), 67);
+        assert_eq!(list_width(200), 90);
+    }
+
+    #[test]
+    fn the_preview_reads_a_script_s_lines_numbered_and_counts_the_rest() {
+        let (app, _) = demo_with_check();
+        let s = render(&app, 150, 40);
+        assert!(s.contains("  1 #!/bin/sh"), "{s}");
+        assert!(s.contains("  6 npm test -- --silent"), "{s}");
+        let t = Lang::En.text();
+        let long: String = (1..=SCRIPT_ROWS + 3)
+            .map(|n| format!("echo {n}\n"))
+            .collect();
+        let got = script_lines(t, &long, 40);
+        assert_eq!(got.len(), SCRIPT_ROWS + 1);
+        assert_eq!(
+            text(&got[SCRIPT_ROWS - 1]),
+            format!(" {SCRIPT_ROWS} echo {SCRIPT_ROWS}")
+        );
+        assert_eq!(text(&got[SCRIPT_ROWS]), "… 3 more");
+        let short = script_lines(t, "a\nb\n", 40);
+        assert_eq!(short.len(), 2);
+        assert_eq!(text(&short[1]), "  2 b");
+    }
+
+    #[test]
+    fn a_change_s_preview_says_what_it_comes_to_and_its_patch_without_git_s_lines() {
         let mut app = home(Lang::En);
         let a = worker(&app);
         app.world.changes.push(change(a, Vec::new()));
         app.world.inbox.push(item(InboxKind::Change, a, ""));
         let s = render(&app, 150, 40);
         assert!(s.contains("Paging in product search"), "{s}");
-        assert!(s.contains("+19 −6"), "{s}");
         assert!(s.contains("src/query.rs"), "{s}");
         assert!(s.contains("+new line") && s.contains("-old line"), "{s}");
         assert!(!s.contains("diff --git") && !s.contains("+++ b/x"), "{s}");
@@ -606,44 +1401,27 @@ mod tests {
     }
 
     #[test]
-    fn a_narrow_screen_opens_the_row_at_hand_under_itself() {
-        let mut app = home(Lang::En);
-        let a = worker(&app);
-        app.world
-            .inbox
-            .push(item(InboxKind::Question, a, "Which index?"));
-        let wide = render(&app, WIDE, 30);
-        let narrow = render(&app, WIDE - 1, 30);
-        let rule = |s: &str| s.lines().skip(2).any(|l| l.contains('│'));
-        assert!(rule(&wide), "{wide}");
-        assert!(!rule(&narrow), "{narrow}");
-        assert!(narrow.contains("Which index?"), "{narrow}");
+    fn the_patch_keeps_its_own_lines_and_only_as_many_as_there_is_room_for() {
+        let patch = "diff --git a/x b/x\nindex 1\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n x\n-a\n+b\n";
+        let got = |rows| {
+            patch_lines(patch, 40, rows)
+                .iter()
+                .map(|l| l.spans[0].content.to_string())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(got(10), ["@@ -1 +1 @@", " x", "-a", "+b"]);
+        assert_eq!(got(2), ["@@ -1 +1 @@", " x"]);
     }
 
     #[test]
-    fn the_bar_counts_each_project_and_says_whom_slash_writes_to() {
-        let mut app = home(Lang::En);
-        let a = worker(&app);
-        let p = app.world.agents[a].project;
-        app.world.agents[a].status = Status::Working;
-        app.world.inbox.push(item(InboxKind::Reply, a, "x"));
-        let lead = app.world.agents[app.world.projects[p].leader].name.clone();
-        let line = |app: &App| render(app, 150, 40).lines().nth(1).unwrap().to_string();
-        let row = line(&app);
-        assert!(row.contains("!1 ●1"), "{row}");
-        assert!(row.contains(&format!("/ writes to {lead}")), "{row}");
-        assert!(row.starts_with(" all "), "{row}");
-        app.world.agents[a].status = Status::Blocked;
-        assert!(line(&app).contains("!1 ■1"), "{}", line(&app));
-        app.lang = Lang::Tr;
-        assert!(line(&app).contains("hepsi"), "{}", line(&app));
-    }
-
-    #[test]
-    fn a_full_bar_leaves_out_whom_slash_writes_to() {
+    fn the_proof_in_the_preview_starts_clean() {
         let app = home(Lang::En);
-        let s = render(&app, 40, 20);
-        assert!(!s.lines().nth(1).unwrap().contains("writes"), "{s}");
+        let a = worker(&app);
+        let mut got = Vec::new();
+        let c = change(a, vec![ran("cargo test", 0)]);
+        change_lines(Lang::En, &app.world, &c, &mut got, 80);
+        let proof = text(&got[1]);
+        assert!(proof.starts_with("proof    ✓"), "{proof}");
     }
 
     #[test]
@@ -657,167 +1435,52 @@ mod tests {
     }
 
     #[test]
-    fn every_kind_of_item_has_its_mark_and_word() {
-        let t = Lang::En.text();
-        for (kind, glyph, word) in [
-            (InboxKind::Question, "?", "question"),
-            (InboxKind::Approval, "⚑", "allow?"),
-            (InboxKind::Script, "▶", "script"),
-            (InboxKind::Check, "▶", "script"),
-            (InboxKind::Plan, "▤", "plan"),
-            (InboxKind::Fault, "■", "API error"),
-            (InboxKind::Reply, "»", "answered"),
-            (InboxKind::Sensitive, "!", "decide"),
-            (InboxKind::Research, "?", "decide"),
-            (InboxKind::Change, "Δ", ""),
-        ] {
-            let (mark, tail) = item_mark(t, kind);
-            assert_eq!((mark.content.as_ref(), tail), (glyph, word));
-        }
-    }
-
-    #[test]
-    fn a_change_s_end_says_how_its_runs_went() {
-        let ran = |code| Ran {
-            line: "t".into(),
-            code,
-            timed_out: false,
-        };
-        let text = |c: &Change| {
-            let spans = change_tail(c);
-            spans.iter().map(|s| s.content.as_ref()).collect::<String>()
-        };
-        assert_eq!(text(&change(0, Vec::new())), "+19 −6");
-        assert_eq!(text(&change(0, vec![ran(Some(0))])), "+19 −6 ✓");
-        assert_eq!(
-            text(&change(0, vec![ran(Some(0)), ran(Some(1))])),
-            "+19 −6 ✗"
-        );
-    }
-
-    #[test]
-    fn the_patch_keeps_its_own_lines_and_only_as_many_as_there_is_room_for() {
-        let patch = "diff --git a/x b/x\nindex 1\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n x\n-a\n+b\n";
-        let text = |rows| {
-            patch_lines(patch, 40, rows)
-                .iter()
-                .map(|l| l.spans[0].content.to_string())
-                .collect::<Vec<_>>()
-        };
-        assert_eq!(text(10), ["@@ -1 +1 @@", " x", "-a", "+b"]);
-        assert_eq!(text(2), ["@@ -1 +1 @@", " x"]);
-    }
-
-    #[test]
-    fn an_item_s_time_is_its_own_and_the_proof_starts_clean() {
-        let mut app = home(Lang::En);
-        let a = worker(&app);
-        app.world.tick = 240;
-        let mut first = item(InboxKind::Reply, a, "x");
-        first.tick = 228;
-        let mut second = item(InboxKind::Question, a, "y");
-        second.tick = 120;
-        app.world.inbox = vec![first, second];
-        let s = render(&app, 150, 40);
-        assert!(s.contains("1 min") && s.contains("10 min"), "{s}");
-        let ran = Ran {
-            line: "cargo test".into(),
-            code: Some(0),
-            timed_out: false,
-        };
-        let mut lines = Vec::new();
-        let c = change(a, vec![ran]);
-        change_lines(Lang::En, &app.world, &c, &mut lines, 80);
-        let proof: String = lines[1].spans.iter().map(|s| s.content.as_ref()).collect();
-        assert!(proof.starts_with("proof    ✓"), "{proof}");
-    }
-
-    #[test]
-    fn the_list_takes_under_half_and_never_less_than_its_narrowest() {
-        assert_eq!(list_width(WIDE), LIST_MIN);
-        assert_eq!(list_width(116), LIST_MIN);
-        assert_eq!(list_width(120), 54);
-        assert_eq!(list_width(150), 67);
-        assert_eq!(list_width(200), 90);
-    }
-
-    #[test]
-    fn the_bar_lights_the_project_it_is_narrowed_to_and_ends_a_cell_short() {
-        let mut app = home(Lang::En);
-        let name = clean(&app.world.projects[1].name);
-        let reversed = |line: &Line, word: &str| {
-            let span = line
-                .spans
-                .iter()
-                .find(|s| s.content.contains(word))
-                .unwrap();
-            span.style.add_modifier.contains(Modifier::REVERSED)
-        };
-        let bar = project_bar(&app, 150);
-        assert!(reversed(&bar, " all "));
-        assert!(!reversed(&bar, &name));
-        assert_eq!(bar.width(), 149);
-        app.at_home.scope = Some(1);
-        let bar = project_bar(&app, 150);
-        assert!(!reversed(&bar, " all "));
-        assert!(reversed(&bar, &name));
-        // The words go when only their own width and the last cell are left.
-        let plain: usize = home_bar_left(&bar);
-        let writes = bar.spans.last().unwrap().width();
-        let fits = u16::try_from(plain + writes + 2).unwrap();
-        assert!(project_bar(&app, fits).width() > plain);
-        assert_eq!(project_bar(&app, fits - 1).width(), plain);
-    }
-
-    /// The bar's width before the blank that ends it.
-    fn home_bar_left(bar: &Line) -> usize {
-        let n = bar.spans.len() - 2;
-        bar.spans[..n].iter().map(Span::width).sum()
-    }
-
-    fn row_text(app: &App, row: HomeRow) -> String {
-        let line = row_line(app, row, 100, false);
-        line.spans.iter().map(|s| s.content.as_ref()).collect()
-    }
-
-    #[test]
-    fn only_a_change_s_row_ends_with_its_lines() {
-        let mut app = home(Lang::En);
-        let a = worker(&app);
-        app.world.changes.push(change(a, Vec::new()));
-        app.world.inbox.push(item(InboxKind::Change, a, ""));
-        app.world.inbox.push(item(InboxKind::Question, a, "Which?"));
-        assert!(row_text(&app, HomeRow::Item(0)).contains("+19 −6"));
-        let question = row_text(&app, HomeRow::Item(1));
-        assert!(question.contains("question"), "{question}");
-        assert!(!question.contains("+19"), "{question}");
-    }
-
-    #[test]
     fn a_row_names_its_project_only_where_that_tells_it_apart() {
         let mut app = home(Lang::En);
         let a = worker(&app);
         let name = clean(&app.world.projects[app.world.agents[a].project].name);
-        let row = HomeRow::Agent(a);
-        assert!(row_text(&app, row).contains(&name));
+        let row = |app: &App| {
+            let line = row_lines(app, HomeRow::Agent(a), 100, false);
+            text(&line[0])
+        };
+        assert!(row(&app).contains(&name));
         app.at_home.scope = Some(app.world.agents[a].project);
-        assert!(!row_text(&app, row).contains(&name));
+        assert!(!row(&app).contains(&name));
         app.at_home.scope = None;
         let other = 1 - app.world.agents[a].project;
         app.world.projects[other].closed = true;
-        assert!(!row_text(&app, row).contains(&name));
+        assert!(!row(&app).contains(&name));
     }
 
     #[test]
-    fn a_row_says_how_long_from_a_minute_on() {
+    fn the_title_column_shrinks_on_a_narrow_screen_but_never_under_its_least() {
         let mut app = home(Lang::En);
         let a = worker(&app);
-        app.world.inbox.push(item(InboxKind::Reply, a, "x"));
-        let tick = 12;
-        app.world.tick = tick;
-        let row = |app: &App| render(app, 150, 40);
-        assert!(row(&app).contains("1 min"), "{}", row(&app));
-        app.world.tick = tick - 1;
-        assert!(!row(&app).contains(" 55 s"), "{}", row(&app));
+        app.at_home.scope = Some(app.world.agents[a].project);
+        app.world.agents[a].card = Some(0);
+        app.world.cards[0].title = "A title long enough to be cut at every width".into();
+        app.world.inbox.push(item(InboxKind::Question, a, "Which?"));
+        let title = |width| {
+            let line = row_lines(&app, HomeRow::Item(0), width, false);
+            let s = text(&line[0]);
+            let at = s.find("A title").unwrap();
+            let end = s[at..].find("  ").unwrap();
+            s[at..at + end].chars().count()
+        };
+        assert_eq!(title(100), TITLE);
+        assert_eq!(title(64), TITLE);
+        assert_eq!(title(60), 20);
+        assert_eq!(title(45), TITLE_MIN);
+    }
+
+    #[test]
+    fn the_lonca_line_stays_above_the_list_for_a_project_on_it() {
+        let mut app = home(Lang::En);
+        app.world.on_lonca(0, Some("demo".into()));
+        let s = render(&app, 100, 20);
+        assert!(s.lines().nth(1).unwrap().contains("lonca demo"), "{s}");
+        app.at_home.scope = Some(1);
+        let s = render(&app, 100, 20);
+        assert!(!s.contains("lonca demo"), "{s}");
     }
 }

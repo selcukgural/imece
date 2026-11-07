@@ -361,8 +361,11 @@ impl Live {
             researcher: None,
             open: true,
             tick: w.tick,
-            // About a worktree or a change, not a card.
-            card: None,
+            // A check is about a change: the card it was made for. A
+            // worktree's setup is about no card.
+            card: (script.kind == Kind::Check)
+                .then(|| w.card_of(id))
+                .flatten(),
         });
         let what = match script.kind {
             Kind::Check => "check",
@@ -1077,6 +1080,8 @@ mod tests {
         )
         .unwrap();
         change_at(&mut w, &mut live, 1, "t1", &tree);
+        // The ask is about the card the change was made for (record 125).
+        w.agents[1].card = Some(0);
         live.check_change(&mut w, 1);
         assert_eq!(check_of(&w, 1), Check::Asked);
         let asks = |w: &World| -> Vec<usize> {
@@ -1090,7 +1095,7 @@ mod tests {
         let it = &w.inbox[item];
         assert_eq!(
             (it.agent, it.detail.as_str(), it.card),
-            (1, CHECK_FILE, None)
+            (1, CHECK_FILE, Some(0))
         );
         assert_eq!(CHECK_FILE, ".imece/check");
         let last = |w: &World, id: AgentId| w.agents[id].trace.back().unwrap().clone();

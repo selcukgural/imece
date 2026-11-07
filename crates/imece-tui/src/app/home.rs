@@ -14,13 +14,51 @@ pub enum HomeRow {
     Agent(AgentId),
 }
 
-/// The groups of Home's list, in their order.
+/// The groups of Home's list, in their order (record 125): what is to
+/// decide by what deciding costs (a permission is one key, a question is
+/// read and answered, a change is a diff read; what the person put off
+/// with `s` last), then who is at work.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum HomeGroup {
-    Turn,
+    Permission,
+    Question,
+    Change,
+    Later,
     Stuck,
     Work,
     Quiet,
+}
+
+/// The two headings of Home's list: TO DECIDE and AT WORK.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Heading {
+    Decide,
+    Work,
+}
+
+impl HomeGroup {
+    /// The group an item waiting for the person is listed in.
+    pub fn of(kind: InboxKind) -> HomeGroup {
+        match kind {
+            InboxKind::Approval | InboxKind::Script | InboxKind::Check => HomeGroup::Permission,
+            InboxKind::Question
+            | InboxKind::Research
+            | InboxKind::Reply
+            | InboxKind::Fault
+            | InboxKind::Plan => HomeGroup::Question,
+            InboxKind::Change | InboxKind::Sensitive => HomeGroup::Change,
+        }
+    }
+
+    /// The heading the group stands under.
+    pub fn heading(self) -> Heading {
+        match self {
+            HomeGroup::Permission | HomeGroup::Question | HomeGroup::Change | HomeGroup::Later => {
+                Heading::Decide
+            }
+            HomeGroup::Stuck | HomeGroup::Work | HomeGroup::Quiet => Heading::Work,
+        }
+    }
 }
 
 /// What Home holds on to: the row at hand, by what it is, and the place
@@ -33,10 +71,22 @@ pub struct Home {
 }
 
 impl App {
+    /// The group item `i` is listed in: what `s` put off last, else its
+    /// kind's.
+    pub fn home_group(&self, i: usize) -> HomeGroup {
+        if self.deferred.contains(&i) {
+            HomeGroup::Later
+        } else {
+            HomeGroup::of(self.world.inbox[i].kind)
+        }
+    }
+
     /// Home's rows for `scope`, group by group: what waits in `W`'s
-    /// order, then what is stuck, at work and quiet. An agent with an ask
-    /// or a question open is that item; one with a change waiting that
-    /// went on to other work is both, for they are two pieces of work.
+    /// order (permissions, questions, changes; among the changes the
+    /// easy ones first; what was put off last), then what is stuck, at
+    /// work and quiet. An agent with an ask or a question open is that
+    /// item; one with a change waiting that went on to other work is
+    /// both, for they are two pieces of work.
     pub fn home_rows_in(&self, scope: Option<ProjectId>) -> Vec<(HomeGroup, HomeRow)> {
         let w = &self.world;
         let ours = |a: AgentId| scope.is_none_or(|p| w.agents[a].project == p);
@@ -45,7 +95,7 @@ impl App {
         items.sort_by_key(|&i| self.waiting_rank(i));
         let mut rows: Vec<_> = items
             .iter()
-            .map(|&i| (HomeGroup::Turn, HomeRow::Item(i)))
+            .map(|&i| (self.home_group(i), HomeRow::Item(i)))
             .collect();
         let rungs = self.rungs();
         let waits_on_item = |id: AgentId| {
@@ -98,7 +148,7 @@ impl App {
     }
 
     /// Keys go to Home's list: nothing is open over it.
-    pub(super) fn home_keys(&self) -> bool {
+    pub(crate) fn home_keys(&self) -> bool {
         self.view == View::Home
             && self.zoom == Zoom::None
             && self.thread.is_none()
@@ -108,7 +158,7 @@ impl App {
     /// What is at hand on Home, put where every key looks for it. True
     /// when the row the person chose is gone: what is at hand now is not
     /// what they had read.
-    pub(super) fn home_settle(&mut self) -> bool {
+    pub(crate) fn home_settle(&mut self) -> bool {
         let rows = self.home_rows();
         let lost = self
             .at_home
@@ -142,11 +192,20 @@ impl App {
     }
 
     /// Moves Home's selection to row `row` of the list, or its last.
-    pub(super) fn home_go(&mut self, row: usize) {
+    pub(crate) fn home_go(&mut self, row: usize) {
         let rows = self.home_rows();
         self.at_home.row = row.min(rows.len().saturating_sub(1));
         self.at_home.at = rows.get(self.at_home.row).map(|r| r.1);
         self.home_settle();
+    }
+
+    /// `gd` `gw`: the first row under a heading, TO DECIDE or AT WORK;
+    /// nothing stands under it, the list does not move.
+    pub(super) fn home_go_heading(&mut self, heading: Heading) {
+        let rows = self.home_rows();
+        if let Some(row) = rows.iter().position(|r| r.0.heading() == heading) {
+            self.home_go(row);
+        }
     }
 
     /// `[` `]`: all the projects, then each open one, round.
@@ -196,6 +255,14 @@ impl App {
             _ => return false,
         }
         true
+    }
+
+    /// After a decision key acted on Home's row: what is at hand now is
+    /// the row in its place, by what it is, so the next key decides it
+    /// (a yes moves down, record 125). A row that went by itself before
+    /// the key is still told, by `home_key`.
+    pub(super) fn home_decided(&mut self) {
+        self.home_settle();
     }
 }
 
@@ -248,7 +315,7 @@ mod tests {
         app.world.agents[w[2]].status = Status::Blocked;
         app.world.inbox.push(item(InboxKind::Change, w[1], true));
         let rows = app.home_rows();
-        assert_eq!(rows[0], (HomeGroup::Turn, HomeRow::Item(0)));
+        assert_eq!(rows[0], (HomeGroup::Change, HomeRow::Item(0)));
         assert_eq!(rows[1], (HomeGroup::Stuck, HomeRow::Agent(w[2])));
         assert_eq!(rows[2], (HomeGroup::Work, HomeRow::Agent(w[3])));
         assert_eq!(rows[3].0, HomeGroup::Quiet);
@@ -518,5 +585,190 @@ mod tests {
         assert_eq!(app.view, View::Home);
         assert_eq!(groups(&app)[0], HomeGroup::Quiet);
         assert_eq!(app.key_scope(), Some(keys::Scope::Salon));
+    }
+}
+
+#[cfg(test)]
+mod triage_tests {
+    use super::super::tests::*;
+    use super::*;
+
+    fn item(kind: InboxKind, agent: AgentId) -> InboxItem {
+        InboxItem {
+            kind,
+            agent,
+            detail: "the words".into(),
+            researcher: None,
+            open: true,
+            tick: 0,
+            card: None,
+        }
+    }
+
+    /// Two projects of two workers each, all quiet, on Home.
+    fn quiet() -> App {
+        let (world, sim) = crate::sim::world(2, 4, 0, 1, Lang::En);
+        let mut app = App::with(world, Engine::Sim(sim), Lang::En);
+        app.world.inbox.clear();
+        for a in &mut app.world.agents {
+            a.status = Status::Idle;
+            a.starting = false;
+        }
+        app.view = View::Home;
+        app
+    }
+
+    fn workers(app: &App) -> Vec<AgentId> {
+        (app.world.agents.iter())
+            .filter(|a| a.role == Role::Worker)
+            .map(|a| a.id)
+            .collect()
+    }
+
+    #[test]
+    fn every_kind_of_item_has_its_group_and_every_group_its_heading() {
+        for (kind, group) in [
+            (InboxKind::Approval, HomeGroup::Permission),
+            (InboxKind::Script, HomeGroup::Permission),
+            (InboxKind::Check, HomeGroup::Permission),
+            (InboxKind::Question, HomeGroup::Question),
+            (InboxKind::Research, HomeGroup::Question),
+            (InboxKind::Reply, HomeGroup::Question),
+            (InboxKind::Fault, HomeGroup::Question),
+            (InboxKind::Plan, HomeGroup::Question),
+            (InboxKind::Change, HomeGroup::Change),
+            (InboxKind::Sensitive, HomeGroup::Change),
+        ] {
+            assert_eq!(HomeGroup::of(kind), group, "{kind:?}");
+        }
+        for (group, heading) in [
+            (HomeGroup::Permission, Heading::Decide),
+            (HomeGroup::Question, Heading::Decide),
+            (HomeGroup::Change, Heading::Decide),
+            (HomeGroup::Later, Heading::Decide),
+            (HomeGroup::Stuck, Heading::Work),
+            (HomeGroup::Work, Heading::Work),
+            (HomeGroup::Quiet, Heading::Work),
+        ] {
+            assert_eq!(group.heading(), heading, "{group:?}");
+        }
+        assert!(HomeGroup::Permission < HomeGroup::Question);
+        assert!(HomeGroup::Question < HomeGroup::Change);
+        assert!(HomeGroup::Change < HomeGroup::Later);
+        assert!(HomeGroup::Later < HomeGroup::Stuck);
+        assert!(HomeGroup::Stuck < HomeGroup::Work);
+        assert!(HomeGroup::Work < HomeGroup::Quiet);
+    }
+
+    #[test]
+    fn what_is_to_decide_goes_permissions_questions_changes_whatever_their_age() {
+        let mut app = quiet();
+        let w = workers(&app);
+        app.world.inbox.push(item(InboxKind::Change, w[0]));
+        app.world.inbox.push(item(InboxKind::Question, w[1]));
+        app.world.inbox.push(item(InboxKind::Approval, w[2]));
+        app.world.inbox.push(item(InboxKind::Check, w[3]));
+        let rows = app.home_rows();
+        assert_eq!(
+            rows[..4],
+            [
+                (HomeGroup::Permission, HomeRow::Item(2)),
+                (HomeGroup::Permission, HomeRow::Item(3)),
+                (HomeGroup::Question, HomeRow::Item(1)),
+                (HomeGroup::Change, HomeRow::Item(0)),
+            ]
+        );
+        // One put off goes last of what is to decide, in its own group.
+        app.deferred.push(2);
+        let rows = app.home_rows();
+        assert_eq!(rows[0], (HomeGroup::Permission, HomeRow::Item(3)));
+        assert_eq!(rows[1], (HomeGroup::Question, HomeRow::Item(1)));
+        assert_eq!(rows[2], (HomeGroup::Change, HomeRow::Item(0)));
+        assert_eq!(rows[3], (HomeGroup::Later, HomeRow::Item(2)));
+        assert_eq!(app.home_group(2), HomeGroup::Later);
+        assert_eq!(app.home_group(3), HomeGroup::Permission);
+    }
+
+    #[test]
+    fn gd_and_gw_go_to_the_first_row_under_a_heading_and_move_nothing_without_one() {
+        let mut app = quiet();
+        let w = workers(&app);
+        app.world.inbox.push(item(InboxKind::Question, w[0]));
+        app.world.inbox.push(item(InboxKind::Question, w[1]));
+        app.world.agents[w[2]].status = Status::Working;
+        keys(&mut app, "gw");
+        assert_eq!(app.at_home.at, Some(HomeRow::Agent(w[2])));
+        assert_eq!(app.at_home.row, 2);
+        keys(&mut app, "jgd");
+        assert_eq!(app.at_home.at, Some(HomeRow::Item(0)));
+        assert_eq!(app.at_home.row, 0);
+        keys(&mut app, "j");
+        assert_eq!(app.at_home.row, 1);
+        // Nothing to decide: `gd` stays where it is.
+        app.world.inbox.clear();
+        keys(&mut app, "gd");
+        assert_eq!(app.at_home.row, 1);
+        assert_eq!(app.pending, None);
+        // Off Home the chord does nothing of Home's.
+        app.view = View::Salon;
+        app.world.inbox.push(item(InboxKind::Question, w[0]));
+        app.at_home.row = 0;
+        app.at_home.at = None;
+        keys(&mut app, "gw");
+        assert_eq!(app.at_home.row, 0);
+    }
+
+    #[test]
+    fn a_yes_moves_down_and_the_next_key_decides_the_next_row() {
+        let mut app = quiet();
+        let w = workers(&app);
+        for &a in &[w[0], w[1], w[2], w[3], w[0]] {
+            let mut it = item(InboxKind::Approval, a);
+            it.detail = "Bash: cargo test".into();
+            app.world.inbox.push(it);
+        }
+        keys(&mut app, "a");
+        assert!(!app.world.inbox[0].open);
+        assert_eq!(app.at_home.at, Some(HomeRow::Item(1)), "moved down");
+        assert_eq!(app.at_home.row, 0);
+        let moved = app.lang.text().home_moved;
+        // Each key that decides: the next key decides the next row.
+        for (n, k) in ["r", "e", "A"].into_iter().enumerate() {
+            keys(&mut app, k);
+            assert!(!app.world.inbox[n + 1].open, "{k} decided the next row");
+            assert_eq!(app.at_home.at, Some(HomeRow::Item(n + 2)), "{k}");
+            assert!(
+                app.flash.as_ref().is_none_or(|f| f.0 != moved),
+                "{k}: {:?}",
+                app.flash
+            );
+        }
+        // The last one: the row in its place is whatever is next.
+        keys(&mut app, "a");
+        assert!(!app.world.inbox[4].open);
+        assert!(matches!(app.at_home.at, Some(HomeRow::Agent(_))));
+        // A row gone by itself is still told once.
+        app.world.inbox.push(item(InboxKind::Approval, w[0]));
+        app.world.inbox.push(item(InboxKind::Approval, w[1]));
+        app.home_settle();
+        assert_eq!(app.at_home.at, Some(HomeRow::Item(5)));
+        app.world.inbox[5].open = false;
+        keys(&mut app, "a");
+        assert!(app.world.inbox[6].open, "not decided unseen");
+        assert_eq!(app.flash.as_ref().map(|f| f.0.as_str()), Some(moved));
+    }
+
+    #[test]
+    fn a_decision_off_home_settles_nothing_of_home_s() {
+        let mut app = quiet();
+        let w = workers(&app);
+        app.world.inbox.push(item(InboxKind::Approval, w[0]));
+        app.world.inbox.push(item(InboxKind::Approval, w[1]));
+        app.view = View::Salon;
+        app.pane = Pane::Inbox;
+        app.inbox_sel = 0;
+        keys(&mut app, "a");
+        assert!(!app.world.inbox[0].open);
+        assert_eq!(app.at_home.at, None);
     }
 }

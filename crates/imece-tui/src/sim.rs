@@ -2167,7 +2167,8 @@ impl Sim {
             researcher: None,
             open: true,
             tick: w.tick,
-            card: None,
+            // The card the change it would check was made for.
+            card: w.agents[id].card,
         });
     }
 
@@ -7300,6 +7301,9 @@ diff --git a/b.rs b/b.rs
             .position(|i| i.kind == InboxKind::Check)
             .expect("asked");
         assert_eq!(w.inbox[item].detail, setup::CHECK_FILE);
+        // About the card the change was made for.
+        assert_eq!(w.inbox[item].card, w.agents[worker].card);
+        assert!(w.inbox[item].card.is_some());
         let script = s.setup_asked(&w, item).unwrap();
         assert_eq!(script.kind, setup::Kind::Check);
         assert_eq!(script.bytes, DEMO_CHECK.as_bytes());

@@ -170,3 +170,26 @@ glued with the pause or the demo's speed. The last ten minutes
 the pot lasts and a window short of loud are the `:budget` note's
 (`App::command_note`). The projects are not in the header yet: Home's
 project bar has them, and step 2 folds the two.
+
+Step 2's Home as built: `App::home_rows_in` lists what is to decide by
+`HomeGroup::of` the item's kind (permissions: an approval, the setup
+script, the check; questions: a question, a report, an answer, a fault,
+the plan; changes: a change, a sensitive one), what `s` put off last as
+`HomeGroup::Later`, then stuck, at work and quiet under one AT WORK
+heading that counts them; `App::waiting_rank` (group, not easy, age) is
+`W`'s order too, a change easy when `Change::easy` (proved clean by the
+check or the runs, `Change::proof`, and inside its card's paths,
+`Change::outside`). `ui::home::row_lines` says the whole ask in the
+person's words (`row_*` in `i18n.rs`; a script's commands by
+`commands_of`, the check's ask tied to the change's card in `sim::check`
+and `setup::ask`), wrapped under its column, a change's parts under each
+other when short, an agent's status cut; the row at hand ends with its
+two keys (`row_keys`) when the ask keeps `ASK_MIN` cells. A decision on
+Home settles the row in its place at once (`App::home_decided` from
+`dispatch::act`), so the next key decides it; `gd` `gw`
+(`home_go_heading`, which-key's `chord_home`), `W` and `S` in a script's
+window (`script_key`). The preview from `WIDE` 120 reads a script's lines
+numbered. The header has the projects (`ui::projects_spans`, the narrowed
+one lit) in the fleet's place and the pot as `$3.10 of $20.00`; the
+project bar and `/ writes to` left Home. The status line names the card
+an item came on, as the screen numbers it.
