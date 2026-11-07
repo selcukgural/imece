@@ -27,14 +27,14 @@ Salon takımın yanında tek ajanlı yeni bir grup gösterir ve o seçilidir:
 
 ```text
  ▾ kule
-   ◆ lead             eşgüdüm                                   $0.42
+   ● lead             eşgüdüm                                   $0.42
    ● claude-1         #3 limiter: config v2     src/limit.rs düzenliyor
    ○ claude-2         #4 limiter tests          boşta
  ▾ notes
    ○ solo-notes       opus@xhigh                boşta
 ```
 
-Solonun satırı seçimini söyler. Simge durumudur, liderin `◆`si değil: solo çalışır, eşgüdüm yapmaz. Henüz hiçbir şey para etmiyor: her ajan gibi, siz yazana dek süreci yoktur.
+Solonun satırı seçimini söyler. Simge durumudur, her satırda olduğu gibi: solo çalışır, eşgüdüm yapmaz. Henüz hiçbir şey para etmiyor: her ajan gibi, siz yazana dek süreci yoktur.
 
 ## 2. Ne yapacağını söyle
 
@@ -82,7 +82,7 @@ Başka bir soru, başka bir model. Bu kez bir yol ve ad yok:
 
 ```text
  ▾ kule
-   ◆ lead             boşta
+   ○ lead             boşta
    ○ claude-1         #3 limiter: config v2     boşta
    ○ claude-2         #4 limiter tests          boşta
  ▾ notes
@@ -102,7 +102,7 @@ imece'nin yerine getiremeyeceği bir seçim, bir şey başlamadan reddedilir. `:
 Solo da işini bir işçi gibi bölebilir. Testleri de eklemesi söylenince `solo-notes` `hire`'ı çağırır ve günlük söyler:
 
 ```text
- 15:02 ◆ solo-notes solo-notes.1'i işe aldı (varsayılan model)
+ 15:02 → solo-notes solo-notes.1'i işe aldı (varsayılan model)
  15:02 ⇄ solo-notes → solo-notes.1 [assign]: tests/limit.rs'de patlama penceresi testleri
 ```
 

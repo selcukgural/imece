@@ -8,13 +8,13 @@ description: Görünüm 5 - projeler arası sıra sizde olanlar, takılanlar ve 
 Ana ekran, imece'nin açıldığı ve karar verdiğiniz ekrandır; `5` ya da `:home` geri getirir. Salon takımı gösterir; ana ekran sıranın sizde olduğu şeyleri. Açık projelerin hepsi için tek liste ve yanında eldeki satır, tuşa basmadan okunur.
 
 ```text
- hepsi   shop-api !2 ●1   mobile-app !3 ✕1 ●2                              / lead-shop-api için yazar
+ hepsi   shop-api !2 ●1   mobile-app !3 ■1 ●2                              / lead-shop-api için yazar
  lonca mobile-app 9d3f1c2 · 3 bekliyor
  SIRA SİZDE 5                                       │#19 Paging in product search  shop-api · claude-1 · $0.90
 ▸ Δ shop-api    #19  Paging in product… +41 −6 ✓ 38 dk│
   ? shop-api    #31  Refund rules             soru 12 dk│neden    Paging in product search
   ⚑ mobile-app  #52  Notification sett…      izin? 4 dk│kanıt    ✓ bu ağaçta temiz geçti: dotnet test
-  Δ mobile-app  #21  Currency support   +6 −3 ✕ 41 dk│maliyet  $0.90 · 11 dk · 2 tur
+  Δ mobile-app  #21  Currency support   +6 −3 ✗ 41 dk│maliyet  $0.90 · 11 dk · 2 tur
                                                      │
  TAKILAN 1                                           │dosyalar src/Catalog/ProductQuery.cs    +19 −6
   ■ mobile-app  #14  Price list cache    durdu 52 dk│         tests/PagingTests.cs           +18 −0
@@ -23,7 +23,7 @@ Ana ekran, imece'nin açıldığı ve karar verdiğiniz ekrandır; `5` ya da `:h
   ● shop-api    #33  Order validation  Write the tests 2 dk│-    var rows = db.Skip(q.Offset);
 ```
 
-İlk satır açık projelerin her birini tuttuklarıyla adlandırır: `!` sizi bekliyor, `✕` takılı, `●` çalışıyor. Daraltılmış proje aydınlıktır, satırın sonu `/` ile kime yazılacağını söyler. İkinci satır, Lonca'daki projelerin nasıl durduğunu söyler.
+İlk satır açık projelerin her birini tuttuklarıyla adlandırır: `!` sizi bekliyor, `■` takılı, `●` çalışıyor. Daraltılmış proje aydınlıktır, satırın sonu `/` ile kime yazılacağını söyler. İkinci satır, Lonca'daki projelerin nasıl durduğunu söyler.
 
 ## Liste
 

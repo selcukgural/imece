@@ -59,8 +59,8 @@ Bütçe olduğu yerdedir: `--budget` verilmemişse korunur, `--budget 80` ayarla
 Günlükte her kesilen tur için bir satır vardır ve salon herkesi uykuda gösterir:
 
 ```text
- 09:00 ✕ claude-1 turu imece kapanınca yarım kaldı; uyanınca öğrenecek
- 09:00 ✕ claude-3 turu imece kapanınca yarım kaldı; uyanınca öğrenecek
+ 09:00 ■ claude-1 turu imece kapanınca yarım kaldı; uyanınca öğrenecek
+ 09:00 ■ claude-3 turu imece kapanınca yarım kaldı; uyanınca öğrenecek
 ```
 
 ```text
@@ -118,7 +118,7 @@ Bir süre başka pencereye geçin. Terminal odağı yarım saat ya da daha uzun 
  SEN YOKKEN · son 12 dk
   ✓ 0 kart birleşti
   ! 1 karar seni bekliyor
-  ✕ 0 kez bloke olundu
+  ■ 0 kez bloke olundu
   ⚑ 1 varsayım yapıldı
   ⇄ 4 konuşma
   09:33 ⚑ claude-3: çalışma ağacı 3f2a9c1 yerine HEAD 9b1d2e0 oldu

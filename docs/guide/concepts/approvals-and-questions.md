@@ -57,7 +57,7 @@ Who asks when: the leader may ask you mid-task; a worker asks its leader first a
 
 - `W` from anywhere opens the next item waiting for you (a change's diff, a question's conversation, an approval's focus), so `a`/`r` answer it at once; again goes on to the next, round to the first. Nothing waiting: "Nothing needs you right now".
 - `S` puts the item at hand off and opens the next: put-off items come after all the others, in the order they were put off, their rows marked `later ·`. Putting off is for this run only.
-- The salon sorts each project's workers by what they need of you: waiting for you (an open item or waiting status) first, then stuck (blocked or stopped), then done and not yet seen, then the rest, equals keeping their order. `f` shows only those that need something. The header's fleet (`● working ✓ done ✕ stuck`) and the terminal's title (`imece · 2 waiting`) count the same.
+- The salon sorts each project's workers by what they need of you: waiting for you (an open item or waiting status) first, then stuck (blocked or stopped), then done and not yet seen, then the rest, equals keeping their order. `f` shows only those that need something. The header's fleet (`● working ✓ done ■ stuck`) and the terminal's title (`imece · 2 waiting`) count the same.
 
 ## The `run` tool
 

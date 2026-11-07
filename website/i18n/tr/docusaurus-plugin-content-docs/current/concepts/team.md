@@ -65,14 +65,14 @@ Ajanlar bus'ta birbirlerine bu adlarla seslenir; aynı projenin ekibinde olmayan
 
 ```text
  SALON
- ◆ lead            koordine ediyor
+ ● lead            koordine ediyor
  ● claude-1        #12 parser: tokens      ⎇ ↑1 +34 −8   ▾ 1 yardımcı
    └ ● claude-1.1  claude-1 yardımcısı
  ○ claude-2         boşta
  ✓ claude-3        bitti, henüz bakılmadı
 ```
 
-Sizi bekleyen işçiler önce gelir (takılan, sonra sizi bekleyen, sonra bitip bakılmamış: [durum merdiveni](../screen/salon.md#durum-merdiveni)); yardımcılar işçilerinin altında durur ve `h` `l` ile katlanır. Başlık filoyu sayar: `● 2 çalışıyor ✓ 1 bitti ✕ 1 takıldı`.
+Sizi bekleyen işçiler önce gelir (takılan, sonra sizi bekleyen, sonra bitip bakılmamış: [durum merdiveni](../screen/salon.md#durum-merdiveni)); yardımcılar işçilerinin altında durur ve `h` `l` ile katlanır. Başlık filoyu sayar: `● 2 çalışıyor ✓ 1 bitti ■ 1 takıldı`.
 
 ## Ayrıca bakınız
 

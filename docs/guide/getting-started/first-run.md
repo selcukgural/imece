@@ -97,7 +97,7 @@ What opens is [Home](../screen/home.md): what is your turn on top, what is at wo
 
 The salon is one key away, `1`: the guild on the left, WAITING FOR YOU and the JOURNAL on the right.
 
-The team is the leader alone (`◆ lead`). The journal's first line, on the salon, says, once per start that is not `--confine strict`, that isolation is not imece's.
+The team is the leader alone (`○ lead`, idle until you write). The journal's first line, on the salon, says, once per start that is not `--confine strict`, that isolation is not imece's.
 
 ## Write to the leader
 
@@ -117,7 +117,7 @@ Plain text goes to the leader of the selected project. `@claude-1 text` would go
 The leader reads the checkout (it has read tools, the web, and read-only commands; it cannot write: it works in your checkout, where a write would skip the review). It splits the request into cards, posts them, and **hires** a worker with its `hire` tool when a card needs hands. It picks a **tier**, not a model: `cheap` for small mechanical work, `standard` (the default) for ordinary fixes, `strong` for cross-cutting design; they stand for haiku, Claude Code's default and opus. Up to `--agents` workers (default 4).
 
 ```text
-   ◆ lead      coordinating                                         $0.08
+   ● lead      coordinating                                         $0.08
    ● claude-1  #1   accept a trailing comma   thinking…
 ```
 
@@ -131,7 +131,7 @@ A tier model your account does not have fails its first turn; imece then restart
    ● claude-1  #1   accept a trailing comma   editing src/csv.rs   $0.41  +18 −3
 ```
 
-From left to right: the glyph (`●` working, `○` idle, `◐` asking a teammate, `✕` blocked, `✓` done and not seen yet, `■` stopped, `◦` asleep), the name, its card, what it does now, what it has spent, and where its worktree stands: `+18 −3` are the lines its next `done` would hand you, `⎇ name` a branch it made, `↑N` its own commits, `↓N` your checkout's newer commits. A worker with an open permission ask shows `⚑ waits for your yes`, and the ask is an item in WAITING FOR YOU: `a` allows it, `r` refuses it (routine commands, the build, the tests, git's reading commands, run on their own).
+From left to right: the glyph (`●` working, `○` idle, `!` something of its waits for you, `✓` done and not seen yet, `■` stuck: blocked or its session stopped), the name, its card, what it does now, what it has spent, and where its worktree stands: `+18 −3` are the lines its next `done` would hand you, `⎇ name` a branch it made, `↑N` its own commits, `↓N` your checkout's newer commits. A worker with an open permission ask shows `⚑ waits for your yes`, and the ask is an item in WAITING FOR YOU: `a` allows it, `r` refuses it (routine commands, the build, the tests, git's reading commands, run on their own).
 
 `enter` on the row opens the worker's focus: its card's story (intent, assumptions, decisions, talk, evidence, changes). `enter` again (or `t`) opens the trace, the raw stream of its session. `esc` goes back.
 

@@ -12,15 +12,15 @@ A card is one unit of work: posted by the leader (or opened by your message to a
 │shop-api · IN PROGRESS · 23 min                       ││Δ 13:58 claude-1 finished: parser (3 files, +41 −6)
 │                                                      │└───────────────────────────────────────┘
 │WHO                                                   │┌ JOURNAL · #3 (4) ─────────────────────┐
-│posted    ◆ ▎lead      coordinating                   ││14:01 ⇄ lead → claude-1 [answer] ↩: use manifest::read for #3 …
+│posted    ● ▎lead      coordinating                   ││14:01 ⇄ lead → claude-1 [answer] ↩: use manifest::read for #3 …
 │owner     ● ▎claude-1  #3   Parse the manifest  writing tests
 │helper    ● ▎claude-1.1                  thinking…    ││13:57 ⇄ claude-1 → lead [ask]: Which parser for #3? …
 │                                                      ││13:55 → lead → claude-1: #3 Parse the manifest
-│STORY                                                 ││13:50 ◆ lead posted #3 Parse the manifest
+│STORY                                                 ││13:50 → lead posted #3 Parse the manifest
 │13:55 ◎ intent      Parse the manifest without panics ││                                       │
 │13:57 ⇄ talk        → lead [ask] Which parser? …      ││                                       │
 │14:01 ⚖ decision    use manifest::read, legacy later  ││                                       │
-│14:10 ◌ evidence    ✓ cargo test                      ││                                       │
+│14:10 • evidence    ✓ cargo test                      ││                                       │
 └──────────────────────────────────────────────────────┘└───────────────────────────────────────┘
   tab panel  enter focus  n p next / previous card  # another card  esc back  ? help
 ```
@@ -41,7 +41,7 @@ Left, in the salon's place:
 - Its leases, when it has any (demo only; symbol leases are not built live).
 - The paths it owns (`owns   src/parser.rs, docs (shared)`), when its `assign` or `post` gave it any ([the paths a card owns](../concepts/messages-and-board.md#the-paths-a-card-owns)); a write outside them is a `change` line of its story, `changed src/other.rs, outside the card's paths`.
 - **WHO**: who posted it, its owner, the owner's helpers while it is still the owner's card, then everyone its story says talked about it, each once with the first part it had. They are drawn as the salon's agent rows, so their state is live; `j` `k` select among them and `enter` opens the selected one's focus as in the salon.
-- **STORY**: the card's story, one line per event, oldest first, told as the owner had it. Each line has a glyph and a label: `◎` intent, `⚑` assumption, `⚖` decision, `⇄` talk (a message, with its type), `◌` evidence (a run and how it ended), `Δ` change, `›` you (what you said about it). A card nobody took yet says `No story yet.`
+- **STORY**: the card's story, one line per event, oldest first, told as the owner had it. Each line has a glyph and a label: `◎` intent, `⚑` assumption, `⚖` decision, `⇄` talk (a message, with its type), `•` evidence (a run and how it ended), `Δ` change, `›` you (what you said about it). A card nobody took yet says `No story yet.`
 
 Right, the side panels for this card alone:
 

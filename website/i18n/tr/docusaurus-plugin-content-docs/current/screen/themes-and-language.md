@@ -40,7 +40,7 @@ Son seçim (`T`, `:theme`) sonraki çalıştırma için depoda hatırlanır, ad 
 | --- | --- |
 | `terminal` | varsayılan: 16 ANSI rengi, böylece terminalinizin kendi teması (iTerm2, Ghostty, Kitty, …) imece'yi renklendirir ve oradaki bir değişiklik hemen görünür. imece karanlığı aydınlıktan ayırmak ve seçimi ile tuş ipuçlarını gölgelemek için terminale arka plan ve ön plan rengini sorar |
 | `dark`, `light` | ANSI renkleri, sormak yerine karanlık ya da aydınlık bir arka plan varsayarak |
-| `mono` | renk yok: yalnız şekil ve kalınlık. İşaretler yine okunsun diye seçilmiştir (`●` `✓` `✕` şekilce ayrılır) |
+| `mono` | renk yok: yalnız şekil ve kalınlık. İşaretler yine okunsun diye seçilmiştir (`●` `✓` `■` şekilce ayrılır) |
 
 Sonra tinted-theming/schemes'ten (MIT) kopyalanan on beş base16 şeması, `T`'nin döndürdüğü sırayla: `dracula`, `nord`, `gruvbox-dark-medium`, `gruvbox-light-medium`, `catppuccin-mocha`, `catppuccin-latte`, `tokyo-night-dark`, `solarized-dark`, `solarized-light`, `onedark`, `rose-pine`, `everforest`, `kanagawa`, `github`, `monokai`. Bir şema bütün ekranı boyar, arka plan dahil, böylece her terminalde aynı görünür; base16'nın turuncusu imece'nin vurgu rengidir.
 

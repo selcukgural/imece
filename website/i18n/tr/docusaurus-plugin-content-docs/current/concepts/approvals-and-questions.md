@@ -57,7 +57,7 @@ Kim ne zaman sorar: lider görev ortasında size sorabilir; bir işçi önce lid
 
 - `W` her yerden sizi bekleyen sonraki öğeyi açar (bir değişikliğin diff'i, bir sorunun konuşması, bir onayın odağı), böylece `a`/`r` hemen yanıtlar; yine basılınca sonrakine geçer, sondan ilkine döner. Bekleyen yoksa: "Şu an senden bir şey gerekmiyor".
 - `S` eldeki öğeyi erteler ve sonrakini açar: ertelenenler diğerlerinin hepsinden sonra, ertelenme sırasıyla gelir, satırları `sonra ·` ile işaretli. Erteleme yalnız bu çalıştırma içindir.
-- Salon her projenin işçilerini sizden ne beklediklerine göre sıralar: sizi bekleyen (açık bir öğe ya da bekleyen durum) önce, sonra takılan (bloke ya da durmuş), sonra bitip bakılmamış, sonra kalanı; eşitler sırasını korur. `f` yalnız bir şey bekleyenleri gösterir. Başlığın filosu (`● çalışıyor ✓ bitti ✕ takıldı`) ve terminalin başlığı (`imece · 2 seni bekliyor`) aynı şeyleri sayar.
+- Salon her projenin işçilerini sizden ne beklediklerine göre sıralar: sizi bekleyen (açık bir öğe ya da bekleyen durum) önce, sonra takılan (bloke ya da durmuş), sonra bitip bakılmamış, sonra kalanı; eşitler sırasını korur. `f` yalnız bir şey bekleyenleri gösterir. Başlığın filosu (`● çalışıyor ✓ bitti ■ takıldı`) ve terminalin başlığı (`imece · 2 seni bekliyor`) aynı şeyleri sayar.
 
 ## `run` aracı
 

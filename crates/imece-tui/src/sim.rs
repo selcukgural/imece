@@ -234,7 +234,7 @@ const APPROVAL_WAIT: u64 = 100 / SECONDS_PER_TICK;
 /// does not depend on the answer.
 const QUESTION_WAIT: u64 = 40;
 /// Ticks a session takes to start (live: the process, a first worktree's
-/// checkout), its row saying `◌ starting…` meanwhile; the work under it
+/// checkout), its row saying `● starting…` meanwhile; the work under it
 /// goes on as before, so the demo's course is unchanged.
 const STARTING: u64 = 3;
 /// Why a demo session stops, in the words of Claude Code's process.

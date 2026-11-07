@@ -33,14 +33,14 @@ Press `/`. The footer becomes a command line labelled ` › to lead: `. Type the
  › to lead: the parser test fails on empty input, fix it
 ```
 
-The journal shows your line (`›` marks what you did) and the leader starts its first turn: its row reads `◆ lead  thinking…`, then what it does. It reads the test with its read tools and may run `cargo test` through imece's `run` tool. It does not change a file: the leader is non-writing at every confine level, since it works in your checkout where a write would skip the review.
+The journal shows your line (`›` marks what you did) and the leader starts its first turn: its row reads `● lead  thinking…`, then what it does. It reads the test with its read tools and may run `cargo test` through imece's `run` tool. It does not change a file: the leader is non-writing at every confine level, since it works in your checkout where a write would skip the review.
 
 ## 3. The leader hires
 
 The leader calls the `hire` tool with a tier, never a model name: `cheap` for small mechanical work, `standard` (the default) for ordinary fixes, `strong` for design that cuts across the code. For this fix it picks `standard`. The worker is named `claude-1`, and the journal says who hired whom and on what:
 
 ```text
- 14:01 ◆ lead hired claude-1 (default model)
+ 14:01 → lead hired claude-1 (default model)
  14:01 ⇄ lead → claude-1 [assign]: parser: empty input returns Err instead of an empty tree; src/parser.rs, test parse_empty
 ```
 
@@ -50,7 +50,7 @@ The `assign` message opens a card, `#1`, titled by the message's first line. The
 
 ```text
  ▾ parser                      1 working  $0.09
-   ◆ lead       coordinating                                       $0.09
+   ● lead       coordinating                                       $0.09
    ● claude-1   #1   parser: empty input    reading src/parser.rs
 ```
 

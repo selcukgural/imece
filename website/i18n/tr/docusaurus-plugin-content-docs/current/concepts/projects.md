@@ -33,11 +33,11 @@ Bir solonun modeli ve çabası solo başına sizin seçiminizdir.
 ```text
  SALON
  ▴ api        ! 1 bekliyor
-   ◆ lead-api        koordine ediyor
+   ● lead-api        koordine ediyor
    ● claude-1        #4 auth: refresh      +12 −3
  ▸ shop       2 çalışıyor
  ▾ imece
-   ◆ lead            boşta
+   ○ lead            boşta
    ✓ claude-2         bitti, henüz bakılmadı
 ```
 

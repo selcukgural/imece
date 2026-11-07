@@ -40,7 +40,7 @@ The last choice (`T`, `:theme`) is remembered in the store for the next run, as 
 | --- | --- |
 | `terminal` | the default: the 16 ANSI colours, so your terminal's own theme (iTerm2, Ghostty, Kitty, …) colours imece and a change there shows at once. imece asks the terminal for its background and foreground to tell dark from light and to shade the selection and key hints |
 | `dark`, `light` | the ANSI colours, assuming a dark or a light background instead of asking |
-| `mono` | no colour: shapes and weight only. The glyphs are chosen so it still reads (`●` `✓` `✕` differ by shape) |
+| `mono` | no colour: shapes and weight only. The glyphs are chosen so it still reads (`●` `✓` `■` differ by shape) |
 
 Then fifteen base16 schemes, copied from tinted-theming/schemes (MIT), in the order `T` cycles them: `dracula`, `nord`, `gruvbox-dark-medium`, `gruvbox-light-medium`, `catppuccin-mocha`, `catppuccin-latte`, `tokyo-night-dark`, `solarized-dark`, `solarized-light`, `onedark`, `rose-pine`, `everforest`, `kanagawa`, `github`, `monokai`. A scheme paints the whole screen, background included, so it looks the same in every terminal; base16's orange is imece's accent.
 

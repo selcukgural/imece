@@ -18,7 +18,7 @@ fn story_icon(k: StoryKind) -> (&'static str, usize, Color) {
         StoryKind::Assumption => ("⚑", 1, pal().warn),
         StoryKind::Decision => ("⚖", 2, pal().plan),
         StoryKind::Talk => ("⇄", 3, pal().info),
-        StoryKind::Evidence => ("◌", 4, pal().ok),
+        StoryKind::Evidence => ("•", 4, pal().ok),
         StoryKind::Change => ("Δ", 5, pal().strong),
         StoryKind::Person => ("›", 6, pal().strong),
     }
@@ -613,7 +613,7 @@ mod tests {
                 ("⚑", 1),
                 ("⚖", 2),
                 ("⇄", 3),
-                ("◌", 4),
+                ("•", 4),
                 ("Δ", 5),
                 ("›", 6)
             ]

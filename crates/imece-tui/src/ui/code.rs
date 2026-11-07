@@ -17,9 +17,10 @@ use crate::app::App;
 /// A holder that is no agent of this project.
 const OTHER: &str = "·";
 
-/// Every status glyph the map can show (the salon's), in the order the
-/// legend lists them; `Text::code_glyphs` words them in the same order.
-pub(crate) const GLYPHS: [&str; 8] = ["○", "●", "◐", "✕", "!", "◇", "■", "◦"];
+/// Every status glyph the map can show (the salon's four of record 125's
+/// five: nothing on the map is done), in the order the legend lists
+/// them; `Text::code_glyphs` words them in the same order.
+pub(crate) const GLYPHS: [&str; 4] = ["○", "●", "!", "■"];
 
 /// Where `mark` sits in `GLYPHS`.
 fn kind(mark: &str) -> Option<usize> {
@@ -339,7 +340,7 @@ mod tests {
         let chars: Vec<char> = row.chars().collect();
         (0..chars.len().saturating_sub(2))
             .filter(|&i| {
-                "●◌✕!◐○◆◇■".contains(chars[i])
+                "●!○■".contains(chars[i])
                     && chars[i + 1] == ' '
                     && chars[i + 2].is_ascii_alphabetic()
             })
@@ -550,11 +551,16 @@ mod tests {
             Status::Stopped,
             Status::Asleep,
         ];
-        for (k, s) in statuses.into_iter().enumerate() {
+        // Idle and asleep are `○`; working, asking and researching `●`;
+        // blocked and stopped `■` (record 125's five, less done).
+        let kinds = [0, 1, 1, 3, 2, 1, 3, 0];
+        for (s, k) in statuses.into_iter().zip(kinds) {
             a.status = s;
             assert_eq!(kind(glyph(&a).0), Some(k), "{:?}", a.status);
         }
         assert_eq!(kind("?"), None);
+        assert_eq!(kind("✕"), None);
+        assert_eq!(kind("◆"), None);
         for lang in [Lang::En, Lang::Tr] {
             let words = lang.text().code_glyphs;
             let distinct: std::collections::BTreeSet<&str> = words.iter().copied().collect();

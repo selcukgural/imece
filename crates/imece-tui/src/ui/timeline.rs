@@ -64,14 +64,14 @@ pub(crate) fn cell_glyph(cell: LaneCell) -> (char, Style) {
     match cell {
         LaneCell::Gap => (' ', Style::new()),
         LaneCell::Idle => ('·', dim()),
-        LaneCell::Starting => ('◌', fg(pal().ok)),
+        LaneCell::Starting => ('●', fg(pal().ok)),
         LaneCell::Thinking => ('░', fg(pal().ok)),
         LaneCell::Reading => ('▒', fg(pal().ok)),
         LaneCell::Writing => ('█', fg(pal().ok)),
         LaneCell::Asking => ('?', fg(pal().info)),
         LaneCell::Done => ('✓', bold(pal().ok)),
         LaneCell::Waiting => ('⚑', fg(pal().warn)),
-        LaneCell::Stuck => ('✕', fg(pal().bad)),
+        LaneCell::Stuck => ('■', fg(pal().bad)),
     }
 }
 

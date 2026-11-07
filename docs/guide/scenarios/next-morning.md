@@ -59,8 +59,8 @@ The pot is where it was: `--budget` unset keeps it, `--budget 80` would set it. 
 The journal has a line for each cut turn, and the salon shows everyone asleep:
 
 ```text
- 09:00 ✕ claude-1's turn was cut short when imece closed; it hears of it when it wakes
- 09:00 ✕ claude-3's turn was cut short when imece closed; it hears of it when it wakes
+ 09:00 ■ claude-1's turn was cut short when imece closed; it hears of it when it wakes
+ 09:00 ■ claude-3's turn was cut short when imece closed; it hears of it when it wakes
 ```
 
 ```text
@@ -118,7 +118,7 @@ Switch to another window for a while. When the terminal gets the focus back afte
  WHILE YOU WERE AWAY · last 12 min
   ✓ 0 cards merged
   ! 1 decisions wait for you
-  ✕ 0 blocks
+  ■ 0 blocks
   ⚑ 1 assumptions made
   ⇄ 4 conversations
   09:33 ⚑ claude-3: worktree moved from 3f2a9c1 to HEAD 9b1d2e0

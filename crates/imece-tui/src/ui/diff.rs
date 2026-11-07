@@ -1793,7 +1793,7 @@ diff --git a/c.rs b/c.rs
         assert_eq!(bad[1].spans[0].content, "  a", "the output lines stand in");
         assert_eq!(bad[1].spans[0].style, dim());
         let running = lines(&Check::Running);
-        assert_eq!(texts(&running), ["◌ the check runs on this change…"]);
+        assert_eq!(texts(&running), ["● the check runs on this change…"]);
         assert_eq!(running[0].spans[0].style, dim());
         let asked = lines(&Check::Asked);
         assert_eq!(
