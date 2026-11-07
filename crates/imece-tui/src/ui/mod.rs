@@ -11967,6 +11967,10 @@ mod tests {
         key(&mut app, KeyCode::Char('z'));
         key(&mut app, KeyCode::Char('R'));
         assert_eq!(app.collapsed, [true, true], "zR in a focus over Home");
+        app.collapsed = vec![false, false];
+        key(&mut app, KeyCode::Char('z'));
+        key(&mut app, KeyCode::Char('M'));
+        assert_eq!(app.collapsed, [false, false], "zM in a focus over Home");
         app.zoom = Zoom::None;
         app.view = View::Salon;
         app.pane = Pane::Salon;
