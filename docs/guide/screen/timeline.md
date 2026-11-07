@@ -1,6 +1,6 @@
 ---
 title: The timeline
-description: The `:timeline` window - one lane per agent over the last hour, what each did in every column, the messages under each project, the scale and the keys.
+description: The timeline window (`:timeline`) - one lane per agent over the last hour, what each did in every column, the messages under each project, the scale and the keys.
 ---
 
 # The timeline

@@ -1,6 +1,6 @@
 ---
 title: Zaman şeridi
-description: `:timeline` penceresi - son bir saatte agent başına bir şerit, her sütunda ne yaptığı, her projenin altındaki mesajlar, ölçek ve tuşlar.
+description: Zaman şeridi penceresi (`:timeline`) - son bir saatte agent başına bir şerit, her sütunda ne yaptığı, her projenin altındaki mesajlar, ölçek ve tuşlar.
 ---
 
 # Zaman şeridi
