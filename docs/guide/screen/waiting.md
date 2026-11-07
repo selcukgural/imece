@@ -46,7 +46,7 @@ A change (`Δ`) can also go back to its worker with notes (`n` in the diff), wit
 | `S` (`:defer`) | put this item off and open the next |
 | `esc` | from the diff back to the panel |
 
-Under the selected item a dim row names its keys (`enter see the diff · a apply to the checkout · r reject`; `a allow · r refuse · enter focus` for an ask; `enter read all · r dismiss · or just write back` for a reply; `enter shows the script · a yes · r no` for a setup script).
+Under the selected item a dim row names its keys (`enter see the diff · a apply to the checkout · r reject`; `a allow · r refuse · enter focus` for an ask; `enter read all · r dismiss · or just write back` for a reply; `enter reads it · a writes back` for a question; `enter focus · a writes to it` for an API error; `enter shows the script · a yes · r no` for a setup script).
 
 ## `W` and `S`: one after the other
 

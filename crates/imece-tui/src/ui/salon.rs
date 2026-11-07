@@ -499,27 +499,28 @@ pub(super) fn project_line(app: &App, p: ProjectId, rungs: &[Rung]) -> Line<'sta
     if project.no_git {
         spans.push(Span::styled(format!("  ⌀ {}", t.no_git), fg(pal().warn)));
     }
-    if let Some(on) = &project.lonca {
-        spans.push(store_span(on, t));
+    // What wants the person first: a long row loses its end to the pane's
+    // edge, and a folded project is quiet, not deaf.
+    if waiting > 0 {
+        spans.push(Span::raw("  "));
+        spans.push(Span::styled(
+            fill(t.group_waiting, &[&waiting.to_string()]),
+            attention(),
+        ));
     }
-    spans.push(Span::styled(
-        format!("  {}", fill(t.group_working, &[&working.to_string()])),
-        dim(),
-    ));
-    spans.push(Span::styled(format!("  {}", dollars(cost)), dim()));
     if blocked > 0 {
         spans.push(Span::styled(format!("  ✕{blocked}"), fg(pal().bad)));
     }
     if stopped > 0 {
         spans.push(Span::styled(format!("  ■{stopped}"), fg(pal().stopped)));
     }
-    if waiting > 0 {
-        // A folded project is quiet, not deaf.
-        spans.push(Span::raw("  "));
-        spans.push(Span::styled(
-            fill(t.group_waiting, &[&waiting.to_string()]),
-            attention(),
-        ));
+    spans.push(Span::styled(
+        format!("  {}", fill(t.group_working, &[&working.to_string()])),
+        dim(),
+    ));
+    spans.push(Span::styled(format!("  {}", dollars(cost)), dim()));
+    if let Some(on) = &project.lonca {
+        spans.push(store_span(on, t));
     }
     if let Some(loud) = project_member(app, p) {
         spans.extend(member(app, loud, rungs));
@@ -1131,6 +1132,8 @@ fn side(f: &mut Frame, area: Rect, app: &App) {
                 InboxKind::Approval => t.approval_keys,
                 InboxKind::Script | InboxKind::Check => t.script_keys,
                 InboxKind::Plan => t.plan_keys,
+                InboxKind::Question => t.question_keys,
+                InboxKind::Fault => t.fault_keys,
                 _ => t.item_keys,
             };
             lines.push(Line::from(Span::styled(keys, dim())));

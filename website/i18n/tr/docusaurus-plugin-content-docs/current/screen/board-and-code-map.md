@@ -10,22 +10,23 @@ Salon takımı gösterir; pano işi, kod haritası dosyaları gösterir. `2` (`:
 ## Pano
 
 ```text
-┌ BEKLİYOR (2) ─────────┐┌ ÜZERİNDE (2) ─────────┐┌ DOĞRULANIYOR (0) ────┐┌ BİTTİ (3) ───────────┐
-│#6  Legacy parser      ││#3  Parse the manifest ││                      ││#2  Money rounding    │
-│#7  Changelog entry    ││    ● claude-1 ▰▰▰▱▱   ││                      ││    ○ claude-2        │
-│                       ││#5  Retry on timeout   ││                      ││#1  CI cache          │
-│                       ││    ● claude-3 ▰▱▱▱▱   ││                      ││    ○ claude-1        │
-└───────────────────────┘└───────────────────────┘└──────────────────────┘└──────────────────────┘
+┌ YAPILACAK (2) ──────┐┌ ÜZERİNDE (2) ───────┐┌ İNCELENECEK (1) ────┐┌ DOĞRULANIYOR (0) ───┐┌ BİTTİ (2) ──────────┐
+│#6  Legacy parser    ││#3  Parse the manif… ││#4  Retry budget     ││                     ││#2  Money rounding   │
+│#7  Changelog entry  ││    ● claude-1 ▰▰▰▱▱ ││    claude-2         ││                     ││    claude-2         │
+│                     ││#5  Retry on timeout ││                     ││                     ││#1  CI cache         │
+│                     ││    ● claude-3 ▰▱▱▱▱ ││                     ││                     ││    claude-1         │
+└─────────────────────┘└─────────────────────┘└─────────────────────┘└─────────────────────┘└─────────────────────┘
 ```
 
-Dört sütun, her biri sayısıyla başlıklı:
+Beş sütun, her biri sayısıyla başlıklı:
 
 | Sütun | İçindeki kartlar |
 | --- | --- |
-| BEKLİYOR | asılmış, henüz alınmamış: liderin `post`'u ya da liderin henüz boşta olmayan bir işçi için yazdığı kart |
+| YAPILACAK | asılmış, henüz alınmamış: liderin `post`'u ya da liderin henüz boşta olmayan bir işçi için yazdığı kart |
 | ÜZERİNDE | alınmış: lider görev vermiş ya da boşta bir işçi panodan almış. Başlığın altında sahibi, sahibinin durum işaretiyle ve bir ilerleme çubuğuyla; çalışan bir sahibin işareti salondaki gibi nefes alır (`:motion`) |
-| DOĞRULANIYOR | canlıda hiçbir şey doldurmaz. Demonun merge queue'su kullanıyordu; canlıda biten bir kart doğrudan BİTTİ'ye geçer ve değişikliği onun yerine SENİ BEKLEYEN'de bekler |
-| BİTTİ | bir `done` ile bitmiş, en yeni önce, bitiren sahibiyle |
+| İNCELENECEK | bir `done` ile bitmiş ve değişikliği (`Δ`) SENİ BEKLEYEN'de sizi bekliyor, en yeni önce: ajan işini bitirdi, iş henüz içeri girmedi |
+| DOĞRULANIYOR | canlıda hiçbir şey doldurmaz. Demonun merge queue'su kullanıyordu |
+| BİTTİ | bitmiş ve hiçbir değişikliği sizi beklemiyor, en yeni önce, bitiren sahibiyle. Sahibinin durumunu yalnız üzerinde çalışılan kart gösterir: son iki sütunda sahibi başka bir iş yapıyor olabilir |
 
 Her kart `#N` ve başlığıdır. Birden çok proje açıkken projenin adı soluk olarak izler. Kartlar modelde ve depoda yaşar, bu yüzden pano yeniden başlatmadan sonra da aynıdır.
 
