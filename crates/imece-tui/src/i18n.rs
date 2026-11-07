@@ -781,8 +781,13 @@ pub struct Text {
     pub verdict_no_overlap: &'static str,
     /// Another change waiting touches the same files: its card, the files.
     pub verdict_overlaps: &'static str,
+    /// A proposal waiting in Lonca that no change here shows does: its
+    /// number, who made it, the files.
+    pub verdict_overlaps_proposal: &'static str,
     pub verdict_clash: &'static str,
     pub verdict_partial: &'static str,
+    /// The proposal's base is behind trunk: the queue merges it.
+    pub verdict_stale: &'static str,
     /// What Lonca's queue runs after the yes, or that nothing does.
     pub verdict_verifies: &'static str,
     pub verdict_verifies_none: &'static str,
@@ -1856,8 +1861,10 @@ pub const EN: Text = Text {
     ],
     verdict_no_overlap: "no overlap with other changes",
     verdict_overlaps: "overlaps {} on {}",
+    verdict_overlaps_proposal: "overlaps proposal {} ({}) on {}",
     verdict_clash: "does not fit your checkout",
     verdict_partial: "the patch is not whole",
+    verdict_stale: "based before trunk, merged after your yes",
     verdict_verifies: "after your yes Lonca runs: {}",
     verdict_verifies_none: "nothing runs after your yes",
     card_owns: "owns   ",
@@ -3068,8 +3075,10 @@ pub const TR: Text = Text {
     ],
     verdict_no_overlap: "başka değişiklikle çakışmıyor",
     verdict_overlaps: "{} ile {} üzerinde çakışıyor",
+    verdict_overlaps_proposal: "{} numaralı öneri ({}) ile {} üzerinde çakışıyor",
     verdict_clash: "çalışma kopyana uymuyor",
     verdict_partial: "yama tam değil",
+    verdict_stale: "temeli gövdenin gerisinde, evetinden sonra birleştirilir",
     verdict_verifies: "evetinden sonra Lonca şunları çalıştırır: {}",
     verdict_verifies_none: "evetinden sonra hiçbir şey çalışmaz",
     card_owns: "sahibi ",
@@ -3868,8 +3877,10 @@ mod tests {
             (e.verdict_look, t.verdict_look),
             (e.verdict_no_overlap, t.verdict_no_overlap),
             (e.verdict_overlaps, t.verdict_overlaps),
+            (e.verdict_overlaps_proposal, t.verdict_overlaps_proposal),
             (e.verdict_clash, t.verdict_clash),
             (e.verdict_partial, t.verdict_partial),
+            (e.verdict_stale, t.verdict_stale),
             (e.verdict_verifies, t.verdict_verifies),
             (e.verdict_verifies_none, t.verdict_verifies_none),
             (e.card_owns, t.card_owns),

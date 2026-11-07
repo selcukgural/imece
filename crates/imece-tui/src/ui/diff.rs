@@ -768,11 +768,17 @@ pub(crate) fn verdict_spans(
         None => parts.push(Span::styled(files, dim())),
     }
     for o in &v.overlaps {
-        let with = match o.card {
-            Some(c) => card_ref(c),
-            None => "?".to_string(),
+        let files = named(&o.files);
+        let said = match &o.with {
+            Other::Change { card: Some(c), .. } => {
+                fill(t.verdict_overlaps, &[&card_ref(*c), &files])
+            }
+            Other::Change { card: None, .. } => fill(t.verdict_overlaps, &["?", &files]),
+            Other::Proposal { seq, name } => fill(
+                t.verdict_overlaps_proposal,
+                &[&seq.to_string(), &clean(name), &files],
+            ),
         };
-        let said = fill(t.verdict_overlaps, &[&with, &named(&o.files)]);
         parts.push(Span::styled(said, fg(pal().bad)));
     }
     if v.overlaps.is_empty() && v.others > 0 {
@@ -783,6 +789,9 @@ pub(crate) fn verdict_spans(
     }
     if v.partial {
         parts.push(Span::styled(t.verdict_partial.to_string(), fg(pal().warn)));
+    }
+    if v.stale {
+        parts.push(Span::styled(t.verdict_stale.to_string(), dim()));
     }
     match &v.verifies {
         Some(names) if names.is_empty() => {
@@ -1744,6 +1753,7 @@ diff --git a/c.rs b/c.rs
             overlaps: Vec::new(),
             clashes: false,
             partial: false,
+            stale: false,
             verifies: None,
         }
     }
@@ -1917,8 +1927,7 @@ diff --git a/c.rs b/c.rs
     #[test]
     fn the_verdict_says_what_it_overlaps_what_does_not_fit_and_what_lonca_runs() {
         let overlap = |card, files: &[&str]| Overlap {
-            agent: 2,
-            card,
+            with: Other::Change { agent: 2, card },
             files: files.iter().map(|f| f.to_string()).collect(),
         };
         let said = |v: &Verdict| worded(Lang::En, v, true, None);
@@ -1956,6 +1965,42 @@ diff --git a/c.rs b/c.rs
             worded(Lang::Tr, &v, false, None),
             "✓ cargo test · 2 dosya, ikisi de #6 içinde · #51 ile Money.cs üzerinde çakışıyor · \
              ? ile a, b, c +2 üzerinde çakışıyor"
+        );
+        // A proposal waiting in Lonca that no change here shows, by its
+        // number and who made it (cleaned); a base behind trunk is a fact.
+        let v = Verdict {
+            ready: false,
+            others: 1,
+            overlaps: vec![Overlap {
+                with: Other::Proposal {
+                    seq: 12,
+                    name: "ayse\u{7}".into(),
+                },
+                files: vec!["Money.cs".into()],
+            }],
+            stale: true,
+            ..a_verdict()
+        };
+        assert_eq!(
+            said(&v),
+            format!(
+                "! look first · ✓ cargo test · 2 files, both inside #6 · \
+                 overlaps proposal 12 ({}) on Money.cs · \
+                 based before trunk, merged after your yes",
+                clean("ayse\u{7}")
+            )
+        );
+        let spans = verdict_spans(Lang::En, &v, true, None);
+        assert_eq!(spans[6].style, fg(pal().bad));
+        assert_eq!(spans[8].style, dim());
+        assert_eq!(
+            worded(Lang::Tr, &v, false, None),
+            format!(
+                "✓ cargo test · 2 dosya, ikisi de #6 içinde · \
+                 12 numaralı öneri ({}) ile Money.cs üzerinde çakışıyor · \
+                 temeli gövdenin gerisinde, evetinden sonra birleştirilir",
+                clean("ayse\u{7}")
+            )
         );
         let v = Verdict {
             ready: false,
@@ -2120,6 +2165,7 @@ diff --git a/c.rs b/c.rs
             redacted: Vec::new(),
             cut: false,
             verifies: vec![],
+            on_trunk: true,
         }
     }
 

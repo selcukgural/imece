@@ -258,3 +258,24 @@ stays), `overlay::thread` takes the area it may use (the body under the
 frame, so it no longer covers the composer). Help row `tab`, keyboard page.
 Left: the question's own detail screen and the detail as the one place
 of a card's screen, the story and the peek (step 5).
+
+Step 4's verdict as built (its first piece): a look keeps every proposal
+waiting in a repository that holds changes for a person
+(`Looked.pending`, PROPOSE operations with their trunk; `pending_of` →
+`model::StorePending { seq, change, name, holder, paths, on_trunk }`, the
+holder through `Live::owner`, `on_trunk` = `base` is the trunk of that
+look), `OnLonca.pending` through `World::store_pending`, gone with a store
+that is down. `World::verdict` also overlaps the change's files with the
+paths of the proposals no change of the project shows
+(`pending_elsewhere`: anyone else's, and a worker's whose turn is not
+over; its own and a worker's whose change is shown are judged by the
+changes themselves), counted in `others`; `Overlap.with` is `Other::Change
+{ agent, card }` or `Other::Proposal { seq, name }`, worded `overlaps
+proposal 12 (ayse) on Money.cs`. `StoreProposal.on_trunk` (from `offers`,
+followed by `offered`) → `Verdict.stale`, worded `based before trunk,
+merged after your yes` as a dim fact: the queue merges a stale base
+(record 115's probe), so it leaves the change ready. The demo's table
+holds a stranger's proposal on each repository's first file
+(`sim::STRANGER`, `demo_pending`), and each third demo proposal is based
+before trunk. Left for the step: the `:lonca` window (trunk, pending,
+leases).

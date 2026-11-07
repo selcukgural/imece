@@ -503,6 +503,40 @@ fn content(lang: Lang) -> &'static Content {
     }
 }
 
+/// Who else proposes to the demo's repositories: a stranger's proposal
+/// waits in each, on the repository's first file.
+pub(crate) const STRANGER: &str = "ayse";
+
+/// What waits for a human in project `p`'s repository: the proposals of
+/// its workers, by number, then the stranger's.
+fn demo_pending(w: &World, p: ProjectId) -> Vec<StorePending> {
+    let mut own: Vec<StorePending> = (w.proposals.iter())
+        .filter(|(id, _)| w.agents[**id].project == p)
+        .map(|(&id, proposal)| StorePending {
+            seq: proposal.seq,
+            change: proposal.change.clone(),
+            name: w.agents[id].name.clone(),
+            holder: Some(id),
+            paths: (w.change_of(id).into_iter())
+                .flat_map(|c| c.files.iter().map(|f| f.path.clone()))
+                .collect(),
+            on_trunk: proposal.on_trunk,
+        })
+        .collect();
+    own.sort_by_key(|p| p.seq);
+    own.push(StorePending {
+        seq: 1,
+        change: format!("{STRANGER}1"),
+        name: STRANGER.to_string(),
+        holder: None,
+        paths: (w.projects[p].repo.first().into_iter())
+            .map(|(file, _)| file.to_string())
+            .collect(),
+        on_trunk: false,
+    });
+    own
+}
+
 /// The build and the tests of project `p`, which has the code map of the
 /// same place in [`PROJECTS`].
 fn kit(p: ProjectId) -> &'static Kit {
@@ -1301,21 +1335,21 @@ impl Sim {
 
     /// What the demo's daemon says of each project on Lonca, as live's
     /// looks do; it stops now and then, so the demo shows a project closed
-    /// and coming back.
+    /// and coming back. What waits in the repository is the project's
+    /// proposals and one of a stranger's, [`STRANGER`], on the repository's
+    /// first file, so the verdict shows an overlap imece's own changes can
+    /// not (record 125).
     fn store_answers(&self, w: &mut World) {
         for (p, repo) in w.stores() {
             let row = self.extras.store.iter().find(|(r, _)| *r == repo);
-            let waiting = (w.open_inbox().into_iter())
-                .filter(|&i| w.inbox[i].kind == InboxKind::Change)
-                .filter(|&i| w.agents[w.inbox[i].agent].project == p)
-                .count();
+            let pending = demo_pending(w, p);
             let seen = match row {
                 _ if store_stopped(w.tick) => StoreSeen::Down(StoreDown::NoDaemon),
                 // As a real daemon says it to a human session.
                 None => StoreSeen::Down(StoreDown::Forbidden),
                 Some((_, integrated)) => StoreSeen::Up {
                     trunk: demo_trunk(*integrated),
-                    pending: waiting,
+                    pending: pending.len(),
                     behind: match self.extras.synced.get(&repo) {
                         Some((_, true)) => Behind::Never,
                         Some((has, false)) => Behind::By(u64::from(integrated - has)),
@@ -1323,13 +1357,18 @@ impl Sim {
                     },
                 },
             };
+            let up = matches!(seen, StoreSeen::Up { .. });
             w.store_seen(p, &repo, seen);
+            if up {
+                w.store_pending(p, &repo, pending);
+            }
         }
     }
 
     /// A worker's `change` waits for the person: as a proposal when its
     /// project is on Lonca (record 120), each fourth of those holding an
-    /// older one, which the demo has nobody to propose.
+    /// older one, which the demo has nobody to propose, each third based
+    /// before trunk.
     fn ready(&mut self, w: &mut World, change: Change) {
         let id = change.agent;
         if w.agents[id].workspace.is_none() {
@@ -1346,6 +1385,7 @@ impl Sim {
             redacted: Vec::new(),
             cut: false,
             verifies: vec!["build".into(), "test".into()],
+            on_trunk: !n.is_multiple_of(3),
         };
         w.change_proposed(change, proposal);
     }
@@ -4044,6 +4084,38 @@ mod tests {
                 .any(|e| matches!(e.event, Event::Blocked { .. })),
             "nobody would ever answer it"
         );
+    }
+
+    #[test]
+    fn the_demo_shows_a_change_that_overlaps_the_strangers_proposal() {
+        let (mut w, mut s) = world(2, 3, 0, 1, Lang::En);
+        let mut found = None;
+        for tick in 0..4000 {
+            s.step(&mut w);
+            for c in &w.changes {
+                let v = w.verdict(c.agent).unwrap();
+                let stranger = (v.overlaps.iter())
+                    .find(|o| matches!(&o.with, Other::Proposal { name, .. } if name == STRANGER));
+                if let Some(o) = stranger {
+                    found.get_or_insert((tick, o.clone()));
+                }
+            }
+            if found.is_some() {
+                break;
+            }
+            if tick % 40 == 39 {
+                answer_all(&mut w, &mut s);
+            }
+        }
+        let (tick, overlap) = found.expect("a change on the stranger's file");
+        assert_eq!(
+            overlap.with,
+            Other::Proposal {
+                seq: 1,
+                name: STRANGER.into()
+            }
+        );
+        assert_eq!(overlap.files, [w.projects[1].repo[0].0], "tick {tick}");
     }
 
     #[test]
@@ -7737,7 +7809,8 @@ diff --git a/b.rs b/b.rs
             *seen,
             StoreSeen::Up {
                 trunk: demo_trunk(0),
-                pending: 0,
+                // The stranger's proposal.
+                pending: 1,
                 behind: Behind::By(0),
             }
         );
@@ -7761,10 +7834,39 @@ diff --git a/b.rs b/b.rs
             StoreSeen::Up { pending, .. } => *pending,
             seen => panic!("{seen:?}"),
         };
-        assert_eq!(pending(&w), 0);
-        w.change_ready(b);
-        s.store_answers(&mut w);
+        // The stranger's proposal alone waits; on the repository's first file.
         assert_eq!(pending(&w), 1);
+        let waiting = |w: &World| w.projects[1].lonca.as_ref().unwrap().pending.clone();
+        let stranger = StorePending {
+            seq: 1,
+            change: format!("{STRANGER}1"),
+            name: STRANGER.into(),
+            holder: None,
+            paths: vec![w.projects[1].repo[0].0.to_string()],
+            on_trunk: false,
+        };
+        assert_eq!(waiting(&w), std::slice::from_ref(&stranger));
+        // A proposal of the project's worker comes first, with what it changes.
+        w.agents[other].workspace = Some(repo.clone());
+        let mut b = b;
+        b.files = files_of("diff --git a/x.kt b/x.kt\n@@ -1 +1 @@\n+a\n");
+        s.ready(&mut w, b);
+        s.store_answers(&mut w);
+        assert_eq!(pending(&w), 2);
+        let own = StorePending {
+            seq: 2,
+            change: "demo1".into(),
+            name: w.agents[other].name.clone(),
+            holder: Some(other),
+            paths: vec!["x.kt".into()],
+            on_trunk: true,
+        };
+        assert_eq!(waiting(&w), [own, stranger]);
+        // Nothing waits while the daemon is stopped.
+        w.tick = 54;
+        s.store_answers(&mut w);
+        assert!(waiting(&w).is_empty());
+        w.tick = 0;
         // A repository the table lacks.
         w.on_lonca(1, Some("nobody".into()));
         s.store_answers(&mut w);
@@ -8151,6 +8253,37 @@ diff --git a/b.rs b/b.rs
             redacted: Vec::new(),
             cut: false,
             verifies: Vec::new(),
+            on_trunk: true,
+        }
+    }
+
+    #[test]
+    fn the_demos_proposals_wait_by_number_and_each_third_is_based_before_trunk() {
+        let (mut w, mut s, id) = a_proposal_waits();
+        let (b, c) = (s.hire_for_test(&mut w, 0), s.hire_for_test(&mut w, 0));
+        for (n, who) in [(2, c), (3, b)] {
+            s.ready(&mut w, a_change_of(who));
+            assert_eq!(w.proposal_of(who).map(|p| p.seq), Some(2 * n));
+        }
+        assert!(w.proposal_of(id).unwrap().on_trunk);
+        assert!(w.proposal_of(c).unwrap().on_trunk);
+        assert!(!w.proposal_of(b).unwrap().on_trunk, "the third");
+        let pending = demo_pending(&w, 0);
+        let order: Vec<(u64, Option<AgentId>, bool)> = (pending.iter())
+            .map(|p| (p.seq, p.holder, p.on_trunk))
+            .collect();
+        assert_eq!(
+            order,
+            [
+                (2, Some(id), true),
+                (4, Some(c), true),
+                (6, Some(b), false),
+                (1, None, false)
+            ]
+        );
+        for n in 4..=6 {
+            s.ready(&mut w, a_change_of(id));
+            assert_eq!(w.proposal_of(id).unwrap().on_trunk, n != 6, "{n}");
         }
     }
 

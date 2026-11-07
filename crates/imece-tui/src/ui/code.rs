@@ -432,6 +432,7 @@ mod tests {
             repo: "shop".into(),
             seen: StoreSeen::Asking,
             leases,
+            pending: Vec::new(),
         });
         app
     }
@@ -493,6 +494,7 @@ mod tests {
             repo: "shop".into(),
             seen: StoreSeen::Asking,
             leases: vec![lease("elsewhere.rs", "f", None, "x")],
+            pending: Vec::new(),
         });
         let rows = render(&app, 160, 50).join("\n");
         assert!(!rows.contains("elsewhere.rs"), "{rows}");
