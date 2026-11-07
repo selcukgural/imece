@@ -557,13 +557,13 @@ pub enum StoreJob {
         repo: String,
         agent: AgentId,
         proposal: StoreProposal,
-        verdict: Verdict,
+        verdict: Decision,
     },
 }
 
 /// What the person says of a proposal.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Verdict {
+pub enum Decision {
     Approve,
     /// No, and why: their words reach the worker through Lonca too.
     Reject(String),
@@ -2300,6 +2300,63 @@ pub struct Change {
     pub spend: Option<Spend>,
 }
 
+/// One thing that proved a change as it is (record 125's verdict): the
+/// repository's check, or a run on exactly its tree.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Proof {
+    Check { ok: bool, end: String },
+    Run(Ran),
+}
+
+impl Proof {
+    pub fn ok(&self) -> bool {
+        match self {
+            Proof::Check { ok, .. } => *ok,
+            Proof::Run(r) => r.ok(),
+        }
+    }
+}
+
+/// Another change waiting in the same project that touches a file this
+/// one touches.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Overlap {
+    pub agent: AgentId,
+    /// The card that change was made for.
+    pub card: Option<CardId>,
+    /// The files both touch, in this change's order.
+    pub files: Vec<String>,
+}
+
+/// The Δ gate in one line (record 125): whether a change is ready to
+/// approve, and the facts that say so. Built by [`World::verdict`] from
+/// what the change, its card, the other changes waiting and the store
+/// say; worded at draw time.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Verdict {
+    /// Proved clean, inside its card's paths, overlapping nothing, fitting
+    /// the checkout, shown whole.
+    pub ready: bool,
+    /// The check when it ran, then each run on the tree, oldest first;
+    /// empty when nothing ran.
+    pub proof: Vec<Proof>,
+    pub files: usize,
+    /// The card whose paths it is judged by, when it owns any.
+    pub card: Option<CardId>,
+    /// The files outside those paths.
+    pub outside: Vec<String>,
+    /// Other changes waiting in the project.
+    pub others: usize,
+    pub overlaps: Vec<Overlap>,
+    /// It does not fit the person's checkout (record 108).
+    pub clashes: bool,
+    /// The patch shown is not the whole change: Lonca redacted or cut it.
+    pub partial: bool,
+    /// What Lonca runs after the person's yes (record 122); none off
+    /// Lonca.
+    pub verifies: Option<Vec<String>>,
+}
+
 /// What became of a proposal, as the store says it (record 120).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Landed {
@@ -2444,6 +2501,28 @@ impl Change {
     /// Easy to approve: proved clean and inside its card's paths.
     pub fn easy(&self, card: Option<&Card>) -> bool {
         self.proof() == Some(true) && self.outside(card).is_empty()
+    }
+
+    /// What proved it, each with how it ended: the check when it ran,
+    /// then the runs.
+    pub fn proofs(&self) -> Vec<Proof> {
+        let mut out = Vec::new();
+        if let Check::Ran(d) = &self.check {
+            out.push(Proof::Check {
+                ok: d.ok,
+                end: d.end.clone(),
+            });
+        }
+        out.extend(self.runs.iter().cloned().map(Proof::Run));
+        out
+    }
+
+    /// The files both this change and `other` touch, in this one's order.
+    pub fn shared_files(&self, other: &Change) -> Vec<String> {
+        (self.files.iter())
+            .filter(|f| other.files.iter().any(|o| o.path == f.path))
+            .map(|f| f.path.clone())
+            .collect()
     }
 
     /// Lines added and removed over all files.
@@ -3565,6 +3644,50 @@ impl World {
 
     pub fn change_of(&self, id: AgentId) -> Option<&Change> {
         self.changes.iter().find(|c| c.agent == id)
+    }
+
+    /// The card worker `id`'s waiting change was made for: the one its
+    /// item carries (the worker may have moved on), else the worker's.
+    pub fn change_card(&self, id: AgentId) -> Option<CardId> {
+        self.open_item(id, InboxKind::Change)
+            .and_then(|i| i.card)
+            .or(self.agents[id].card)
+    }
+
+    /// The verdict on worker `id`'s waiting change (record 125): ready
+    /// when it is easy (proved clean, inside its card's paths), overlaps
+    /// no other change waiting in its project, fits the checkout and is
+    /// shown whole.
+    pub fn verdict(&self, id: AgentId) -> Option<Verdict> {
+        let c = self.change_of(id)?;
+        let card = self.change_card(id).and_then(|c| self.cards.get(c));
+        let project = self.agents[id].project;
+        let waiting = (self.changes.iter())
+            .filter(|o| o.agent != id && self.agents[o.agent].project == project);
+        let others = waiting.clone().count();
+        let overlaps = waiting
+            .map(|o| Overlap {
+                agent: o.agent,
+                card: self.change_card(o.agent),
+                files: c.shared_files(o),
+            })
+            .filter(|o| !o.files.is_empty())
+            .collect::<Vec<_>>();
+        let proposal = self.proposal_of(id);
+        let clashes = self.clashes_of(id).is_some();
+        let partial = proposal.is_some_and(|p| !p.redacted.is_empty() || p.cut);
+        Some(Verdict {
+            ready: c.easy(card) && overlaps.is_empty() && !clashes && !partial,
+            proof: c.proofs(),
+            files: c.files.len(),
+            card: card.filter(|c| !c.paths.is_empty()).map(|c| c.id),
+            outside: c.outside(card).iter().map(|f| f.to_string()).collect(),
+            others,
+            overlaps,
+            clashes,
+            partial,
+            verifies: proposal.map(|p| p.verifies.clone()),
+        })
     }
 
     /// Worker `change.agent` finished with a change in its worktree: it
@@ -7480,6 +7603,218 @@ mod tests {
     }
 
     #[test]
+    fn the_verdict_is_ready_when_easy_alone_fitting_and_whole() {
+        let run = |code| Ran {
+            line: "cargo test".into(),
+            code: Some(code),
+            timed_out: false,
+        };
+        let mut w = crate::live::testing::team(2);
+        assert!(w.verdict(1).is_none(), "no change");
+        let mut c = change(1, "T", &[("src/a.rs", 1, 0), ("Cargo.toml", 1, 0)]);
+        c.runs = vec![run(0)];
+        w.change_ready(c);
+        let v = w.verdict(1).unwrap();
+        assert_eq!(
+            v,
+            Verdict {
+                ready: true,
+                proof: vec![Proof::Run(run(0))],
+                files: 2,
+                card: None,
+                outside: Vec::new(),
+                others: 0,
+                overlaps: Vec::new(),
+                clashes: false,
+                partial: false,
+                verifies: None,
+            }
+        );
+        // Not proved clean: not ready.
+        w.changes[0].runs = vec![run(0), run(1)];
+        let v = w.verdict(1).unwrap();
+        assert!(!v.ready);
+        assert_eq!(v.proof, [Proof::Run(run(0)), Proof::Run(run(1))]);
+        w.changes[0].runs.clear();
+        assert_eq!(w.verdict(1).unwrap().proof, []);
+        assert!(!w.verdict(1).unwrap().ready, "nothing ran");
+        w.changes[0].check = Check::Ran(Checked {
+            ok: true,
+            end: "exit 0".into(),
+            lines: Vec::new(),
+        });
+        w.changes[0].runs = vec![run(1)];
+        let v = w.verdict(1).unwrap();
+        assert_eq!(
+            v.proof,
+            [
+                Proof::Check {
+                    ok: true,
+                    end: "exit 0".into()
+                },
+                Proof::Run(run(1))
+            ],
+            "the check first, then the runs, as they ran"
+        );
+        assert!(v.ready, "the check speaks over the runs");
+        assert!(
+            Proof::Check {
+                ok: true,
+                end: String::new()
+            }
+            .ok()
+        );
+        assert!(!Proof::Run(run(1)).ok());
+    }
+
+    #[test]
+    fn the_verdict_counts_the_other_changes_waiting_in_the_project_and_what_they_share() {
+        let mut w = crate::live::testing::team(2);
+        w.change_ready(change(1, "T", &[("src/a.rs", 1, 0), ("Cargo.toml", 1, 0)]));
+        w.changes[0].check = Check::Ran(Checked {
+            ok: true,
+            end: "exit 0".into(),
+            lines: Vec::new(),
+        });
+        w.change_ready(change(
+            2,
+            "U",
+            &[("src/b.rs", 1, 0), ("src/a.rs.bak", 1, 0)],
+        ));
+        let v = w.verdict(1).unwrap();
+        assert_eq!(
+            (v.others, v.overlaps.len()),
+            (1, 0),
+            "a name alike is no overlap"
+        );
+        assert!(v.ready);
+        // The same file: an overlap, in this change's order, and not ready.
+        w.change_ready(change(
+            2,
+            "U",
+            &[("Cargo.toml", 1, 0), ("src/a.rs", 2, 2), ("x", 0, 1)],
+        ));
+        let v = w.verdict(1).unwrap();
+        assert_eq!(
+            v.overlaps,
+            [Overlap {
+                agent: 2,
+                card: None,
+                files: vec!["src/a.rs".into(), "Cargo.toml".into()]
+            }]
+        );
+        assert!(!v.ready);
+        assert_eq!(
+            w.verdict(2).unwrap().overlaps[0].files,
+            ["Cargo.toml", "src/a.rs"],
+            "seen from the other side"
+        );
+        assert_eq!(w.verdict(2).unwrap().overlaps[0].agent, 1);
+        // Another project's change is nobody's business here.
+        w.agents[2].project = 7;
+        let v = w.verdict(1).unwrap();
+        assert_eq!((v.others, v.overlaps.len()), (0, 0));
+        assert!(v.ready);
+    }
+
+    #[test]
+    fn the_verdict_is_judged_by_the_card_the_change_was_made_for() {
+        let mut w = crate::live::testing::team(2);
+        w.change_ready(change(1, "T", &[("src/a.rs", 1, 0), ("Cargo.toml", 1, 0)]));
+        w.changes[0].check = Check::Ran(Checked {
+            ok: true,
+            end: "exit 0".into(),
+            lines: Vec::new(),
+        });
+        let card = |id: CardId, paths: &[&str]| Card {
+            id,
+            project: 0,
+            title: format!("c{id}"),
+            owner: Some(1),
+            column: Column::Done,
+            story: Vec::new(),
+            symbols: Vec::new(),
+            paths: crate::paths::parse(&serde_json::json!(paths)).unwrap(),
+            started: 0,
+            finished: 0,
+        };
+        w.cards.push(card(0, &[]));
+        w.cards.push(card(1, &["src/"]));
+        w.cards.push(card(2, &["src/", "Cargo.toml"]));
+        // The worker's card, when the item carries none.
+        w.agents[1].card = Some(0);
+        let v = w.verdict(1).unwrap();
+        assert_eq!((v.card, v.outside.len()), (None, 0), "owns no paths");
+        assert!(v.ready);
+        w.agents[1].card = Some(1);
+        let v = w.verdict(1).unwrap();
+        assert_eq!(
+            (v.card, &v.outside[..]),
+            (Some(1), &["Cargo.toml".to_string()][..])
+        );
+        assert!(!v.ready, "a file outside");
+        // The item's card over the worker's: the worker moved on.
+        let i = w.inbox.len() - 1;
+        w.inbox[i].card = Some(2);
+        assert_eq!(w.change_card(1), Some(2));
+        let v = w.verdict(1).unwrap();
+        assert_eq!((v.card, v.outside.len()), (Some(2), 0));
+        assert!(v.ready);
+        w.inbox[i].open = false;
+        assert_eq!(w.change_card(1), Some(1), "a closed item says nothing");
+        // The other change's card too.
+        w.inbox[i].open = true;
+        w.change_ready(change(2, "U", &[("src/a.rs", 1, 0)]));
+        w.agents[2].card = Some(1);
+        assert_eq!(w.verdict(1).unwrap().overlaps[0].card, Some(1));
+    }
+
+    #[test]
+    fn the_verdict_says_a_clash_a_patch_not_whole_and_what_lonca_runs() {
+        let mut w = crate::live::testing::team(2);
+        w.change_ready(change(1, "T", &[("a", 1, 0)]));
+        w.changes[0].runs = vec![Ran {
+            line: "make".into(),
+            code: Some(0),
+            timed_out: false,
+        }];
+        assert!(w.verdict(1).unwrap().ready);
+        w.change_clashed(
+            1,
+            Clashes {
+                hunks: vec![Clash {
+                    file: "a".into(),
+                    ..Clash::default()
+                }],
+                ..Clashes::default()
+            },
+        );
+        let v = w.verdict(1).unwrap();
+        assert!(v.clashes && !v.ready);
+        w.change_clashed(1, Clashes::default());
+        let v = w.verdict(1).unwrap();
+        assert!(!v.clashes && v.ready);
+        // On Lonca: what runs after the yes; a patch redacted or cut.
+        let mut p = a_store_proposal(5);
+        p.verifies = vec!["build".into()];
+        let mut c = change(1, "T", &[("a", 1, 0)]);
+        c.runs = w.changes[0].runs.clone();
+        w.change_proposed(c.clone(), p.clone());
+        let v = w.verdict(1).unwrap();
+        assert_eq!(v.verifies.as_deref(), Some(&["build".to_string()][..]));
+        assert!(!v.partial && v.ready);
+        p.redacted = vec!["x.env".into()];
+        w.change_proposed(c.clone(), p.clone());
+        let v = w.verdict(1).unwrap();
+        assert!(v.partial && !v.ready);
+        p.redacted.clear();
+        p.cut = true;
+        w.change_proposed(c, p);
+        let v = w.verdict(1).unwrap();
+        assert!(v.partial && !v.ready);
+    }
+
+    #[test]
     fn what_a_proposal_cost_is_carried_until_it_is_on_trunk() {
         let spend = Spend {
             cost: 40,
@@ -7522,7 +7857,7 @@ mod tests {
             repo: "r".into(),
             agent: 1,
             proposal: a_store_proposal(5),
-            verdict: Verdict::Approve,
+            verdict: Decision::Approve,
         };
         assert_eq!((job.project(), job.act()), (4, StoreAct::Decide));
     }

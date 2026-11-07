@@ -11,7 +11,6 @@ use ratatui::widgets::{Block, Paragraph};
 use super::*;
 use crate::app::{App, Copying, DiffNote, Folds};
 use crate::i18n::Text;
-use crate::paths;
 use crate::ui::words::card_ref;
 
 /// Line offsets of the file headers (`diff --git`) in `patch`, for
@@ -419,17 +418,23 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, id: AgentId) {
     }
     let inner = block.inner(area);
     f.render_widget(block, area);
-    let mut ran = check_lines(app.lang, &c.check);
-    ran.extend(run_lines(app.lang, &c.runs));
-    if let Some(clashes) = w.clashes_of(id) {
-        ran.insert(0, clash_line(app.lang, clashes, &a.name));
+    // The verdict first, then the worker's words, Lonca's, a clash, what
+    // the check printed: the gate in one line, the reasons under it.
+    let width = usize::from(inner.width);
+    let mut ran = match w.verdict(id) {
+        Some(v) => verdict_lines(app.lang, &v, width),
+        None => Vec::new(),
+    };
+    if let Some(why) = w.done_why(id) {
+        ran.extend(why_lines(why, width));
     }
     if let Some(proposal) = w.proposal_of(id) {
-        ran.splice(0..0, proposal_lines(app.lang, proposal));
+        ran.extend(proposal_lines(app.lang, proposal));
     }
-    if let Some(why) = w.done_why(id) {
-        ran.splice(0..0, why_lines(why, usize::from(inner.width)));
+    if let Some(clashes) = w.clashes_of(id) {
+        ran.push(clash_line(app.lang, clashes, &a.name));
     }
+    ran.extend(check_lines(app.lang, &c.check));
     let review = review_lines(
         app.lang,
         w.review_of(id),
@@ -444,11 +449,6 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, id: AgentId) {
     } else {
         file_lines(app.lang, &c.files)
     };
-    if let Some(card) = a.card
-        && let Some(outside) = outside_line(app.lang, &c.files, &w.cards[card])
-    {
-        files.insert(0, outside);
-    }
     if let Some(split) = kinds_line(app.lang, &c.files) {
         files.insert(0, split);
     }
@@ -705,35 +705,126 @@ fn kinds_line(lang: Lang, files: &[ChangedFile]) -> Option<Line<'static>> {
     )))
 }
 
-/// The files of the change its worker's `card` does not own (record
-/// 114), under the kinds line: `2 outside #12: src/b.rs, Cargo.toml`, in
-/// the warning colour; nothing when the card owns no paths or every file
-/// is in them. The card may be done already: it is still the one the
-/// change was made for.
-fn outside_line(lang: Lang, files: &[ChangedFile], card: &Card) -> Option<Line<'static>> {
-    let outside: Vec<&str> = files
-        .iter()
-        .filter(|f| paths::strays(&card.paths, &f.path))
-        .map(|f| f.path.as_str())
-        .collect();
-    if outside.is_empty() {
-        return None;
+/// How many names the verdict says of files outside the card or shared
+/// with another change; the rest are counted.
+const VERDICT_NAMES: usize = 3;
+
+/// `names`, [`VERDICT_NAMES`] at most and the rest counted, cleaned.
+fn named(names: &[String]) -> String {
+    let mut said = (names.iter().take(VERDICT_NAMES))
+        .map(|n| clean(n))
+        .collect::<Vec<_>>()
+        .join(", ");
+    if names.len() > VERDICT_NAMES {
+        said.push_str(&format!(" +{}", names.len() - VERDICT_NAMES));
     }
+    said
+}
+
+/// The verdict on a change (record 125) as spans, parts joined with
+/// ` · `: its head (`✓ ready to approve` / `! look first`) when `head`,
+/// what proved it (`✓ check`, `✗ cargo test: exit 101`, or `nothing
+/// ran`), its files and where they stand to the card's paths, what it
+/// overlaps, a clash, a patch not whole, what Lonca runs after the yes.
+/// Each part in its own colour: good, bad, a warning, or dim for a fact.
+/// With `counts` the files part carries the lines added and removed
+/// (a row's; the change view's title has them).
+pub(crate) fn verdict_spans(
+    lang: Lang,
+    v: &Verdict,
+    head: bool,
+    counts: Option<(u32, u32)>,
+) -> Vec<Span<'static>> {
     let t = lang.text();
-    Some(Line::from(Span::styled(
-        format!(
-            " {}",
-            fill(
-                t.diff_outside,
-                &[
-                    &outside.len().to_string(),
-                    &card_ref(card.id),
-                    &clean(&outside.join(", ")),
-                ],
-            )
-        ),
-        fg(pal().warn),
-    )))
+    let counts = match counts {
+        Some((added, removed)) => format!(" +{added} −{removed}"),
+        None => String::new(),
+    };
+    let mut parts: Vec<Span<'static>> = Vec::new();
+    if head {
+        parts.push(if v.ready {
+            Span::styled(t.verdict_ready.to_string(), bold(pal().ok))
+        } else {
+            Span::styled(t.verdict_look.to_string(), bold(pal().warn))
+        });
+    }
+    if v.proof.is_empty() {
+        parts.push(Span::styled(t.row_not_run.to_string(), fg(pal().warn)));
+    }
+    for p in &v.proof {
+        let colour = if p.ok() { pal().ok } else { pal().bad };
+        let said = match p {
+            Proof::Check { ok: true, .. } => format!("✓ {}", t.row_check_word),
+            Proof::Check { end, .. } => fill(t.check_bad, &[&clean(end)]),
+            Proof::Run(r) => words::ran(lang, r),
+        };
+        parts.push(Span::styled(said, fg(colour)));
+    }
+    let files = match v.files {
+        1 => format!("{}{counts}", t.row_file),
+        n => format!("{}{counts}", fill(t.row_files, &[&n.to_string()])),
+    };
+    match v.card.map(card_ref) {
+        Some(card) if v.outside.is_empty() => {
+            let n = v.files.to_string();
+            let said = match v.files {
+                1 => fill(t.verdict_inside[0], &[&counts, &card]),
+                2 => fill(t.verdict_inside[1], &[&counts, &card]),
+                _ => fill(t.verdict_inside[2], &[&n, &counts, &card]),
+            };
+            parts.push(Span::styled(said, dim()));
+        }
+        Some(card) => {
+            parts.push(Span::styled(files, dim()));
+            let n = v.outside.len().to_string();
+            let said = fill(t.diff_outside, &[&n, &card, &named(&v.outside)]);
+            parts.push(Span::styled(said, fg(pal().bad)));
+        }
+        None => parts.push(Span::styled(files, dim())),
+    }
+    for o in &v.overlaps {
+        let with = match o.card {
+            Some(c) => card_ref(c),
+            None => "?".to_string(),
+        };
+        let said = fill(t.verdict_overlaps, &[&with, &named(&o.files)]);
+        parts.push(Span::styled(said, fg(pal().bad)));
+    }
+    if v.overlaps.is_empty() && v.others > 0 {
+        parts.push(Span::styled(t.verdict_no_overlap.to_string(), dim()));
+    }
+    if v.clashes {
+        parts.push(Span::styled(t.verdict_clash.to_string(), fg(pal().bad)));
+    }
+    if v.partial {
+        parts.push(Span::styled(t.verdict_partial.to_string(), fg(pal().warn)));
+    }
+    match &v.verifies {
+        Some(names) if names.is_empty() => {
+            parts.push(Span::styled(
+                t.verdict_verifies_none.to_string(),
+                fg(pal().warn),
+            ));
+        }
+        Some(names) => {
+            let said = fill(t.verdict_verifies, &[&clean(&names.join(", "))]);
+            parts.push(Span::styled(said, dim()));
+        }
+        None => {}
+    }
+    let mut spans = Vec::with_capacity(parts.len() * 2);
+    for (n, part) in parts.into_iter().enumerate() {
+        if n > 0 {
+            spans.push(Span::styled(" · ", dim()));
+        }
+        spans.push(part);
+    }
+    spans
+}
+
+/// The verdict line above a change's patch, wrapped to `width`.
+pub(crate) fn verdict_lines(lang: Lang, v: &Verdict, width: usize) -> Vec<Line<'static>> {
+    super::wrap(Line::from(verdict_spans(lang, v, true, None)), width)
 }
 
 /// Lonca's word for why a change waits for a human, as a person says it;
@@ -765,14 +856,7 @@ pub(crate) fn proposal_lines(lang: Lang, p: &StoreProposal) -> Vec<Line<'static>
     if !p.older.is_empty() {
         said.push_str(&fill(t.diff_proposal_older, &[&p.older.len().to_string()]));
     }
-    let verifies = match p.verifies.join(", ") {
-        names if names.is_empty() => t.diff_verifies_none.to_string(),
-        names => fill(t.diff_verifies, &[&names]),
-    };
-    let mut lines = vec![
-        Line::from(Span::styled(said, dim())),
-        Line::from(Span::styled(verifies, dim())),
-    ];
+    let mut lines = vec![Line::from(Span::styled(said, dim()))];
     let loud = |text: String| Line::from(Span::styled(text, fg(pal().warn)));
     if !p.redacted.is_empty() {
         lines.push(loud(fill(t.diff_redacted, &[&p.redacted.join(", ")])));
@@ -879,22 +963,12 @@ pub(crate) fn review_lines(
 pub(crate) fn check_lines(lang: Lang, check: &Check) -> Vec<Line<'static>> {
     let t = lang.text();
     match check {
-        Check::None => Vec::new(),
-        Check::Ran(d) if d.ok => vec![Line::from(Span::styled(
-            fill(t.check_ok, &[&d.end]),
-            fg(pal().ok),
-        ))],
-        Check::Ran(d) => {
-            let mut out = vec![Line::from(Span::styled(
-                fill(t.check_bad, &[&d.end]),
-                fg(pal().bad),
-            ))];
-            out.extend(
-                (d.lines.iter())
-                    .map(|l| Line::from(Span::styled(format!("  {}", clean(l)), dim()))),
-            );
-            out
-        }
+        // How it ended is the verdict's; a failure's last lines stand
+        // under it.
+        Check::None | Check::Ran(Checked { ok: true, .. }) => Vec::new(),
+        Check::Ran(d) => (d.lines.iter())
+            .map(|l| Line::from(Span::styled(format!("  {}", clean(l)), dim())))
+            .collect(),
         Check::Running => vec![Line::from(Span::styled(t.check_running.to_string(), dim()))],
         Check::Asked => vec![Line::from(Span::styled(
             t.check_asked.to_string(),
@@ -905,19 +979,6 @@ pub(crate) fn check_lines(lang: Lang, check: &Check) -> Vec<Line<'static>> {
             fg(pal().warn),
         ))],
     }
-}
-
-fn run_lines(lang: Lang, runs: &[Ran]) -> Vec<Line<'static>> {
-    if runs.is_empty() {
-        let none = lang.text().ran_none_long.to_string();
-        return vec![Line::from(Span::styled(none, fg(pal().warn)))];
-    }
-    runs.iter()
-        .map(|r| {
-            let colour = if r.ok() { pal().ok } else { pal().bad };
-            Line::from(Span::styled(words::ran(lang, r), fg(colour)))
-        })
-        .collect()
 }
 
 #[cfg(test)]
@@ -1683,51 +1744,306 @@ diff --git a/c.rs b/c.rs
         assert_eq!(q, fenced(&["@@ -1 +1 @@", "+ [2Jgone", "[***]"]));
     }
 
+    fn a_verdict() -> Verdict {
+        Verdict {
+            ready: true,
+            proof: vec![Proof::Run(Ran {
+                line: "cargo test".into(),
+                code: Some(0),
+                timed_out: false,
+            })],
+            files: 2,
+            card: Some(5),
+            outside: Vec::new(),
+            others: 0,
+            overlaps: Vec::new(),
+            clashes: false,
+            partial: false,
+            verifies: None,
+        }
+    }
+
+    fn worded(lang: Lang, v: &Verdict, head: bool, counts: Option<(u32, u32)>) -> String {
+        (verdict_spans(lang, v, head, counts).iter())
+            .map(|s| s.content.as_ref())
+            .collect()
+    }
+
     #[test]
-    fn the_runs_on_a_change_head_its_diff_coloured_by_how_they_ended() {
-        let ran = |code, timed_out| Ran {
-            line: "cargo test".into(),
-            code,
-            timed_out,
+    fn the_verdict_heads_with_ready_or_look_first_and_says_what_proved_it() {
+        let v = a_verdict();
+        assert_eq!(
+            worded(Lang::En, &v, true, None),
+            "✓ ready to approve · ✓ cargo test · 2 files, both inside #6"
+        );
+        assert_eq!(
+            worded(Lang::Tr, &v, true, None),
+            "✓ onaya hazır · ✓ cargo test · 2 dosya, ikisi de #6 içinde"
+        );
+        let spans = verdict_spans(Lang::En, &v, true, None);
+        assert_eq!(spans[0].style, bold(pal().ok));
+        assert_eq!(spans[1].content, " · ");
+        assert_eq!(spans[1].style, dim());
+        assert_eq!(spans[2].style, fg(pal().ok), "a run that passed");
+        assert_eq!(spans[4].style, dim(), "the files are a fact");
+        let look = Verdict {
+            ready: false,
+            proof: vec![
+                Proof::Check {
+                    ok: false,
+                    end: "exit 1, 3.0 s".into(),
+                },
+                Proof::Run(Ran {
+                    line: "cargo test".into(),
+                    code: Some(101),
+                    timed_out: false,
+                }),
+                Proof::Run(Ran {
+                    line: "cargo build".into(),
+                    code: None,
+                    timed_out: true,
+                }),
+            ],
+            ..a_verdict()
         };
-        let shown = |lang, runs: &[Ran]| -> Vec<(String, Style)> {
-            run_lines(lang, runs)
-                .iter()
-                .map(|l| (l.spans[0].content.to_string(), l.spans[0].style))
-                .collect()
+        assert_eq!(
+            worded(Lang::En, &look, true, None),
+            "! look first · ✗ check · exit 1, 3.0 s · ✗ cargo test: exit 101 · \
+             ✗ cargo build: killed at the deadline · 2 files, both inside #6"
+        );
+        let spans = verdict_spans(Lang::En, &look, true, None);
+        assert_eq!(spans[0].style, bold(pal().warn));
+        assert_eq!(spans[2].style, fg(pal().bad));
+        assert_eq!(spans[4].style, fg(pal().bad));
+        assert_eq!(
+            worded(Lang::Tr, &look, true, None),
+            "! önce bak · ✗ kontrol · exit 1, 3.0 s · ✗ cargo test: exit 101 · \
+             ✗ cargo build: süre dolunca durduruldu · 2 dosya, ikisi de #6 içinde"
+        );
+        let check = Verdict {
+            proof: vec![Proof::Check {
+                ok: true,
+                end: "exit 0, 41.2 s".into(),
+            }],
+            ..a_verdict()
         };
-        let runs = [
-            ran(Some(0), false),
-            ran(Some(101), false),
-            ran(None, true),
-            ran(None, false),
-        ];
-        let (ok, bad) = (fg(pal().ok), fg(pal().bad));
         assert_eq!(
-            shown(Lang::En, &runs),
-            [
-                ("✓ cargo test".to_string(), ok),
-                ("✗ cargo test: exit 101".to_string(), bad),
-                ("✗ cargo test: killed at the deadline".to_string(), bad),
-                ("✗ cargo test: killed".to_string(), bad),
-            ]
+            worded(Lang::En, &check, true, None),
+            "✓ ready to approve · ✓ check · 2 files, both inside #6"
         );
         assert_eq!(
-            shown(Lang::Tr, &runs[2..]),
-            [
-                ("✗ cargo test: süre dolunca durduruldu".to_string(), bad),
-                ("✗ cargo test: durduruldu".to_string(), bad),
-            ]
+            worded(Lang::Tr, &check, false, None),
+            "✓ kontrol · 2 dosya, ikisi de #6 içinde",
+            "a row has no head"
+        );
+        let none = Verdict {
+            ready: false,
+            proof: Vec::new(),
+            ..a_verdict()
+        };
+        assert_eq!(
+            worded(Lang::En, &none, true, None),
+            "! look first · nothing ran · 2 files, both inside #6"
         );
         assert_eq!(
-            shown(Lang::En, &[]),
-            [(
-                "no imece run on exactly this change: whether it builds and passes its \
-                 tests is not known"
-                    .to_string(),
-                fg(pal().warn)
-            )]
+            verdict_spans(Lang::En, &none, true, None)[2].style,
+            fg(pal().warn)
         );
+        assert_eq!(
+            worded(Lang::Tr, &none, true, None),
+            "! önce bak · hiçbir şey koşmadı · 2 dosya, ikisi de #6 içinde"
+        );
+    }
+
+    #[test]
+    fn the_verdict_counts_the_files_against_the_card_s_paths() {
+        let with = |files, card, outside: &[&str]| Verdict {
+            files,
+            card,
+            outside: outside.iter().map(|f| f.to_string()).collect(),
+            ..a_verdict()
+        };
+        let said = |v: &Verdict| worded(Lang::En, v, false, None);
+        assert_eq!(
+            said(&with(1, Some(5), &[])),
+            "✓ cargo test · 1 file, inside #6"
+        );
+        assert_eq!(
+            said(&with(3, Some(5), &[])),
+            "✓ cargo test · 3 files, all inside #6"
+        );
+        assert_eq!(said(&with(1, None, &[])), "✓ cargo test · 1 file");
+        assert_eq!(said(&with(3, None, &[])), "✓ cargo test · 3 files");
+        assert_eq!(
+            said(&with(3, Some(5), &["src/b.rs"])),
+            "✓ cargo test · 3 files · 1 outside #6: src/b.rs"
+        );
+        assert_eq!(
+            said(&with(3, Some(5), &["a", "b", "c"])),
+            "✓ cargo test · 3 files · 3 outside #6: a, b, c",
+            "three names are said whole"
+        );
+        let v = with(5, Some(5), &["a", "b", "c", "d"]);
+        assert_eq!(
+            said(&v),
+            "✓ cargo test · 5 files · 4 outside #6: a, b, c +1",
+            "three names and the rest counted"
+        );
+        assert_eq!(
+            verdict_spans(Lang::En, &v, false, None)[4].style,
+            fg(pal().bad)
+        );
+        assert_eq!(
+            worded(Lang::Tr, &with(3, Some(5), &["src/b.rs"]), false, None),
+            "✓ cargo test · 3 dosya · 1 kartın dışında (#6): src/b.rs"
+        );
+        assert_eq!(
+            worded(Lang::Tr, &with(1, None, &[]), false, None),
+            "✓ cargo test · 1 dosya"
+        );
+        // A row carries the lines with the files, inside or not.
+        assert_eq!(
+            worded(Lang::En, &with(2, Some(5), &[]), false, Some((4, 2))),
+            "✓ cargo test · 2 files +4 −2, both inside #6"
+        );
+        assert_eq!(
+            worded(Lang::En, &with(1, Some(5), &[]), false, Some((4, 2))),
+            "✓ cargo test · 1 file +4 −2, inside #6"
+        );
+        assert_eq!(
+            worded(Lang::En, &with(3, Some(5), &[]), false, Some((4, 2))),
+            "✓ cargo test · 3 files +4 −2, all inside #6"
+        );
+        assert_eq!(
+            worded(Lang::En, &with(3, Some(5), &["x"]), false, Some((4, 2))),
+            "✓ cargo test · 3 files +4 −2 · 1 outside #6: x"
+        );
+        assert_eq!(
+            worded(Lang::En, &with(1, None, &[]), false, Some((4, 2))),
+            "✓ cargo test · 1 file +4 −2"
+        );
+        // A name is cleaned on its way to the screen.
+        assert_eq!(
+            said(&with(1, Some(5), &["src/\u{1b}[31mx.rs"])),
+            "✓ cargo test · 1 file · 1 outside #6: src/ [31mx.rs"
+        );
+    }
+
+    #[test]
+    fn the_verdict_says_what_it_overlaps_what_does_not_fit_and_what_lonca_runs() {
+        let overlap = |card, files: &[&str]| Overlap {
+            agent: 2,
+            card,
+            files: files.iter().map(|f| f.to_string()).collect(),
+        };
+        let said = |v: &Verdict| worded(Lang::En, v, true, None);
+        let alone = Verdict {
+            others: 2,
+            ..a_verdict()
+        };
+        assert_eq!(
+            said(&alone),
+            "✓ ready to approve · ✓ cargo test · 2 files, both inside #6 · \
+             no overlap with other changes"
+        );
+        assert_eq!(
+            said(&a_verdict()),
+            "✓ ready to approve · ✓ cargo test · 2 files, both inside #6",
+            "with no other change waiting, nothing to say"
+        );
+        let v = Verdict {
+            ready: false,
+            others: 2,
+            overlaps: vec![
+                overlap(Some(50), &["Money.cs"]),
+                overlap(None, &["a", "b", "c", "d", "e"]),
+            ],
+            ..a_verdict()
+        };
+        assert_eq!(
+            said(&v),
+            "! look first · ✓ cargo test · 2 files, both inside #6 · \
+             overlaps #51 on Money.cs · overlaps ? on a, b, c +2"
+        );
+        let spans = verdict_spans(Lang::En, &v, true, None);
+        assert_eq!(spans[6].style, fg(pal().bad));
+        assert_eq!(
+            worded(Lang::Tr, &v, false, None),
+            "✓ cargo test · 2 dosya, ikisi de #6 içinde · #51 ile Money.cs üzerinde çakışıyor · \
+             ? ile a, b, c +2 üzerinde çakışıyor"
+        );
+        let v = Verdict {
+            ready: false,
+            clashes: true,
+            partial: true,
+            ..a_verdict()
+        };
+        assert_eq!(
+            said(&v),
+            "! look first · ✓ cargo test · 2 files, both inside #6 · \
+             does not fit your checkout · the patch is not whole"
+        );
+        let spans = verdict_spans(Lang::En, &v, true, None);
+        assert_eq!(spans[6].style, fg(pal().bad));
+        assert_eq!(spans[8].style, fg(pal().warn));
+        assert_eq!(
+            worded(Lang::Tr, &v, true, None),
+            "! önce bak · ✓ cargo test · 2 dosya, ikisi de #6 içinde · \
+             çalışma kopyana uymuyor · yama tam değil"
+        );
+        let runs = Verdict {
+            verifies: Some(vec!["build".into(), "test".into()]),
+            ..a_verdict()
+        };
+        assert_eq!(
+            said(&runs),
+            "✓ ready to approve · ✓ cargo test · 2 files, both inside #6 · \
+             after your yes Lonca runs: build, test"
+        );
+        assert_eq!(verdict_spans(Lang::En, &runs, true, None)[6].style, dim());
+        let nothing = Verdict {
+            verifies: Some(Vec::new()),
+            ..a_verdict()
+        };
+        assert_eq!(
+            said(&nothing),
+            "✓ ready to approve · ✓ cargo test · 2 files, both inside #6 · \
+             nothing runs after your yes"
+        );
+        assert_eq!(
+            verdict_spans(Lang::En, &nothing, true, None)[6].style,
+            fg(pal().warn)
+        );
+        assert_eq!(
+            worded(Lang::Tr, &runs, true, None),
+            "✓ onaya hazır · ✓ cargo test · 2 dosya, ikisi de #6 içinde · \
+             evetinden sonra Lonca şunları çalıştırır: build, test"
+        );
+        assert!(
+            worded(Lang::Tr, &nothing, true, None).ends_with("evetinden sonra hiçbir şey çalışmaz")
+        );
+    }
+
+    #[test]
+    fn the_verdict_line_wraps_at_the_width_and_keeps_every_part() {
+        let v = Verdict {
+            others: 1,
+            verifies: Some(vec!["build".into(), "test".into()]),
+            ..a_verdict()
+        };
+        let one = verdict_lines(Lang::En, &v, 200);
+        assert_eq!(one.len(), 1);
+        let rows = verdict_lines(Lang::En, &v, 40);
+        assert!(rows.len() >= 3, "{}", texts(&rows).join("|"));
+        for r in &rows {
+            assert!(r.to_string().chars().count() <= 40, "{r}");
+        }
+        let joined = texts(&rows)
+            .join(" ")
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert_eq!(joined, texts(&one)[0]);
     }
 
     #[test]
@@ -1769,29 +2085,29 @@ diff --git a/c.rs b/c.rs
     }
 
     #[test]
-    fn the_check_s_lines_say_how_it_stands_in_its_colour() {
+    fn the_check_s_lines_are_a_failure_s_output_or_why_it_has_not_run() {
         let lines = |check: &Check| check_lines(Lang::En, check);
         let ran = |ok: bool, lines: &[&str]| {
             Check::Ran(Checked {
                 ok,
-                end: if ok {
-                    "exit 0, 41.2 s"
-                } else {
-                    "exit 1, 3.0 s"
-                }
-                .into(),
+                end: "exit 1, 3.0 s".into(),
                 lines: lines.iter().map(|l| l.to_string()).collect(),
             })
         };
         assert!(lines(&Check::None).is_empty());
-        let ok = lines(&ran(true, &[]));
-        assert_eq!(texts(&ok), ["✓ check · exit 0, 41.2 s"]);
-        assert_eq!(ok[0].spans[0].style, fg(pal().ok));
+        assert!(
+            lines(&ran(true, &["fine"])).is_empty(),
+            "a check that passed is the verdict's"
+        );
         let bad = lines(&ran(false, &["a", "TOKEN=abc b"]));
-        assert_eq!(texts(&bad), ["✗ check · exit 1, 3.0 s", "a", "[***] b"]);
-        assert_eq!(bad[0].spans[0].style, fg(pal().bad));
-        assert_eq!(bad[1].spans[0].content, "  a", "the output lines stand in");
-        assert_eq!(bad[1].spans[0].style, dim());
+        assert_eq!(
+            texts(&bad),
+            ["a", "[***] b"],
+            "how it ended is the verdict's"
+        );
+        assert_eq!(bad[0].spans[0].content, "  a", "the output lines stand in");
+        assert_eq!(bad[0].spans[0].style, dim());
+        assert!(lines(&ran(false, &[])).is_empty());
         let running = lines(&Check::Running);
         assert_eq!(texts(&running), ["● the check runs on this change…"]);
         assert_eq!(running[0].spans[0].style, dim());
@@ -1805,56 +2121,8 @@ diff --git a/c.rs b/c.rs
         assert_eq!(texts(&failed), ["check did not run: [***] gone"]);
         assert_eq!(failed[0].spans[0].style, fg(pal().warn));
         assert_eq!(
-            texts(&check_lines(Lang::Tr, &ran(true, &[]))),
-            ["✓ kontrol · exit 0, 41.2 s"]
-        );
-    }
-    #[test]
-    fn the_files_a_card_does_not_own_are_counted_and_named_under_the_kinds() {
-        let file = |path: &str| ChangedFile {
-            path: path.into(),
-            added: 1,
-            removed: 0,
-            binary: false,
-        };
-        let files = [file("src/a.rs"), file("src/b.rs"), file("Cargo.toml")];
-        let mut card = Card {
-            id: 11,
-            project: 0,
-            title: "x".into(),
-            owner: Some(1),
-            column: Column::Done,
-            story: Vec::new(),
-            symbols: Vec::new(),
-            paths: Vec::new(),
-            started: 0,
-            finished: 0,
-        };
-        assert!(
-            outside_line(Lang::En, &files, &card).is_none(),
-            "no paths, no bounds"
-        );
-        card.paths = vec![Owned::new("src/a.rs"), Owned::shared("Cargo.toml")];
-        let line = outside_line(Lang::En, &files, &card).unwrap();
-        assert_eq!(line.to_string(), " 1 outside #12: src/b.rs");
-        assert_eq!(line.spans[0].style, fg(pal().warn));
-        card.paths = vec![Owned::new("docs")];
-        assert_eq!(
-            outside_line(Lang::Tr, &files, &card).unwrap().to_string(),
-            " 3 kartın dışında (#12): src/a.rs, src/b.rs, Cargo.toml"
-        );
-        card.paths = vec![Owned::new("src"), Owned::new("Cargo.toml")];
-        assert!(
-            outside_line(Lang::En, &files, &card).is_none(),
-            "all inside"
-        );
-        assert!(outside_line(Lang::En, &[], &card).is_none());
-        // A file name is cleaned on its way to the screen.
-        card.paths = vec![Owned::new("docs")];
-        let odd = [file("src/\u{1b}[31mx.rs")];
-        assert_eq!(
-            outside_line(Lang::En, &odd, &card).unwrap().to_string(),
-            " 1 outside #12: src/ [31mx.rs"
+            texts(&check_lines(Lang::Tr, &Check::Running)),
+            ["● kontrol bu değişiklikte çalışıyor…"]
         );
     }
 
@@ -1875,19 +2143,12 @@ diff --git a/c.rs b/c.rs
     }
 
     #[test]
-    fn a_proposal_says_what_runs_after_the_persons_yes() {
+    fn what_runs_after_the_persons_yes_is_the_verdict_s_not_the_proposal_line_s() {
         let p = StoreProposal {
             verifies: vec!["build".into(), "test".into()],
             ..a_proposal()
         };
-        let lines = proposal_lines(Lang::En, &p);
-        assert_eq!(said(&lines)[1], " after your yes Lonca runs: build, test");
-        let lines = proposal_lines(Lang::Tr, &p);
-        assert!(
-            said(&lines)[1].contains("build, test"),
-            "{:?}",
-            said(&lines)
-        );
+        assert_eq!(proposal_lines(Lang::En, &p).len(), 1);
     }
 
     #[test]
@@ -1895,10 +2156,7 @@ diff --git a/c.rs b/c.rs
         let lines = proposal_lines(Lang::En, &a_proposal());
         assert_eq!(
             said(&lines),
-            [
-                " needs your yes: nobody watched this session's tools, approvals=1 · proposal 5",
-                " nothing runs after your yes: no build or test in lonca.toml"
-            ]
+            [" needs your yes: nobody watched this session's tools, approvals=1 · proposal 5"]
         );
         assert_eq!(lines[0].spans[0].style, dim());
     }
@@ -1926,9 +2184,9 @@ diff --git a/c.rs b/c.rs
             ..a_proposal()
         };
         let lines = proposal_lines(Lang::En, &p);
-        assert_eq!(said(&lines)[2], " left out, redacted: a.env, b.env");
-        assert_eq!(said(&lines)[3], Lang::En.text().diff_cut);
+        assert_eq!(said(&lines)[1], " left out, redacted: a.env, b.env");
+        assert_eq!(said(&lines)[2], Lang::En.text().diff_cut);
+        assert_eq!(lines[1].spans[0].style, fg(pal().warn));
         assert_eq!(lines[2].spans[0].style, fg(pal().warn));
-        assert_eq!(lines[3].spans[0].style, fg(pal().warn));
     }
 }

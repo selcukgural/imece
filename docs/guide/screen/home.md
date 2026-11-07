@@ -35,7 +35,7 @@ The [header](salon.md#the-header) names the open projects; the one the list is n
 | TO DECIDE | counts each kind: `1 permission · 2 questions · 3 changes · 1 put off` |
 | permissions | one key each: a command an agent asks to run, the worktree setup script, the repository's check. The row says what would run: `run .imece/check on its changes?` and then the script's commands (its lines that are not comments; `enter` shows every byte) |
 | questions | read and answer: an agent's question whole, a researcher's report, an answer to read, an API error, the leader's plan |
-| changes | a diff to read: `2 files +4 −2 · ✓ dotnet build, dotnet test · 1 outside #51` — the files and lines, what was proved on its tree (the repository's check when it ran, else imece's runs, else `nothing ran`), the files outside the paths its card owns. The ones proved clean and inside their paths come first; the group's line counts them, `2 ready to approve` |
+| changes | a diff to read: `✓ dotnet build · ✓ dotnet test · 2 files +4 −2 · 1 outside #51: Money.cs` — the [verdict](changes.md#what-is-above-the-patch) without its head: what was proved on its tree (the repository's check when it ran, then imece's runs, else `nothing ran`), the files and lines against the paths its card owns, what other waiting change it overlaps, what Lonca runs after your yes. The ready ones (proved clean, inside their paths, overlapping nothing, fitting, whole) come first; the group's line counts them, `2 ready to approve` |
 | later | what you put off with `s`, in the order put off |
 | AT WORK | `AT WORK 12 · stuck 2 · idle 1`: agents stuck first (`■`, blocked or their session ended), then mid-turn or asking a teammate (`●`, the step they are on or what they do, then how long from a minute on), then idle (`○`). A worker whose change waits and who has gone on to other work is here too: two pieces of work. One waiting on a yes or an answer of yours is that item instead; a leader with nothing to do is not listed |
 
@@ -43,7 +43,7 @@ A row is the piece of work: `!` (or the agent's glyph), its project when several
 
 ## The preview
 
-From 120 columns the row at hand is read beside the list without a key: a question's or an ask's words; a script's lines, numbered; a change's title, proof, cost, gate, files and the top of its patch without git's own lines; an agent's status, to-do list and newest trace lines. Below 120 columns, beside an editor, the list takes the width and the rows say it all.
+From 120 columns the row at hand is read beside the list without a key: a question's or an ask's words; a script's lines, numbered; a change's verdict line, why, cost, gate, files and the top of its patch without git's own lines; an agent's status, to-do list and newest trace lines. Below 120 columns, beside an editor, the list takes the width and the rows say it all.
 
 ## Keys
 

@@ -403,7 +403,7 @@ impl Live {
         hunks: Vec<usize>,
     ) -> Result<(), String> {
         if w.proposal_of(id).is_some() {
-            return self.decide_proposal(w, id, Verdict::Approve);
+            return self.decide_proposal(w, id, Decision::Approve);
         }
         if let Some(why) = w.store_closed(w.agents[id].project) {
             return Err(why.into());

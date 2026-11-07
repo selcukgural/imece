@@ -156,9 +156,7 @@ impl App {
         match self.deferred.iter().position(|&d| d == i) {
             None => {
                 let hard = item.kind == InboxKind::Change
-                    && !w
-                        .change_of(item.agent)
-                        .is_some_and(|c| c.easy(item.card.and_then(|c| w.cards.get(c))));
+                    && !w.verdict(item.agent).is_some_and(|v| v.ready);
                 (group, hard, i)
             }
             Some(n) => (group, false, n),
@@ -1287,6 +1285,11 @@ mod rank_tests {
         app.world.inbox[0].card = Some(0);
         assert_eq!(app.waiting_rank(0), (2, true, 0), "outside its card");
         app.world.cards[0].paths = crate::paths::parse(&serde_json::json!(["src/"])).unwrap();
+        assert_eq!(app.waiting_rank(0), (2, false, 0));
+        // Overlapping another change waiting in the project: hard.
+        app.world.changes.push(change(2, true, "src/a.rs"));
+        assert_eq!(app.waiting_rank(0), (2, true, 0), "overlaps");
+        app.world.changes.pop();
         assert_eq!(app.waiting_rank(0), (2, false, 0));
         // Put off: after everything, in the order put off.
         app.deferred = vec![3, 2];

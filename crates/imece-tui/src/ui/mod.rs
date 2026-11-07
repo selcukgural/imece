@@ -7057,10 +7057,12 @@ mod tests {
         });
         app.zoom = Zoom::Diff(id);
         let s = render(&app, 120, 30);
-        let body = s.lines().nth(2).unwrap();
+        let verdict = s.lines().nth(2).unwrap();
+        assert!(verdict.contains("! look first · nothing ran"), "{s}");
+        let body = s.lines().nth(3).unwrap();
         assert!(
             body.contains("Kept the old shape; next is a new field."),
-            "{s}"
+            "the worker's words under the verdict: {s}"
         );
     }
 
@@ -7912,18 +7914,19 @@ mod tests {
             "{s}"
         );
         assert!(s.contains("-OLD-LINE") && s.contains("+NEW-LINE"), "{s}");
-        // What ran on it heads the diff, its files under that, then the
-        // patch.
+        // The verdict heads the diff, its files under that, then the
+        // patch. The demo's card owns the files of its leases, which this
+        // change is not of: the verdict says so (record 114).
         let row = |needle: &str| s.lines().position(|l| l.contains(needle)).unwrap();
-        let ran = row("no imece run on exactly this change");
-        // The demo's card owns the files of its leases, which this change
-        // is not of: the line under the runs says so (record 114).
         let card = app.world.agents[1].card.unwrap();
         assert!(!app.world.cards[card].paths.is_empty());
-        let outside = format!("2 outside #{}: src/p.rs, src/q.rs", card + 1);
-        assert_eq!(ran + 1, row(&outside), "{s}");
-        assert_eq!(ran + 2, row("│ src/p.rs +"), "{s}");
-        assert_eq!(ran + 4, row("│src/p.rs "), "{s}");
+        let verdict = format!(
+            "! look first · nothing ran · 2 files · 2 outside #{}: src/p.rs, src/q.rs",
+            card + 1
+        );
+        let ran = row(&verdict);
+        assert_eq!(ran + 1, row("│ src/p.rs +"), "{s}");
+        assert_eq!(ran + 3, row("│src/p.rs "), "{s}");
         assert!(
             s.contains("+Q-LINE \n") || s.contains("+Q-LINE "),
             "control characters go: {s}"

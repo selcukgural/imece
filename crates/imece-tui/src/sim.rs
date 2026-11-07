@@ -4017,6 +4017,33 @@ mod tests {
     }
 
     #[test]
+    fn the_demo_shows_a_change_that_overlaps_another_waiting_and_one_that_does_not() {
+        let (mut w, mut s) = world(1, 3, 0, 1, Lang::En);
+        let (mut alone, mut shared) = (None, None);
+        for tick in 0..1500 {
+            s.step(&mut w);
+            for c in &w.changes {
+                let v = w.verdict(c.agent).unwrap();
+                if v.others > 0 && v.overlaps.is_empty() {
+                    alone.get_or_insert(tick);
+                }
+                if !v.overlaps.is_empty() {
+                    shared.get_or_insert((tick, v.overlaps[0].files.clone()));
+                }
+            }
+            // Changes are decided as they come, so the next ones can show.
+            if alone.is_some() && shared.is_some() {
+                break;
+            }
+            if tick % 40 == 39 {
+                answer_all(&mut w, &mut s);
+            }
+        }
+        assert!(alone.is_some(), "no two changes waiting apart");
+        assert!(shared.is_some(), "no two changes waiting on one file");
+    }
+
+    #[test]
     fn a_symbol_is_leased_by_one_card_at_a_time() {
         let (mut w, mut s) = world(2, 40, 4, 3, Lang::En);
         for _ in 0..2000 {
