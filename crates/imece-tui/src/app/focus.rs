@@ -26,8 +26,7 @@ impl App {
     pub(super) fn keep_reading(&mut self) {
         match self.zoom {
             Zoom::Focus(id) | Zoom::Trace(id) => self.reading_for(id),
-            _ if self.reading.agent.is_some() => self.reading = Reading::default(),
-            _ => {}
+            _ => self.reading = Reading::default(),
         }
     }
 
@@ -178,6 +177,15 @@ impl App {
 mod tests {
     use super::super::tests::*;
     use super::*;
+
+    #[test]
+    fn a_conversation_over_a_focus_keeps_its_keys_from_the_focus() {
+        let (mut app, worker) = with_thread();
+        app.zoom = Zoom::Focus(worker);
+        assert_eq!(app.focus_zoom(), None);
+        app.thread = None;
+        assert_eq!(app.focus_zoom(), Some(worker));
+    }
 
     #[test]
     fn a_r_and_capital_a_on_a_focus_decide_what_its_agent_waits_for() {

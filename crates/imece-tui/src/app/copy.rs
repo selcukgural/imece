@@ -187,6 +187,16 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_copy_says_how_it_went_or_why_it_did_not() {
+        let mut app = quiet();
+        let t = app.lang.text();
+        app.copied(Ok("tmux"));
+        assert_eq!(flashed(&app), Some(fill(t.copied, &["tmux"])));
+        app.copied(Err("no clipboard".into()));
+        assert_eq!(flashed(&app), Some(fill(t.copy_failed, &["no clipboard"])));
+    }
+
+    #[test]
     fn a_copy_choice_spans_its_anchor_and_cursor_either_way() {
         let down = Copying { anchor: 3, at: 5 };
         let up = Copying { anchor: 5, at: 3 };

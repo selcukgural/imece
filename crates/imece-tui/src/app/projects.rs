@@ -712,6 +712,18 @@ mod tests {
     use super::*;
 
     #[test]
+    fn the_journal_line_says_the_project_only_while_the_journal_is_at_hand() {
+        let (mut app, [a, _, c]) = two_quiet_projects();
+        app.world.said(c, "from the other project");
+        app.journal_sel = Some(app.world.journal.len() - 1);
+        app.selected = Sel::Agent(a);
+        app.pane = Pane::Journal;
+        assert_eq!(app.project_at_hand(), app.world.agents[c].project);
+        app.pane = Pane::Salon;
+        assert_eq!(app.project_at_hand(), app.world.agents[a].project);
+    }
+
+    #[test]
     fn the_folder_an_agent_works_in_is_its_checkout_or_its_worktree_with_home_as_tilde() {
         use crate::live::testing::{idle_live_in, team};
         let mut w = team(1);
