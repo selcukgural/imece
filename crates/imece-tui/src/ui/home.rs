@@ -431,7 +431,7 @@ fn row_lines(app: &App, row: HomeRow, width: usize, here: bool) -> Vec<Line<'sta
     let keys_width: usize = keys.iter().map(Span::width).sum();
     // The ask gets at least `ASK_MIN` on the first line: when the keys
     // would leave less, they go, the status line still has them.
-    let keys = if keys_width > 0 && width.saturating_sub(used + keys_width + 2) >= ASK_MIN {
+    let keys = if width.saturating_sub(used + keys_width + 2) >= ASK_MIN {
         keys
     } else {
         Vec::new()
@@ -958,6 +958,36 @@ mod tests {
         assert_eq!(commands_of(script), "set -e; cargo build; cargo test");
         assert_eq!(commands_of("# only\n"), "");
         assert!(!commands_of("echo \u{7}x").contains('\u{7}'), "cleaned");
+    }
+
+    #[test]
+    fn a_row_not_at_hand_gets_the_whole_first_line_but_its_last_cell() {
+        let mut app = home(Lang::En);
+        let a = worker(&app);
+        app.world
+            .inbox
+            .push(item(InboxKind::Question, a, "first, at hand"));
+        app.world.inbox.push(item(InboxKind::Question, a, "QQQ"));
+        let got = lines(&app, 80);
+        let row = got.iter().position(|l| l.contains("QQQ")).unwrap();
+        let column = got[row].find("QQQ").unwrap();
+        let c = got[row][..column].chars().count();
+        let room = 80 - c - 1;
+        let i = app.world.inbox.len() - 1;
+        // Words that fill the room to its last cell stay on one line.
+        let fits = format!("{} b", "a".repeat(room - 2));
+        app.world.inbox[i].detail = fits.clone();
+        let got = lines(&app, 80);
+        assert!(got[row].trim_end().ends_with(&fits), "{}", got[row]);
+        assert_eq!(got[row].trim_end().chars().count(), 79);
+        assert_ne!(got[row + 1].trim(), "b", "{}", got[row + 1]);
+        // One cell more and the last word goes under.
+        app.world.inbox[i].detail = format!("{} b", "a".repeat(room - 1));
+        let got = lines(&app, 80);
+        assert!(!got[row].contains(" b"), "{}", got[row]);
+        assert_eq!(got[row + 1].trim(), "b", "{}", got[row + 1]);
+        let next: Vec<char> = got[row + 1].chars().collect();
+        assert_eq!(next[c], 'b', "under its own column: {}", got[row + 1]);
     }
 
     #[test]
