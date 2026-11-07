@@ -139,7 +139,7 @@ imece fails closed: when a file, a session or a change is not what it expects, i
 
 ### Agents stop taking turns; the journal says `at $4.20/h the budget lasts about 25 min more; :budget USD raises it`
 
-**Why.** The pot is one budget for the whole team, kept between runs; once spent, nobody takes a turn. The header's rate is the last ten minutes' cost. Under half an hour left, the budget turns the attention colour and the journal says so once.
+**Why.** The pot is one budget for the whole team, kept between runs; once spent, nobody takes a turn. The `:budget` note's rate is the last ten minutes' cost. Under half an hour left, the header's pot turns the attention colour, says how long is left, and the journal says so once.
 
 **What to do.** `:budget 80` raises it while agents run; a turn under way finishes on its old cap, the next starts on the new remainder. A session that hit its own cap is started again with the same prompts, once.
 

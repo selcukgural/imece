@@ -56,7 +56,7 @@ From 100 columns on it stands beside the list. On a narrower screen, beside an e
 | `@` | write to the agent at hand |
 | `W` | open the next item |
 
-Every other key works as everywhere; the footer starts with what the row at hand takes.
+Every other key works as everywhere; the status line's keys are the row at hand's.
 
 A decision never lands on what you did not read: when the row at hand is gone by the time you press `a` or `r`, the key does nothing, a line says so, and the row now in its place is at hand.
 

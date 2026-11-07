@@ -1425,15 +1425,6 @@ pub enum Fresh {
     Refused(String),
 }
 
-/// What happened lately ([`World::pulse`]): cards done, changes that came
-/// for review, messages on the bus.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct Pulse {
-    pub done: usize,
-    pub changes: usize,
-    pub messages: usize,
-}
-
 /// An event of the whole guild, for the journal.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Event {
@@ -3253,28 +3244,6 @@ impl World {
         self.spent().saturating_sub(then) * 3600 / (RATE_WINDOW * SECONDS_PER_TICK)
     }
 
-    /// What happened in the last [`RATE_WINDOW`]: the cards done, the
-    /// changes that came for review and the messages on the bus, of the
-    /// projects not put away. It reads the journal from its newest line
-    /// back to the window's start only, so a long journal costs nothing.
-    pub fn pulse(&self) -> Pulse {
-        let recent = |tick: u64| tick + RATE_WINDOW > self.tick;
-        let here = |a: AgentId| self.projects[self.agents[a].project].archived.is_none();
-        let mut p = Pulse::default();
-        for e in self.journal.iter().rev().take_while(|e| recent(e.tick)) {
-            match e.event {
-                Event::ChangeReady { agent, .. } if here(agent) => p.changes += 1,
-                Event::Sent { from, .. } if here(from) => p.messages += 1,
-                _ => {}
-            }
-        }
-        p.done = self
-            .shown_cards()
-            .filter(|c| c.column == Column::Done && recent(c.finished))
-            .count();
-        p
-    }
-
     /// How many minutes the pot lasts at [`World::rate_per_hour`]; none
     /// when nothing is being spent or the pot is already spent.
     pub fn pot_lasts(&self) -> Option<u64> {
@@ -3432,12 +3401,6 @@ impl World {
             }
         }
         out
-    }
-
-    pub fn cards_done(&self) -> usize {
-        self.shown_cards()
-            .filter(|c| c.column == Column::Done)
-            .count()
     }
 
     /// The cards in sight: an archived project's wait in its archive.
@@ -5295,7 +5258,10 @@ mod tests {
             card(Column::Working),
             card(Column::Done),
         ];
-        assert_eq!(w.cards_done(), 2);
+        assert_eq!(
+            w.shown_cards().filter(|c| c.column == Column::Done).count(),
+            2
+        );
     }
 
     #[test]
@@ -6659,7 +6625,10 @@ mod tests {
             event: Event::Failed { agent: 1 },
         });
         w.tick = 50;
-        assert_eq!(w.cards_done(), 2);
+        assert_eq!(
+            w.shown_cards().filter(|c| c.column == Column::Done).count(),
+            2
+        );
 
         assert_eq!(w.archive_project(0, "first".into()), 2);
         let was = &w.projects[0];
@@ -6718,7 +6687,10 @@ mod tests {
         assert!(!w.name_taken("claude-9"));
         assert_eq!(w.open_inbox(), [1]);
         assert!(w.inbox[0].open, "it waits, open, in the archive");
-        assert_eq!(w.cards_done(), 1);
+        assert_eq!(
+            w.shown_cards().filter(|c| c.column == Column::Done).count(),
+            1
+        );
         assert_eq!(w.shown_cards().map(|c| c.id).collect::<Vec<_>>(), [1]);
         assert!(w.in_archive(1) && w.put_away(1));
         assert!(!w.in_archive(3) && !w.put_away(3) && !w.in_archive(4));

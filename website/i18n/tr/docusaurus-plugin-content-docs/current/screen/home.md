@@ -56,7 +56,7 @@ Eldeki satır, tamamıyla: bir sorunun ya da isteğin sözleri; bir değişikli�
 | `@` | eldeki ajana yazar |
 | `W` | sıradaki ögeyi açar |
 
-Diğer tuşlar her yerdeki gibi çalışır; alt satır eldeki satırın aldığı tuşlarla başlar.
+Diğer tuşlar her yerdeki gibi çalışır; durum satırının tuşları eldeki satırınkilerdir.
 
 Karar asla okumadığınız şeye düşmez: `a` ya da `r`'ye bastığınızda eldeki satır gitmişse tuş hiçbir şey yapmaz, bir satır bunu söyler ve yerine gelen satır elinize geçer.
 

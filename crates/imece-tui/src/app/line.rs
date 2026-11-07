@@ -256,10 +256,24 @@ impl App {
         let t = self.lang.text();
         let on_off = |on: bool| if on { t.value_on } else { t.value_off }.to_string();
         let value = match name {
-            "budget" => Some(fill(
-                t.budget,
-                &[&dollars(self.world.spent()), &dollars(self.world.budget)],
-            )),
+            // The pot, its rate, how long it lasts at it, and the usage
+            // window nearest to full: what the header said before record
+            // 125 and says now only when pressing.
+            "budget" => {
+                let w = &self.world;
+                let mut said = fill(t.budget, &[&dollars(w.spent()), &dollars(w.budget)]);
+                said += " · ";
+                said += &fill(t.per_hour, &[&dollars(w.rate_per_hour())]);
+                if let Some(minutes) = w.pot_lasts() {
+                    said += ", ";
+                    said += &fill(t.pot_lasts, &[&ui::words::ago(self.lang, minutes * 60)]);
+                }
+                if let Some(l) = w.tightest() {
+                    said += " · ";
+                    said += &ui::words::limit(self.lang, &l, w.now());
+                }
+                Some(said)
+            }
             "edit" => Some(editor::of_env()),
             "theme" => Some(theme::pal().name.clone()),
             "lang" => Some(t.language.to_string()),
@@ -800,7 +814,28 @@ mod tests {
         app.world.agents.iter_mut().for_each(|a| a.cost = 0);
         app.world.agents[0].cost = 31_000;
         app.world.budget = 200_000;
-        assert_eq!(app.command_note("budget"), "(spent $3.10 of $20.00)");
+        // What the header no longer carries (record 125): the rate, how
+        // long the pot lasts at it, the usage window nearest to full.
+        assert_eq!(
+            app.command_note("budget"),
+            "(spent $3.10 of $20.00 · $18.60/h, ~54 min left)"
+        );
+        app.world.limits = vec![crate::model::Limit {
+            minutes: 300,
+            used: 52,
+            resets_at: None,
+        }];
+        assert_eq!(
+            app.command_note("budget"),
+            "(spent $3.10 of $20.00 · $18.60/h, ~54 min left · claude 5h: 48% left)"
+        );
+        app.world.limits.clear();
+        app.world.run_spent = 31_000;
+        assert_eq!(
+            app.command_note("budget"),
+            "(spent $3.10 of $20.00 · $0.00/h)",
+            "nothing spent this window: no rate, no end in sight"
+        );
         theme::choose("light").unwrap();
         assert_eq!(app.command_note("theme"), "(light)");
         assert_eq!(app.command_note("lang"), "(English)");

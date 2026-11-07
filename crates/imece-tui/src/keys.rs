@@ -374,6 +374,11 @@ impl Keys {
         Keys(keys.to_vec())
     }
 
+    /// The keys, in order.
+    pub fn keys(&self) -> &[Key] {
+        &self.0
+    }
+
     /// The keys as the help writes them: `j`, `gt`, `^x j`. Plain
     /// characters go together unless that reads as another key (`f1`,
     /// `up`); the rest apart.

@@ -8,7 +8,7 @@ description: imece'nin varsayılan ekranı - başlık satırı, projeye göre gr
 Salon takımın ekranıdır, `1` ya da `:salon`; imece [ana ekranda](home.md) açılır. Bütün takımı bir bakışta gösterir: üstte bütçe ve filoyu sayan başlık satırı, solda lonca ağacı (her proje, lideri, işçileri ve yardımcıları), sağda iki yan panel: SENİ BEKLEYEN ve [HİKÂYE](journal.md#hikâye) (ne olduğu, karta göre; `J` günlüğü satır satır gösterir). Pano ve kod haritası bir tuş uzakta (`2`, `3`); geri kalan her şey salonun üstünde açılır ve `esc` salonu geri getirir.
 
 ```text
- imece   ! 2 seni bekliyor  │ ● 2 çalışıyor  ✓ 1 bitti │ 10 dk: 1 kart bitti · 1 Δ · 6 mesaj │ 3/9 kart │ $3.10 / $20.00 harcandı ($1.80/sa, ~9 sa kaldı) │ claude 5 sa: %48 kaldı, 1 sa 59 dk sonra yenilenir  14:02
+ imece   ! 2 seni bekliyor  │ ● 2 çalışıyor  ✓ 1 bitti │ $3.10 / $20.00 harcandı  14:02
 ┌ SALON ──────────────────────────────────────────┐┌ SENİ BEKLEYEN (2) ─────────────────────┐
 │▾ ▴ shop-api  ▓▓▓░░░░░ 3/8  ! 2 bekliyor  2 çalışıyor││Δ 13:58 claude-1 bitirdi: parser (3 dosya, +41 −6) · ✓ bu ağaçta temiz geçti: cargo test
 │  ◆ ▎lead      koordine ediyor                   ││⚑ 14:01 claude-5 onayını bekliyor: Bash: npm install left-pad
@@ -27,20 +27,19 @@ Salon takımın ekranıdır, `1` ya da `:salon`; imece [ana ekranda](home.md) a�
 
 ## Başlık satırı
 
-Tek satır, parçalar `│` ile ayrılmış, en çok istenen önce. Ekran satırdan darsa önce en az istenen parça düşer; böylece ekranın kenarı sizi bekleyeni asla kesmez: önce araştırmacılar ve kullanım pencereleri (dolmak üzere olan kalır), sonra bütçenin hızı, saat, kartlar, son on dakika, bütçe ve filo. Sizi bekleyenler, duraklatma ve azalan bir bütçe her zaman kalır.
+Tek satır, dört şey, parçalar `│` ile ayrılmış, en çok istenen önce: sizi bekleyenler, filo, kese, saat; bir kullanım penceresi yalnız dolmak üzereyken aralarına girer. Ekran satırdan darsa önce en az istenen parça düşer; böylece ekranın kenarı sizi bekleyeni asla kesmez: saat, sonra filo. Sizi bekleyenler, kese, duraklatma ve dolmak üzere olan bir pencere her zaman kalır.
 
 | Parça | Ne söyler |
 | --- | --- |
 | `! 2 seni bekliyor` | SENİ BEKLEYEN'deki açık ögeler, dikkat renginde. Terminalin başlığı aynı sayıyı taşır, `! imece · 2 seni bekliyor`, böylece arkadaki bir sekme de gösterir; başında açık projelerin durum merdiveninin tepesi vardır: `✕` takılan var, `!` sizi bekleyen var, `●` çalışan ya da başlayan var, her şey sakinse imece'nin işareti `⁙` (bitmiş ama görülmemiş bir tur sakindir). Windows Terminal, kitty 0.39+, Ghostty 1.2+ ve iTerm2 3.6.6+ bunu sekmenin ilerleme çubuğu olarak da gösterir (OSC 9;4): takılınca dolu kırmızı, beklerken dolu sarı, çalışırken hareketli, sakinken yok. imece başlarken terminale adını sorar (XTVERSION) ve `TERM_PROGRAM`'a değil onun cevabına bakar, çünkü başka bir terminalden açılan terminal onu miras alır; bazı terminaller bu diziyi bildirim sandığı için başkalarına gönderilmez. tmux içinde gönderilir: tmux 3.8 onu Ghostty ve iTerm2'ye iletir, daha eski bir tmux düşürür. `IMECE_PROGRESS=on` ya da `off` ile kendiniz karar verirsiniz. imece bitince ya da terminali bir `!` komutuna bırakınca kabuğunuzun başlığı geri gelir, çubuk kalkar. |
 | `● 2 çalışıyor  ✓ 1 bitti  ✕ 1 takıldı` | filo: tur ortasındaki (token harcayan) agent'lar, bir turu bitirmiş ama o zamandan beri açmadığınız agent'lar, bloke olan ya da oturumu duran agent'lar. Sıfır olan sayı yazılmaz; hiçbiri yoksa `hepsi boşta` der. Sizi bekleyenler filoda değildir: kendi sayısı vardır. |
-| `10 dk: 3 kart bitti · 2 Δ · 14 mesaj` | son on dakikada olanlar: biten kartlar, incelemenize gelen değişiklikler, agent'ların bus üzerinden birbirine gönderdiği mesajlar; sıfır olan sayı yazılmaz, hiçbir şey olmadıysa hiç görünmez. Defterin yalnız en yeni satırlarından on dakika öncesine kadar okunur. |
-| `3/9 kart` | biten kartlar / bütün kartlar; kart yokken gösterilmez (canlı bir başlangıçta lider kart asana dek yoktur). |
-| `$3.10 / $20.00 harcandı ($1.80/sa, ~9 sa kaldı)` | kese (bütçe): bütün agent'ların birlikte harcadığı, son on dakikanın saat başına maliyeti ve bu hızla bütçenin ne kadar dayanacağı. Yarım saatten az kaldığında parçanın tamamı dikkat rengine döner ve günlük bunu bir kez söyler. |
-| `claude 5 sa: %48 kaldı, 1 sa 59 dk sonra yenilenir` | planınızın dolmaya en yakın kullanım penceresi, oturumların bildirdiği gibi; %90'dan itibaren dikkat renginde. Bir aboneliğin sınırı takımı bütçeden önce durdurabilir. Çalıştırmalar arasında saklanmaz: oturum ilk turunda yeniden söyler. |
-| `araştırmacı 1/4` | çalışan araştırmacılar / üst sınır; yalnız bir üst sınır varken (`--demo --researchers N`; araştırmacılar canlıda yapılmadı). |
-| `14:02` | saat. |
+| `$3.10 / $20.00 harcandı` | kese (bütçe): bütün agent'ların birlikte harcadığı. O anki hızla yarım saatten az kaldığında parça dikkat rengine döner ve ne kadar kaldığını söyler, `$19.60 / $20.00 harcandı, ~25 dk kaldı`; günlük bunu bir kez söyler. Hız ve kalan süre başka her zaman `:budget` menüsünün notundadır. |
+| `claude 5 sa: %10 kaldı, 1 sa 59 dk sonra yenilenir` | planınızın dolmaya en yakın kullanım penceresi, yalnız %90 kullanımdan itibaren, dikkat renginde: bir aboneliğin sınırı takımı keseden önce durdurabilir. Onun altında `:budget` notundadır. Çalıştırmalar arasında saklanmaz: oturum ilk turunda yeniden söyler. |
+| `14:02` | saat; demonun `‖ DURAKLATILDI`sı ya da `×4`ü ona yapışık. |
 
-Bütçenin ve pencerelerin nasıl sayıldığı [bütçe ve sınırlar](../concepts/budget-and-limits.md) sayfasında.
+Son on dakikada olanlar, kart sayısı ve araştırmacı üst sınırı kayıt 125 ile başlıktan çıktı: kartlar panoda, olanlar günlükte.
+
+Kesenin ve pencerelerin nasıl sayıldığı [bütçe ve sınırlar](../concepts/budget-and-limits.md) sayfasında.
 
 ## Lonca ağacı
 

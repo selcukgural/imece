@@ -270,7 +270,7 @@ impl App {
 
     /// The agent the person is looking at: focused, selected in the salon,
     /// or the one behind the selected inbox item.
-    pub(super) fn agent_at_hand(&self) -> Option<AgentId> {
+    pub(crate) fn agent_at_hand(&self) -> Option<AgentId> {
         match self.zoom {
             Zoom::Focus(id) | Zoom::Trace(id) | Zoom::Diff(id) => return Some(id),
             Zoom::None => {}
