@@ -86,8 +86,8 @@ pub(crate) fn column_index(column: Column) -> usize {
     match column {
         Column::Waiting => 0,
         Column::Working => 1,
-        Column::Verifying => TO_REVIEW + 1,
-        Column::Done => TO_REVIEW + 2,
+        Column::Verifying => 3,
+        Column::Done => 4,
     }
 }
 

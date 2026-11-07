@@ -6663,6 +6663,7 @@ mod tests {
             of(2, Column::Done, 3, "older review"),
             of(3, Column::Done, 4, "newer review"),
             of(4, Column::Verifying, 0, "checked"),
+            of(5, Column::Working, 0, "at work"),
         ];
         app.world.inbox.clear();
         for c in [2, 3] {
@@ -6685,6 +6686,17 @@ mod tests {
             line.chars().skip(at).take(16).collect::<String>()
         };
         assert!(glyph("checked").contains(&format!("● {name}")), "{s}");
+        // Only a card at work has its progress.
+        let bar = |word: &str| {
+            let row = s.lines().skip_while(|l| !l.contains(word)).nth(1).unwrap();
+            let at = s.lines().find(|l| l.contains(word)).unwrap();
+            let from = at[..at.find(word).unwrap()].chars().count();
+            let cell: String = row.chars().skip(from).take(28).collect();
+            cell.contains('░') || cell.contains('▓')
+        };
+        assert!(bar("at work"), "{s}");
+        assert!(!bar("checked"), "{s}");
+        assert!(!bar("newer done"), "{s}");
         assert!(!glyph("newer review").contains('●'), "{s}");
         assert!(!glyph("newer done").contains('●'), "{s}");
     }
