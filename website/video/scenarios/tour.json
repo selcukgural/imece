@@ -41,7 +41,7 @@
     {
       "id": "what",
       "chapter": "What imece is",
-      "narration": "imece runs a team of coding agents from many vendors on one codebase, on one screen. A leader reads your checkout and hires workers as the work needs them; each worker changes a git worktree of its own, never your checkout. Claude Code, Codex and Gemini CLI, side by side.",
+      "narration": "imece runs a team of Claude Code agents on one codebase, on one screen. A leader reads your checkout and hires workers as the work needs them; each worker changes a git worktree of its own, never your checkout.",
       "steps": [
         { "action": "goto", "path": "/" },
         { "action": "wait", "seconds": 2 },
@@ -52,23 +52,24 @@
       ]
     },
     {
-      "id": "salon",
-      "chapter": "The salon",
-      "narration": "This is the salon. Each project is a group with its own leader. A worker's row shows its card, the step of its own to-do list it is on, and dimmer, the tool call it is making; the mark in front says where it stands: working, starting, waiting for you, stuck. When some need you, they sit under a header of their own. The small bars show how busy it was in the last half minute. On the right, the story: what happened, card by card, and whom you hold up. Capital J shows the journal, line by line.",
+      "id": "home",
+      "chapter": "Home",
+      "narration": "This is Home: one list. What is to decide comes first, grouped by what deciding costs you: permissions, questions, changes. Then who is at work, project by project. A worker's row is its card, the step of its own to-do list it is on, and dimmer, the tool call it is making; the mark in front says where it stands: at work, waiting for you, done, stuck. Capital J opens the journal in a window: what happened, card by card, and whom you hold up.",
       "steps": [
         { "action": "type", "target": "#corner", "text": "j", "delayMs": 0 },
         { "action": "wait", "seconds": 7 },
         { "action": "type", "target": "#corner", "text": "j", "delayMs": 0 },
         { "action": "wait", "seconds": 7 },
-        { "action": "type", "target": "#corner", "text": "j", "delayMs": 0 },
-        { "action": "wait", "seconds": 7 },
-        { "action": "type", "target": "#corner", "text": "j", "delayMs": 0 }
+        { "action": "type", "target": "#corner", "text": "J", "delayMs": 0 },
+        { "action": "wait", "seconds": 8 },
+        { "action": "press", "key": "Escape" },
+        { "action": "wait", "seconds": 1 }
       ]
     },
     {
       "id": "deeper",
       "chapter": "Three depths",
-      "narration": "Enter looks deeper: an agent's screen, with how full its context is, its to-do list step by step, and its card's story. Enter again shows the raw stream from the vendor's own CLI. Escape goes back. Three depths, everywhere: the guild, one card's story, the raw stream.",
+      "narration": "Enter looks deeper: an agent's detail, with how full its context is, its to-do list step by step, and its card's story; tab turns to its diff and its conversation. Enter again shows the raw stream from Claude Code itself. Escape goes back. Three depths, everywhere: the list, one piece of work, the raw stream.",
       "steps": [
         { "action": "press", "key": "Enter" },
         { "action": "wait", "seconds": 5 },
@@ -95,11 +96,11 @@
       ]
     },
     {
-      "id": "waiting",
-      "chapter": "Waiting for you",
-      "narration": "Everything that needs you lands in one place: WAITING FOR YOU. A change a worker has finished, a command or an edit a vendor would have asked you about, a question for you. The terminal's title counts them, so a tab in the background shows it too.",
+      "id": "decide",
+      "chapter": "To decide",
+      "narration": "Everything that needs you is at the top of Home: TO DECIDE. A change a worker has finished, a command Claude Code would have asked you about, a question for you. Each row says the whole ask and ends with the keys that decide it; g d jumps to the first. The terminal's title counts them, so a tab in the background shows it too.",
       "steps": [
-        { "action": "type", "target": "#corner", "text": "w", "delayMs": 0 },
+        { "action": "type", "target": "#corner", "text": "gd", "delayMs": 200 },
         { "action": "wait", "seconds": 5 },
         { "action": "type", "target": "#corner", "text": "j", "delayMs": 0 },
         { "action": "wait", "seconds": 5 },
@@ -110,7 +111,7 @@
     {
       "id": "change",
       "chapter": "A change",
-      "narration": "Capital W opens the next item from anywhere. This one is a change: what the worker's worktree holds since its last done. The files above the patch, the lines by kind, then the diff itself. j and k scroll it; the brackets go from file to file.",
+      "narration": "Capital W opens the next item from anywhere. This one is a change. Its first line is the verdict: what ran on its tree, whether it stays inside its card's paths, whether it can be approved as it stands. Then what the worker's worktree holds since its last done: the files above the patch, then the diff itself. j and k scroll it; the brackets go from file to file.",
       "steps": [
         { "action": "type", "target": "#corner", "text": "W", "delayMs": 0 },
         { "action": "wait", "seconds": 6 },
@@ -123,7 +124,7 @@
     {
       "id": "apply",
       "chapter": "Apply or send it back",
-      "narration": "a applies the change to your checkout, staged, for you to look over and commit. r sends it back and opens the composer, so you say why. Git does its work on a thread of its own; the journal says when the change is in. Your checkout is the one place an agent never writes.",
+      "narration": "a applies the change to your checkout, staged, for you to look over and commit, and Home moves on to the next row. r sends it back and opens the composer, so you say why. Git does its work on a thread of its own; the journal says when the change is in. Your checkout is the one place an agent never writes.",
       "steps": [
         { "action": "type", "target": "#corner", "text": "a", "delayMs": 0 },
         { "action": "wait", "seconds": 7 },
@@ -134,30 +135,35 @@
     {
       "id": "pot",
       "chapter": "One pot",
-      "narration": "Let the simulation run again. The header starts with what waits for you and the fleet: working, done, stuck. Then what happened in the last ten minutes: cards done, changes, messages. Then one pot for the whole team, kept between runs: what was spent, what the last ten minutes cost per hour, and how long it lasts at that rate. On a narrow screen, the least wanted parts give way first.",
+      "narration": "Let the simulation run again. The header has four things: the projects, what is to decide, one pot for the whole team, kept between runs, and the time. The pot's rate and how long it lasts are a colon budget away. On a narrow screen, the least wanted parts give way first.",
       "steps": [
         { "action": "type", "target": "#corner", "text": " ", "delayMs": 0 },
         { "action": "wait", "seconds": 1 },
-        { "action": "type", "target": "#corner", "text": "1", "delayMs": 0 },
+        { "action": "type", "target": "#corner", "text": "gw", "delayMs": 200 },
         { "action": "wait", "seconds": 8 },
-        { "action": "type", "target": "#corner", "text": "k", "delayMs": 0 },
+        { "action": "type", "target": "#corner", "text": "j", "delayMs": 0 },
         { "action": "wait", "seconds": 6 }
       ]
     },
     {
-      "id": "board",
+      "id": "windows",
       "chapter": "The board, the code map, the timeline",
-      "narration": "Two is the board: the cards the leaders posted, who claimed which, what is done. An idle worker may claim a card on its own. Three is the code map: one row per file, and who holds which symbols. Four is the timeline: one lane per agent over the last hour, each column what it did then: writing, reading, thinking, asking a teammate, waiting for you, stuck. The brackets make a column five seconds, half a minute or a minute. One brings the salon back.",
+      "narration": "The board, the code map and the timeline are windows over Home. Colon board: the cards the leaders posted, who claimed which, what is done; an idle worker may claim a card on its own. Colon code: one row per file, and who holds which symbols. Colon timeline: one lane per agent over the last hour, each column what it did then: writing, reading, thinking, asking a teammate, waiting for you, stuck. The brackets make a column five seconds, half a minute or a minute. Escape closes a window.",
       "steps": [
-        { "action": "type", "target": "#corner", "text": "2", "delayMs": 0 },
+        { "action": "type", "target": "#corner", "text": ":board", "delayMs": 90 },
+        { "action": "press", "key": "Enter" },
         { "action": "wait", "seconds": 7 },
-        { "action": "type", "target": "#corner", "text": "3", "delayMs": 0 },
+        { "action": "press", "key": "Escape" },
+        { "action": "type", "target": "#corner", "text": ":code", "delayMs": 90 },
+        { "action": "press", "key": "Enter" },
         { "action": "wait", "seconds": 6 },
-        { "action": "type", "target": "#corner", "text": "4", "delayMs": 0 },
-        { "action": "wait", "seconds": 9 },
+        { "action": "press", "key": "Escape" },
+        { "action": "type", "target": "#corner", "text": ":timeline", "delayMs": 90 },
+        { "action": "press", "key": "Enter" },
+        { "action": "wait", "seconds": 8 },
         { "action": "type", "target": "#corner", "text": "]", "delayMs": 0 },
-        { "action": "wait", "seconds": 6 },
-        { "action": "type", "target": "#corner", "text": "1", "delayMs": 0 },
+        { "action": "wait", "seconds": 5 },
+        { "action": "press", "key": "Escape" },
         { "action": "wait", "seconds": 1 }
       ]
     },

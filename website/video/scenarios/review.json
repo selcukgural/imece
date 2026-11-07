@@ -51,7 +51,7 @@
     {
       "id": "diff",
       "chapter": "The diff view",
-      "narration": "Capital W opens the next change. A change of several files lists them above its patch, with the lines each adds and removes, and when they are of more than one kind, the lines by kind first: source, tests, generated. j and k scroll; the brackets jump from file to file; w wraps the long lines under themselves.",
+      "narration": "Capital W opens the next change. Its first line is the verdict: what ran on its tree, whether it stays inside its card's paths, whether it can be approved as it stands. A change of several files lists them above its patch, with the lines each adds and removes, and when they are of more than one kind, the lines by kind first: source, tests, generated. j and k scroll; the brackets jump from file to file; w wraps the long lines under themselves.",
       "steps": [
         { "action": "type", "target": "#corner", "text": "W", "delayMs": 0 },
         { "action": "wait", "seconds": 7 },
@@ -143,12 +143,11 @@
     {
       "id": "asks",
       "chapter": "Commands and questions",
-      "narration": "Let the simulation run again. Changes are not the only thing that waits for you. A flag is a command or an edit a vendor would have asked you about: routine commands, the build and the tests, run on their own; the rest wait here, shown whole, for a to allow or r to refuse. A question mark is a question an agent asked you. Capital S puts the item at hand off and opens the next.",
+      "narration": "Let the simulation run again. Changes are not the only thing to decide. A flag is a command Claude Code would have asked you about: routine commands, the build and the tests, run on their own; the rest wait at the top of Home, shown whole, for a to allow or r to refuse. A question mark is a question an agent asked you, its answers as digits. Capital S puts the item at hand off and opens the next.",
       "steps": [
         { "action": "type", "target": "#corner", "text": " ", "delayMs": 0 },
         { "action": "wait", "seconds": 1 },
-        { "action": "type", "target": "#corner", "text": "1", "delayMs": 0 },
-        { "action": "type", "target": "#corner", "text": "w", "delayMs": 0 },
+        { "action": "type", "target": "#corner", "text": "gd", "delayMs": 200 },
         { "action": "wait", "seconds": 7 },
         { "action": "type", "target": "#corner", "text": "j", "delayMs": 0 },
         { "action": "wait", "seconds": 5 },

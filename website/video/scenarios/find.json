@@ -18,7 +18,6 @@
   "pronounce": {
     "imece's": "imeje's",
     "imece": "imeje",
-    "codex-3": "codex three",
     "worktree": "work-tree",
     "worktrees": "work-trees"
   },
@@ -41,7 +40,7 @@
         { "action": "wait", "seconds": 4 },
         { "action": "type", "target": "#corner", "text": "&", "delayMs": 0 },
         { "action": "wait", "seconds": 5 },
-        { "action": "type", "target": "#corner", "text": "codex-3", "delayMs": 200 },
+        { "action": "type", "target": "#corner", "text": "claude-3", "delayMs": 200 },
         { "action": "wait", "seconds": 3 },
         { "action": "press", "key": "Enter" },
         { "action": "wait", "seconds": 3 }
@@ -49,8 +48,8 @@
     },
     {
       "id": "focus",
-      "chapter": "An agent's screen",
-      "narration": "Let us pause the simulation, so the rows hold still. Enter opens its screen: the card and what it has cost, how full its context window is, how busy it was over the last two minutes, and its own to-do list, step by step. Below, its card's story.",
+      "chapter": "An agent's detail",
+      "narration": "Let us pause the simulation, so the rows hold still. Enter opens its detail: the card and what it has cost, how full its context window is, how busy it was over the last two minutes, and its own to-do list, step by step. Below, its card's story.",
       "steps": [
         { "action": "type", "target": "#corner", "text": " ", "delayMs": 0 },
         { "action": "wait", "seconds": 2 },
@@ -63,7 +62,7 @@
     {
       "id": "peek",
       "chapter": "A look without leaving",
-      "narration": "Capital K peeks instead: the same screen in a window over the salon, so you keep your place. j and k step from agent to agent; escape closes it.",
+      "narration": "Capital K peeks instead: the same detail in a window over Home, so you keep your place. j and k step from agent to agent; escape closes it.",
       "steps": [
         { "action": "type", "target": "#corner", "text": "K", "delayMs": 0 },
         { "action": "wait", "seconds": 4 },
@@ -76,17 +75,15 @@
       ]
     },
     {
-      "id": "hints",
-      "chapter": "A letter on every row",
-      "narration": "Capital F puts a letter on every row you can select: the agents and the items waiting for you. Type the letter and you are there. Type it as a capital, and it opens too.",
+      "id": "straight",
+      "chapter": "Straight to what matters",
+      "narration": "g d jumps to the first row to decide, g w to the first at work. Capital W opens the next item to decide from anywhere, and a yes moves on to the next; escape comes back to Home.",
       "steps": [
-        { "action": "type", "target": "#corner", "text": "F", "delayMs": 0 },
+        { "action": "type", "target": "#corner", "text": "gd", "delayMs": 200 },
         { "action": "wait", "seconds": 4 },
-        { "action": "type", "target": "#corner", "text": "h", "delayMs": 0 },
+        { "action": "type", "target": "#corner", "text": "gw", "delayMs": 200 },
         { "action": "wait", "seconds": 3 },
-        { "action": "type", "target": "#corner", "text": "F", "delayMs": 0 },
-        { "action": "wait", "seconds": 3 },
-        { "action": "type", "target": "#corner", "text": "J", "delayMs": 0 },
+        { "action": "type", "target": "#corner", "text": "W", "delayMs": 0 },
         { "action": "wait", "seconds": 4 },
         { "action": "press", "key": "Escape" },
         { "action": "wait", "seconds": 1 }
@@ -95,7 +92,7 @@
     {
       "id": "settle",
       "chapter": "Out of the way",
-      "narration": "s settles the row at hand: it leaves the salon until it needs you again, and the salon's title counts what is settled. A row that needs you does not go. Colon unsettle, or the jump line, brings it back.",
+      "narration": "s settles the row at hand: it leaves AT WORK until it needs you again, and the heading counts what is settled. A row that needs you does not go. Colon unsettle, or the jump line, brings it back.",
       "steps": [
         { "action": "type", "target": "#corner", "text": "s", "delayMs": 0 },
         { "action": "wait", "seconds": 3 },
@@ -145,7 +142,7 @@
     {
       "id": "archives",
       "chapter": "The archives",
-      "narration": "Capital A lists the archives by checkout. Enter opens one as it was, read-only: its salon, its journal, what still waits. Escape comes back, and r restores it, asleep, while the fresh project gives way.",
+      "narration": "Capital A lists the archives by checkout. Enter opens one as it was, read-only: its Home, its journal, what still waited. Escape comes back, and r restores it, asleep, while the fresh project gives way.",
       "steps": [
         { "action": "type", "target": "#corner", "text": "A", "delayMs": 0 },
         { "action": "wait", "seconds": 3 },
