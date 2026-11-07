@@ -2211,16 +2211,16 @@ fn place_spans(app: &App) -> Vec<Span<'static>> {
     if let Some(project) = w.projects.get(p) {
         words.push(project.name.clone());
     }
-    let about = match app.home_at() {
-        Some(crate::app::HomeRow::Item(i)) if app.view == View::Home && app.zoom == Zoom::None => {
-            w.inbox.get(i).map(|item| item.agent)
+    // On Home's list the row at hand; anywhere else (a screen over Home
+    // too) the agent at hand.
+    let about = if app.view == View::Home && app.zoom == Zoom::None {
+        match app.home_at() {
+            Some(crate::app::HomeRow::Item(i)) => w.inbox.get(i).map(|item| item.agent),
+            Some(crate::app::HomeRow::Agent(id)) => Some(id),
+            None => None,
         }
-        Some(crate::app::HomeRow::Agent(id))
-            if app.view == View::Home && app.zoom == Zoom::None =>
-        {
-            Some(id)
-        }
-        _ => app.agent_at_hand(),
+    } else {
+        app.agent_at_hand()
     };
     if let Some(id) = about.filter(|&id| id < w.agents.len()) {
         match w
@@ -6762,12 +6762,101 @@ mod tests {
         let tight = foot(&app, 24);
         assert!(!tight.contains("salon"), "{tight}");
         assert!(tight.contains("?  help"), "{tight}");
-        // Nothing of it under hint letters or in a window with a title.
+        // The place stays at exactly the width that holds it and the help,
+        // and goes one cell short of it.
+        let place = format!(
+            "salon · {project} · #{card} {}…",
+            "a".repeat(PLACE_TITLE - 1)
+        );
+        let exact =
+            u16::try_from(1 + place.width() + 3 + spans_width(&hint_spans(&[("?", "help")])))
+                .unwrap();
+        let row = foot(&app, exact);
+        assert!(row.starts_with(&format!(" {place}    ?  help")), "{row}");
+        let row = foot(&app, exact - 1);
+        assert!(!row.contains("salon") && row.contains("?  help"), "{row}");
+        // Nothing of it under hint letters or in a window with a title,
+        // each on its own.
         app.hints = Some(crate::app::Hints {
             labels: Vec::new(),
             typed: String::new(),
         });
         assert!(!foot(&app, 200).contains("salon ·"), "{}", foot(&app, 200));
+        app.hints = None;
+        app.world.inbox.push(item(InboxKind::Script, agent));
+        app.script = Some((0, 0));
+        assert!(!foot(&app, 200).contains("salon ·"), "{}", foot(&app, 200));
+        app.script = None;
+        app.world.inbox[0].kind = InboxKind::Plan;
+        app.plan_window = Some((0, 0));
+        assert!(!foot(&app, 200).contains("salon ·"), "{}", foot(&app, 200));
+        app.plan_window = None;
+        app.world.inbox.clear();
+        assert!(foot(&app, 200).contains("salon ·"), "{}", foot(&app, 200));
+        app.world.change_ready(a_change(agent));
+        app.zoom = Zoom::Diff(agent);
+        assert!(
+            foot(&app, 200).starts_with(" change · "),
+            "{}",
+            foot(&app, 200)
+        );
+        let patch = crate::app::patch_key(&app.world.change_of(agent).unwrap().patch);
+        app.diff_copy = Some((agent, patch, crate::app::Copying { anchor: 0, at: 0 }));
+        assert!(!foot(&app, 200).contains("change ·"), "{}", foot(&app, 200));
+    }
+
+    #[test]
+    fn the_status_line_names_home_s_row_at_hand_and_elsewhere_the_agent_at_hand() {
+        let mut app = app_after(1, 2, 0, Lang::En);
+        let agent = app.world.agents[1].id;
+        let other = app.world.agents[2].id;
+        // A card's id is its place in the list.
+        let second_id = app.world.cards.len();
+        let mut second = app.world.cards[0].clone();
+        second.id = second_id;
+        second.title = "the other card".into();
+        app.world.cards.push(second);
+        app.world.agents[agent].card = Some(app.world.cards[0].id);
+        app.world.agents[other].card = Some(second_id);
+        let first = app.world.cards[0].id;
+        app.world.inbox.clear();
+        for a in &mut app.world.agents {
+            a.status = Status::Idle;
+            a.starting = false;
+        }
+        // The salon's selection is one agent, Home's row at hand another:
+        // on Home the row's card is named, on the salon the selection's.
+        app.selected = Sel::Agent(other);
+        app.world.inbox.push(item(InboxKind::Question, agent));
+        app.view = View::Home;
+        let row = foot(&app, 200);
+        assert!(
+            row.starts_with(&format!(" home · shop-api · #{first} ")),
+            "{row}"
+        );
+        app.view = View::Salon;
+        let row = foot(&app, 200);
+        assert!(
+            row.starts_with(" salon · shop-api · #77 the other card"),
+            "{row}"
+        );
+        // A screen over Home is about its own agent, not the row's.
+        app.view = View::Home;
+        app.zoom = Zoom::Focus(other);
+        let row = foot(&app, 200);
+        assert!(
+            row.starts_with(&format!(" focus · shop-api · #{second_id} ")),
+            "{row}"
+        );
+        app.zoom = Zoom::None;
+        // A row that is an agent, not an item, names its card too.
+        app.world.inbox.clear();
+        app.world.agents[agent].status = Status::Working;
+        let row = foot(&app, 200);
+        assert!(
+            row.starts_with(&format!(" home · shop-api · #{first} ")),
+            "{row}"
+        );
     }
 
     #[test]
