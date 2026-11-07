@@ -6837,7 +6837,7 @@ mod tests {
         app.view = View::Salon;
         let row = foot(&app, 200);
         assert!(
-            row.starts_with(" salon · shop-api · #77 the other card"),
+            row.starts_with(&format!(" salon · shop-api · #{second_id} the other card")),
             "{row}"
         );
         // A screen over Home is about its own agent, not the row's.
