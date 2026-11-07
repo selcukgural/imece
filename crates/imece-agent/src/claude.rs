@@ -1050,12 +1050,10 @@ fn result(v: &Value) -> Event {
         Some(r) if ok || (v["is_error"] == true && !r.is_empty()) => r.to_string(),
         _ => v["subtype"].as_str().unwrap_or("error").to_string(),
     };
+    // JSON carries no infinity or NaN; a negative figure counts as nothing
+    // (the cast saturates at zero).
     let usd = v["total_cost_usd"].as_f64().unwrap_or(0.0);
-    let cost = if usd.is_finite() && usd > 0.0 {
-        (usd * 1_000_000.0).round() as u64
-    } else {
-        0
-    };
+    let cost = (usd.max(0.0) * 1_000_000.0).round() as u64;
     Event::TurnDone {
         ok,
         text,
@@ -2585,6 +2583,10 @@ mod tests {
                 denied: 0
             }]
         );
+        // A figure below zero counts as nothing spent (the session keeps
+        // its floor, so the line's own reading is asked).
+        let odd = serde_json::json!({"type":"result","subtype":"success","is_error":false,"result":"ok","total_cost_usd":-0.5});
+        assert!(matches!(result(&odd), Event::TurnDone { cost: 0, .. }));
         assert_eq!(p.line(r#"{"type":"rate_limit_event"}"#).unwrap(), []);
     }
 

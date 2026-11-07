@@ -1534,6 +1534,8 @@ mod tests {
         let path = live.bus.as_ref().unwrap().servers[1].path().to_path_buf();
         assert!(path.ends_with("a1.sock"), "{}", path.display());
         let mut sock = UnixStream::connect(path).unwrap();
+        sock.set_read_timeout(Some(Duration::from_secs(10)))
+            .unwrap();
         writeln!(sock, r#"{{"jsonrpc":"2.0","id":1,"method":"tools/list"}}"#).unwrap();
         let mut line = String::new();
         BufReader::new(&sock).read_line(&mut line).unwrap();
