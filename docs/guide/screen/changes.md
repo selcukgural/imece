@@ -135,7 +135,7 @@ On the git thread the part becomes a change of its own before anything is applie
 
 ### Quoting a hunk
 
-`>` starts a message to the change's worker, `@claude-1 ` with the cursor after it, and under your line a `diff` fence with the file's `---` and `+++` lines and the hunk at the top: at most 40 lines, the rest counted as `… +N` (the worker has the whole hunk in its worktree). You edit all of it before `enter`; it is a plain message, journaled as said. With no hunk to quote (an empty change) the flash says so. In this view `>` quotes and no longer narrows the side panel; `.` still does.
+`>` starts a message to the change's worker, `@claude-1 ` with the cursor after it, and under your line a `diff` fence with the file's `---` and `+++` lines and the hunk at the top: at most 40 lines, the rest counted as `… +N` (the worker has the whole hunk in its worktree). You edit all of it before `enter`; it is a plain message, journaled as said. With no hunk to quote (an empty change) the flash says so.
 
 ### Copying lines
 

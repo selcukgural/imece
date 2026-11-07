@@ -135,7 +135,7 @@ Git iş parçacığında parça, bir şey uygulanmadan önce kendi başına bir 
 
 ### Bir parçayı alıntılamak
 
-`>` değişikliğin işçisine bir mesaj başlatır, `@claude-1 ` ve imleç ardında, satırınızın altında dosyanın `---` ve `+++` satırlarını ve en üstteki parçayı tutan bir `diff` çiti: en çok 40 satır, kalanı `… +N` diye sayılmış (işçide parçanın tamamı worktree'sinde var). `enter`'dan önce hepsini düzenlersiniz; düz bir mesajdır, söylendi diye günlüğe geçer. Alıntılanacak parça yoksa (boş bir değişiklik) flaş söyler. Bu görünümde `>` alıntılar, yan paneli artık daraltmaz; `.` yine daraltır.
+`>` değişikliğin işçisine bir mesaj başlatır, `@claude-1 ` ve imleç ardında, satırınızın altında dosyanın `---` ve `+++` satırlarını ve en üstteki parçayı tutan bir `diff` çiti: en çok 40 satır, kalanı `… +N` diye sayılmış (işçide parçanın tamamı worktree'sinde var). `enter`'dan önce hepsini düzenlersiniz; düz bir mesajdır, söylendi diye günlüğe geçer. Alıntılanacak parça yoksa (boş bir değişiklik) flaş söyler.
 
 ### Satır kopyalama
 

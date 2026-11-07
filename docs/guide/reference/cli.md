@@ -53,7 +53,7 @@ Some messages of exit code 1, quoted: `another imece is running on <path>/imece.
 | the theme (`--theme`, `T`, `:theme`; a flag or `IMECE_THEME` wins over the saved one) | the language (`--lang`, `IMECE_LANG`, else English; `L` changes it for this run) |
 | the pot (`--budget` sets it; without the flag it stays as it was left; $50 the first time) | `--agents`, `--helpers`, `--confine`, `--run`, `--run-timeout` |
 | | `--model` and `--tier` |
-| the side panel's width (`,` `.` `<` `>`), how you are told in another window (`:notify`), how much moves on the screen (`:motion`) | `--awake` (by choice: it changes the machine's power behaviour) |
+| how you are told in another window (`:notify`), how much moves on the screen (`:motion`) | `--awake` (by choice: it changes the machine's power behaviour) |
 | projects, agents, cards, the journal, mail, the board, pins, marks, the copy list, each agent's session | the usage windows in the header (a session says them again on its first turn) |
 
 ## The flags

@@ -35,3 +35,7 @@ line taken off (a load of the newest N lines finds its point by
 dropped). Both are world keys, not settings. The demo has no store, so
 its clear ends with the run; otherwise it runs the same path. An
 archive's view starts with nothing cleared.
+
+Since record 125's step 5 (2026-11-07) what `:clear inbox` hid is
+counted on Home's TO DECIDE heading (`· N hidden (:unclear)`,
+`World::hidden_inbox`); the salon's panel is no more.

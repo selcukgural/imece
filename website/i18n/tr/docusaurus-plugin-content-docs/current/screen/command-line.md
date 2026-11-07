@@ -58,16 +58,14 @@ Bir mesaj birkaç satıra yayılabilir; kart açan bir mesajın ilk satırı kar
 | `:pending` | `q` `s` | çıkmadan önce: tur ortasındaki agent'lar ve incelenmemiş değişiklikler |
 | `:next` / `:defer` | `W` / `S` | bekleyen sıradaki ögeyi aç / bunu ertele |
 | `:waiting` | `w` | bekleyenler paneli |
-| `:needs` | `f` | ekip yalnız sizi bekleyenleri gösterir |
 | `:settle` / `:unsettle` | `s` / — | seçili satırı size yeniden ihtiyacı olana dek gizle / gizlenen her şeyi geri getir |
 | `:fold` / `:unfold` | `zM` / `zR` | her projeyi ve her işçinin yardımcılarını katla / aç |
 | `:trace [@NAME]` / `:talk [@NAME]` | `t` / `v` | adı verilen, yoksa eldeki agent'ın ham akışı / konuşması |
 | `:peek [@NAME]` | `K` | adı verilen, yoksa eldeki agent'ın odağı görünümün üstünde bir pencerede |
-| `:hints` | `F` | ekip ekranında seçilebilen her satırda ipucu harfleri |
 | `:mark` | `m` | eldeki satırı işaretle |
 | `:pause`, `:faster`, `:slower` | `space`, `+`, `-` | yalnız demo; canlıda bunu söyler ve menüde yer almaz |
 
-Bir ekip panelinde çalışan komutlar (`:waiting`, `:needs`, `:fold`, `:unfold`, `:settle`, `:unsettle`) önce o panele gider. Her komutun ne aldığı ve ne yanıtladığı [komutlar başvurusunda](../reference/commands.md).
+Ana ekranın listesinde çalışan komutlar (`:waiting`, `:fold`, `:unfold`, `:settle`, `:unsettle`) önce ana ekrana gider. Her komutun ne aldığı ve ne yanıtladığı [komutlar başvurusunda](../reference/commands.md).
 
 ### Menü ve değerler
 

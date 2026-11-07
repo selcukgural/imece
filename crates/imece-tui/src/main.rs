@@ -435,9 +435,6 @@ fn main() -> std::io::Result<()> {
             Err(msg) => fail(msg),
         }
     };
-    if let Some(side) = saved.side {
-        app.side = side;
-    }
     app.shift_enter = said.keys;
     app.start_keys(keys_file, keys_seen, keys_start);
     if app.keys_good != kept_keys {
@@ -451,7 +448,6 @@ fn main() -> std::io::Result<()> {
     app.away = saved.away.unwrap_or_default();
     app.story = saved.story.unwrap_or(true);
     app.review = saved.review.unwrap_or(false);
-    app.open_home();
     app.ssh = motion::over_ssh(var);
     app.awake.on = args.awake;
     let result = run(&mut terminal, &mut app, &state, progress, style);
@@ -637,8 +633,7 @@ fn run(
         if let Some(Event::Key(k)) = event
             && k.kind == KeyEventKind::Press
         {
-            let (side, theme, notify, moves, away, story, review) = (
-                app.side,
+            let (theme, notify, moves, away, story, review) = (
                 app.theme(),
                 app.notify,
                 app.motion,
@@ -647,9 +642,9 @@ fn run(
                 app.review,
             );
             app.on_key(k);
-            if app.side != side || app.theme() != theme || app.notify != notify {
+            if app.theme() != theme || app.notify != notify {
                 // Remembered for the next run; a failure only costs that.
-                let _ = prefs::save(state, app.side, &app.theme(), app.notify);
+                let _ = prefs::save(state, &app.theme(), app.notify);
             }
             if app.motion != moves {
                 let _ = prefs::keep_motion(state, app.motion);

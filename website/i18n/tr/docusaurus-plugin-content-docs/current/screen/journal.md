@@ -22,7 +22,7 @@ Günlük (ekrandaki adı DEFTER) ekranın üstünde bir pencerede açılır, `J`
 
 ## Hikâye
 
-Alt yan panel varsayılan olarak günlüğü satır satır göstermez, hikâyeyi anlatır: aynı satırları karta göre gruplar. `J` (ya da `:story`) ikisi arasında geçer; seçim hatırlanır ve defterin başlığı o zaman geri dönüş tuşunu söyler: `DEFTER · J hikâye`. Bir kartın ekranında panel her zaman o kartın günlüğüdür.
+Günlüğün penceresi varsayılan olarak günlüğü satır satır göstermez, hikâyeyi anlatır: aynı satırları karta göre gruplar. `J` (ya da `:story`) ikisi arasında geçer; seçim hatırlanır ve defterin başlığı o zaman geri dönüş tuşunu söyler: `DEFTER · J hikâye`. Bir kartın ayrıntısında log her zaman o kartın günlüğüdür.
 
 ```text
 ┌ HİKÂYE · J defter ─────────────────────────────────────────┐

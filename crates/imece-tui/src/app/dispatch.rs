@@ -120,7 +120,6 @@ impl App {
             && !self.help
             && self.pending.is_none()
             && self.keys_held.is_none()
-            && self.hints.is_none()
             && self.noting.is_none()
             && self.card.is_none()
             && self.zoom == Zoom::None
@@ -152,7 +151,6 @@ impl App {
         };
         let mut v = App::with(world, Engine::View(viewed), self.lang);
         v.keys = self.keys.clone();
-        v.side = self.side;
         v.shift_enter = self.shift_enter;
         v.home = self.home.clone();
         v.fold_talk = self.fold_talk;
@@ -209,7 +207,6 @@ impl App {
         }
         self.preview_theme();
         self.seen();
-        self.settle();
         self.follow_thread();
         self.persist();
     }
@@ -235,7 +232,7 @@ impl App {
             }
             self.act_all(keys.alone(first), away.take());
         }
-        if self.typing || self.hints.is_some() || (self.help && self.help_typing) {
+        if self.typing || (self.help && self.help_typing) {
             self.act(k, away);
             return;
         }
@@ -369,10 +366,6 @@ impl App {
             self.window_key(win, k);
             return;
         }
-        if self.hints.is_some() {
-            self.hint_key(k);
-            return;
-        }
         if let Some(first) = self.pending.take() {
             self.chord(first, k);
             return;
@@ -450,14 +443,7 @@ impl App {
                 self.input = "!".into();
                 self.menu = None;
             }
-            KeyCode::Char('#') => {
-                self.typing = true;
-                self.input = match self.card_at_hand().filter(|&c| Some(c) != self.card) {
-                    Some(c) => format!("#{}", c + 1),
-                    None => "#".into(),
-                };
-                self.menu = self.suggest();
-            }
+            KeyCode::Char('#') => self.hash_line(),
             KeyCode::Char('&') => self.open_jump(),
             KeyCode::Char('n') | KeyCode::Char('p') if self.on_card() => {
                 self.step_card(k.code == KeyCode::Char('n'))
@@ -474,7 +460,6 @@ impl App {
                 }
             }
             KeyCode::Char('K') => self.peek = self.agent_at_hand(),
-            KeyCode::Char('F') => self.open_hints(),
             // On an ask in waiting for you: yes from now on; else the
             // archives.
             KeyCode::Char('A') if self.pane == Pane::Inbox && self.ask_at_hand().is_some() => {
@@ -517,25 +502,12 @@ impl App {
             KeyCode::Char('+') | KeyCode::Char('=') if self.demo() => self.faster(),
             KeyCode::Char('-') if self.demo() => self.slower(),
             KeyCode::Char('?') => self.open_help(),
-            KeyCode::Tab | KeyCode::Char(']') if self.pane_keys() => self.cycle_pane(true),
-            KeyCode::BackTab | KeyCode::Char('[') if self.pane_keys() => self.cycle_pane(false),
-            KeyCode::Char('w') if self.pane_keys() => self.pane = Pane::Inbox,
             // From anywhere: what waits for the person, one item after
             // the other; `S` puts this one off first.
             KeyCode::Char('W') => self.next_waiting(false),
             // The journal in a window; `J` there turns the story on and off.
             KeyCode::Char('J') => self.open_window(Window::Journal),
             KeyCode::Char('S') => self.next_waiting(true),
-            // `,` and `.` are the same keys without shift.
-            KeyCode::Char('<') | KeyCode::Char(',') => self.resize(true),
-            KeyCode::Char('>') | KeyCode::Char('.') => self.resize(false),
-            KeyCode::Char('c') | KeyCode::Char('y')
-                if self.pane == Pane::Journal && self.zoom == Zoom::None =>
-            {
-                if let Some(i) = self.journal_sel {
-                    self.copy = Some(ui::copy_text(self.lang, &self.world, &[i]));
-                }
-            }
             KeyCode::Char('m') => self.toggle_mark(),
             KeyCode::Char('u') => self.undo(),
             KeyCode::Char('U') => self.grace_now(),
@@ -543,19 +515,8 @@ impl App {
             KeyCode::Char('O') => self.quote_output(),
             KeyCode::Up | KeyCode::Char('k') => self.move_selection(false),
             KeyCode::Down | KeyCode::Char('j') => self.move_selection(true),
-            KeyCode::Left | KeyCode::Char('h') if self.salon_keys() => self.fold(true),
-            KeyCode::Right | KeyCode::Char('l') if self.salon_keys() => self.fold(false),
-            KeyCode::Char('f') if self.salon_keys() => self.toggle_needs(),
-            KeyCode::Char('s') if self.salon_keys() => self.settle_at_hand(),
-            KeyCode::Enter if self.pane == Pane::Journal && self.story_on() => {
-                self.open_story_item()
-            }
             KeyCode::Enter => self.deeper(),
             KeyCode::Esc if self.on_card() => self.leave_card(),
-            KeyCode::Esc if self.card.is_some() && matches!(self.zoom, Zoom::Focus(_)) => {
-                self.leave_card();
-            }
-            KeyCode::Esc if self.story_away && self.zoom == Zoom::None => self.story_back(),
             KeyCode::Esc => {
                 self.zoom = match self.zoom {
                     Zoom::Trace(id) => Zoom::Focus(id),
@@ -618,20 +579,9 @@ impl App {
                 self.reading.folds = Folds::every(c == 'M');
                 self.reading.follow.set(true);
             }
-            ('z', KeyCode::Char('a')) if self.salon_keys() => {
-                let folded = match self.worker_at_hand() {
-                    Some(id) => self.folded_workers.contains(&id),
-                    None => self.collapsed[self.current_project()],
-                };
-                self.fold(!folded);
-            }
             ('z', KeyCode::Char('a')) if self.home_keys() => self.home_fold_toggle(),
-            ('z', KeyCode::Char('M')) if self.salon_keys() || self.home_keys() => {
-                self.fold_all(true);
-            }
-            ('z', KeyCode::Char('R')) if self.salon_keys() || self.home_keys() => {
-                self.fold_all(false);
-            }
+            ('z', KeyCode::Char('M')) if self.home_keys() => self.fold_all(true),
+            ('z', KeyCode::Char('R')) if self.home_keys() => self.fold_all(false),
             _ => {}
         }
     }
@@ -645,10 +595,9 @@ mod tests {
     #[test]
     fn the_digits_open_no_view_and_l_does_what_its_colon_name_does() {
         let mut app = App::new(1, 1, 0, 1, Lang::En);
-        app.view = View::Home;
         for c in ['1', '2', '3', '4', '5'] {
             app.on_key(key(KeyCode::Char(c)));
-            assert_eq!((app.view, app.window), (View::Home, None), "{c}");
+            assert_eq!((app.window), (None), "{c}");
         }
         app.on_key(key(KeyCode::Char('L')));
         assert_eq!(app.lang, Lang::Tr);
@@ -681,38 +630,6 @@ mod tests {
         app.on_key(ctrl('e'));
         assert!(view(&app).editor.is_none() && app.editor.is_none());
         assert_eq!(said(view(&app)), Lang::En.text().read_only);
-    }
-
-    #[test]
-    fn a_view_is_at_rest_only_with_nothing_open_that_esc_closes() {
-        let mut rest = App::new(1, 1, 0, 1, Lang::En);
-        assert!(rest.at_rest());
-        rest.view = View::Home;
-        assert!(rest.at_rest(), "Home");
-        let busy: [fn(&mut App); 12] = [
-            |a| a.window = Some(Window::Board),
-            |a| a.typing = true,
-            |a| a.help = true,
-            |a| a.pending = Some('g'),
-            |a| a.keys_held = Some((key(KeyCode::Char('x')), Instant::now())),
-            |a| {
-                a.hints = Some(Hints {
-                    labels: Vec::new(),
-                    typed: String::new(),
-                })
-            },
-            |a| a.noting = Some(Noting::Line(0, 0)),
-            |a| a.card = Some(0),
-            |a| a.zoom = Zoom::Focus(0),
-            |a| a.zoom = Zoom::Diff(0),
-            |a| a.peek = Some(0),
-            |a| a.archives = Some(Browser::new(&a.world, Vec::new())),
-        ];
-        for (i, busy) in busy.iter().enumerate() {
-            let mut a = App::new(1, 1, 0, 1, Lang::En);
-            busy(&mut a);
-            assert!(!a.at_rest(), "{i}");
-        }
     }
 
     #[test]
@@ -870,87 +787,16 @@ mod tests {
         assert!(said(&app).starts_with("brought "), "{}", said(&app));
     }
 
-    #[test]
-    fn an_answer_and_a_held_key_let_through_are_drawn() {
-        let mut app = live_welcome(fake_look);
-        app.start_welcome(true);
-        app.looked();
-        assert!(app.changed, "the answer");
-        app.changed = false;
-        app.looked();
-        assert!(!app.changed, "nothing more came");
-        app.changed = true;
-        app.seen = Seen::Missing;
-        app.input = ":welcome".into();
-        app.typing = true;
-        app.on_key(key(KeyCode::Enter));
-        app.looked();
-        assert!(app.changed, "still, with more");
-        let mut app = App::new(1, 1, 0, 1, Lang::En);
-        let now = Instant::now();
-        app.keys_held = Some((key(KeyCode::Char('f')), now));
-        app.keys_due(now);
-        assert!(!app.changed, "still held");
-        app.keys_due(now + keys::WAIT);
-        assert!(app.changed && app.needs_only);
-    }
-
     fn keymap(text: &str) -> Keymap {
         Keymap::read(text).unwrap()
-    }
-
-    #[test]
-    fn the_key_file_turns_keys_but_not_writing_the_help_filter_or_hints() {
-        let (mut app, _) = drawn_for_hints();
-        app.keys = keymap("^n = f\nd = L\ne = /");
-        app.on_key(ctrl('n'));
-        assert!(app.needs_only, "^n is f");
-        app.on_key(key(KeyCode::Char('d')));
-        assert_eq!(app.lang, Lang::Tr, "d is L");
-        app.on_key(key(KeyCode::Char('d')));
-        assert_eq!(app.lang, Lang::En);
-        app.on_key(key(KeyCode::Char('f')));
-        assert!(!app.needs_only, "a key not named is itself");
-        // Writing takes the letter.
-        app.on_key(key(KeyCode::Char('/')));
-        app.on_key(key(KeyCode::Char('d')));
-        assert_eq!(app.input, "d");
-        app.on_key(key(KeyCode::Esc));
-        assert!(!app.typing);
-        // So does the help's filter, but the help itself turns keys.
-        app.on_key(key(KeyCode::Char('?')));
-        app.on_key(key(KeyCode::Char('/')));
-        app.on_key(key(KeyCode::Char('d')));
-        assert_eq!(app.help_find, "d");
-        app.on_key(key(KeyCode::Enter));
-        assert!(app.help && !app.help_typing);
-        app.on_key(key(KeyCode::Char('e')));
-        assert!(app.help_typing, "e is /: the filter again, not closed");
-        app.on_key(key(KeyCode::Char('e')));
-        assert_eq!(app.help_find, "de", "and then a letter");
-        app.on_key(key(KeyCode::Enter));
-        app.on_key(key(KeyCode::Char('d')));
-        assert!(!app.help, "any key closes it");
-        assert_eq!(app.view, View::Salon, "and does nothing else");
-        // A hint letter is a letter.
-        app.on_key(shift('F'));
-        assert!(app.hints.is_some());
-        app.on_key(key(KeyCode::Char('d')));
-        assert!(app.hints.is_none(), "d was a label");
-        assert_eq!(app.view, View::Salon);
-        assert_eq!(app.selected, Sel::Agent(1), "the third row");
-        // ctrl-c quits whatever the file says.
-        app.on_key(ctrl('c'));
-        assert!(app.quit);
     }
 
     #[test]
     fn a_turned_key_acts_with_its_ctrl() {
         let mut app = App::new(1, 4, 0, 1, Lang::En);
         app.keys = keymap("x = ^o");
-        app.selected = Sel::Agent(0);
         app.on_key(key(KeyCode::Enter));
-        assert_eq!(app.zoom, Zoom::Focus(0));
+        assert!(matches!(app.zoom, Zoom::Focus(_)), "Home's row opened");
         app.on_key(key(KeyCode::Char('x')));
         assert_eq!(app.zoom, Zoom::None, "x is ^o: back where the person was");
     }
@@ -967,7 +813,6 @@ mod tests {
         let mut app = three_rows();
         app.keys = keymap("fx = L\ngt = f");
         app.on_key(key(KeyCode::Char('f')));
-        assert!(!app.needs_only, "f waits for its second");
         assert!(app.keys_held.is_some());
         app.on_key(key(KeyCode::Char('x')));
         assert_eq!(app.lang, Lang::Tr, "fx is L");
@@ -976,7 +821,6 @@ mod tests {
         // Another key: the first acts alone, then the other.
         app.on_key(key(KeyCode::Char('f')));
         app.on_key(key(KeyCode::Char('?')));
-        assert!(app.needs_only, "f alone is f");
         assert!(app.help, "and ? acted after it");
         assert!(app.keys_held.is_none());
         app.on_key(key(KeyCode::Esc));
@@ -995,7 +839,6 @@ mod tests {
         );
         app.on_key(key(KeyCode::Char('g')));
         app.on_key(key(KeyCode::Char('t')));
-        assert!(!app.needs_only, "gt is f: off again");
         assert_eq!(app.pending, None);
     }
 
@@ -1007,23 +850,19 @@ mod tests {
         app.on_key(key(KeyCode::Char('f')));
         let (_, at) = app.keys_held.unwrap();
         app.keys_due(at + keys::WAIT - Duration::from_millis(1));
-        assert!(!app.needs_only, "still waiting");
         app.keys_due(at + keys::WAIT);
-        assert!(app.needs_only, "f alone");
         assert!(app.keys_held.is_none());
         app.keys_due(at + keys::WAIT * 3);
-        assert!(app.needs_only, "nothing held, nothing to do");
     }
 
     #[test]
     fn one_key_of_the_person_acts_as_two() {
         let mut app = three_rows();
-        let top = app.selected;
         app.keys = keymap("x = gg\ny = :q\nG = j");
         app.on_key(key(KeyCode::Char('G')));
-        assert_ne!(app.selected, top, "G is j");
+        assert_eq!(app.at_home.row, 1, "G is j");
         app.on_key(key(KeyCode::Char('x')));
-        assert_eq!(app.selected, top, "x is gg");
+        assert_eq!(app.at_home.row, 0, "x is gg");
         assert_eq!(app.pending, None);
         // The second goes where the first left the screen: writing.
         app.on_key(key(KeyCode::Char('y')));
@@ -1036,7 +875,6 @@ mod tests {
         use keys::Scope;
         let mut app = App::new(1, 1, 0, 1, Lang::En);
         assert_eq!(app.key_scope(), Some(Scope::Salon));
-        app.view = View::Home;
         assert_eq!(
             app.key_scope(),
             Some(Scope::Salon),
@@ -1049,7 +887,6 @@ mod tests {
         app.window = Some(Window::Timeline);
         assert_eq!(app.key_scope(), Some(Scope::Timeline));
         app.window = None;
-        app.view = View::Salon;
         app.help = true;
         assert_eq!(app.key_scope(), Some(Scope::Help));
         assert_eq!(app.scope_below(), Some(Scope::Salon), "where ? was pressed");

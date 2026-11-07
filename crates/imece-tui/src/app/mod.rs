@@ -20,7 +20,6 @@ use crate::live::{self, Live, Open, Refusal, TidyRefusal, standing};
 use crate::model::*;
 use crate::motion::{self, Glow, GlowOn, Lit, Motion};
 use crate::notify::{self, Note, Notify};
-use crate::prefs::{SIDE_DEFAULT, SIDE_MAX, SIDE_MIN};
 use crate::recall;
 use crate::screen::Progress;
 use crate::shell::{Caught, Output, Ran};
@@ -105,8 +104,8 @@ pub struct Viewed {
 /// `:restore` asks the screen behind to bring the archive back.
 const VIEW_COMMANDS: &[&str] = &[
     "goto", "history", "export", "salon", "board", "code", "timeline", "lang", "theme", "help",
-    "quit", "next", "defer", "waiting", "needs", "fold", "unfold", "trace", "peek", "hints",
-    "news", "settle", "unsettle", "talk", "why", "story", "journal",
+    "quit", "next", "defer", "waiting", "fold", "unfold", "trace", "peek", "news", "settle",
+    "unsettle", "talk", "why", "story", "journal",
 ];
 
 /// Whether a line sent is one `↑` and `^r` bring back: a message, a
@@ -207,21 +206,12 @@ pub const FLASH: Duration = Duration::from_secs(3);
 pub enum Moves {
     /// A working row's glyph.
     Breath,
-    /// The dots after `starting`.
-    Dots,
     /// The spinner where imece waits for an answer.
     Spin,
     /// The spinner by the header's fleet (full motion).
     HeadSpin,
     /// imece's mark at the start, a dot a beat (`App::mark_dots`).
     Mark,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum View {
-    Salon,
-    /// What is the person's turn, beside what is at work (record 124).
-    Home,
 }
 
 /// A view that became a window over the screen (record 125, step 5):
@@ -528,7 +518,6 @@ pub fn patch_key(patch: &str) -> u64 {
 /// card whose screen is open. `^o` goes back through the places left.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Place {
-    pub view: View,
     pub zoom: Zoom,
     pub pane: Pane,
     pub card: Option<CardId>,
@@ -655,44 +644,6 @@ impl SoloPick {
 pub enum Sel {
     Project(ProjectId),
     Agent(AgentId),
-}
-
-/// A row the hint letters (`F`) can name: a salon row (a project's
-/// header, an agent, also the people on a card's screen), an item of
-/// TO DECIDE (its index in `World::inbox`) or a journal line (its
-/// index in `World::journal`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Target {
-    Row(Sel),
-    Waiting(usize),
-    Line(usize),
-}
-
-/// The hint letters on the screen: each row's label, given as `F`
-/// opened them and kept while they are open (the drawing puts a label
-/// where its row is now), and the letters typed so far.
-pub struct Hints {
-    pub labels: Vec<(String, Target)>,
-    pub typed: String,
-}
-
-/// The letters labels are made of, the home row first.
-pub const HINT_LETTERS: &[u8; 26] = b"asdfghjklqwertyuiopzxcvbnm";
-
-/// Labels for `n` rows (at most 26 × 26), the first rows first: as many
-/// of one letter as there can be, and two letters from the last letters
-/// on, as few of those as hold the rest; a letter that starts a label of
-/// two is never a label itself, so no label starts another.
-pub fn hint_labels(n: usize) -> Vec<String> {
-    let letter = |i: usize| char::from(HINT_LETTERS[i]);
-    let k = HINT_LETTERS.len();
-    let n = n.min(k * k);
-    // Each letter turned into a start of two gives k labels for its one.
-    let starts = n.saturating_sub(k).div_ceil(k - 1);
-    let ones = (0..k - starts).map(|i| letter(i).to_string());
-    let twos =
-        (k - starts..k).flat_map(|a| (0..k).map(move |b| [letter(a), letter(b)].iter().collect()));
-    ones.chain(twos).take(n).collect()
 }
 
 /// How much an agent needs the person, least first: the salon puts the
@@ -903,7 +854,6 @@ pub struct App {
     pub world: World,
     engine: Engine,
     pub lang: Lang,
-    pub view: View,
     pub zoom: Zoom,
     pub pane: Pane,
     pub selected: Sel,
@@ -911,9 +861,6 @@ pub struct App {
     pub collapsed: Vec<bool>,
     /// Workers whose helpers are folded away.
     pub folded_workers: BTreeSet<AgentId>,
-    /// The salon shows only the agents that need the person (`f`). Kept
-    /// for this run only.
-    pub needs_only: bool,
     /// The side panel tells the story in the journal's place (`J`,
     /// `:story`; record 99). Off in `App::new`; `main` sets the saved one,
     /// on by default.
@@ -974,8 +921,6 @@ pub struct App {
     /// The start's look for worktrees no agent owns, until it answered
     /// and its count was said.
     tidy_start: bool,
-    /// The hint letters, while they are on the screen (`F`).
-    pub hints: Option<Hints>,
     /// The agents that were mid-turn at the last step.
     turning: BTreeSet<AgentId>,
     /// Position in the open inbox items.
@@ -1047,8 +992,6 @@ pub struct App {
     pub recalling: bool,
     /// The last key was `^o`: the place it left is not one to go back to.
     went_back: bool,
-    /// The side panel's width, in percent.
-    pub side: u16,
     /// Text the person asked to copy; the main loop hands it to the
     /// clipboard.
     pub copy: Option<String>,
@@ -1153,9 +1096,6 @@ pub struct App {
     /// Salon lines in the order they were shown last, for moving the
     /// selection.
     pub shown: RefCell<Vec<Sel>>,
-    /// The rows the last drawing showed that hint letters can name, in
-    /// the order drawn, and where each starts on the screen (column, row).
-    pub hintable: RefCell<Vec<(Target, u16, u16)>>,
     /// Where the last drawing put the glyphs that breathe, every one of
     /// them, so that a frame where only the breath changed can be drawn
     /// from that drawing ([`App::patch_due`], `ui::patch`); none when
@@ -1275,7 +1215,6 @@ impl App {
             world,
             engine,
             lang,
-            view: View::Salon,
             zoom: Zoom::None,
             pane: Pane::Salon,
             selected,
@@ -1292,8 +1231,6 @@ impl App {
             importing: None,
             teardown: None,
             tidy_start: false,
-            hints: None,
-            needs_only: false,
             story: false,
             story_away: false,
             story_sel: 0,
@@ -1328,7 +1265,6 @@ impl App {
             searching: false,
             recalling: false,
             went_back: false,
-            side: SIDE_DEFAULT,
             copy: None,
             shell: None,
             editor: None,
@@ -1375,7 +1311,6 @@ impl App {
             quit: false,
             store_error: None,
             shown: RefCell::new(Vec::new()),
-            hintable: RefCell::new(Vec::new()),
             breathing: RefCell::new(None),
             caret_at: Cell::new(None),
             last_key: Instant::now(),
@@ -1444,7 +1379,6 @@ impl App {
         }
         self.wake_settled();
         self.keep_awake();
-        self.settle();
         self.follow_thread();
         self.persist();
     }

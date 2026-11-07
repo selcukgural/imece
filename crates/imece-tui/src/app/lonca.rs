@@ -183,13 +183,11 @@ impl App {
             return self.flash(fill(t.lonca_not_shown, &[&row.seq.to_string()]));
         };
         self.lonca_win = None;
-        if self.view == View::Home {
-            let w = &self.world;
-            let item = (w.open_inbox().into_iter())
-                .find(|&i| w.inbox[i].kind == InboxKind::Change && w.inbox[i].agent == id);
-            if let Some(i) = item {
-                self.at_home.at = Some(HomeRow::Item(i));
-            }
+        let w = &self.world;
+        let item = (w.open_inbox().into_iter())
+            .find(|&i| w.inbox[i].kind == InboxKind::Change && w.inbox[i].agent == id);
+        if let Some(i) = item {
+            self.at_home.at = Some(HomeRow::Item(i));
         }
         self.diff_scroll = 0;
         self.zoom = Zoom::Diff(id);
@@ -560,10 +558,8 @@ mod tests {
         assert_eq!(app.lonca_win, None, "closed");
         assert_eq!(app.zoom, Zoom::Diff(id));
         assert_eq!(app.diff_scroll, 0);
-        assert_eq!(app.at_home.at, None, "not on Home: its row untouched");
         // From Home the change is its row at hand too.
         app.zoom = Zoom::None;
-        app.view = View::Home;
         app.command("lonca");
         app.key(key(KeyCode::Enter));
         assert_eq!(app.zoom, Zoom::Diff(id));

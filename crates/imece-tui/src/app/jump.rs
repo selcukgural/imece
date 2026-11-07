@@ -98,7 +98,7 @@ impl App {
             .map(|p| p.id);
         match project {
             Some(p) => {
-                self.go_salon();
+                self.go_home();
                 self.thread = None;
                 self.settled_projects.remove(&p);
                 self.selected = Sel::Project(p);
@@ -279,8 +279,7 @@ impl App {
     /// journal when it shows there.
     fn show_line(&mut self, i: usize) {
         self.leave_card();
-        self.go_salon();
-        self.zoom = Zoom::None;
+        self.go_home();
         if self.journal_rows().iter().any(|&(r, _)| r == i) {
             self.pane = Pane::Journal;
             self.journal_sel = Some(i);
@@ -306,7 +305,7 @@ impl App {
     /// worker's helpers too when it is one, and everyone shown again when
     /// `f` would hide it.
     pub(super) fn go_agent(&mut self, id: AgentId) {
-        self.go_salon();
+        self.go_home();
         self.thread = None;
         let a = &self.world.agents[id];
         self.collapsed[a.project] = false;
@@ -320,9 +319,6 @@ impl App {
             .collect();
         for s in rows {
             self.settled.remove(&s);
-        }
-        if self.needs_only && self.needs()[id] == Need::Nothing {
-            self.needs_only = false;
         }
         self.selected = Sel::Agent(id);
         // On Home: its row, else the item that stands for it.
@@ -344,7 +340,6 @@ impl App {
     /// Where the person is now.
     pub fn place(&self) -> Place {
         Place {
-            view: self.view,
             zoom: self.zoom,
             pane: self.pane,
             card: self.card,
@@ -369,7 +364,6 @@ impl App {
             };
             let card_ok = p.card.is_none_or(|c| c < self.world.cards.len());
             if zoom_ok && card_ok && p != self.place() {
-                self.view = p.view;
                 self.zoom = p.zoom;
                 self.pane = p.pane;
                 self.card = p.card;
@@ -387,140 +381,6 @@ impl App {
 mod tests {
     use super::super::tests::*;
     use super::*;
-
-    #[test]
-    fn ampersand_lists_where_to_go_what_needs_you_first_frozen_and_a_digit_goes_at_once() {
-        let (mut app, w) = four_idle();
-        let t = Lang::En.text();
-        app.world.agents[w[2]].status = Status::Blocked;
-        app.world.agents[w[2]].topic = "the JWT clock, the refresh and the cookie".into();
-        app.world.inbox.push(InboxItem {
-            kind: InboxKind::Question,
-            agent: w[1],
-            detail: "which index?".into(),
-            researcher: None,
-            open: true,
-            tick: 0,
-            card: None,
-        });
-        app.world.agents[w[1]].status = Status::WaitingHuman;
-        app.unseen.insert(w[3]);
-        app.world.agents[w[0]].status = Status::Working;
-        let name = |app: &App, id: AgentId| app.world.agents[id].name.clone();
-        app.on_key(KeyEvent::from(KeyCode::Char('&')));
-        assert!(app.typing && app.input == "&", "{}", app.input);
-        // Stuck, waiting, done and not seen; then the working one before the
-        // idle ones; the project last.
-        let names: Vec<String> = app.jumps.iter().map(|j| j.name.clone()).collect();
-        assert_eq!(names[0], name(&app, w[2]));
-        assert_eq!(names[1], name(&app, w[1]));
-        assert_eq!(names[2], name(&app, w[3]));
-        assert_eq!(names[3], name(&app, w[0]));
-        assert_eq!(names.last().unwrap(), &app.world.projects[0].name);
-        assert_eq!(app.jumps.len(), app.world.agents.len() + 1);
-        assert_eq!(
-            app.jumps.iter().filter(|j| j.needs).count(),
-            3,
-            "stuck, waiting and done need the person"
-        );
-        // Each agent with its glyph and status; a project with its word.
-        assert!(
-            app.jumps[0].note.starts_with("■ BLOCKED \"the J"),
-            "{}",
-            app.jumps[0].note
-        );
-        assert_eq!(app.jumps[1].note, format!("! {}", t.waiting_human));
-        assert_eq!(app.jumps[2].note, format!("✓ {}", t.done_unseen));
-        assert!(app.jumps[3].note.starts_with("● "), "{}", app.jumps[3].note);
-        assert_eq!(
-            app.jumps[0].note.chars().count(),
-            32,
-            "the glyph, a space and thirty of the status: {}",
-            app.jumps[0].note
-        );
-        assert!(app.jumps.iter().all(|j| j.note.chars().count() <= 32));
-        assert_eq!(app.jumps.last().unwrap().note, t.jump_project);
-        let m = app.menu.as_ref().expect("the menu");
-        assert_eq!(m.items[0], format!("&1 {}", names[0]));
-        assert_eq!(m.notes[0], app.jumps[0].note);
-        // Frozen: a change in the world does not reorder the open list.
-        app.world.agents[w[0]].status = Status::Blocked;
-        type_in(&mut app, "c");
-        assert_eq!(
-            app.jumps.iter().map(|j| j.name.clone()).collect::<Vec<_>>(),
-            names
-        );
-        assert_eq!(
-            app.menu.as_ref().unwrap().items[0],
-            format!("&1 {}", names[0])
-        );
-        // `!` keeps only what needed the person when the list was made.
-        app.input = "&!".into();
-        app.menu = app.suggest();
-        assert_eq!(app.menu.as_ref().unwrap().items.len(), 3);
-        // Esc closes the menu, then the line, which drops the list.
-        app.on_key(KeyEvent::from(KeyCode::Esc));
-        assert!(app.typing && app.menu.is_none());
-        app.on_key(KeyEvent::from(KeyCode::Esc));
-        assert!(app.jumps.is_empty() && !app.typing, "esc drops the list");
-        // A digit right after `&` goes at once.
-        app.zoom = Zoom::Focus(w[0]);
-        // A fresh list: the two stuck first, by id; `2` is the second.
-        app.on_key(KeyEvent::from(KeyCode::Char('&')));
-        assert_eq!(
-            app.jumps
-                .iter()
-                .take(3)
-                .map(|j| j.name.clone())
-                .collect::<Vec<_>>(),
-            [name(&app, w[0]), name(&app, w[2]), name(&app, w[1])]
-        );
-        app.on_key(KeyEvent::from(KeyCode::Char('2')));
-        assert!(!app.typing);
-        assert_eq!(app.selected, Sel::Agent(w[2]));
-        assert_eq!(
-            (app.view, app.zoom, app.pane),
-            (View::Home, Zoom::None, Pane::Salon)
-        );
-        assert_eq!(app.at_home.at, Some(HomeRow::Agent(w[2])), "Home's row");
-        assert!(app.jumps.is_empty(), "the list went with the line");
-        // `0` only filters.
-        app.on_key(KeyEvent::from(KeyCode::Char('&')));
-        app.on_key(KeyEvent::from(KeyCode::Char('0')));
-        assert!(app.typing && app.input == "&0");
-        assert_eq!(app.menu, None, "no tenth");
-        app.on_key(KeyEvent::from(KeyCode::Esc));
-        // `9` goes at once too; past the list's end (six here) it says so
-        // and the line closes.
-        app.on_key(KeyEvent::from(KeyCode::Char('&')));
-        assert_eq!(app.jumps.len(), 6);
-        app.on_key(KeyEvent::from(KeyCode::Char('9')));
-        assert!(!app.typing && app.jumps.is_empty());
-        assert_eq!(
-            app.flash.take().map(|f| f.0).unwrap_or_default(),
-            "nothing called \"9\" to go to: an agent or a project"
-        );
-        assert_eq!(app.selected, Sel::Agent(w[2]), "nothing moved");
-        // A bare `&` and enter: nothing said, nothing moved.
-        app.on_key(KeyEvent::from(KeyCode::Char('&')));
-        app.on_key(KeyEvent::from(KeyCode::Enter));
-        assert!(!app.typing && app.flash.is_none());
-        // Someone gone is not on the list.
-        app.world.agents[w[3]].gone = true;
-        app.on_key(KeyEvent::from(KeyCode::Char('&')));
-        assert_eq!(app.jumps.len(), 5);
-        assert!(app.jumps.iter().all(|j| j.name != name(&app, w[3])));
-        app.on_key(KeyEvent::from(KeyCode::Esc));
-        // `f` stays on when the one gone to needs the person: its row shows.
-        app.needs_only = true;
-        app.command(&format!("goto {}", name(&app, w[1])));
-        assert!(app.needs_only && app.selected == Sel::Agent(w[1]));
-        app.command(&format!("goto {}", name(&app, w[0])));
-        assert!(app.needs_only, "stuck needs the person too");
-        app.world.agents[w[0]].status = Status::Idle;
-        app.command(&format!("goto {}", name(&app, w[0])));
-        assert!(!app.needs_only, "idle would be hidden: everyone shown");
-    }
 
     #[test]
     fn a_line_sent_is_kept_for_recall_unless_it_only_went_somewhere() {
@@ -953,7 +813,6 @@ mod tests {
         type_in(&mut app, &project);
         app.on_key(KeyEvent::from(KeyCode::Enter));
         // One project in view: no heading on Home, its first row instead.
-        assert_eq!(app.view, View::Home);
         assert_eq!(app.pane, Pane::Salon);
         assert!(
             matches!(app.at_home.at, Some(HomeRow::Agent(id)) if app.world.agents[id].project == 0),
@@ -1006,12 +865,13 @@ mod tests {
         let mut app = App::new(1, 1, 0, 1, Lang::En);
         let t = app.lang.text();
         let salon = app.place();
-        app.selected = Sel::Agent(0);
         app.on_key(key(KeyCode::Enter));
         let focus = app.place();
-        assert_eq!(focus.zoom, Zoom::Focus(0));
+        let Zoom::Focus(id) = focus.zoom else {
+            panic!("Home's row opened: {:?}", focus.zoom)
+        };
         app.on_key(key(KeyCode::Char('t')));
-        assert_eq!(app.zoom, Zoom::Trace(0));
+        assert_eq!(app.zoom, Zoom::Trace(id));
         assert_eq!(app.been, [salon, focus]);
         // A key that goes nowhere leaves nothing.
         app.on_key(key(KeyCode::Char('2')));
@@ -1045,7 +905,6 @@ mod tests {
         assert!(app.thread.is_none());
         assert_eq!(app.place(), here);
         let at = |zoom, card| Place {
-            view: View::Salon,
             zoom,
             pane: Pane::Inbox,
             card,
@@ -1076,14 +935,13 @@ mod tests {
     #[test]
     fn the_places_left_are_kept_up_to_fifty_the_oldest_going_first() {
         let mut app = App::new(1, 1, 0, 1, Lang::En);
-        app.selected = Sel::Agent(0);
         for n in 0..60 {
             let c = [KeyCode::Enter, KeyCode::Esc][n % 2];
             app.on_key(key(c));
         }
         assert_eq!(app.been.len(), 50);
-        // The last place left was the focus, the one before the team.
-        assert_eq!(app.been[49].zoom, Zoom::Focus(0));
+        // The last place left was the focus, the one before Home.
+        assert!(matches!(app.been[49].zoom, Zoom::Focus(_)));
         assert_eq!(app.been[48].zoom, Zoom::None);
         assert_eq!(app.been[0].zoom, Zoom::None);
     }

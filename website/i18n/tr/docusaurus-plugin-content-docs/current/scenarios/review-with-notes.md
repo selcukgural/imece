@@ -131,7 +131,7 @@ Kalanı `W` ile açın. `src/lib.rs` içindeki parçayı en üste kaydırın ve 
 ```
 ````
 
-Soruyu çitin üstüne yazın, `burada neden clone, Config zaten referansla geliyor?`, ve `enter`. İşçiye düz bir mesajdır, söylendiği gibi günlüğe girer. Bir parçanın en çok 40 satırı girer, gerisi `… +N` olarak sayılır; işçinin worktree'sinde bütünü var. En üstte parça yokken (ikili bir dosya) anlık mesaj `burada alıntılanacak bir parça yok` der. Diff görünümünde `>` alıntılar; `.` hâlâ yan paneli daraltır.
+Soruyu çitin üstüne yazın, `burada neden clone, Config zaten referansla geliyor?`, ve `enter`. İşçiye düz bir mesajdır, söylendiği gibi günlüğe girer. Bir parçanın en çok 40 satırı girer, gerisi `… +N` olarak sayılır; işçinin worktree'sinde bütünü var. En üstte parça yokken (ikili bir dosya) anlık mesaj `burada alıntılanacak bir parça yok` der.
 
 ## 8. Kalanı nedeniyle reddedin
 

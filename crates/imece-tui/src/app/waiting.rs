@@ -169,11 +169,7 @@ impl App {
     /// above it closes), else the one selected in the waiting panel.
     /// Moving the selection by hand forgets what `W` opened.
     pub(super) fn waiting_at_hand(&self) -> Option<usize> {
-        let selected = || match self.pane {
-            Pane::Inbox => self.inbox_rows().get(self.inbox_sel).copied(),
-            _ => None,
-        };
-        self.waiting_at.or_else(selected)
+        self.waiting_at
     }
 
     /// The first open item whose place in `W`'s order comes after
@@ -228,7 +224,6 @@ impl App {
         self.card = None;
         self.thread = None;
         self.window = None;
-        self.view = View::Home;
         self.at_home.at = Some(HomeRow::Item(i));
         self.zoom = Zoom::None;
         self.pane = Pane::Inbox;
@@ -455,14 +450,12 @@ mod tests {
         app.world.asks_you(two, "Bash: make other");
         app.world.asks_you(one, "Bash: make a");
         app.world.asks_you(one, "Edit: x");
-        // In waiting for you, on the second row: agent one's.
-        app.pane = Pane::Inbox;
-        app.inbox_sel = 1;
+        // On Home, the second row: agent one's.
+        app.at_home.at = Some(HomeRow::Item(app.inbox_rows()[1]));
         app.on_key(key(KeyCode::Char('e')));
         assert_eq!(flash(&app), Some(fill(t.turn_yes_said, &[&n1])));
         assert_eq!(open(&app), ["Bash: make other"]);
         assert_eq!(app.world.agents[one].turn_yes, Some(1));
-        assert_eq!(app.inbox_sel, 0, "the selection stays on a row");
         // Not on an ask: nothing.
         app.world.asked_you(two, "Which?");
         app.inbox_sel = 1;
@@ -508,13 +501,13 @@ mod tests {
         let one = app.world.projects[p].leader + 1;
         app.world.asks_you(one, "Bash: make a");
         let open = |app: &App| app.world.open_inbox().len();
-        for pane in [Pane::Salon, Pane::Journal] {
-            app.pane = pane;
-            app.on_key(key(KeyCode::Char('a')));
-            assert_eq!(open(&app), 1, "{pane:?}: a decides nothing here");
-            app.on_key(key(KeyCode::Char('r')));
-            assert_eq!(open(&app), 1, "{pane:?}: r decides nothing here");
-        }
+        // An agent's row at hand decides nothing; the item's row does.
+        app.at_home.at = Some(HomeRow::Agent(one + 1));
+        app.on_key(key(KeyCode::Char('a')));
+        assert_eq!(open(&app), 1, "an agent's row: a decides nothing here");
+        app.on_key(key(KeyCode::Char('r')));
+        assert_eq!(open(&app), 1, "an agent's row: r decides nothing here");
+        app.at_home.at = Some(HomeRow::Item(0));
         app.pane = Pane::Inbox;
         app.inbox_sel = 0;
         app.on_key(key(KeyCode::Char('r')));
@@ -586,7 +579,7 @@ mod tests {
             .inbox_rows()
             .iter()
             .position(|&i| app.world.inbox[i].detail == "Bash: make");
-        app.inbox_sel = make.unwrap();
+        app.at_home.at = Some(HomeRow::Item(app.inbox_rows()[make.unwrap()]));
         app.on_key(key(KeyCode::Char('A')));
         assert_eq!(
             flash(&app),
@@ -629,7 +622,7 @@ mod tests {
         let at = |app: &App| {
             (app.inbox_rows().iter()).position(|&i| app.world.inbox[i].detail == "Bash: echo `id`")
         };
-        app.inbox_sel = at(&app).unwrap();
+        app.at_home.at = Some(HomeRow::Item(app.inbox_rows()[at(&app).unwrap()]));
         app.on_key(key(KeyCode::Char('A')));
         assert_eq!(
             flash(&app),
@@ -1064,7 +1057,7 @@ mod tests {
         assert_eq!(app.waiting_at, Some(0), "the focus stepped");
         app.on_key(key(KeyCode::Esc));
         app.on_key(key(KeyCode::Char('j')));
-        assert_eq!(app.waiting_at, None);
+        assert_eq!(app.waiting_at, Some(2), "picked 2 (0 was read and went)");
         assert_eq!(press(&mut app, 'W'), Some(3), "after the picked 2");
         let mut app = waiting(&[Reply, Sensitive, Sensitive, Sensitive]);
         app.on_key(key(KeyCode::Char('W')));
@@ -1093,13 +1086,9 @@ mod tests {
     fn capital_w_with_nothing_waiting_says_so_and_stays() {
         let mut app = waiting(&[InboxKind::Sensitive]);
         app.world.inbox[0].open = false;
-        app.view = View::Home;
         for c in ['W', 'S'] {
             app.on_key(key(KeyCode::Char(c)));
-            assert_eq!(
-                (app.view, app.pane, app.zoom),
-                (View::Home, Pane::Salon, Zoom::None)
-            );
+            assert_eq!((app.pane, app.zoom), (Pane::Salon, Zoom::None));
             let said = app.flash.as_ref().map(|(m, _)| m.as_str());
             assert_eq!(said, Some(Lang::En.text().nothing_needed));
             app.flash = None;

@@ -71,3 +71,8 @@ help keeps its 55 rows and the forty-row window.
 
 **Not done.** A settled set kept between runs; `:settle NAME`; settling
 from the board or a card's screen (only the salon's selection).
+
+Since record 125's step 5 (2026-11-07) `s` hides the row at hand on Home
+(`home_hide`, an agent or a project's heading) and `:unsettle` stays
+there; the peek's `j k` step through Home's agents (`peek_step` over
+`home_rows`). The salon's rows are no more.

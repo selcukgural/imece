@@ -1,19 +1,22 @@
 ---
 title: KARAR BEKLEYEN
-description: Yalnız sizin verebileceğiniz her kararı tutan panel - incelenecek değişiklikler, izin verilecek araç çağrıları, yanıtlanacak sorular - ve içinde ilerleyen tuşlar.
+description: Ana ekranın üst yarısı - yalnız sizin verebileceğiniz her karar, incelenecek değişiklikler, izin verilecek araç çağrıları, yanıtlanacak sorular - karar vermenin bedeline göre gruplanmış, ve içinde ilerleyen tuşlar.
 ---
 
 # KARAR BEKLEYEN
 
-KARAR BEKLEYEN (İngilizce ekranda WAITING FOR YOU) ekibin üst yan panelidir. Oraya yalnız sizi gerektiren kararlar düşer; geri kalan her şey günlükte kalır. Onunla ilk kez bir işçi `done` gönderdiğinde karşılaşırsınız: değişikliği (`Δ`) görünür, başlık `! 1 seni bekliyor` sayar ve terminalin başlığı `imece · 1 seni bekliyor` der. Başka bir penceredeyken `:notify bell` terminalin zilini çalar, `:notify text` masaüstü bildirimi gönderir (`imece · claude-1 bitirdi: bir değişiklik seni bekliyor`), yeni bir şey beş saniyedir bekliyorsa; makineden uzaktayken `:notify push` bunu ntfy üzerinden telefonunuza gönderir; siz istemedikçe kapalıdır, bkz. [`:notify`](../reference/commands.md#notify-offbelltextpush).
+KARAR BEKLEYEN (İngilizce ekranda TO DECIDE) [ana ekranın](home.md) üst yarısıdır, karar vermenin size bedeline göre gruplanmış: izinler (tek tuş), sorular (oku ve yanıtla), değişiklikler (okunacak bir diff), sonra ertelediğiniz. Oraya yalnız sizi gerektiren kararlar düşer; geri kalan her şey günlükte kalır. Onunla ilk kez bir işçi `done` gönderdiğinde karşılaşırsınız: değişikliği (`Δ`) görünür, başlık `! 1 karar bekliyor` sayar ve terminalin başlığı `! imece · 1 karar bekliyor` der. Başka bir penceredeyken `:notify bell` terminalin zilini çalar, `:notify text` masaüstü bildirimi gönderir (`imece · claude-1 bitirdi: bir değişiklik seni bekliyor`), yeni bir şey beş saniyedir bekliyorsa; makineden uzaktayken `:notify push` bunu ntfy üzerinden telefonunuza gönderir; siz istemedikçe kapalıdır, bkz. [`:notify`](../reference/commands.md#notify-offbelltextpush).
 
 ```text
-┌ KARAR BEKLEYEN (3) ────────────────────────────────────────────────┐
-│Δ 13:58 claude-1 bitirdi: parser (3 dosya, +41 −6) · ✓ bu ağaçta temiz geçti: cargo test
-│  enter diff'i gör · a onayla · r geri gönder                   │
-│⚑ 14:01 claude-2 çalıştırmak istiyor: Bash: npm install left-pad        │
-│? 14:03 sonra · claude-3 sana soruyor: Eski CLI bayrağı kalsın mı?   │
-└─────────────────────────────────────────────────────────────────────┘
+ KARAR BEKLEYEN 1 izin · 1 soru · 1 değişiklik
+ izinler                                                                    tek tuş
+▸! #2   Money rounding rules      çalıştırmak istiyor: Bash: npm install left-pad   a  evet   r  hayır
+ sorular
+ ! #6   Shipping zones            Money için yarım yukarı mı, bankacı yuvarlaması mı?   1-2  seç   a  yanıtla
+ değişiklikler                                                          1 onaya hazır
+ ! #4   Order validation rules    1 dosya +2 −1 · ✓ dotnet build, dotnet test
+ sonra
+ ? #3   Parse the manifest        sonra · Eski CLI bayrağı kalsın mı?
 ```
 
 ## Oraya ne düşer
@@ -31,38 +34,41 @@ KARAR BEKLEYEN (İngilizce ekranda WAITING FOR YOU) ekibin üst yan panelidir. O
 
 Satır saati taşır, ertelediyseniz `sonra ·`, birden çok proje açıksa projenin adını. Başka bir günün ögesi tarihini de taşır.
 
-Bir değişiklik (`Δ`) işçisine notlarla (diff'te `n`) ya da reddedilen bir uygulamadan sonra çakışan yerleriyle (`b`) de geri gönderilebilir ya da kısmen uygulanabilir (`x` sonra `a`); bkz. [değişiklik görünümü](changes.md). Bir öge geldiğinde agent'ının üzerinde çalıştığı kartı tutar, böylece o [kartın ekranında](cards.md) da görünür.
+Bir değişiklik (`Δ`) işçisine notlarla (diff'te `n`) ya da reddedilen bir uygulamadan sonra çakışan yerleriyle (`b`) de geri gönderilebilir ya da kısmen uygulanabilir (`x` sonra `a`); bkz. [değişiklik görünümü](changes.md). Bir öge geldiğinde agent'ının üzerinde çalıştığı kartı tutar, böylece o [kartın ayrıntısında](cards.md) da görünür.
 
 ## Tuşlar
 
+Ana ekranın tuşları; hepsi için bkz. [ana ekran](home.md#tuşlar).
+
 | Tuş | Ne yapar |
 | --- | --- |
-| `tab` `⇧tab` | panelleri döndür: ekip, bekleyenler, günlük |
-| `w` (`:waiting`) | ekibin herhangi bir panelinden doğrudan bekleyenler paneline |
-| `↑` `↓` / `j` `k`, `gg` `G` | bir öge seç |
+| `↑` `↓` / `j` `k`, `gg` `G`, `gd` | hareket; önizleme izler; `gd` karar bekleyen ilk satır |
 | `enter` | ögeyi aç: bir değişikliğin diff'i, bir sorunun ya da yanıtın konuşması, bir kurulum betiğinin baytları, geri kalanı için agent'ın odağı |
-| `a` / `r` | seçili ögeyi onayla / izin ver · geri gönder / reddet, yukarıdaki tablonun dediği gibi |
-| `W` (`:next`) | her yerden: bekleyen sıradaki ögeyi aç |
+| `a` / `r` | eldeki satırı onayla / izin ver · geri gönder / reddet, yukarıdaki tablonun dediği gibi; bir evet imleci aşağı taşır |
+| `1`-`9` | yanıt öneren bir soruda: birini seç |
+| `e` / `A` | bir istekte: agent'ının turunun sonuna dek evet · projede bundan böyle evet |
+| `s` (`:settle`) | sonraya: öge sondaki `sonra` grubuna gider |
+| `W` (`:next`) | her yerden: karar bekleyen sıradaki ögeyi aç |
 | `S` (`:defer`) | bu ögeyi ertele ve sıradakini aç |
-| `esc` | diff'ten panele geri |
+| `esc` | açılandan ana ekrana geri |
 
-Seçili ögenin altında soluk bir satır tuşlarını söyler (`enter diff'i gör · a onayla · r geri gönder`; bir istek için `a izin ver · r reddet · enter odak`; bir yanıt için `enter tamamını oku · r kapat · ya da doğrudan yanıt yaz`; bir soru için `enter okur · a yanıt yazar`; bir API hatası için `enter odak · a ona yazar`; bir kurulum betiği için `enter betiği gösterir · a evet · r hayır`).
+Her satır isteğin tamamını söyler ve eldeki satır tuşlarıyla biter (bir izinde ya da betikte `a evet  r hayır`, bir değişiklikte `a onayla  r geri gönder`, bir soruda `1-2 seç  a yanıtla`, bir yanıtta `a yanıtla  enter aç`); bir iznin komutu satırının altında bütünüyle durur, bir sorunun yanıtları rakamlarıyla.
 
 ## `W` ve `S`: birbiri ardına
 
-`W` her ekranda çalışır: pano, kod haritası, bir kartın ekranı, bir diff, bir konuşma, bir ham akış, bir betiğin penceresi. Ekibin üstünde açık olanı kapatır, paneldeki sıradaki açık ögeyi seçer ve `enter`'ın yapacağı gibi açar, böylece `a` ve `r` hemen yanıtlar. Yine basılınca ondan sonrakine geçer, sonuncudan sonra ilke döner. Sırası [ana ekranın](home.md) sırasıdır: önce izinler, sonra sorular, sonra değişiklikler (temiz kanıtlanmış ve kartının yollarının içinde kalanlar önce), sonra ertelenenler; bir grubun içinde en eski önce. Bekleyen yoksa `Şu an senden bir şey gerekmiyor` der ve hiçbir şey kımıldamaz.
+`W` her ekranda çalışır: pano, kod haritası, bir kartın ekranı, bir diff, bir konuşma, bir ham akış, bir betiğin penceresi. Ana ekranın üstünde açık olanı kapatır, imleci karar bekleyen sıradaki açık satıra koyar ve `enter`'ın yapacağı gibi açar, böylece `a` ve `r` hemen yanıtlar. Yine basılınca ondan sonrakine geçer, sonuncudan sonra ilke döner. Sırası [ana ekranın](home.md) sırasıdır: önce izinler, sonra sorular, sonra değişiklikler (temiz kanıtlanmış ve kartının yollarının içinde kalanlar önce), sonra ertelenenler; bir grubun içinde en eski önce. Bekleyen yoksa `Şu an senden bir şey gerekmiyor` der ve hiçbir şey kımıldamaz.
 
 `S` eldeki ögeyi erteler ve sıradakini açar. Ertelenen ögeler diğerlerinin hepsinden sonra gelir, ertelendikleri sırayla, ve satırları en önde `sonra ·` der. Zaten ertelenmiş birini ertelemek onu en sona taşır. Liste kapanan ögeleri unutur ve yalnız bu çalıştırma boyunca sürer: yeni bir başlangıç her şeyi yine yaş sırasında gösterir.
 
-"Eldeki", `W`'nin son açtığı ögedir; panelin seçimini kendiniz oynattığınızda (`j` `k`, `gg` `G`) eldeki o olur ve `W` oradan devam eder. "Sıradaki", ögenin ertelenmeden önceki yerine göredir, böylece `S` en başa değil ondan sonra gelene geçer.
+"Eldeki", `W`'nin son açtığı ögedir; ana ekranın imlecini kendiniz karar bekleyen bir satıra götürdüğünüzde eldeki o olur ve `W` oradan devam eder. "Sıradaki", ögenin ertelenmeden önceki yerine göredir, böylece `S` en başa değil ondan sonra gelene geçer.
 
 ## Satırdaki `!`
 
-Ögesi bekleyen bir agent bunu kendi ekip satırında gösterir: bir soru beklerken `? → sen`, bir istek beklerken `⚑ çalıştırmak istiyor`, bir yanıt beklerken `sana yanıt verdi`, bir API hatası beklerken `■ API hatası`; durumu "seni bekliyor" olan bir agent işaret olarak `!` taşır. Proje başlığı bunları dikkat renginde sayar, `! 2 bekliyor`, proje katlıyken bile. Ekipte `f` yalnız sizi bekleyen agent'ları gösterir, bunlar en önde.
+Ögesi bekleyen bir agent bunu ÇALIŞAN'daki kendi satırında gösterir: bir soru beklerken `? → sen`, bir istek beklerken `⚑ çalıştırmak istiyor`, bir yanıt beklerken `sana yanıt verdi`, bir API hatası beklerken `■ API hatası`; durumu "seni bekliyor" olan bir agent işaret olarak `!` taşır. ÇALIŞAN'daki proje başlığı bunları dikkat renginde sayar, `! 2 bekliyor`, proje katlıyken bile.
 
 ## Ögeler açıkken çıkmak
 
-`q` çıkmadan önce sorar ve şimdi çıkmanın neyi geride bırakacağını sayar: `imece kapatılsın mı? tur ortasındaki agent: 2, incelenmemiş değişiklik: 1 · bir daha q çıkar · s gösterir · başka bir tuş kalır`. Tur ortasındaki agent'lar token harcayanlardır; incelenmemiş değişiklikler açık `Δ` ögeleridir. İstekler ve sorular burada sayılmaz: zaten başlıkta ve terminal başlığındadır ve çıkmak hiçbirini kesmez. `q` `s` (`:pending`) ÇIKMADAN ÖNCE penceresini açar: tur ortasındaki agent'lar, her biri satırının söylediği işle, ve değişiklikler panelin gösterdiği gibi; orada `q` hemen çıkar, `W` bekleyen sıradakini açar, başka bir tuş geri döner. Hiçbir şey yolda değilse soru düz sorudur. Geri sayımı süren bir `:close`, `:forget`, `:archive` ya da `:clear` da söylenir (`:close kule şimdi yapılır`): çıkmak, süresinin dolması gibi onu yapar.
+`q` çıkmadan önce sorar ve şimdi çıkmanın neyi geride bırakacağını sayar: `imece kapatılsın mı? tur ortasındaki agent: 2, incelenmemiş değişiklik: 1 · bir daha q çıkar · s gösterir · başka bir tuş kalır`. Tur ortasındaki agent'lar token harcayanlardır; incelenmemiş değişiklikler açık `Δ` ögeleridir. İstekler ve sorular burada sayılmaz: zaten başlıkta ve terminal başlığındadır ve çıkmak hiçbirini kesmez. `q` `s` (`:pending`) ÇIKMADAN ÖNCE penceresini açar: tur ortasındaki agent'lar, her biri satırının söylediği işle, ve değişiklikler ana ekranın listelediği gibi; orada `q` hemen çıkar, `W` bekleyen sıradakini açar, başka bir tuş geri döner. Hiçbir şey yolda değilse soru düz sorudur. Geri sayımı süren bir `:close`, `:forget`, `:archive` ya da `:clear` da söylenir (`:close kule şimdi yapılır`): çıkmak, süresinin dolması gibi onu yapar.
 
 ## Ayrıca bakınız
 

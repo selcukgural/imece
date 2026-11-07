@@ -1,19 +1,22 @@
 ---
 title: TO DECIDE
-description: The panel that holds every decision only you can take - changes to review, tool calls to allow, questions to answer - and the keys that work through it.
+description: The upper half of Home - every decision only you can take, changes to review, tool calls to allow, questions to answer - grouped by what deciding costs, and the keys that work through it.
 ---
 
 # TO DECIDE
 
-TO DECIDE is the top side panel of the team. Only decisions that need you land there; everything else stays in the journal. You meet it the first time a worker sends `done`: its change (`Δ`) appears, the header counts `! 1 waiting for you`, and the terminal's title says `imece · 1 waiting`. In another window, `:notify bell` rings the terminal's bell and `:notify text` sends a desktop notification (`imece · claude-1 finished: a change waits for you`) when something new has waited five seconds; away from the machine, `:notify push` sends it to your phone through ntfy; off unless you ask, see [`:notify`](../reference/commands.md#notify-offbelltextpush).
+TO DECIDE is the upper half of [Home](home.md), grouped by what deciding costs you: permissions (one key each), questions (read and answer), changes (a diff to read), then what you put off. Only decisions that need you land there; everything else stays in the journal. You meet it the first time a worker sends `done`: its change (`Δ`) appears, the header counts `! 1 to decide`, and the terminal's title says `! imece · 1 to decide`. In another window, `:notify bell` rings the terminal's bell and `:notify text` sends a desktop notification (`imece · claude-1 finished: a change waits for you`) when something new has waited five seconds; away from the machine, `:notify push` sends it to your phone through ntfy; off unless you ask, see [`:notify`](../reference/commands.md#notify-offbelltextpush).
 
 ```text
-┌ TO DECIDE (3) ─────────────────────────────────────────────────────┐
-│Δ 13:58 claude-1 finished: parser (3 files, +41 −6) · ✓ ran clean on this tree: cargo test
-│  enter see the diff · a approve · r send back            │
-│⚑ 14:01 claude-2 asks to run Bash: npm install left-pad      │
-│? 14:03 later · claude-3 asks you: Keep the old CLI flag or drop it? │
-└─────────────────────────────────────────────────────────────────────┘
+ TO DECIDE 1 permission · 1 question · 1 change
+ permissions                                                                 one key each
+▸! #2   Money rounding rules      run Bash: npm install left-pad                  a  yes   r  no
+ questions
+ ! #6   Shipping zones            Half-up rounding for Money, or banker's rounding?   1-2  pick   a  answer
+ changes                                                                 1 ready to approve
+ ! #4   Order validation rules    1 file +2 −1 · ✓ dotnet build, dotnet test
+ later
+ ? #3   Parse the manifest        later · Keep the old CLI flag or drop it?
 ```
 
 ## What lands there
@@ -31,38 +34,41 @@ TO DECIDE is the top side panel of the team. Only decisions that need you land t
 
 The row carries the time, `later ·` when you put it off, and the project's name when several are open. An item of another day carries its date.
 
-A change (`Δ`) can also go back to its worker with notes (`n` in the diff), with what clashes after a refused apply (`b`), or be applied in part (`x` then `a`); see [the change view](changes.md). An item keeps the card its agent worked on when it came, so it shows on that [card's screen](cards.md) too.
+A change (`Δ`) can also go back to its worker with notes (`n` in the diff), with what clashes after a refused apply (`b`), or be applied in part (`x` then `a`); see [the change view](changes.md). An item keeps the card its agent worked on when it came, so it shows on that [card's detail](cards.md) too.
 
 ## Keys
 
+Home's keys; see [Home](home.md#keys) for all of them.
+
 | Key | What it does |
 | --- | --- |
-| `tab` `⇧tab` | cycle the panels: team, waiting, journal |
-| `w` (`:waiting`) | straight to the waiting panel, from any panel of the team |
-| `↑` `↓` / `j` `k`, `gg` `G` | select an item |
+| `↑` `↓` / `j` `k`, `gg` `G`, `gd` | move; the preview follows; `gd` the first row to decide |
 | `enter` | open the item: a change's diff, a question's or reply's conversation, a setup script's bytes, an agent's focus for the rest |
-| `a` / `r` | approve / allow · send back / refuse the selected item, as the table above says |
-| `W` (`:next`) | from anywhere: open the next item waiting |
+| `a` / `r` | approve / allow · send back / refuse the row at hand, as the table above says; a yes moves the cursor down |
+| `1`-`9` | on a question that offers answers: pick one |
+| `e` / `A` | on an ask: yes for the rest of its agent's turn · yes from now on for the project |
+| `s` (`:settle`) | later: the item goes to the `later` group at the end |
+| `W` (`:next`) | from anywhere: open the next item to decide |
 | `S` (`:defer`) | put this item off and open the next |
-| `esc` | from the diff back to the panel |
+| `esc` | from what opened back to Home |
 
-Under the selected item a dim row names its keys (`enter see the diff · a approve · r send back`; `a allow · r refuse · enter focus` for an ask; `enter read all · r dismiss · or just write back` for a reply; `enter reads it · a writes back` for a question; `enter focus · a writes to it` for an API error; `enter shows the script · a yes · r no` for a setup script).
+Every row says the whole ask, and the row at hand ends with its keys (`a yes  r no` on a permission or a script, `a approve  r send back` on a change, `1-2 pick  a answer` on a question, `a answer  enter open` on a reply); a permission's command stands whole under its row, a question's answers with their digits.
 
 ## `W` and `S`: one after the other
 
-`W` works on every screen: the board, the code map, a card's screen, a diff, a conversation, a raw stream, a script's window. It closes what is open over the team, selects the next open item in the panel and opens it as `enter` would, so `a` and `r` answer it at once. Pressed again it goes on to the item after, and round to the first after the last. Its order is [Home](home.md)'s: permissions first, then questions, then changes (the ones proved clean and inside their card's paths first), then what was put off; within a group, the oldest first. With nothing waiting it says `Nothing needs you right now` and nothing moves.
+`W` works on every screen: the board, the code map, a card's screen, a diff, a conversation, a raw stream, a script's window. It closes what is open over Home, puts the cursor on the next open row to decide and opens it as `enter` would, so `a` and `r` answer it at once. Pressed again it goes on to the item after, and round to the first after the last. Its order is [Home](home.md)'s: permissions first, then questions, then changes (the ones proved clean and inside their card's paths first), then what was put off; within a group, the oldest first. With nothing waiting it says `Nothing needs you right now` and nothing moves.
 
 `S` puts the item at hand off and opens the next one. Put-off items come after all the others, in the order they were put off, and their rows say `later ·` up front. Putting off one already put off moves it to the very end. The list forgets items that close, and it lasts the run only: a fresh start shows everything in age order again.
 
-"At hand" is the item `W` last opened; when you move the panel's selection yourself (`j` `k`, `gg` `G`), that is what is at hand, and `W` goes on from there. "Next" is by the item's place before it was put off, so `S` moves on to what came after it rather than back to the top.
+"At hand" is the item `W` last opened; when you move Home's cursor to a row to decide yourself, that is what is at hand, and `W` goes on from there. "Next" is by the item's place before it was put off, so `S` moves on to what came after it rather than back to the top.
 
 ## The `!` on a row
 
-An agent whose item waits shows it on its own team row: `? → you` while a question waits, `⚑ asks to run` while an ask does, `answered you` while a reply does, `■ API error` while an API error does; an agent with the status "waiting for you" wears `!` as its glyph. The project header counts them in the attention colour, `! 2 waiting`, even when the project is folded. `f` in the team shows only the agents that need you, these first.
+An agent whose item waits shows it on its own row in AT WORK: `? → you` while a question waits, `⚑ asks to run` while an ask does, `answered you` while a reply does, `■ API error` while an API error does; an agent with the status "waiting for you" wears `!` as its glyph. The project's heading in AT WORK counts them in the attention colour, `! 2 waiting`, even when the project is folded.
 
 ## Quitting with items open
 
-`q` asks before quitting and counts what quitting now would leave: `quit imece? agents mid-turn: 2, changes not reviewed: 1 · q again quits · s shows them · any other key stays`. Agents mid-turn are the ones spending tokens; changes not reviewed are the open `Δ` items. Asks and questions are not counted here: they are in the title and the header already, and quitting cuts none of them. `q` `s` (`:pending`) opens BEFORE YOU GO with the agents mid-turn, each with what its row says it does, and the changes as the panel shows them; there `q` quits at once, `W` opens the next item waiting, any other key goes back. With nothing in flight the question is the plain one. A `:close`, `:forget`, `:archive` or `:clear` still counting down is said too (`:close kule happens now`): quitting lets it act, as its time running out would.
+`q` asks before quitting and counts what quitting now would leave: `quit imece? agents mid-turn: 2, changes not reviewed: 1 · q again quits · s shows them · any other key stays`. Agents mid-turn are the ones spending tokens; changes not reviewed are the open `Δ` items. Asks and questions are not counted here: they are in the title and the header already, and quitting cuts none of them. `q` `s` (`:pending`) opens BEFORE YOU GO with the agents mid-turn, each with what its row says it does, and the changes as Home lists them; there `q` quits at once, `W` opens the next item waiting, any other key goes back. With nothing in flight the question is the plain one. A `:close`, `:forget`, `:archive` or `:clear` still counting down is said too (`:close kule happens now`): quitting lets it act, as its time running out would.
 
 ## See also
 

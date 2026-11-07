@@ -353,3 +353,22 @@ team's commands land on Home: `:salon` its AT WORK, `:waiting` its first
 row to decide, `W` and a notice's click Home's item, `&`/`:goto` its row
 or heading. The team view (`View::Salon`) is reached by nothing now and
 goes with the next piece.
+
+Step 5's salon gone (its last piece): `View` and `App.view` are no more,
+Home is the screen and `App::go_home` is where every view-leaving path
+lands; `ui/salon.rs` keeps the rows' pieces Home and the card's screen
+use (`project_line`, `agent_line`, the journal pane) and lost its drawing
+(`draw`, `salon`, `side`, `rows`, `Row`, the queue line). With the screen
+went its keys and state: the panes' cycling (`tab` `⇧tab` `[` `]` `w` on
+the salon, `pane_keys`, `cycle_pane`), the side panel's width (`, . < >`,
+`App.side`, the `side` pref, `prefs::save` without it), the hint letters
+(`F`, `:hints`, `Hints`, `Target`, `hintable`, record 74), only-what-needs-
+you (`f`, `:needs`, `needs_only`, record 38), the salon's own folding of a
+worker's helpers (`fold`, `worker_at_hand`), `Talk.until` (the salon's
+folding of calm rows). `Pane` stays as the model under the keys (Home's
+item or agent at hand, the journal window). The status line's place on
+Home is `home` (`Text::home_place`); `:salon` is `go_team` (Home's AT
+WORK), the `salon` place of the key file is Home's. Home shows what the
+salon alone showed: what `:clear` hid (`· N hidden (:unclear)` on the TO
+DECIDE heading, record 90), imece's mark in the free rows (record 101),
+the breath on a working row (record 84).

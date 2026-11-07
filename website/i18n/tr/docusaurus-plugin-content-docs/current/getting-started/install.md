@@ -81,7 +81,7 @@ imece'nin hatırladığı her şey yalnız sizindir (dosyalar `0600` yapılır) 
 
 | Yol | Nedir |
 | --- | --- |
-| `<state>/imece.sqlite` | depo: projeler, ajanlar, kartlar ve hikâyeleri, günlük, gelen kutusu, posta, pano, kese, ekran tercihleriniz (yan panel genişliği, tema). WAL kipinde; açıkken `imece.sqlite-wal` ve `imece.sqlite-shm` yanında durur |
+| `<state>/imece.sqlite` | depo: projeler, ajanlar, kartlar ve hikâyeleri, günlük, gelen kutusu, posta, pano, kese, ekran tercihleriniz (tema, notify, motion). WAL kipinde; açıkken `imece.sqlite-wal` ve `imece.sqlite-shm` yanında durur |
 | `<state>/imece.sqlite.lock` | bir imece çalışırken `flock` ile tutulur; aynı dosyada ikinci bir imece reddedilir ve ilkinden `:open` kullanması söylenir |
 | `<state>/worktrees/<dizin>-<özet>/<ajan>` | işçi başına bir git worktree (`claude-1`, `claude-2`, …), HEAD'inizde ayrılmış, proje başına bir dizin altında (checkout'un dizin adı ve yolunun 8 haneli özeti). Çalıştırmalar arasında saklanır. Her birinin kendi `target/` dizini var |
 

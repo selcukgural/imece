@@ -22,7 +22,7 @@ Bir kart tek bir iş birimidir: lider asar (ya da boşta bir işçiye mesajını
 │14:01 ⚖ karar       manifest::read, eskisi sonra      ││                                       │
 │14:10 • kanıt       ✓ cargo test                      ││                                       │
 └──────────────────────────────────────────────────────┘└───────────────────────────────────────┘
-  tab panel  enter odak  n p sonraki / önceki iş  # başka iş  esc geri  ? yardım
+  tab diff · konuşma  enter iz  n p sonraki / önceki iş  # başka iş  esc geri  ? yardım
 ```
 
 ## Bir kartı açmak
@@ -43,25 +43,25 @@ Solda, ekibin yerinde:
 - **KİM**: kim astı, sahibi, hâlâ sahibinin kartıyken sahibinin yardımcıları, sonra hikâyesinin hakkında konuştuğunu söylediği herkes; her biri bir kez, ilk aldığı rolle. Ekibin agent satırları gibi çizilirler, böylece durumları canlıdır; `j` `k` aralarında seçer ve `enter` seçilenin odağını ekipteki gibi açar.
 - **HİKÂYE**: kartın hikâyesi, olay başına bir satır, eskiden yeniye, sahibinin gördüğü gibi anlatılır. Her satırda bir işaret ve bir etiket vardır: `◎` niyet, `⚑` varsayım, `⚖` karar, `⇄` konuşma (bir mesaj, türüyle), `•` kanıt (bir çalıştırma ve nasıl bittiği), `Δ` değişiklik, `›` sen (onun hakkında söylediğiniz). Henüz kimsenin almadığı bir kart `Henüz hikâye yok.` der.
 
-Sağda, yalnız bu kartın yan panelleri:
+Altlarında, yalnız bu kart için:
 
 - **KARAR BEKLEYEN · #3**: bu kartta gelen açık ögeler. Bir öge geldiğinde agent'ının üzerinde çalıştığı kartı tutar, böylece bir işçinin `Δ`'sı işçi sonraki kartı aldıktan sonra da bitirdiği kartta kalır.
 - **DEFTER · #3**: kartı adlandıran satırlar (asıldı, alındı, görev verildi) ve metninde `#3` geçen her söylenmiş satır (ardında rakam yoksa; `#30`, `#3` değildir), günlük gibi katlanmış, en yeni önce; numara geçtiği her yerde vurgu renginde işaretlenir.
 
 ## Kart ekranındaki tuşlar
 
-Her tuş ana ekranda yaptığını yapar: `tab` panelleri döndürür, bir günlük satırında `enter` konuşmayı açar, `a` `r` seçili ögeyi yanıtlar, `c` kopyalar, `t` ve `v` seçili agent'ın izini ya da konuşmasını açar, `m` işaretler, `W` her yerdeki bekleyen sıradakine gider.
+Her tuş ana ekranda yaptığını yapar: `tab` `⇧tab` sahibinin öbür sekmelerine geçer (diff'i, konuşması), bir günlük satırında `enter` konuşmayı açar, `a` `r` seçili ögeyi yanıtlar, `c` kopyalar, `t` ve `v` seçili agent'ın izini ya da konuşmasını açar, `m` işaretler, `W` her yerdeki bekleyen sıradakine gider.
 
 | Tuş | Ne yapar |
 | --- | --- |
 | `n` / `p` | açık bir projenin sonraki / önceki kartı, numarayla |
 | `#` | başka bir kart (menü boş başlar) |
-| `esc` | buradan açılan bir odak, iz ya da diff'ten karta geri; kartta ekibe geri |
+| `esc` | buradan açılan bir iz ya da diff'ten karta geri; kartta ana ekrana geri |
 | `^o` | olduğunuz yere geri; kart ekranı da yerlerden biridir |
 | `:export [YOL]` | kartın ekranı Markdown dosyası olarak |
 | `:home` `:salon` | kartı bırakıp ana ekrana ya da ekibe |
 
-Ekibin katlama tuşları (`h` `l`, `za` `zM` `zR`) ve `f` burada bir şey yapmaz.
+Ana ekranın katlama tuşları (`h` `l`, `za` `zM` `zR`) burada bir şey yapmaz.
 
 ## Dışa aktarma
 

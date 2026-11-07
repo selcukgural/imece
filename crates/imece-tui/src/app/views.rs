@@ -21,7 +21,7 @@ impl Window {
 impl App {
     /// `:board`, `:code`, `:timeline`: the window over whatever is on the
     /// screen; the timeline starts on its first lane.
-    pub(super) fn open_window(&mut self, win: Window) {
+    pub(crate) fn open_window(&mut self, win: Window) {
         if win == Window::Timeline {
             self.timeline_sel = 0;
         }
@@ -36,7 +36,7 @@ impl App {
     }
 
     /// A window closed: the journal's pane goes with it.
-    pub(super) fn close_window(&mut self) {
+    pub(crate) fn close_window(&mut self) {
         if self.window == Some(Window::Journal) {
             self.pane = Pane::Salon;
         }
@@ -85,6 +85,7 @@ impl App {
             KeyCode::Char('g') | KeyCode::Home => self.jump(true),
             KeyCode::Char('G') | KeyCode::End => self.jump(false),
             KeyCode::Char('J') => self.toggle_story(),
+            KeyCode::Char('#') => self.hash_line(),
             KeyCode::Char('m') => self.toggle_mark(),
             KeyCode::Char('\'') => self.next_mark(),
             KeyCode::Char('c') | KeyCode::Char('y') => {
@@ -163,13 +164,12 @@ mod tests {
             app.command(name);
             assert_eq!(app.window, Some(win), "{name}");
             assert_eq!(app.key_scope(), Some(win.scope()), "{name}");
-            assert_eq!(app.view, View::Salon, "{name}: the view under it stays");
             app.on_key(key(KeyCode::Esc));
             assert_eq!(app.window, None, "{name}: esc closes it");
         }
         for c in ['1', '2', '3', '4', '5'] {
             app.on_key(key(KeyCode::Char(c)));
-            assert_eq!((app.window, app.view), (None, View::Salon), "{c}");
+            assert_eq!(app.window, None, "{c}");
         }
         app.command("timeline");
         app.on_key(key(KeyCode::Char('q')));
@@ -302,7 +302,6 @@ mod tests {
         for a in &mut app.world.agents {
             a.status = Status::Idle;
         }
-        app.view = View::Home;
         let worker = app.world.projects[0].leader + 1;
         app.world.journal.clear();
         // The oldest line is said to the person; the rest are events, a
@@ -423,12 +422,29 @@ mod tests {
     }
 
     #[test]
+    fn esc_in_another_window_closes_it_even_while_the_story_is_away() {
+        let (mut app, _) = with_journal(2);
+        app.story = true;
+        app.on_key(key(KeyCode::Char('\'')));
+        assert!(app.story_away, "the mark put the story away");
+        app.on_key(key(KeyCode::Esc));
+        app.on_key(key(KeyCode::Char('\'')));
+        assert_eq!(app.window, Some(Window::Journal));
+        // The journal window's `esc` brings the story back and stays open;
+        // the board's closes, the story left as it was.
+        app.open_window(Window::Board);
+        assert!(app.story_away);
+        app.on_key(key(KeyCode::Esc));
+        assert_eq!(app.window, None);
+        assert!(app.story_away, "the board's esc is not the story's");
+    }
+
+    #[test]
     fn a_card_s_number_opens_its_detail_and_the_team_commands_go_home() {
         let mut app = App::new(1, 2, 0, 1, Lang::En);
         for _ in 0..60 {
             app.step();
         }
-        app.view = View::Home;
         app.world.inbox.clear();
         for a in &mut app.world.agents {
             a.status = Status::Idle;
@@ -449,14 +465,10 @@ mod tests {
         assert_eq!(app.card_at_hand(), Some(c));
         assert!(app.on_card());
         app.on_key(key(KeyCode::Esc));
-        assert_eq!(
-            (app.card, app.zoom, app.view),
-            (None, Zoom::None, View::Home)
-        );
+        assert_eq!((app.card, app.zoom), (None, Zoom::None));
         // `:salon` is Home's team, `:waiting` its first row to decide.
         app.world.asks_you(owner, "Bash: ls");
         app.command("salon");
-        assert_eq!(app.view, View::Home);
         assert!(
             matches!(
                 app.at_home.at,
@@ -466,7 +478,6 @@ mod tests {
             app.at_home.at
         );
         app.command("waiting");
-        assert_eq!(app.view, View::Home);
         assert!(
             matches!(app.at_home.at, Some(HomeRow::Item(_))),
             "{:?}",
@@ -477,7 +488,7 @@ mod tests {
         app.window = None;
         app.command("timeline");
         app.open_waiting(app.world.open_inbox()[0]);
-        assert_eq!((app.window, app.view), (None, View::Home));
+        assert_eq!(app.window, None);
     }
 
     #[test]
@@ -485,14 +496,10 @@ mod tests {
         let mut app = team();
         app.command("board");
         app.command("home");
-        assert_eq!((app.window, app.view), (None, View::Home));
+        assert_eq!(app.window, None);
         app.command("code");
         app.command("salon");
-        assert_eq!(
-            (app.window, app.view),
-            (None, View::Home),
-            "the team is Home's"
-        );
+        assert_eq!(app.window, None, "the team is Home's");
         // Not at rest with a window open: `esc` has it to close.
         app.command("timeline");
         assert!(!app.at_rest());

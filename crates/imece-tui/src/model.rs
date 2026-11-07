@@ -243,7 +243,6 @@ pub struct Talk {
     /// The agent said it (`→`), or was told it (`←`).
     pub mine: bool,
     pub text: String,
-    pub until: u64,
 }
 
 /// A message's number on the bus: given in order from 1 across the
@@ -4506,7 +4505,6 @@ impl World {
             with: Party::Person,
             mine: false,
             text: text.into(),
-            until: t + 6,
         });
         a.trace(t, format!("session/prompt (person) {text:?}"));
     }
@@ -5913,7 +5911,6 @@ mod tests {
         w.tick = 3;
         w.said(0, "hello");
         let talk = w.agents[0].talk.as_ref().unwrap();
-        assert_eq!(talk.until, 3 + 6);
         assert_eq!(talk.with, Party::Person);
         assert!(!talk.mine, "the person's words, not the agent's");
         assert_eq!(talk.text, "hello");

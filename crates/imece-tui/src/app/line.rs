@@ -292,7 +292,6 @@ impl App {
                 let open = self.world.open_inbox().len().to_string();
                 Some(fill(t.value_waiting, &[&open]))
             }
-            "needs" => Some(on_off(self.needs_only)),
             "story" => Some(on_off(self.story)),
             "review" => Some(on_off(self.review)),
             "plan" => Some(on_off(self.world.projects[self.current_project()].plan.on)),
@@ -675,14 +674,11 @@ impl App {
             "output" => self.quote_output(),
             "edit" => self.open_editor(arg.to_string()),
             // The team is Home's lower half (record 125, step 5).
-            "salon" => {
-                self.show(View::Home);
-                self.home_go_heading(Heading::Work);
-            }
+            "salon" => self.go_team(),
             "board" => self.open_window(Window::Board),
             "code" => self.open_window(Window::Code),
             "timeline" => self.open_window(Window::Timeline),
-            "home" => self.show(View::Home),
+            "home" => self.go_home(),
             "lang" if arg.is_empty() => self.set_lang(self.lang.other()),
             "lang" => match Lang::parse(arg) {
                 Some(lang) => self.set_lang(lang),
@@ -694,10 +690,6 @@ impl App {
             "next" => self.next_waiting(false),
             "defer" => self.next_waiting(true),
             "waiting" => self.go_waiting(),
-            "needs" => {
-                self.go_salon();
-                self.toggle_needs();
-            }
             "story" => {
                 self.open_window(Window::Journal);
                 self.toggle_story();
@@ -711,11 +703,9 @@ impl App {
             which @ ("fold" | "unfold") if self.thread.is_some() => {
                 self.fold_talk(which == "fold");
             }
-            // On Home the team is its lower half: the folding stays there.
+            // The team is Home's lower half: the folding is Home's.
             which @ ("fold" | "unfold") => {
-                if self.view != View::Home {
-                    self.go_salon();
-                }
+                self.go_home();
                 self.fold_all(which == "fold");
             }
             "trace" => {
@@ -747,17 +737,13 @@ impl App {
                     self.flash(said);
                 }
             }
-            "hints" => self.open_hints(),
             "tidy" => self.open_tidy(),
             "welcome" => self.open_welcome(),
             "news" => self.open_news(),
-            "settle" if self.view == View::Home => {
+            "settle" => {
+                self.go_home();
                 self.home_settle();
                 self.home_hide();
-            }
-            "settle" => {
-                self.go_salon();
-                self.settle_at_hand();
             }
             "unsettle" => self.unsettle(),
             "clear" => self.clear(arg),
@@ -853,7 +839,6 @@ mod tests {
         assert_eq!(app.command_note("lang"), "(English)");
         app.lang = Lang::Tr;
         assert_eq!(app.command_note("lang"), "(Türkçe)");
-        assert_eq!(app.command_note("needs"), "(kapalı)");
         app.lang = Lang::En;
         let project = format!("({})", app.world.projects[0].name);
         assert_eq!(app.command_note("close"), project);
@@ -877,9 +862,6 @@ mod tests {
         app.story = true;
         assert_eq!(app.command_note("story"), "(on)");
         app.story = false;
-        assert_eq!(app.command_note("needs"), "(off)");
-        app.needs_only = true;
-        assert_eq!(app.command_note("needs"), "(on)");
         assert_eq!(app.command_note("pause"), "(off)");
         app.paused = true;
         assert_eq!(app.command_note("pause"), "(on)");
@@ -996,11 +978,7 @@ mod tests {
         app.command("code");
         assert_eq!(app.window, Some(Window::Code));
         app.command("salon");
-        assert_eq!(
-            (app.view, app.window),
-            (View::Home, None),
-            "the team is Home's"
-        );
+        assert_eq!((app.window), (None), "the team is Home's");
         // The language: turned over, or named.
         app.command("lang");
         assert_eq!(app.lang, Lang::Tr);
@@ -1039,33 +1017,18 @@ mod tests {
         assert_eq!(app.waiting_at, Some(0));
         app.command("defer");
         assert_eq!(app.waiting_at, Some(1));
-        app.show(View::Home);
+        app.go_home();
         app.command("waiting");
-        assert_eq!(
-            (app.view, app.pane),
-            (View::Home, Pane::Inbox),
-            "Home's first row to decide"
-        );
+        assert_eq!((app.pane), (Pane::Inbox), "Home's first row to decide");
         assert_eq!(app.at_home.at, Some(HomeRow::Item(1)), "item 0 was put off");
-        app.show(View::Home);
-        app.pane = Pane::Inbox;
-        app.command("needs");
-        assert_eq!((app.view, app.pane), (View::Home, Pane::Salon));
-        assert!(app.needs_only);
-        app.show(View::Home);
+        app.go_home();
         app.command("fold");
-        assert_eq!(app.view, View::Home, "Home folds its own team");
         assert!(app.collapsed.iter().all(|&c| c));
         app.command("unfold");
         assert!(app.collapsed.iter().all(|&c| !c));
-        app.show(View::Salon);
         app.zoom = Zoom::Focus(0);
         app.command("fold");
-        assert_eq!(
-            (app.view, app.zoom),
-            (View::Home, Zoom::None),
-            "the team is Home's"
-        );
+        assert_eq!((app.zoom), (Zoom::None), "the team is Home's");
         assert!(app.collapsed.iter().all(|&c| c));
         app.command("unfold");
         assert!(app.collapsed.iter().all(|&c| !c));

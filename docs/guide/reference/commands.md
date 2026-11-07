@@ -44,14 +44,12 @@ A line that starts with `:` is a command to imece, not a message to an agent. Yo
 | `:goto [NAME]` | `&` | | | | |
 | `:history [WORDS]` | `^r` | | | | |
 | `:help` | `?` | | | | |
-| `:hints` | `F` | | | | |
 | `:keys` | — | | | | how many keys your file gives |
 | `:lang [en\|tr]` | `L` | | | | `English` / `Türkçe` |
 | `:lonca [NAME\|off\|login\|import [NAME]]` | — | | | | the project's repository, when there is one |
 | `:mark` | `m` | | | | |
 | `:model NAME` | — | | | | the solo at hand's model, or `default` |
 | `:motion [off\|calm\|full]` | — | | | | off / calm / full |
-| `:needs` | `f` | | | | on / off |
 | `:news` | — | | | | this version |
 | `:next` | `W` | | | | N waiting |
 | `:notify [off\|bell\|text\|push]` | — | | | | off / bell / text / push |
@@ -202,10 +200,6 @@ Searches the lines you sent, as `^r` does: the command line opens with `WORDS` o
 
 The `?` help: every key and command in both languages, the legend of glyphs; `/` in it filters by every word. See [keyboard](../screen/keyboard.md).
 
-### `:hints`
-
-Hint letters, as `F`: a label of one or two letters over the start of every row of the team's screen you can select (project headers, agents, the people on a card's screen, waiting items, journal lines). Typing a label selects its row in its panel; its last letter in capitals opens it too, as `enter`. `backspace` takes a letter back, `esc` closes them. A row gone from the screen since: `that row has left the screen`. Off the team's screen: `no rows to label here: F works on the team's screen`. See [team](../screen/salon.md).
-
 ### `:journal`
 
 The journal in a window over the screen, as `J`: its lines newest first, or the story by card while that is on (`J` in the window turns it); `j` `k` `gg` `G` and the pages move, `m` marks, `'` goes to the next mark, `c` copies, `enter` opens the line's conversation in the window's place, `esc` or `q` closes it. See [the journal](../screen/journal.md).
@@ -239,10 +233,6 @@ Sets the model the solo session at hand runs on, from its next turn: an alias (`
 ### `:motion [off|calm|full]`
 
 How much moves on the screen. `calm` (the default): a working row's glyph breathes, its colour dimmed every other 0.6 s, never its shape (on the board too, a working owner's under its card); `starting` counts its dots; the bottom line shows a spinner while imece waits for an answer (`:commit`), and so does Claude Code while it is still being checked in the first-run window; a row or an item that comes to wait for you blinks three times; a row whose turn is done, or whose session started, hides from a green background to its own colours (a theme of the terminal's own colours: reversed, then the changed rows' look); a row wears its activity bar, `▁▃▅▂▁`, what the agent did in each of the last five ticks (it changes only with what the agent does and as the ticks pass); imece's mark, where it comes on the screen (the welcome and news windows, a team with no worker yet), brings its dots one a beat, any key showing it whole. `full` adds a spinner by the header's fleet while anyone works, and spins faster; over SSH it runs as calm (every frame crosses the network). `off`: nothing moves, no row wears an activity bar and the mark is drawn whole, the screen as it was before. Nothing moves in another window, and what happens there does not blink when you come back; everything falls on one beat (0.3 s), so several things moving cost no more frames than one, and a frame is drawn only when what it shows moves (see [the decision](https://github.com/selcukgural/imece/blob/main/docs/decisions/84-motion.md)). Bare `:motion` goes to the next one round: off, calm, full, off. The flash says what the new one does (`calm motion: a working row breathes, what comes to wait blinks`, `full motion: spinners too, and faster`, `full motion runs as calm over SSH`, `nothing moves on the screen`); another word: `wild is not off, calm or full`. The menu note shows the value; it is remembered in the store.
-
-### `:needs`
-
-The team shows only what needs you (waiting for you, stuck, done and not seen), as `f`; again, everyone. Goes to the team first. The menu note: `(on)` / `(off)`.
 
 ### `:news`
 
@@ -335,7 +325,7 @@ The team: Home's AT WORK, as `gw` (record 125: the team is Home's lower half).
 
 ### `:settle`
 
-Hides the team's selected row, as `s` there: a worker's row (with its helpers and researcher) or, on a project's header or its leader, the whole project, out of the team until it needs you again. On Home it hides the row at hand's agent or project and stays; from another screen it goes to the team first. Refused while something of it waits for you or is stuck: `not hidden: claude-2 needs you`. Its finished turns count as seen. The flash: `claude-2 hidden: back when it needs you`. The menu note names the row. See [team](../screen/salon.md).
+Hides the row at hand's agent (with its helpers and researcher) or, on a project's heading, the whole project, out of AT WORK until it needs you again, as `s` there; from another screen it goes to Home first. Refused while something of it waits for you or is stuck: `not hidden: claude-2 needs you`. Its finished turns count as seen. The flash: `claude-2 hidden: back when it needs you`. The menu note names the row. See [team](../screen/salon.md).
 
 ### `:slower`
 
@@ -391,7 +381,7 @@ Unfolds everything in the team, as `zR` (on Home it stays); with a conversation 
 
 ### `:unsettle`
 
-Brings back everything hidden with `s` or `:settle`, and goes to the team (Home, which shows the team too, stays). The flash: `3 back in the team`. The menu note says how many are hidden.
+Brings back everything hidden with `s` or `:settle`; Home stays. The flash: `3 back in the team`. The menu note says how many are hidden.
 
 ### `:waiting`
 

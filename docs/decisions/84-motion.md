@@ -152,3 +152,9 @@ in sight (`shown_cards`), not waiting, has an owner not gone who
 breathes; under a zoom or on the code map nothing breathes. The demo
 draws the same board, so it shows it (record 31). Read cost: the rungs
 once per frame and the cards in sight, as the board already read them.
+
+Since record 125's step 5 (2026-11-07) the breath is Home's: a working
+row's glyph on Home dims every other beat (`home::row_lines` through
+`glyph_style`, the glyphs noted for `patch` by `home::draw`); the salon's
+starting dots (`Moves::Dots`) went with it; the board's window breathes
+as the view did.

@@ -15,7 +15,7 @@ Gelenekler vim'inkidir: `h` `j` `k` `l` hareket ve katlama, `gg` ve `G` uçlara,
 
 ## Durum satırı
 
-Son satır, yazmadığınız sürece, bir durum satırıdır: nerede olduğunuz (`ana ekran`, `salon`, ya da görünümün üstündeki ekran: `odak`, `iz`, `değişiklik`, `konuşma`, `iş`, `bakış`), eldeki proje ve açık ekranın ya da seçili satırın ilgili olduğu iş (`#12 Refund flow`, uzun bir başlık kesilir), soluk; sonra seçili şey için en fazla üç tuş, geri dönüş varsa `esc`, ve `?`. Hareket tuşları hiç gösterilmez: vim'inkilerdir ve bu yardımdadır. Dar bir ekranda tuşlar sondan gider, `esc` ve `?` asla; onlar bile yanına sığmayınca yer sözcüğü gider. Kendi başlığı olan bir pencere (bir script, bir plan, pano, kod haritası, zaman şeridi, ipucu harfleri, kopyalama kipi) kendi tuşlarını gösterir.
+Son satır, yazmadığınız sürece, bir durum satırıdır: nerede olduğunuz (`ana ekran`, ya da üstündeki ekran: `odak`, `iz`, `değişiklik`, `konuşma`, `iş`, `bakış`), eldeki proje ve açık ekranın ya da seçili satırın ilgili olduğu iş (`#12 Refund flow`, uzun bir başlık kesilir), soluk; sonra seçili şey için en fazla üç tuş, geri dönüş varsa `esc`, ve `?`. Hareket tuşları hiç gösterilmez: vim'inkilerdir ve bu yardımdadır. Dar bir ekranda tuşlar sondan gider, `esc` ve `?` asla; onlar bile yanına sığmayınca yer sözcüğü gider. Kendi başlığı olan bir pencere (bir script, bir plan, pano, kod haritası, zaman şeridi, kopyalama kipi) kendi tuşlarını gösterir.
 
 Bir akorun ilk tuşu ikincisini beklerken satır ikinci tuşun ne olabileceğini ve ne yaptığını listeler, vim'deki which-key gibi: `g…   g  ilk satır`, `z…   a  katla · aç   M  hepsini katla   R  hepsini aç`, `q…   q  çık   s  çıkınca ne kalır`. [Tuş dosyanızdan](#kendi-tuşlarınız) ilk tuşu basılı olan bir çift de listelenir, ne olarak davrandığıyla (`t  G olarak`).
 
@@ -68,15 +68,12 @@ Bir akorun ilk tuşu ikincisini beklerken satır ikinci tuşun ne olabileceğini
 | `^o` | olduğunuz yere geri: görünüm, panel, odak, kart (vim'in atlama listesi, elli yer; açık konuşma önce kapanır) |
 | `enter` | derine in: odak, sonra ham akış |
 | `K`  `:peek` | göz at: eldeki agent'ın odağı görünümün üstünde bir pencerede, görünüm olduğu gibi kalır; içinde `j` `k` ekipteki sonraki / önceki agent, `enter` odağın tamamı, `@` ona yaz, `esc` ya da `K` kapatır |
-| `F`  `:hints` | ipucu harfleri: ekip ekranında seçilebilen her satıra (proje başlıkları, agent'lar, bekleyen kalemler, günlük satırları, bir kartın ekranındaki kişiler) bir ya da iki harflik bir etiket; bir etiketi yazmak satırını kendi panelinde seçer, son harfi büyük yazılırsa onu açar da (`enter` gibi); `backspace` bir harfi geri alır, `esc` kapatır |
 | `t`  `:trace` | eldeki agent'ın ham akışı |
 | `v`  `:talk` | onun sizinle konuşması |
 | `esc` | geri |
 | `u`  `:undo` | alt satır on saniyesini geri sayarken bir `:close` ya da `:forget`'in olmasını önle |
 | `U`  `:now` | geri sayan `:close`, `:forget`, `:archive` ya da `:clear`'ı on saniyeyi beklemeden hemen yap |
 | `A`  `:archives` | arşivler bir ağaç olarak (çalışma kopyası → arşiv → ajanları); içinde `j` `k` `gg` `G` gezer, `h` `l` `za` katlar, `enter` bir arşivi salt okunur açar (`esc` ya da `q` geri), `/` süzer, `r` eldekini geri getirir (`:restore`), `esc` kapatır; `:archive` eldeki projeyi kaldırır |
-| `tab` `⇧tab` `[` `]` | sonraki / önceki panel |
-| `,`  `.`  `<`  `>` | yan paneli genişlet / daralt |
 | `J`  `:journal` | günlük bir pencerede; oradaki `J`: karta göre hikâye · satırlar (`:story`) |
 
 ## Ekip
@@ -85,14 +82,13 @@ Bir akorun ilk tuşu ikincisini beklerken satır ikinci tuşun ne olabileceğini
 | --- | --- |
 | `←` `→`  `h` `l` | bir projeyi ya da bir işçinin yardımcılarını katla / aç; ana ekranda eldeki satırın projesini, başlığına (konuşmada: bir mesajı) |
 | `za`  `zM`  `zR` | katla: değiştir · hepsi (`:fold`) · hiçbiri (`:unfold`), ekipte ve ana ekranda; konuşmada mesajlarını |
-| `f`  `:needs` | ekip: yalnız sizi bekleyenler · herkes |
-| `s`  `:settle` | seçili işçinin satırını ya da projeyi (başlığında ya da liderinde) size yeniden ihtiyacı olana dek gizle; ana ekranda eldeki satırın ajanını ya da projesini (bir öge ise `sonraya` gider); `:unsettle` hepsini geri getirir |
+| `s`  `:settle` | eldeki satırın agent'ını, bir proje başlığında projeyi, size yeniden ihtiyacı olana dek ÇALIŞAN'dan gizle (bir öge ise `sonraya` gider); `:unsettle` hepsini geri getirir |
 
 ## KARAR BEKLEYEN
 
 | Tuş | Ne yapar |
 | --- | --- |
-| `w`  `:waiting` | ana ekran, karar bekleyen ilk satırı |
+| `:waiting` | ana ekran, karar bekleyen ilk satırı |
 | `W`  `S` | `:next` bekleyen, her yerden · `:defer` bunu ertele ve sıradakini aç; bir betiğin penceresinde önce onu kapatırlar |
 | `a`  `r` | onayla / bir kez izin ver · geri gönder / reddet (karar bekleyenlerde, bir de odakta: aşağıda) |
 | `A`  `:allow` | sizi bekleyenlerdeki bir istekte ya da ajanının odağında: proje için komutlarına artık hep evet (başka yerde `A` arşivlerdir) |
@@ -192,7 +188,7 @@ Odağın `klasör` satırı ajanın nerede çalıştığını söyler: lider iç
 
 | Komut | Tuş |
 | --- | --- |
-| `:salon` `:home` | yok: iki görünüm, adıyla |
+| `:home` `:salon` | yok: ana ekran · ana ekranın ÇALIŞAN'ı (`gw`) |
 | `:board` `:code` `:timeline` | yok: ekranın üstünde pencereler; `esc` kapatır |
 | `:lang` | `L` |
 | `:theme` | `T` |
@@ -200,12 +196,10 @@ Odağın `klasör` satırı ajanın nerede çalıştığını söyler: lider iç
 | `:quit` (`:q`) | `q` `q` |
 | `:pending` | `q` `s` |
 | `:next` / `:defer` | `W` / `S` |
-| `:waiting` | `w` |
-| `:needs` | `f` |
+| `:waiting` | yok |
 | `:story` | `J` |
 | `:settle` | `s` |
 | `:peek` | `K` |
-| `:hints` | `F` |
 | `:archives` | `A` |
 | `:now` | `U` |
 | `:recall` | `H` |

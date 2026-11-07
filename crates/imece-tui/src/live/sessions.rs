@@ -144,7 +144,6 @@ pub fn apply(w: &mut World, id: AgentId, e: AgentEvent, before: u64) {
                     with: Party::Person,
                     mine: true,
                     text: text.lines().next().unwrap_or_default().to_string(),
-                    until: t + 12,
                 });
                 // The story keeps it; the journal gets it only when it
                 // goes to the person (`Live::step` decides).
@@ -1412,8 +1411,8 @@ mod tests {
         assert_eq!(a.activity, None);
         let talk = a.talk.as_ref().unwrap();
         assert_eq!(
-            (talk.text.as_str(), talk.with, talk.mine, talk.until),
-            ("Fixed both.", Party::Person, true, w.tick + 12),
+            (talk.text.as_str(), talk.with, talk.mine),
+            ("Fixed both.", Party::Person, true),
             "its own closing words, on its row"
         );
         let touched = w.cards[c]
@@ -2144,7 +2143,6 @@ mod tests {
         for id in [0, 1] {
             let talk = w.agents[id].talk.as_ref().expect("a talk line");
             assert_eq!(talk.text, "first line");
-            assert_eq!(talk.until, w.tick + 8);
             assert_eq!(talk.with, Party::Agent(1 - id));
         }
     }
@@ -2157,23 +2155,6 @@ mod tests {
         finish(&mut live, &mut w, 1, "one down");
         assert_eq!(live.turns[1], 1);
         assert_eq!(w.agents[1].status, Status::Working);
-    }
-
-    #[test]
-    fn a_talk_stays_on_the_row_past_its_news_time_until_the_next_exchange() {
-        let mut w = team(2);
-        let mut live = idle_live(3);
-        let talk = |until| Talk {
-            with: Party::Person,
-            mine: false,
-            text: "hi".into(),
-            until,
-        };
-        w.agents[1].talk = Some(talk(0));
-        w.agents[2].talk = Some(talk(1_000_000));
-        live.step(&mut w);
-        assert!(w.agents[1].talk.is_some(), "stale, but still the newest");
-        assert!(w.agents[2].talk.is_some());
     }
 
     #[test]

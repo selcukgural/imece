@@ -100,7 +100,11 @@ impl App {
     /// agent `s` hid is out until it needs the person.
     pub fn home_rows_in(&self, scope: Option<ProjectId>) -> Vec<(HomeGroup, HomeRow)> {
         let w = &self.world;
-        let ours = |a: AgentId| scope.is_none_or(|p| w.agents[a].project == p);
+        let ours = |a: AgentId| {
+            scope.is_none_or(|p| w.agents[a].project == p)
+                && !w.put_away(a)
+                && !w.projects[w.agents[a].project].closed
+        };
         let mut items = w.shown_inbox();
         items.retain(|&i| ours(w.inbox[i].agent));
         items.sort_by_key(|&i| self.waiting_rank(i));
@@ -254,16 +258,10 @@ impl App {
         chosen.or_else(|| in_place().map(|r| r.1))
     }
 
-    /// imece opens on Home (the person, 2026-11-07), `main` says so: the
-    /// tests of every other view start on the salon they were written for.
-    pub fn open_home(&mut self) {
-        self.show(View::Home);
-    }
-
     /// Keys go to Home's list: nothing is open over it.
     pub(crate) fn home_keys(&self) -> bool {
-        self.view == View::Home
-            && self.zoom == Zoom::None
+        self.zoom == Zoom::None
+            && self.window.is_none()
             && self.thread.is_none()
             && self.card.is_none()
     }
@@ -282,7 +280,6 @@ impl App {
         if let Some(row) = rows.iter().position(|r| Some(r.1) == at) {
             self.at_home.row = row;
         }
-        self.waiting_at = None;
         match at {
             Some(HomeRow::Item(i)) => {
                 self.pane = Pane::Inbox;
@@ -313,6 +310,11 @@ impl App {
         let rows = self.home_rows();
         self.at_home.row = row.min(rows.len().saturating_sub(1));
         self.at_home.at = rows.get(self.at_home.row).map(|r| r.1);
+        // The person picked: `W` goes on from the item they stand on.
+        self.waiting_at = match self.at_home.at {
+            Some(HomeRow::Item(i)) => Some(i),
+            _ => None,
+        };
         self.home_settle();
     }
 
@@ -395,9 +397,6 @@ impl App {
             return (w.open_inbox().into_iter())
                 .find(|&i| w.inbox[i].kind == InboxKind::Question && w.inbox[i].agent == id);
         }
-        if self.view != View::Home {
-            return None;
-        }
         match self.home_at()? {
             HomeRow::Item(i) if w.inbox[i].kind == InboxKind::Question => Some(i),
             HomeRow::Item(_) | HomeRow::Agent(_) | HomeRow::Project(_) => None,
@@ -457,7 +456,6 @@ mod tests {
             a.status = Status::Idle;
             a.starting = false;
         }
-        app.view = View::Home;
         app
     }
 
@@ -745,7 +743,6 @@ mod tests {
         app.world.inbox.push(item(InboxKind::Approval, w[0], true));
         app.key(key(KeyCode::Char('a')));
         assert!(!app.world.inbox[0].open, "allowed");
-        assert_eq!(app.view, View::Home);
         app.at_home.at = None;
         // The first row is the project's heading: its leader's work opens.
         app.key(key(KeyCode::Enter));
@@ -765,7 +762,7 @@ mod tests {
             }
         );
         app.key(key(KeyCode::Esc));
-        assert_eq!((app.view, app.zoom), (View::Home, Zoom::None));
+        assert_eq!((app.zoom), (Zoom::None));
     }
 
     #[test]
@@ -774,7 +771,6 @@ mod tests {
         let w = workers(&app);
         app.world.inbox.push(item(InboxKind::Sensitive, w[0], true));
         app.key(key(KeyCode::Char('W')));
-        assert_eq!(app.view, View::Home);
         assert_eq!(app.at_home.at, Some(HomeRow::Item(0)));
         // A window over the screen takes the key: nothing opens.
         let mut app = quiet();
@@ -783,16 +779,13 @@ mod tests {
             .push(item(InboxKind::Sensitive, workers(&app)[0], true));
         app.window = Some(Window::Board);
         app.key(key(KeyCode::Char('W')));
-        assert_eq!((app.view, app.window), (View::Home, Some(Window::Board)));
+        assert_eq!((app.window), (Some(Window::Board)));
         assert_eq!(app.at_home.at, None);
     }
 
     #[test]
     fn imece_opens_on_home_and_the_first_key_acts_on_the_row_shown() {
         let mut app = quiet();
-        app.view = View::Salon;
-        app.open_home();
-        assert_eq!(app.view, View::Home);
         let w = workers(&app);
         app.world.inbox.push(item(InboxKind::Approval, w[0], true));
         assert_eq!(app.home_at(), Some(HomeRow::Item(0)));
@@ -828,10 +821,9 @@ mod tests {
         assert_eq!(app.option_at_hand('a'), None);
         // `3` names no answer and does nothing; `2` answers and Home stays.
         app.key(key(KeyCode::Char('3')));
-        assert_eq!((app.view, app.window), (View::Home, None));
+        assert_eq!((app.window), (None));
         assert!(app.world.inbox[0].open, "not answered");
         app.key(key(KeyCode::Char('2')));
-        assert_eq!(app.view, View::Home);
         assert!(!app.world.inbox[0].open, "answered");
         assert!(
             matches!(
@@ -844,17 +836,15 @@ mod tests {
         assert_eq!(app.option_at_hand('1'), None, "nothing at hand");
         // Off Home the digits do nothing, question or not.
         ask(&mut app, w[1], &["a"]);
-        app.view = View::Salon;
         assert_eq!(app.option_at_hand('1'), None);
         app.key(key(KeyCode::Char('1')));
-        assert_eq!((app.view, app.window), (View::Salon, None));
+        assert_eq!((app.window), (None));
         assert!(app.world.has_question(w[1]));
         // A question without answers to pick: `1` does nothing either.
-        app.view = View::Home;
         ask(&mut app, w[1], &[]);
         assert_eq!(app.option_at_hand('1'), None);
         app.key(key(KeyCode::Char('1')));
-        assert_eq!((app.view, app.window), (View::Home, None));
+        assert_eq!((app.window), (None));
         assert!(app.world.has_question(w[1]));
     }
 
@@ -875,7 +865,6 @@ mod tests {
         assert!(app.typing);
         assert_eq!(app.input, "");
         app.typing = false;
-        app.view = View::Salon;
         app.world.asked_you(w[0], "Which?");
         assert_eq!(app.question_at_hand(), None, "Home only");
     }
@@ -883,11 +872,8 @@ mod tests {
     #[test]
     fn colon_home_opens_it_and_five_does_not() {
         let mut app = quiet();
-        app.view = View::Salon;
         app.key(key(KeyCode::Char('5')));
-        assert_eq!(app.view, View::Salon, "the digits open no view");
         app.command("home");
-        assert_eq!(app.view, View::Home);
         assert_eq!(groups(&app)[0], HomeGroup::Team);
         assert_eq!(groups(&app)[1], HomeGroup::Quiet);
         assert_eq!(app.key_scope(), Some(keys::Scope::Salon));
@@ -920,7 +906,6 @@ mod triage_tests {
             a.status = Status::Idle;
             a.starting = false;
         }
-        app.view = View::Home;
         app
     }
 
@@ -1021,13 +1006,6 @@ mod triage_tests {
         keys(&mut app, "gd");
         assert_eq!(app.at_home.row, 1);
         assert_eq!(app.pending, None);
-        // Off Home the chord does nothing of Home's.
-        app.view = View::Salon;
-        app.world.inbox.push(item(InboxKind::Question, w[0]));
-        app.at_home.row = 0;
-        app.at_home.at = None;
-        keys(&mut app, "gw");
-        assert_eq!(app.at_home.row, 0);
     }
 
     #[test]
@@ -1069,20 +1047,6 @@ mod triage_tests {
         assert!(app.world.inbox[6].open, "not decided unseen");
         assert_eq!(app.flash.as_ref().map(|f| f.0.as_str()), Some(moved));
     }
-
-    #[test]
-    fn a_decision_off_home_settles_nothing_of_home_s() {
-        let mut app = quiet();
-        let w = workers(&app);
-        app.world.inbox.push(item(InboxKind::Approval, w[0]));
-        app.world.inbox.push(item(InboxKind::Approval, w[1]));
-        app.view = View::Salon;
-        app.pane = Pane::Inbox;
-        app.inbox_sel = 0;
-        keys(&mut app, "a");
-        assert!(!app.world.inbox[0].open);
-        assert_eq!(app.at_home.at, None);
-    }
 }
 
 #[cfg(test)]
@@ -1112,7 +1076,6 @@ mod team_tests {
             a.status = Status::Idle;
             a.starting = false;
         }
-        app.view = View::Home;
         let w: Vec<AgentId> = (app.world.agents.iter())
             .filter(|a| a.role == Role::Worker && a.project == 0)
             .map(|a| a.id)
@@ -1237,10 +1200,8 @@ mod team_tests {
         assert_eq!(app.collapsed, [true, true]);
         app.command("unfold");
         assert_eq!(app.collapsed, [false, false]);
-        assert_eq!(app.view, View::Home);
         app.command("fold");
         assert_eq!(app.collapsed, [true, true]);
-        assert_eq!(app.view, View::Home);
         app.collapsed = vec![false, false];
         // One project in view: nothing heads the rows, so nothing folds.
         app.at_home.scope = Some(0);
@@ -1286,7 +1247,6 @@ mod team_tests {
         // `:unsettle` brings them back and stays on Home.
         app.command("unsettle");
         assert!(app.settled.is_empty() && app.settled_projects.is_empty());
-        assert_eq!(app.view, View::Home);
         assert_eq!(rows(&app)[0], HomeRow::Project(0));
         // Refused for one that needs the person: its row stays.
         app.world.agents[w[1]].status = Status::Blocked;
@@ -1308,7 +1268,6 @@ mod team_tests {
         app.world.agents[w[1]].status = Status::Idle;
         app.command("settle");
         assert!(app.settled.contains(&w[1]));
-        assert_eq!(app.view, View::Home);
     }
 
     #[test]

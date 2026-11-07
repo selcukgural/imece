@@ -131,7 +131,7 @@ Open the rest with `W`. Scroll the hunk in `src/lib.rs` to the top and press `>`
 ```
 ````
 
-Type the question above the fence, `why clone here, Config is already by reference?`, and `enter`. It is a plain message to the worker, journaled as said. At most 40 lines of a hunk go in, the rest counted as `… +N`; the worker has the whole of it in its worktree. With no hunk at the top (a binary file), the flash says `no hunk here to quote`. In the diff view `>` quotes; `.` still narrows the side panel.
+Type the question above the fence, `why clone here, Config is already by reference?`, and `enter`. It is a plain message to the worker, journaled as said. At most 40 lines of a hunk go in, the rest counted as `… +N`; the worker has the whole of it in its worktree. With no hunk at the top (a binary file), the flash says `no hunk here to quote`.
 
 ## 8. Reject the remainder with a reason
 

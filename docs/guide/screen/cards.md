@@ -22,7 +22,7 @@ A card is one unit of work: posted by the leader (or opened by your message to a
 │14:01 ⚖ decision    use manifest::read, legacy later  ││                                       │
 │14:10 • evidence    ✓ cargo test                      ││                                       │
 └──────────────────────────────────────────────────────┘└───────────────────────────────────────┘
-  tab panel  enter focus  n p next / previous card  # another card  esc back  ? help
+  tab diff · talk  enter trace  n p next / previous card  # another card  esc back  ? help
 ```
 
 ## Opening a card
@@ -43,25 +43,25 @@ Left, in the team's place:
 - **WHO**: who posted it, its owner, the owner's helpers while it is still the owner's card, then everyone its story says talked about it, each once with the first part it had. They are drawn as the team's agent rows, so their state is live; `j` `k` select among them and `enter` opens the selected one's focus as in the team.
 - **STORY**: the card's story, one line per event, oldest first, told as the owner had it. Each line has a glyph and a label: `◎` intent, `⚑` assumption, `⚖` decision, `⇄` talk (a message, with its type), `•` evidence (a run and how it ended), `Δ` change, `›` you (what you said about it). A card nobody took yet says `No story yet.`
 
-Right, the side panels for this card alone:
+Under them, for this card alone:
 
 - **TO DECIDE · #3**: the open items that came on this card. An item keeps the card its agent worked on when it came, so a worker's `Δ` stays with the card it finished after the worker takes the next one.
 - **JOURNAL · #3**: the lines that name the card (posted, claimed, assigned) and every said line whose text has `#3` in it (where no digit follows, so `#30` is not `#3`), folded like the journal, newest first; the number is marked in the accent wherever it is named.
 
 ## Keys on a card's screen
 
-Every key does what it does on the main screen: `tab` cycles the panels, `enter` on a journal line opens the conversation, `a` `r` answer the selected item, `c` copies, `t` and `v` open the selected agent's trace or conversation, `m` marks, `W` goes to the next item waiting anywhere.
+Every key does what it does on Home: `tab` `⇧tab` turn to the owner's other tabs (its diff, its conversation), `enter` on a journal line opens the conversation, `a` `r` answer the selected item, `c` copies, `t` and `v` open the selected agent's trace or conversation, `m` marks, `W` goes to the next item waiting anywhere.
 
 | Key | What it does |
 | --- | --- |
 | `n` / `p` | the next / previous card of an open project, by number |
 | `#` | another card (the menu, starting empty) |
-| `esc` | from a focus, trace or diff opened here, back to the card; on the card, back to the team |
+| `esc` | from a trace or diff opened here, back to the card; on the card, back to Home |
 | `^o` | back where you were, the card screen being one of the places |
 | `:export [PATH]` | the card's screen as a Markdown file |
 | `:home` `:salon` | leave the card for Home or the team |
 
-The team's fold keys (`h` `l`, `za` `zM` `zR`) and `f` do nothing here.
+Home's fold keys (`h` `l`, `za` `zM` `zR`) do nothing here.
 
 ## Export
 

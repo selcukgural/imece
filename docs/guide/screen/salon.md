@@ -1,6 +1,6 @@
 ---
 title: The team
-description: The default screen of imece - the header, the guild tree grouped by project, each agent's row and glyph, folding, and the panels beside it.
+description: The team on Home - the header, AT WORK project by project, each agent's row and glyph, folding, settling, the windows.
 ---
 
 # The team
@@ -8,20 +8,22 @@ description: The default screen of imece - the header, the guild tree grouped by
 The team is the lower half of [Home](home.md), AT WORK (record 125): `:salon` goes there, as `gw`. What this page describes of the guild tree (every project, its leader, its workers and their helpers, folding, `s`) stands there, project by project; what waited beside it is Home's TO DECIDE, and the [journal](journal.md) (told as the story) is a window, `J` or `:journal`. The board, the code map and the timeline open as windows too (`:board`, `:code`, `:timeline`); everything else opens over Home and `esc` brings it back.
 
 ```text
- imece  shop-api │  ! 2 to decide  │ $3.10 of $20.00  14:02
-┌ TEAM ───────────────────────────────────────────┐┌ TO DECIDE (2) ─────────────────────────┐
-│▾ ▴ shop-api  ▓▓▓░░░░░ 3/8  ! 2 waiting  2 working││Δ 13:58 claude-1 finished: parser (3 files, +41 −6) · ✓ ran clean on this tree: cargo test
-│  ● ▎lead      coordinating                       ││⚑ 14:01 claude-5 asks to run Bash: npm install left-pad
-│  ├ ● ▎claude-1 #3   Parse the manifest  writing tests · 2 min  $1.10  ⎇ fix-parser ↑2 +12
-│  │ └ ● ▎claude-1.1                      thinking… ← claude-1 "add the tests"   ⎇          │
-│  ├ ✓ ▎claude-5 #5   Money rounding      done, not seen yet → you "rounded half up" · 5 min│
-│  └ … 2 agents doing fine                         │└────────────────────────────────────────┘
-│▸ web  1 working  $0.70                           │┌ JOURNAL ───────────────────────────────┐
-│                                                  ││13:58 ! claude-1 finished: change ready · 3 files +41 −6
-│                                                  ││13:55 ⇄ lead → claude-1 [assign] #3 Parse the manifest
-│QUEUE  empty  │ latest: #2 ✓ #1 ✓                 ││13:40 › you: fix the parser crash on empty files
-└──────────────────────────────────────────────────┘└────────────────────────────────────────┘
-  W next for you  / write to the lead  @ to an agent  # card  tab panel  enter focus  ? help   1 team  2 board  3 code
+ imece  shop-api · web │  ! 2 to decide  │ $3.10 of $20.00  14:02
+ TO DECIDE 1 permission · 1 change
+ permissions                                                                 one key each
+ ! #5   Money rounding             run Bash: npm install left-pad                  a  yes   r  no
+ changes                                                                 1 ready to approve
+ ! #3   Parse the manifest         3 files +41 −6 · ✓ cargo test
+
+ AT WORK 5 · stuck 1 · idle 1
+▾ ▴ shop-api  ▓▓▓░░░░░ 3/8  ! 2 waiting  2 working  $2.40
+ ● lead             coordinating
+ ● #3   Parse the manifest         ▸ Write the tests  Edit tests/parse.rs · 2 min  $1.10  ⎇ fix-parser ↑2 +12
+   └ ● claude-1.1                  thinking… ← claude-1 "add the tests"
+ ■ #7   Order tests                ■ session ended · write to it to restart
+ ✓ #5   Money rounding             done, not seen yet → you "rounded half up" · 5 min
+▸ web  1 working  $0.70  ● claude-9
+ home · shop-api · #3 Parse the manifest    enter  open   ?  help
 ```
 
 ## The header
@@ -44,7 +46,7 @@ See [budget and limits](../concepts/budget-and-limits.md) for how the pot and th
 
 Agents are grouped by project. Each project is a header row, then its leader, then its workers, each worker's helpers under it. Projects come in the order they were opened, pinned ones first.
 
-While no project has a worker yet (a team that has only its leader, a solo), imece's mark and its words stand in the middle of the free rows: `imece v…`, `one terminal, many agents, one leader`, the project at hand and who heads it. Its dots come one a beat as it appears (see [first run](../getting-started/first-run.md#the-welcome-window)); the first worker's row takes its place, and `f` leaves it out.
+While no project has a worker yet (a team that has only its leader, a solo), imece's mark and its words stand in the middle of the free rows: `imece v…`, `one terminal, many agents, one leader`, the project at hand and who heads it. Its dots come one a beat as it appears (see [first run](../getting-started/first-run.md#the-welcome-window)); the first worker's row takes its place.
 
 A project header: `▾ shop-api  ▓▓▓░░░░░ 3/8  ! 2 waiting  ■2  2 working  $2.40`. `▾` is open, `▸` folded. After the name: how far its cards are (eight cells, the done share filled down to the cell, then done of all; none before its leader posts a card), in the attention colour how many items of this project wait for you, `■N` stuck agents (blocked or stopped) when there are any, how many workers and helpers are not idle, what the project's agents have cost, then how its Lonca repository stands. What wants you comes first, so a row too long for its pane loses the rest. A folded project is one line, that line still shows what waits (quiet, not deaf) and ends with its loudest member, `▸ shop-api  ! 1 waiting  2 working  $2.40  ! claude-5`: the agent highest on the state ladder below, the first in order among equals. A pinned project (`:pin`) wears `▴` before its name and keeps the top of the team; the pin is saved between runs.
 
@@ -70,30 +72,13 @@ An agent's row:
 - `↗ localhost:5173/`: the newest loopback address the worker or helper wrote in its own text, as a link the terminal opens (OSC 8). Only `http`/`https` on `localhost`, `127.0.0.1` or `[::1]` counts, the query and fragment are dropped, and an address over 60 characters is not shown. Gone with the session.
 - A worker with helpers ends with `▾ 2 helpers`, or `▸ 2 helpers  ● claude-1.1` when they are folded away: the count and the loudest of them.
 
-Every agent is one row, whatever it says: rows never change height, and the parts of a row stand in columns: every status starts at one column, whatever the depth, and each part after it is as wide as its widest on a row, blank on a row without it. On a narrow screen the blanks go first. The time, the quote and the activity bar take only what the row has left once its cost, stand, helpers and link are on it, so a narrow pane drops the bar first, the quote next and then the time (`.` narrows the side panel). A row that just changed stands out for a moment, then calms down. The selected row is reversed.
+Every agent is one row, whatever it says: rows never change height, and the parts of a row stand in columns: every status starts at one column, whatever the depth, and each part after it is as wide as its widest on a row, blank on a row without it. On a narrow screen the blanks go first. The time, the quote and the activity bar take only what the row has left once its cost, stand, helpers and link are on it, so a narrow screen drops the bar first, the quote next and then the time. A row that just changed stands out for a moment, then calms down. The selected row is reversed.
 
-When some workers of an open project need you and it shows more than one, they sit under a header for what they need, in the ladder's order, and the rest under one header that counts them:
-
-```text
-▾ shop-api      7 working  $0.45   ! 2 waiting
-  ● ▎lead-shop-api     coordinating
-  ■ stuck · 1
-  └ ■ ▎claude-6          #17  Order tests           ■ session ended: the session ended
-  ! waits for you · 2
-  ├ ! ▎claude-4          #1   Payment retry policy  ⚑ asks to run "WebFetch: …"
-  └ ! ▎claude-3          #7   Payment retry policy  ▸ Write it up  thinking…
-  ● 4 working  ○ 1 idle
-  ├ ● ▎claude-5          #2   Price list cache      ▸ Run the tests  Bash: dotnet test
-  └ …
-```
-
-The headers are `■ stuck`, `! waits for you`, `✓ done, not seen` and, for the rest, `● N working  ○ N idle` (a count of none left out); each closes its branch with `└`. They say where what needs you ends and the calm part starts. When all of a project's workers are calm, or it shows only one, there are none. They give way first: when the rows with them do not fit the pane, none is shown and the rows fold as below.
-
-When the rows do not fit the pane, calm workers (working or idle, nothing said lately, not selected) fold from the bottom of the team up into one line, `… 2 agents folded, loudest  ● claude-5`, which names the loudest of them; a pinned project folds last and what needs you is never folded away. The bottom line of the pane, `QUEUE`, lists cards being verified and the last four done (`#2 ✓`); live, nothing fills the verifying part, so it reads `empty`.
+Within a project the workers come by what they need: stuck first, then at work, then the quiet ones, equals keeping their order so the list does not jump as agents go from idle to working and back; a worker's helpers stay under it (`└`). The AT WORK heading counts them: `AT WORK 12 · stuck 2 · idle 1`. When the rows do not fit the screen, the list scrolls with the row at hand; nothing folds by itself.
 
 ## The state ladder
 
-Every agent stands on one rung, loudest first: stuck (blocked, or its session stopped: it goes nowhere until you write to it) > something of its waits for you > working (mid-turn, asking a teammate, researching) > starting > done, not seen > idle (or asleep, or gone). The rung decides the row's glyph, which worker comes first in its project (stuck, then waiting for you, then done and not seen; the calm rungs keep their order so the screen does not jump as agents go from idle to working and back), what `f` shows, and which member a folded group (a project, a worker's helpers, the folded calm workers) shows for all of them: the highest rung, the first in order among equals.
+Every agent stands on one rung, loudest first: stuck (blocked, or its session stopped: it goes nowhere until you write to it) > something of its waits for you > working (mid-turn, asking a teammate, researching) > starting > done, not seen > idle (or asleep, or gone). The rung decides the row's glyph, which worker comes first in its project (stuck, then waiting for you, then done and not seen; the calm rungs keep their order so the screen does not jump as agents go from idle to working and back), and which member a folded project shows for all of them: the highest rung, the first in order among equals.
 
 ## The legend
 
@@ -125,52 +110,39 @@ Home's AT WORK rows use the same shapes, so they read in the mono theme too.
 
 | Key | What it does |
 | --- | --- |
-| `↑` `↓` / `j` `k` | select the row above or below |
-| `gg` / `G` | first / last row |
+| `↑` `↓` / `j` `k` | the row above or below; the preview follows |
+| `gg` / `G`, `gd` / `gw` | first / last row · the first row to decide / the first at work |
 | `^d` `^u` / `^f` `^b` | half a page / a page |
-| `←` `→` / `h` `l` | fold / unfold the selected project, or the selected worker's helpers (also the selected helper's worker). `enter` on a project header folds and unfolds too. |
+| `[` / `]` | all projects, then each one, round: the header lights the one shown |
+| `←` `→` / `h` `l` | fold the row at hand's project to its heading / open it again |
 | `za` | toggle the fold at hand |
-| `zM` / `zR` (`:fold` / `:unfold`) | fold / unfold every project and every worker's helpers |
-| `f` (`:needs`) | the team shows only what needs you, then everyone again |
-| `s` (`:settle`) | hide the selected worker's row, or the selected project (its header or its leader), until it needs you again; `:unsettle` brings everything back |
-| `&` (`:goto`) | go to an agent or a project by name or number, what needs you first; its project and its worker's helpers unfold, and `f` lets go when it would hide the row |
-| `enter` | look deeper: an agent's focus (its card, status, origin and story), `enter` again its raw stream (the trace) |
-| `K` (`:peek`) | a peek: the agent at hand's focus in a window over the view, which stays as it was; `j` `k` the next / previous agent, `enter` its whole focus, `@` write to it, `esc` or `K` close |
-| `F` (`:hints`) | hint letters on every row you can select; a label selects its row, its last letter in capitals opens it |
+| `zM` / `zR` (`:fold` / `:unfold`) | fold / unfold every project |
+| `s` (`:settle`) | hide the row at hand's agent, or on a heading the project, until it needs you again; `:unsettle` brings everything back |
+| `&` (`:goto`) | go to an agent or a project by name or number, what needs you first; its project unfolds and its row comes back if it was hidden |
+| `enter` | look deeper: an agent's focus (its card, status, origin and story), `enter` again its raw stream (the trace); on a heading, the leader's focus |
+| `K` (`:peek`) | a peek: the agent at hand's focus in a window over the screen, which stays as it was; `j` `k` the next / previous agent, `enter` its whole focus, `@` write to it, `esc` or `K` close |
 | `t` (`:trace`) / `v` (`:talk`) | the raw stream / the conversation of the agent at hand |
 | `esc` | back up one depth |
 
-Folding moves the selection to the worker or the header so it does not vanish.
-
-## Only what needs you
-
-What an agent needs of you is one rank, most first: something of it waits in TO DECIDE, it is stuck (blocked, or its session stopped), it finished a turn you have not looked at, nothing. Within a project the workers sort by that rank, equals keeping their order, so the calm ones do not jump around. When rows do not fit, the calm ones fold first.
-
-`f` keeps only the agents that need something, each under its project's header: a worker comes along for a helper of its that needs something, the leader only when it needs something itself. A project with nothing is left out, a folded one with something shows its header alone, and with nothing at all the team says `Nothing needs you right now · f shows everyone`. The pane title says the filter is on, `SALON · only what needs you (f)`. While it is on, a selection whose row left moves to the first row of its project still shown (not while you write: the selection decides who `/` writes to). The filter lasts the run only.
+Folding moves the cursor to the heading so it does not vanish.
 
 ## Settling what is finished
 
-A worker that finished and that you have looked at still takes a row. `s` on its row hides it: the row goes, with its helpers and the researcher working for it, until it needs you again. On a project's header, or on its leader's row, `s` hides the whole project. The selection goes on to the next row still shown (else the one before it).
+A worker that finished and that you have looked at still takes a row. `s` on its row hides it: the row goes, with its helpers and the researcher working for it, until it needs you again. On a project's heading `s` hides the whole project. The selection goes on to the next row still shown (else the one before it).
 
-What waits for you or is stuck is never hidden: `not hidden: claude-2 needs you`. A finished turn not seen yet is fine; hiding counts it as seen. A hidden agent comes back by itself the moment something of its row needs you again: a question or a change in TO DECIDE, blocked or stopped, or a new turn finished. A hidden project comes back when any of its agents does. Nothing is gone silently: the pane title counts what is hidden, `SALON · 2 hidden (:unsettle)`, the header's fleet still counts every agent, and `&` still lists them; going to one with `&` or `:goto` brings its row (and its project) back. `:unsettle` brings everything back at once. Settling lasts the run only.
+What waits for you or is stuck is never hidden: `not hidden: claude-2 needs you`. A finished turn not seen yet is fine; hiding counts it as seen. A hidden agent comes back by itself the moment something of its row needs you again: a question or a change in TO DECIDE, blocked or stopped, or a new turn finished. A hidden project comes back when any of its agents does. Nothing is gone silently: the AT WORK heading counts what is hidden, `AT WORK 12 · 2 hidden (:unsettle)`, and `&` still lists them; going to one with `&` or `:goto` brings its row (and its project) back. `:unsettle` brings everything back at once. Settling lasts the run only.
 
 ## A peek
 
-`K` opens the focus of the agent at hand (selected in the team, behind the inbox item or journal line, or the one you are zoomed in on) in a window over the screen, a little smaller than it; the view under it, the team, the board, the code map or a card, does not move. In the window `j` `k` (or the arrows) step to the next / previous agent in the team's order, `enter` opens its whole focus, `@` starts a message to it, `esc` or `K` close it; other keys do nothing. Looking at a finished agent this way counts as seeing it.
+`K` opens the focus of the agent at hand (the row at hand on Home, the agent of the item at hand, or the one you are zoomed in on) in a window over the screen, a little smaller than it; what is under it does not move. In the window `j` `k` (or the arrows) step to the next / previous agent in AT WORK's order, `enter` opens its whole focus, `@` starts a message to it, `esc` or `K` close it; other keys do nothing. Looking at a finished agent this way counts as seeing it.
 
-## Hint letters
+## Windows
 
-`F` puts a label of one or two letters over the start of every row of the team's screen you can select: the project headers and agents in the team (on a card's screen, its people), the items of TO DECIDE and the journal lines shown. The first rows drawn get one letter, home row first (`a s d f …`); when there are more rows than letters, the last letters start labels of two (`ma`, `ms`, …), as few as needed, and a letter that starts a label of two is never a label of its own. Typing a label selects its row and moves to its panel; typed with its last letter in capitals (`D`, `mS`), it also opens the row as `enter` does: an agent's focus, a change, a question's conversation, a journal line's conversation. The letters typed so far narrow the labels to those they start; a letter no label goes on does nothing, `backspace` takes one back, `?` shows the help over them, `esc` closes them. The labels are given when `F` opens them and stay with their rows: a row that moves follows its label, one that leaves the screen loses it, and typing its label says `that row has left the screen`. Where the screen has no such rows (the board, the code map, a focus, a conversation over the team) `F` says so. Both the demo and live sessions have them.
-
-## The side panels
-
-To the right, TO DECIDE on top and the JOURNAL under it. `tab` and `⇧tab` (or `]` and `[`) cycle team → waiting → journal; `w` (`:waiting`) goes straight to the waiting panel. The waiting panel takes as many rows as its items need, up to half the side, and its border turns the warning colour when items wait and the panel is not focused. `:clear` takes both panels' contents off the screen without deleting anything; see [journal](journal.md#clearing-the-screen).
-
-`,` and `.` (or `<` and `>`) make the side panel wider or narrower by four columns, between 20 and 70 percent of the screen; the flash says `side panel 38% (, . or < >)` and the width is saved for the next run. In a change's view `>` quotes a hunk instead, and `.` still narrows.
+What once stood beside the team is Home's upper half and a few windows. TO DECIDE is the upper half ([TO DECIDE](waiting.md)). The [journal](journal.md) is a window, `J` or `:journal`: its lines newest first, or the story by card (`J` in it turns between them); the board, the code map and the timeline open as windows too (`:board`, `:code`, `:timeline`). `esc` or `q` closes a window, a key that opens another closes the first, and `W` closes any to open the next item to decide. `:clear` takes the decided items and the journal's lines off the screen without deleting anything; see [journal](journal.md#clearing-the-screen).
 
 ## Legibility
 
-A window over the team (a conversation, a peek, the help, the away digest, where you left off) dims everything around it, so the tree and the journal's clipped line ends read as background. The journal pane and a question in the inbox show a message as one row of plain words: cleaned, lines joined, heading and list marks off, a link by its label. The trace marks each line with a glyph for its kind, read from the line's first word: `›` the agent's own text, drawn as Markdown (lists, headings, code in the code colour, fences never shown); `▸` a tool call, its name in the info colour and its command or path in the code colour, a run's end by its exit code; `⇄` the bus (a message, a wake, a hire, the board) with its word in the accent; `•` a note of Claude Code's own (a retry, a refusal); `✕` what went wrong; `·` imece's own lines. The focus draws what agents wrote in its story the same way: a one-line message or a decision with its marks on its line, a longer message (or a list, a heading, code) under its head as Markdown, its first eight lines and how many more; imece's own story lines stay plain. In both, a web address (`http` or `https` only) shown whole on its row is a link your terminal opens on click (OSC 8): the text is the address, cleaned as it is drawn, and one cut by the row's end links nothing. An open conversation follows the talk: lines that arrive are appended, and the selection follows when it was on the last line.
+A window over Home (a conversation, a peek, the help, the away digest, where you left off) dims everything around it, so the list reads as background. The journal window and a question's row show a message as one row of plain words: cleaned, lines joined, heading and list marks off, a link by its label. The trace marks each line with a glyph for its kind, read from the line's first word: `›` the agent's own text, drawn as Markdown (lists, headings, code in the code colour, fences never shown); `▸` a tool call, its name in the info colour and its command or path in the code colour, a run's end by its exit code; `⇄` the bus (a message, a wake, a hire, the board) with its word in the accent; `•` a note of Claude Code's own (a retry, a refusal); `✕` what went wrong; `·` imece's own lines. The focus draws what agents wrote in its story the same way: a one-line message or a decision with its marks on its line, a longer message (or a list, a heading, code) under its head as Markdown, its first eight lines and how many more; imece's own story lines stay plain. In both, a web address (`http` or `https` only) shown whole on its row is a link your terminal opens on click (OSC 8): the text is the address, cleaned as it is drawn, and one cut by the row's end links nothing. An open conversation follows the talk: lines that arrive are appended, and the selection follows when it was on the last line.
 
 Everything an agent wrote reaches the screen only through a cleaning that removes control characters and hides secret-looking tokens; nothing is drawn raw.
 
