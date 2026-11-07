@@ -15,12 +15,17 @@ use crate::i18n::Text;
 
 /// From this wide the preview stands beside the list.
 pub(crate) const WIDE: u16 = 100;
-/// The list's widest, of what the preview leaves it.
-const LIST_MAX: u16 = 66;
+/// The list's narrowest beside the preview.
+const LIST_MIN: u16 = 52;
 /// Rows of the preview under the row at hand on a narrow screen.
 const OPENED: usize = 5;
 /// Files named in a preview.
 const FILES: usize = 6;
+
+/// How wide the list is on a screen `width` wide, the preview beside it.
+fn list_width(width: u16) -> u16 {
+    (width * 45 / 100).max(LIST_MIN)
+}
 
 pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     let lonca = lonca_line(app);
@@ -41,10 +46,8 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
         f.render_widget(Paragraph::new(lines.0).scroll((lines.1, 0)), body);
         return;
     }
-    let side = body.width.min(LIST_MAX.max(body.width * 45 / 100));
-    let side = side.min(body.width / 2 + 10);
     let [list, gap, preview] = Layout::horizontal([
-        Constraint::Length(side),
+        Constraint::Length(list_width(body.width)),
         Constraint::Length(1),
         Constraint::Min(0),
     ])
@@ -727,6 +730,82 @@ mod tests {
         change_lines(Lang::En, &app.world, &c, &mut lines, 80);
         let proof: String = lines[1].spans.iter().map(|s| s.content.as_ref()).collect();
         assert!(proof.starts_with("proof    ✓"), "{proof}");
+    }
+
+    #[test]
+    fn the_list_takes_under_half_and_never_less_than_its_narrowest() {
+        assert_eq!(list_width(WIDE), LIST_MIN);
+        assert_eq!(list_width(116), LIST_MIN);
+        assert_eq!(list_width(120), 54);
+        assert_eq!(list_width(150), 67);
+        assert_eq!(list_width(200), 90);
+    }
+
+    #[test]
+    fn the_bar_lights_the_project_it_is_narrowed_to_and_ends_a_cell_short() {
+        let mut app = home(Lang::En);
+        let name = clean(&app.world.projects[1].name);
+        let reversed = |line: &Line, word: &str| {
+            let span = line
+                .spans
+                .iter()
+                .find(|s| s.content.contains(word))
+                .unwrap();
+            span.style.add_modifier.contains(Modifier::REVERSED)
+        };
+        let bar = project_bar(&app, 150);
+        assert!(reversed(&bar, " all "));
+        assert!(!reversed(&bar, &name));
+        assert_eq!(bar.width(), 149);
+        app.at_home.scope = Some(1);
+        let bar = project_bar(&app, 150);
+        assert!(!reversed(&bar, " all "));
+        assert!(reversed(&bar, &name));
+        // The words go when only their own width and the last cell are left.
+        let plain: usize = home_bar_left(&bar);
+        let writes = bar.spans.last().unwrap().width();
+        let fits = u16::try_from(plain + writes + 2).unwrap();
+        assert!(project_bar(&app, fits).width() > plain);
+        assert_eq!(project_bar(&app, fits - 1).width(), plain);
+    }
+
+    /// The bar's width before the blank that ends it.
+    fn home_bar_left(bar: &Line) -> usize {
+        let n = bar.spans.len() - 2;
+        bar.spans[..n].iter().map(Span::width).sum()
+    }
+
+    fn row_text(app: &App, row: HomeRow) -> String {
+        let line = row_line(app, row, 100, false);
+        line.spans.iter().map(|s| s.content.as_ref()).collect()
+    }
+
+    #[test]
+    fn only_a_change_s_row_ends_with_its_lines() {
+        let mut app = home(Lang::En);
+        let a = worker(&app);
+        app.world.changes.push(change(a, Vec::new()));
+        app.world.inbox.push(item(InboxKind::Change, a, ""));
+        app.world.inbox.push(item(InboxKind::Question, a, "Which?"));
+        assert!(row_text(&app, HomeRow::Item(0)).contains("+19 −6"));
+        let question = row_text(&app, HomeRow::Item(1));
+        assert!(question.contains("question"), "{question}");
+        assert!(!question.contains("+19"), "{question}");
+    }
+
+    #[test]
+    fn a_row_names_its_project_only_where_that_tells_it_apart() {
+        let mut app = home(Lang::En);
+        let a = worker(&app);
+        let name = clean(&app.world.projects[app.world.agents[a].project].name);
+        let row = HomeRow::Agent(a);
+        assert!(row_text(&app, row).contains(&name));
+        app.at_home.scope = Some(app.world.agents[a].project);
+        assert!(!row_text(&app, row).contains(&name));
+        app.at_home.scope = None;
+        let other = 1 - app.world.agents[a].project;
+        app.world.projects[other].closed = true;
+        assert!(!row_text(&app, row).contains(&name));
     }
 
     #[test]

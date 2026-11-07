@@ -416,6 +416,20 @@ mod tests {
     }
 
     #[test]
+    fn the_row_at_hand_follows_when_the_rows_above_it_go() {
+        let mut app = quiet();
+        let w = workers(&app);
+        app.world.inbox.push(item(InboxKind::Approval, w[0], true));
+        app.world.inbox.push(item(InboxKind::Approval, w[1], true));
+        app.home_go(1);
+        assert_eq!(app.at_home.row, 1);
+        app.world.inbox[0].open = false;
+        app.home_settle();
+        assert_eq!(app.at_home.at, Some(HomeRow::Item(1)));
+        assert_eq!(app.at_home.row, 0);
+    }
+
+    #[test]
     fn s_puts_an_item_after_the_rest_and_nothing_else() {
         let mut app = quiet();
         let w = workers(&app);
