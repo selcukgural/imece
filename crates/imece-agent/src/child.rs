@@ -379,8 +379,8 @@ fn read_tail(mut r: impl Read, keep: usize) -> String {
             break;
         }
         tail.extend_from_slice(&chunk[..n]);
-        if tail.len() > keep {
-            tail.drain(..tail.len() - keep);
+        if let Some(over) = tail.len().checked_sub(keep) {
+            tail.drain(..over);
         }
     }
     String::from_utf8_lossy(&tail).into_owned()

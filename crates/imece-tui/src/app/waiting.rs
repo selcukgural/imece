@@ -505,6 +505,26 @@ mod tests {
     }
 
     #[test]
+    fn a_and_r_decide_an_ask_only_in_waiting_for_you() {
+        let mut app = App::new(1, 2, 0, 1, Lang::En);
+        let p = app.current_project();
+        let one = app.world.projects[p].leader + 1;
+        app.world.asks_you(one, "Bash: make a");
+        let open = |app: &App| app.world.open_inbox().len();
+        for pane in [Pane::Salon, Pane::Journal] {
+            app.pane = pane;
+            app.on_key(key(KeyCode::Char('a')));
+            assert_eq!(open(&app), 1, "{pane:?}: a decides nothing here");
+            app.on_key(key(KeyCode::Char('r')));
+            assert_eq!(open(&app), 1, "{pane:?}: r decides nothing here");
+        }
+        app.pane = Pane::Inbox;
+        app.inbox_sel = 0;
+        app.on_key(key(KeyCode::Char('r')));
+        assert_eq!(open(&app), 0);
+    }
+
+    #[test]
     fn a_on_an_ask_says_yes_from_now_on_and_colon_allow_lists_adds_and_drops() {
         let mut app = App::new(1, 2, 0, 1, Lang::En);
         let flash = |app: &App| app.flash.as_ref().map(|(m, _)| m.clone()).unwrap();

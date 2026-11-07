@@ -1441,6 +1441,8 @@ mod tests {
             let path = live.bus.as_ref().unwrap().servers[n].path().to_path_buf();
             thread::spawn(move || {
                 let mut sock = UnixStream::connect(path).unwrap();
+                sock.set_read_timeout(Some(Duration::from_secs(10)))
+                    .unwrap();
                 let call = json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"send",
                     "arguments":{"to":"lead","type":"inform","body":"from the socket"}}});
                 writeln!(sock, "{call}").unwrap();
@@ -1484,6 +1486,8 @@ mod tests {
         let list = |n: usize| {
             let path = live.bus.as_ref().unwrap().servers[n].path().to_path_buf();
             let mut sock = UnixStream::connect(path).unwrap();
+            sock.set_read_timeout(Some(Duration::from_secs(10)))
+                .unwrap();
             writeln!(sock, r#"{{"jsonrpc":"2.0","id":1,"method":"tools/list"}}"#).unwrap();
             let mut line = String::new();
             BufReader::new(&sock).read_line(&mut line).unwrap();

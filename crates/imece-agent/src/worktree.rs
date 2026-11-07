@@ -1263,6 +1263,11 @@ mod tests {
         assert_eq!(resolve(&to, "HEAD").unwrap(), head);
         // The one it came from is as it was.
         assert_eq!(change(&from, 1 << 20).unwrap().unwrap(), one);
+        // A patch at the cap is shown; one over it is refused.
+        let whole = one.patch.len();
+        assert_eq!(change(&from, whole).unwrap().unwrap(), one);
+        let err = change(&from, whole - 1).unwrap_err().to_string();
+        assert!(err.contains("more than imece shows"), "{err}");
         // Nothing to carry: nothing changes.
         let three = ensure(&s.repo, &root, "three", Some(&head)).unwrap().path;
         let four = ensure(&s.repo, &root, "four", Some(&head)).unwrap().path;

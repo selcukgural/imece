@@ -37,6 +37,10 @@
 # gone git's answers are never taken, every live test that waits for one
 # waits its ten seconds, and the run reports a timeout for what is caught
 # (#280). It is a boundary path, so its timeout held the PR.
+# `child::exited` said to see no end (`-> Ok(false)`) is caught by every
+# test that waits for a child's end, each waiting its full ten seconds
+# first; together they outlast the run's timeout (the nightly of
+# 2026-11-07), so it is left out the same way.
 # `lonca_fake` is a test double behind a feature, never in a build of
 # imece; a mutant in it fails or passes what it stands in for.
 # `lonca::read_session` joins open flags with `|` as `input::seen` does:
@@ -47,6 +51,7 @@ exclude_re = [
     "src/live/mod.rs:.*: replace Live::step -> bool with (false|true)$",
     "src/live/changes.rs:.*: replace Live::take_git -> bool with (false|true)$",
     "src/child.rs:.*: replace \\| with \\^$",
+    "src/child.rs:.*: replace exited -> io::Result<bool> with Ok\\(false\\)$",
     "src/lonca_fake.rs:.*",
     "src/lonca.rs:.*: replace \\| with \\^ in read_session$",
     "src/child.rs:.*: replace bsd_parent ",

@@ -185,10 +185,11 @@ pub fn fill(template: &str, args: &[&str]) -> String {
     let mut out = String::with_capacity(template.len() + 32);
     let mut rest = template;
     let mut args = args.iter();
-    while let Some(i) = rest.find("{}") {
-        out.push_str(&rest[..i]);
+    // No arithmetic on the way through: a `+` made `*` would stand still.
+    while let Some((head, tail)) = rest.split_once("{}") {
+        out.push_str(head);
         out.push_str(&clean(args.next().copied().unwrap_or("")));
-        rest = &rest[i + 2..];
+        rest = tail;
     }
     out.push_str(rest);
     out

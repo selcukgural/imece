@@ -339,6 +339,9 @@ mod tests {
         assert!(Server::bind(&path, tools(), |_, _, _| Ok(String::new())).is_err());
 
         let mut sock = UnixStream::connect(&path).unwrap();
+        // A reply that never comes fails the test, it does not hang it.
+        sock.set_read_timeout(Some(std::time::Duration::from_secs(10)))
+            .unwrap();
         writeln!(
             sock,
             r#"{{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{{"name":"send","arguments":{{"to":"lead"}}}}}}"#
@@ -351,6 +354,9 @@ mod tests {
 
         drop(server);
         assert!(!path.exists());
+        // The relay the CLI starts has nothing to relay to: an error, not
+        // a quiet end.
+        assert!(relay(&path).is_err());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
