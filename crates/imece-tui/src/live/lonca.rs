@@ -19,8 +19,8 @@ use super::Live;
 use super::Slot;
 use crate::model::{
     Agent, AgentId, Attested, Behind, Change, ChangedFile, Check, Decision, ImportAsk, Landed,
-    MsgKind, ProjectId, Role, StoreDown, StoreJob, StoreLease, StoreProposal, StoreSeen, Synced,
-    World,
+    MsgKind, ProjectId, Role, StoreDown, StoreJob, StoreLease, StorePending, StoreProposal,
+    StoreSeen, Synced, World,
 };
 
 /// How often the store is asked. Each look is a connection and a
@@ -81,6 +81,8 @@ struct Looked {
     evidence: HashMap<String, Vec<Attested>>,
     /// What is held in each repository.
     leases: Vec<(ProjectId, String, Vec<lonca::Lease>)>,
+    /// Every proposal waiting in each repository, with its trunk.
+    pending: Vec<(ProjectId, String, String, Vec<lonca::Pending>)>,
 }
 
 /// What the looks keep: the store does not change what it said.
@@ -168,6 +170,7 @@ fn offers(status: &lonca::Status, read: &mut impl FnMut(&str) -> Option<Arc<Diff
                 redacted: diff.redacted.clone(),
                 cut: diff.cut,
                 verifies: vec![],
+                on_trunk: newest.base.as_deref() == Some(status.trunk.as_str()),
             },
             diff,
         });
@@ -512,6 +515,11 @@ fn look(place: &Place, repos: &Repos, watched: &[String], kept: &mut Kept) -> Lo
                     .leases
                     .push((*p, repo.clone(), status.leases.clone()));
                 if kept.holds(c, repo, &status.policy) {
+                    let proposals = (status.pending.iter())
+                        .filter(|w| w.op == lonca::PROPOSE)
+                        .cloned();
+                    let trunk = status.trunk.clone();
+                    (looked.pending).push((*p, repo.clone(), trunk, proposals.collect()));
                     let mut read = |change: &str| kept.diff(c, repo, change);
                     let mut offered = offers(&status, &mut read);
                     if !offered.is_empty() {
@@ -555,6 +563,26 @@ fn lease_of(w: &World, p: ProjectId, lease: lonca::Lease) -> StoreLease {
         holder: Live::owner(w, p, &name),
         name,
     }
+}
+
+/// `pending` as the verdict reads it (record 125): its proposer an agent
+/// of project `p` when it is one, its base against `trunk`. Nothing for
+/// an operation that is no proposal of a change.
+fn pending_of(
+    w: &World,
+    p: ProjectId,
+    trunk: &str,
+    pending: lonca::Pending,
+) -> Option<StorePending> {
+    let name = pending.agent?;
+    Some(StorePending {
+        seq: pending.seq,
+        change: pending.change?,
+        holder: Live::owner(w, p, &name),
+        name,
+        paths: pending.paths,
+        on_trunk: pending.base.as_deref() == Some(trunk),
+    })
 }
 
 /// Those of `watched` that `status` has settled, so that its queue has
@@ -816,6 +844,12 @@ impl Live {
             let held = held.into_iter().map(|l| lease_of(w, p, l)).collect();
             changed |= w.store_leases(p, &repo, held);
         }
+        for (p, repo, trunk, pending) in looked.pending {
+            let pending = (pending.into_iter())
+                .filter_map(|waiting| pending_of(w, p, &trunk, waiting))
+                .collect();
+            changed |= w.store_pending(p, &repo, pending);
+        }
         changed |= self.land(w, &looked.standings, &looked.evidence);
         for (p, offer) in &looked.offers {
             changed |= self.offered(w, *p, offer);
@@ -842,8 +876,10 @@ impl Live {
         };
         match w.proposals.get_mut(&id) {
             Some(shown) if shown.change == offer.proposal.change => {
-                let moved = shown.older != offer.proposal.older;
+                let moved = shown.older != offer.proposal.older
+                    || shown.on_trunk != offer.proposal.on_trunk;
                 shown.older.clone_from(&offer.proposal.older);
+                shown.on_trunk = offer.proposal.on_trunk;
                 moved
             }
             _ => {
@@ -1049,12 +1085,19 @@ mod tests {
 
     /// Steps until the look under way came back, what it brought kept.
     fn settle(live: &mut Live, w: &mut World) {
+        settled(live, w);
+    }
+
+    /// Waits for the look out to come back; whether it changed the screen.
+    fn settled(live: &mut Live, w: &mut World) -> bool {
         let till = Instant::now() + WAIT;
+        let mut changed = false;
         while live.lonca.out {
-            live.take_lonca(w);
+            changed |= live.take_lonca(w);
             assert!(Instant::now() < till, "no answer");
             std::thread::sleep(Duration::from_millis(2));
         }
+        changed
     }
 
     #[test]
@@ -1949,6 +1992,7 @@ mod tests {
                 redacted: Vec::new(),
                 cut: false,
                 verifies: vec![],
+                on_trunk: true,
             },
             diff: diff_of("diff --git a/a.rs b/a.rs\n"),
         }
@@ -1956,12 +2000,13 @@ mod tests {
 
     #[test]
     fn a_workers_newest_proposal_is_its_offer_and_holds_the_older() {
-        let status = waiting(&[
+        let mut status = waiting(&[
             (5, Some("w1"), Some("c5")),
             (9, Some("w1"), Some("c9")),
             (7, Some("w1"), Some("c7")),
             (6, Some("w2"), Some("c6")),
         ]);
+        status.pending[1].base = Some("0ther".into());
         let mut asked = Vec::new();
         let got = offers(&status, &mut |change: &str| {
             asked.push(change.to_string());
@@ -1979,10 +2024,12 @@ mod tests {
             redacted: vec!["s.txt".into()],
             cut: true,
             verifies: vec![],
+            on_trunk: false,
         };
         assert_eq!(got[0].proposal, want);
         assert_eq!(got[1].agent, "w2");
         assert_eq!(got[1].proposal.older, Vec::<u64>::new());
+        assert!(got[1].proposal.on_trunk, "based on trunk as it stands");
     }
 
     #[test]
@@ -2456,6 +2503,11 @@ mod tests {
                 v["changes"] = serde_json::json!([
                     {"change": "kkkk", "status": {"status": "pending", "seq": 7}}]);
                 v["policy"] = policy.clone();
+                // An operation waiting that is no proposal.
+                let mut rule = v["pending"][0].clone();
+                rule["op"] = serde_json::json!("policy.update");
+                rule["seq"] = serde_json::json!(8);
+                v["pending"].as_array_mut().unwrap().push(rule);
                 Ok(v)
             }
             Some("change.diff") => Ok(serde_json::json!({"commit": "c", "files": [],
@@ -2478,7 +2530,14 @@ mod tests {
         assert_eq!(looked.offers[0].0, 4);
         assert_eq!(looked.offers[0].1.agent, "a");
         assert_eq!(looked.offers[0].1.diff.patch, "the patch");
+        assert!(looked.offers[0].1.proposal.on_trunk);
         assert_eq!(looked.standings.get("kkkk"), Some(&Standing::Pending));
+        // Every proposal waiting, with trunk; the other operation is not.
+        assert_eq!(looked.pending.len(), 1);
+        let (p, repo, trunk, pending) = &looked.pending[0];
+        assert_eq!((*p, repo.as_str(), trunk.as_str()), (4, "demo", TRUNK));
+        assert_eq!(pending.iter().map(|w| w.seq).collect::<Vec<_>>(), [7]);
+        assert_eq!(pending[0].paths, ["src/a.rs"]);
         look(&d.place, &repos, &[], &mut kept);
         let diffs = |d: &Daemon| {
             let heard = d.heard.lock().unwrap();
@@ -2502,6 +2561,122 @@ mod tests {
         let down = StoreSeen::Down(StoreDown::Unguarded);
         assert_eq!(looked.found[0].2, down);
         assert!(looked.offers.is_empty() && looked.standings.is_empty());
+        assert!(looked.pending.is_empty(), "nothing waits where no gate is");
+    }
+
+    #[test]
+    fn a_proposal_waiting_reads_with_its_holder_and_its_base_against_trunk() {
+        let (w, _, word) = proposer();
+        let status = waiting(&[
+            (5, Some(word.as_str()), Some("c5")),
+            (6, Some("someone"), Some("c6")),
+            (7, Some("x"), None),
+            (8, None, Some("c8")),
+        ]);
+        let mut pending = status.pending.clone();
+        pending[0].paths = vec!["src/a.rs".into(), "b.rs".into()];
+        pending[1].base = Some("0000".into());
+        assert_eq!(
+            pending_of(&w, 0, TRUNK, pending[0].clone()),
+            Some(StorePending {
+                seq: 5,
+                change: "c5".into(),
+                name: word.clone(),
+                holder: Some(1),
+                paths: vec!["src/a.rs".into(), "b.rs".into()],
+                on_trunk: true,
+            })
+        );
+        let other = pending_of(&w, 0, TRUNK, pending[1].clone()).unwrap();
+        assert_eq!(
+            (other.holder, other.name.as_str(), other.on_trunk),
+            (None, "someone", false)
+        );
+        assert_eq!(
+            pending_of(&w, 3, TRUNK, pending[0].clone()).unwrap().holder,
+            None,
+            "another project's"
+        );
+        assert_eq!(
+            pending_of(&w, 0, TRUNK, pending[2].clone()),
+            None,
+            "no change"
+        );
+        assert_eq!(
+            pending_of(&w, 0, TRUNK, pending[3].clone()),
+            None,
+            "no agent"
+        );
+    }
+
+    #[test]
+    fn a_look_s_proposals_waiting_reach_the_project_with_their_holders() {
+        let (mut w, mut live, word) = proposer();
+        let rows = serde_json::json!([
+            {"seq": 5, "created_ms": 5, "actor": "agent:a/s", "op": "change.propose",
+                "reasons": ["unobserved_session"], "approvals": [], "required": 1, "change": "c5",
+                "base": TRUNK, "intent": "fix", "agent": word, "task": "T-1", "paths": ["src/a.rs"]},
+            {"seq": 6, "created_ms": 5, "actor": "agent:b/s", "op": "change.propose",
+                "reasons": ["unobserved_session"], "approvals": [], "required": 1, "change": "c6",
+                "base": "0000", "intent": "fix", "agent": "someone", "task": "T-2", "paths": ["b.rs"]},
+        ]);
+        let rows = Arc::new(std::sync::Mutex::new(rows));
+        let said = rows.clone();
+        let d = Daemon::start(PROTOCOL, move |asked| match asked["method"].as_str() {
+            Some("status") => {
+                let mut v = status(&[]);
+                v["pending"] = said.lock().unwrap().clone();
+                Ok(v)
+            }
+            Some("tree") => Ok(serde_json::json!([{"path": "lonca.toml",
+                "content_b64": "W29ic2VydmF0aW9uXQp1bm9ic2VydmVkX2lzX3RhaW50ZWQgPSBmYWxzZQo="}])),
+            _ => Err("not_found"),
+        });
+        d.sign_in();
+        live.lonca = Watch::start(d.place.clone());
+        live.lonca_due(&w, Instant::now());
+        assert!(settled(&mut live, &mut w));
+        let on = w.projects[0].lonca.as_ref().unwrap();
+        assert!(
+            matches!(on.seen, StoreSeen::Up { pending: 2, .. }),
+            "{:?}",
+            on.seen
+        );
+        assert_eq!(
+            on.pending,
+            [
+                StorePending {
+                    seq: 5,
+                    change: "c5".into(),
+                    name: word.clone(),
+                    holder: Some(1),
+                    paths: vec!["src/a.rs".into()],
+                    on_trunk: true,
+                },
+                StorePending {
+                    seq: 6,
+                    change: "c6".into(),
+                    name: "someone".into(),
+                    holder: None,
+                    paths: vec!["b.rs".into()],
+                    on_trunk: false,
+                },
+            ]
+        );
+        assert!(
+            w.changes.is_empty(),
+            "no diff could be read: no change shown"
+        );
+        // Trunk moved on to the stranger's base: the only thing that changed.
+        rows.lock().unwrap()[1]["base"] = serde_json::json!(TRUNK);
+        live.look_now();
+        live.lonca_due(&w, Instant::now());
+        assert!(settled(&mut live, &mut w), "what waits moved");
+        let on = w.projects[0].lonca.as_ref().unwrap();
+        assert!(on.pending[1].on_trunk);
+        live.look_now();
+        live.lonca_due(&w, Instant::now());
+        assert!(!settled(&mut live, &mut w), "nothing moved");
     }
 
     /// A team of one on Lonca, its worker between turns, its word for
@@ -2568,6 +2743,12 @@ mod tests {
         same.proposal.older = vec![2];
         assert!(live.offered(&mut w, 0, &same), "an older one came to light");
         assert_eq!(w.proposal_of(1).unwrap().older, [2]);
+        assert_eq!(w.changes.len(), 1);
+        let mut rebased = same.clone();
+        rebased.proposal.on_trunk = false;
+        assert!(live.offered(&mut w, 0, &rebased), "trunk moved on");
+        assert!(!w.proposal_of(1).unwrap().on_trunk);
+        assert!(!live.offered(&mut w, 0, &rebased), "nothing new");
         assert_eq!(w.changes.len(), 1);
         assert!(live.offered(&mut w, 0, &offer(&word, 8, "c8")));
         assert_eq!(w.proposal_of(1).unwrap().seq, 8);

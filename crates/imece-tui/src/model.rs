@@ -492,6 +492,30 @@ pub struct OnLonca {
     pub seen: StoreSeen,
     /// What is held in it now, as the last look read it (record 123).
     pub leases: Vec<StoreLease>,
+    /// Every proposal waiting in it for a human, as the last look read
+    /// it (record 125, step 4): the verdict on a change counts the ones
+    /// that are no change shown here.
+    pub pending: Vec<StorePending>,
+}
+
+/// A proposal waiting in a Lonca repository, anyone's: what the verdict on
+/// a change of the project reads for the overlaps the project's own
+/// changes can not show.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StorePending {
+    /// The number `approve` and `reject` name.
+    pub seq: u64,
+    /// The change's id in the store.
+    pub change: String,
+    /// The agent's name, as Lonca has it.
+    pub name: String,
+    /// The agent of this project that proposed it; none for anyone else.
+    pub holder: Option<AgentId>,
+    /// The paths it changes, as Lonca lists them.
+    pub paths: Vec<String>,
+    /// Its base is trunk as it stands: a stale one is merged by the queue
+    /// after the yes.
+    pub on_trunk: bool,
 }
 
 /// A symbol held in a Lonca repository: the code map's rows on Lonca.
@@ -2333,15 +2357,29 @@ impl Proof {
     }
 }
 
-/// Another change waiting in the same project that touches a file this
-/// one touches.
+/// Another change waiting that touches a file this one touches.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Overlap {
-    pub agent: AgentId,
-    /// The card that change was made for.
-    pub card: Option<CardId>,
+    pub with: Other,
     /// The files both touch, in this change's order.
     pub files: Vec<String>,
+}
+
+/// What a change overlaps: another change waiting in the project, or a
+/// proposal waiting in the project's Lonca repository that no change here
+/// shows (someone else's, or a worker's whose turn is not over).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Other {
+    Change {
+        agent: AgentId,
+        /// The card that change was made for.
+        card: Option<CardId>,
+    },
+    Proposal {
+        seq: u64,
+        /// The agent's name, as Lonca has it.
+        name: String,
+    },
 }
 
 /// The Δ gate in one line (record 125): whether a change is ready to
@@ -2368,6 +2406,9 @@ pub struct Verdict {
     pub clashes: bool,
     /// The patch shown is not the whole change: Lonca redacted or cut it.
     pub partial: bool,
+    /// A proposal based before trunk as it stands: Lonca's queue merges it
+    /// after the yes.
+    pub stale: bool,
     /// What Lonca runs after the person's yes (record 122); none off
     /// Lonca.
     pub verifies: Option<Vec<String>>,
@@ -2420,6 +2461,9 @@ pub struct StoreProposal {
     pub cut: bool,
     /// What Lonca's queue runs on it after the person's yes (record 122).
     pub verifies: Vec<String>,
+    /// Its base is trunk as the last look saw it; a stale one is merged
+    /// by the queue after the yes (record 125, step 4).
+    pub on_trunk: bool,
 }
 
 /// Where the repository's check (`.imece/check`, record 112) stands on a
@@ -2535,8 +2579,17 @@ impl Change {
 
     /// The files both this change and `other` touch, in this one's order.
     pub fn shared_files(&self, other: &Change) -> Vec<String> {
+        self.shared_paths(other.files.iter().map(|f| f.path.as_str()))
+    }
+
+    /// The files this change touches that are among `paths`, in this
+    /// change's order.
+    pub fn shared_paths<'a>(
+        &self,
+        paths: impl IntoIterator<Item = &'a str> + Clone,
+    ) -> Vec<String> {
         (self.files.iter())
-            .filter(|f| other.files.iter().any(|o| o.path == f.path))
+            .filter(|f| paths.clone().into_iter().any(|o| o == f.path))
             .map(|f| f.path.clone())
             .collect()
     }
@@ -2987,6 +3040,7 @@ impl World {
             repo,
             seen: StoreSeen::Asking,
             leases: Vec::new(),
+            pending: Vec::new(),
         });
     }
 
@@ -3050,6 +3104,7 @@ impl World {
         on.seen = seen.clone();
         if matches!(seen, StoreSeen::Down(_)) {
             on.leases.clear();
+            on.pending.clear();
         }
         let repo = repo.to_string();
         match seen {
@@ -3067,6 +3122,17 @@ impl World {
             return false;
         };
         on.leases = leases;
+        true
+    }
+
+    /// What waits for a human in project `p`'s repository `repo`. Whether
+    /// it moved.
+    pub fn store_pending(&mut self, p: ProjectId, repo: &str, pending: Vec<StorePending>) -> bool {
+        let on = self.projects[p].lonca.as_mut().filter(|l| l.repo == repo);
+        let Some(on) = on.filter(|l| l.pending != pending) else {
+            return false;
+        };
+        on.pending = pending;
         true
     }
 
@@ -3703,15 +3769,28 @@ impl World {
         let project = self.agents[id].project;
         let waiting = (self.changes.iter())
             .filter(|o| o.agent != id && self.agents[o.agent].project == project);
-        let others = waiting.clone().count();
-        let overlaps = waiting
+        let pending = self.pending_elsewhere(id);
+        let others = waiting.clone().count() + pending.len();
+        let mut overlaps = waiting
             .map(|o| Overlap {
-                agent: o.agent,
-                card: self.change_card(o.agent),
+                with: Other::Change {
+                    agent: o.agent,
+                    card: self.change_card(o.agent),
+                },
                 files: c.shared_files(o),
             })
             .filter(|o| !o.files.is_empty())
             .collect::<Vec<_>>();
+        overlaps.extend(pending.into_iter().filter_map(|p| {
+            let files = c.shared_paths(p.paths.iter().map(String::as_str));
+            (!files.is_empty()).then(|| Overlap {
+                with: Other::Proposal {
+                    seq: p.seq,
+                    name: p.name.clone(),
+                },
+                files,
+            })
+        }));
         let proposal = self.proposal_of(id);
         let clashes = self.clashes_of(id).is_some();
         let partial = proposal.is_some_and(|p| !p.redacted.is_empty() || p.cut);
@@ -3725,8 +3804,26 @@ impl World {
             overlaps,
             clashes,
             partial,
+            stale: proposal.is_some_and(|p| !p.on_trunk),
             verifies: proposal.map(|p| p.verifies.clone()),
         })
+    }
+
+    /// The proposals waiting in worker `id`'s repository that no change of
+    /// its project shows: anyone else's, and a worker's whose turn is not
+    /// over (its own, and another worker's whose change is shown, are
+    /// judged by the changes themselves).
+    fn pending_elsewhere(&self, id: AgentId) -> Vec<&StorePending> {
+        let project = self.agents[id].project;
+        let Some(on) = &self.projects[project].lonca else {
+            return Vec::new();
+        };
+        (on.pending.iter())
+            .filter(|p| match p.holder {
+                Some(holder) => holder != id && self.change_of(holder).is_none(),
+                None => true,
+            })
+            .collect()
     }
 
     /// Worker `change.agent` finished with a change in its worktree: it
@@ -7609,6 +7706,99 @@ mod tests {
         assert!(w.projects[0].lonca.as_ref().unwrap().leases.is_empty());
     }
 
+    fn a_pending(seq: u64, name: &str, holder: Option<AgentId>, paths: &[&str]) -> StorePending {
+        StorePending {
+            seq,
+            change: format!("c{seq}"),
+            name: name.into(),
+            holder,
+            paths: paths.iter().map(|p| p.to_string()).collect(),
+            on_trunk: true,
+        }
+    }
+
+    #[test]
+    fn what_waits_in_the_repository_is_of_it_and_goes_with_a_store_that_is_down() {
+        let mut w = world(vec![lead(0)]);
+        let waits = |seq| vec![a_pending(seq, "x", None, &["a"])];
+        assert!(!w.store_pending(0, "r", waits(5)), "on no repository");
+        w.on_lonca(0, Some("r".into()));
+        assert!(!w.store_pending(0, "other", waits(5)), "not its");
+        assert!(w.projects[0].lonca.as_ref().unwrap().pending.is_empty());
+        assert!(w.store_pending(0, "r", waits(5)));
+        assert!(!w.store_pending(0, "r", waits(5)), "the same");
+        assert!(w.store_pending(0, "r", waits(6)));
+        assert_eq!(w.projects[0].lonca.as_ref().unwrap().pending, waits(6));
+        w.store_seen(0, "r", StoreSeen::Down(StoreDown::NoDaemon));
+        assert!(w.projects[0].lonca.as_ref().unwrap().pending.is_empty());
+    }
+
+    #[test]
+    fn the_verdict_counts_the_proposals_waiting_in_the_repository_that_no_change_shows() {
+        let mut w = crate::live::testing::team(3);
+        w.on_lonca(0, Some("r".into()));
+        w.change_ready(change(1, "T", &[("a", 1, 0), ("b", 1, 0)]));
+        w.changes[0].check = Check::Ran(Checked {
+            ok: true,
+            end: "exit 0".into(),
+            lines: Vec::new(),
+        });
+        assert!(w.verdict(1).unwrap().ready);
+        w.store_pending(
+            0,
+            "r",
+            vec![
+                // Its own: judged by the change itself.
+                a_pending(3, "w1", Some(1), &["a"]),
+                // A stranger's.
+                a_pending(12, "ayse", None, &["z", "b"]),
+                // A worker's whose turn is not over.
+                a_pending(8, "w2", Some(2), &["a", "q"]),
+                // One that shares nothing.
+                a_pending(9, "w3", Some(3), &["q"]),
+            ],
+        );
+        let v = w.verdict(1).unwrap();
+        assert_eq!(v.others, 3);
+        assert_eq!(
+            v.overlaps,
+            [
+                Overlap {
+                    with: Other::Proposal {
+                        seq: 12,
+                        name: "ayse".into()
+                    },
+                    files: vec!["b".into()],
+                },
+                Overlap {
+                    with: Other::Proposal {
+                        seq: 8,
+                        name: "w2".into()
+                    },
+                    files: vec!["a".into()],
+                },
+            ]
+        );
+        assert!(!v.ready);
+        // Worker 2's change is shown now: its proposal is judged as that.
+        w.change_ready(change(2, "U", &[("q", 1, 0)]));
+        let v = w.verdict(1).unwrap();
+        assert_eq!(v.others, 3, "one change and two proposals");
+        assert_eq!(v.overlaps.len(), 1);
+        assert_eq!(
+            v.overlaps[0].with,
+            Other::Proposal {
+                seq: 12,
+                name: "ayse".into()
+            }
+        );
+        // Off Lonca nothing of it counts.
+        w.on_lonca(0, None);
+        let v = w.verdict(1).unwrap();
+        assert_eq!((v.others, v.overlaps.len()), (1, 0));
+        assert!(v.ready);
+    }
+
     #[test]
     fn a_kept_refusal_of_critical_paths_is_said_by_the_project() {
         let mut w = world(vec![lead(0)]);
@@ -7679,6 +7869,7 @@ mod tests {
             redacted: Vec::new(),
             cut: false,
             verifies: vec![],
+            on_trunk: true,
         }
     }
 
@@ -7729,6 +7920,7 @@ mod tests {
                 overlaps: Vec::new(),
                 clashes: false,
                 partial: false,
+                stale: false,
                 verifies: None,
             }
         );
@@ -7800,8 +7992,10 @@ mod tests {
         assert_eq!(
             v.overlaps,
             [Overlap {
-                agent: 2,
-                card: None,
+                with: Other::Change {
+                    agent: 2,
+                    card: None
+                },
                 files: vec!["src/a.rs".into(), "Cargo.toml".into()]
             }]
         );
@@ -7811,7 +8005,10 @@ mod tests {
             ["Cargo.toml", "src/a.rs"],
             "seen from the other side"
         );
-        assert_eq!(w.verdict(2).unwrap().overlaps[0].agent, 1);
+        assert!(matches!(
+            w.verdict(2).unwrap().overlaps[0].with,
+            Other::Change { agent: 1, .. }
+        ));
         // Another project's change is nobody's business here.
         w.agents[2].project = 7;
         let v = w.verdict(1).unwrap();
@@ -7868,7 +8065,10 @@ mod tests {
         w.inbox[i].open = true;
         w.change_ready(change(2, "U", &[("src/a.rs", 1, 0)]));
         w.agents[2].card = Some(1);
-        assert_eq!(w.verdict(1).unwrap().overlaps[0].card, Some(1));
+        assert!(matches!(
+            w.verdict(1).unwrap().overlaps[0].with,
+            Other::Change { card: Some(1), .. }
+        ));
     }
 
     #[test]
@@ -7904,7 +8104,13 @@ mod tests {
         w.change_proposed(c.clone(), p.clone());
         let v = w.verdict(1).unwrap();
         assert_eq!(v.verifies.as_deref(), Some(&["build".to_string()][..]));
-        assert!(!v.partial && v.ready);
+        assert!(!v.partial && !v.stale && v.ready);
+        // Based before trunk: said, and still ready, for the queue merges it.
+        p.on_trunk = false;
+        w.change_proposed(c.clone(), p.clone());
+        let v = w.verdict(1).unwrap();
+        assert!(v.stale && v.ready);
+        p.on_trunk = true;
         p.redacted = vec!["x.env".into()];
         w.change_proposed(c.clone(), p.clone());
         let v = w.verdict(1).unwrap();

@@ -7786,6 +7786,7 @@ mod tests {
             redacted: Vec::new(),
             cut: false,
             verifies: vec![],
+            on_trunk: true,
         };
         app.world.change_proposed(a_change(1), proposal);
         let s = render(&app, 140, 40);

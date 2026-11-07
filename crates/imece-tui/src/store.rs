@@ -1602,6 +1602,7 @@ impl Store {
                     repo,
                     seen: StoreSeen::Asking,
                     leases: Vec::new(),
+                    pending: Vec::new(),
                 }),
                 archived,
             });
@@ -5230,6 +5231,7 @@ mod tests {
                     repo: "repo".into(),
                     seen: StoreSeen::Asking,
                     leases: Vec::new(),
+                    pending: Vec::new(),
                 }
             );
             // As schema 26 wrote it: on no store.

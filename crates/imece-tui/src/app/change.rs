@@ -1462,6 +1462,7 @@ mod tests {
             redacted: Vec::new(),
             cut: false,
             verifies: vec![],
+            on_trunk: true,
         };
         app.world.change_proposed(a_change(1), proposal);
         app.zoom = Zoom::Diff(1);
@@ -1605,6 +1606,7 @@ mod tests {
             redacted: Vec::new(),
             cut: false,
             verifies: vec![],
+            on_trunk: true,
         };
         let mut w = team(1);
         w.change_ready(a_change(1));
