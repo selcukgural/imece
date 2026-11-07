@@ -8,7 +8,7 @@ use ratatui::widgets::{Block, Paragraph, Wrap};
 
 use super::*;
 use crate::app::{
-    App, Digest, LeftOff, PickStep, SoloPick, TalkNote, TeardownAsk, Thread, TidyWin,
+    App, Digest, LeftOff, LoncaWin, PickStep, SoloPick, TalkNote, TeardownAsk, Thread, TidyWin,
 };
 use crate::archives::{self, Browser, Row};
 use crate::keys::{Keymap, Scope};
@@ -347,6 +347,104 @@ pub fn tidy(f: &mut Frame, app: &App, win: TidyWin) -> Rect {
         _ => Line::from(hint_spans(&t.tidy_hints)),
     };
     f.render_widget(Paragraph::new(foot), keys);
+    area
+}
+
+/// The `:lonca` window (record 125, step 4): how the project at hand's
+/// repository stands, then every proposal waiting for a human in it, a
+/// row each (its number, who made it: the agent's name here when it is
+/// one of the project's, the paths it changes, `Δ shown` when it is the
+/// change waiting for the person, `based before trunk`), the one at hand
+/// marked, then what is held (file, symbol, holder). At its foot its
+/// keys.
+pub fn lonca(f: &mut Frame, app: &App, win: LoncaWin) -> Rect {
+    let t = app.lang.text();
+    let full = f.area();
+    let area = centered(
+        full,
+        full.width.saturating_sub(8),
+        full.height.saturating_sub(4),
+    );
+    shade(f, area);
+    clear(f, area);
+    let w = &app.world;
+    let p = app.current_project();
+    let repo = (w.projects[p].lonca.as_ref()).map_or(String::new(), |on| clean(&on.repo));
+    let block = Block::bordered()
+        .title(fill(t.lonca_title, &[&repo]))
+        .border_style(fg(pal().accent));
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    let mut lines = vec![
+        Line::from(Span::styled(app.lonca_state(p), dim())),
+        Line::default(),
+    ];
+    let rows = app.lonca_rows();
+    let head = fill(t.lonca_pending_head, &[&rows.len().to_string()]);
+    lines.push(Line::from(Span::styled(head, bold(pal().fg))));
+    if rows.is_empty() {
+        lines.push(Line::from(Span::styled(t.lonca_pending_none, dim())));
+    }
+    let name_of = |row: &crate::model::StorePending| match row.holder {
+        Some(id) => w.agents[id].name.clone(),
+        None => clean(&row.name),
+    };
+    let width = rows
+        .iter()
+        .map(|r| name_of(r).chars().count())
+        .max()
+        .unwrap_or(0);
+    for (i, row) in rows.iter().enumerate() {
+        let at = i == win.at;
+        let mark = if at { "▶ " } else { "  " };
+        let name = name_of(row);
+        let name = if at {
+            Span::styled(format!("{name:<width$}"), bold(pal().fg))
+        } else {
+            Span::raw(format!("{name:<width$}"))
+        };
+        let mut spans = vec![
+            Span::raw(mark),
+            Span::styled(format!("{:>4}  ", row.seq), dim()),
+            name,
+            Span::styled(format!("  {}", diff::named(&row.paths)), dim()),
+        ];
+        if app.lonca_row_shown(row).is_some() {
+            spans.push(Span::styled(format!("  {}", t.lonca_shown), fg(pal().ok)));
+        }
+        if !row.on_trunk {
+            spans.push(Span::styled(
+                format!("  {}", t.lonca_before_trunk),
+                fg(pal().warn),
+            ));
+        }
+        lines.push(Line::from(spans));
+    }
+    lines.push(Line::default());
+    let leases = (w.projects[p].lonca.as_ref()).map_or(&[][..], |on| &on.leases[..]);
+    let head = fill(t.lonca_leases_head, &[&leases.len().to_string()]);
+    lines.push(Line::from(Span::styled(head, bold(pal().fg))));
+    if leases.is_empty() {
+        lines.push(Line::from(Span::styled(t.lonca_leases_none, dim())));
+    }
+    for lease in leases {
+        let holder = match lease.holder {
+            Some(id) => w.agents[id].name.clone(),
+            None => clean(&lease.name),
+        };
+        lines.push(Line::from(vec![
+            Span::raw(format!("  {}", clean(&lease.file))),
+            Span::styled(format!(" · {}", clean(&lease.symbol)), dim()),
+            Span::styled(format!(" · {holder}"), fg(pal().agent)),
+        ]));
+    }
+    let [body, keys] = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(inner);
+    // The row at hand stays on the window: the rows above it scroll away.
+    let room = usize::from(body.height).max(1);
+    let row = 3 + win.at.min(rows.len().saturating_sub(1));
+    let skip = (row + 1).saturating_sub(room);
+    f.render_widget(Paragraph::new(lines).scroll((skip as u16, 0)), body);
+    f.render_widget(Paragraph::new(Line::from(hint_spans(&t.lonca_hints))), keys);
     area
 }
 

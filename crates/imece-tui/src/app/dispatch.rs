@@ -367,6 +367,10 @@ impl App {
             self.tidy_key(win, k);
             return;
         }
+        if let Some(win) = self.lonca_win {
+            self.lonca_key(win, k);
+            return;
+        }
         if self.hints.is_some() {
             self.hint_key(k);
             return;

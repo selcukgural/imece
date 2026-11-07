@@ -695,7 +695,7 @@ fn kinds_line(lang: Lang, files: &[ChangedFile]) -> Option<Line<'static>> {
 const VERDICT_NAMES: usize = 3;
 
 /// `names`, [`VERDICT_NAMES`] at most and the rest counted, cleaned.
-fn named(names: &[String]) -> String {
+pub(crate) fn named(names: &[String]) -> String {
     let mut said = (names.iter().take(VERDICT_NAMES))
         .map(|n| clean(n))
         .collect::<Vec<_>>()

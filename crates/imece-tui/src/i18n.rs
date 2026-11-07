@@ -828,6 +828,20 @@ pub struct Text {
     pub setup_yes: &'static str,
     pub setup_no: &'static str,
     pub setup_gone: &'static str,
+    /// The `:lonca` window (record 125, step 4): its title with the
+    /// repository, the heads of what waits for a human and of what is held
+    /// with their counts, their empty lines, a proposal shown as a Δ, one
+    /// based before trunk, its keys, and `enter` on a proposal that is no
+    /// change shown here.
+    pub lonca_title: &'static str,
+    pub lonca_pending_head: &'static str,
+    pub lonca_pending_none: &'static str,
+    pub lonca_shown: &'static str,
+    pub lonca_before_trunk: &'static str,
+    pub lonca_leases_head: &'static str,
+    pub lonca_leases_none: &'static str,
+    pub lonca_hints: [(&'static str, &'static str); 3],
+    pub lonca_not_shown: &'static str,
     /// The `:tidy` window (record 96): its title with the count, the line
     /// under it, while it looks / removes, when nothing is found, a row's
     /// state, its keys, the `y` it asks for (name, what it holds).
@@ -1459,7 +1473,7 @@ pub const EN: Text = Text {
         ("home", "what is your turn, beside what is at work (5)"),
         ("keys", "read your key file again"),
         ("lang", "Türkçe / English (L)"),
-        ("lonca", "Lonca repository: NAME, import, login, off"),
+        ("lonca", "the Lonca window; NAME, import, login, off"),
         ("mark", "mark the line at hand; ' goes to the next mark (m)"),
         (
             "model",
@@ -1930,6 +1944,19 @@ pub const EN: Text = Text {
         ("j k", "move"),
         ("esc", "back"),
     ],
+    lonca_title: "LONCA · {}",
+    lonca_pending_head: "WAITING FOR A HUMAN · {}",
+    lonca_pending_none: "nothing waits for a human",
+    lonca_shown: "Δ shown",
+    lonca_before_trunk: "based before trunk",
+    lonca_leases_head: "HELD · {}",
+    lonca_leases_none: "nothing is held",
+    lonca_hints: [
+        ("j k", "move"),
+        ("enter", "open the change"),
+        ("esc", "back"),
+    ],
+    lonca_not_shown: "proposal {} is no change shown here: nobody's of this project, or its worker's turn goes on",
     tidy_sure: "remove {} with what it holds ({})? y removes it, any other key keeps it",
     tidy_found: "{} worktrees no agent owns: :tidy lists them",
     tidy_removed: "removed {}",
@@ -2664,7 +2691,7 @@ pub const TR: Text = Text {
         ("home", "sıra sizde olanlar ve çalışanlar (5)"),
         ("keys", "tuş dosyanı yeniden oku"),
         ("lang", "Türkçe / English (L)"),
-        ("lonca", "Lonca deposu: AD, import, login, off"),
+        ("lonca", "Lonca penceresi; AD, import, login, off"),
         (
             "mark",
             "eldeki satırı işaretle; ' sonraki işarete gider (m)",
@@ -3144,6 +3171,19 @@ pub const TR: Text = Text {
         ("j k", "gez"),
         ("esc", "geri"),
     ],
+    lonca_title: "LONCA · {}",
+    lonca_pending_head: "İNSAN BEKLEYEN · {}",
+    lonca_pending_none: "insan bekleyen yok",
+    lonca_shown: "Δ gösteriliyor",
+    lonca_before_trunk: "temeli gövdenin gerisinde",
+    lonca_leases_head: "TUTULAN · {}",
+    lonca_leases_none: "tutulan yok",
+    lonca_hints: [
+        ("j k", "gezin"),
+        ("enter", "değişikliği aç"),
+        ("esc", "geri"),
+    ],
+    lonca_not_shown: "{} numaralı öneri burada gösterilen bir değişiklik değil: bu projeden kimsenin değil ya da işçisinin turu sürüyor",
     tidy_sure: "{} tuttuklarıyla ({}) silinsin mi? y siler, başka her tuş bırakır",
     tidy_found: "sahibi olmayan {} worktree var: :tidy listeler",
     tidy_removed: "silindi: {}",
@@ -4126,6 +4166,14 @@ mod tests {
             (e.lonca_bad, t.lonca_bad),
             (e.lonca_state_up, t.lonca_state_up),
             (e.lonca_state_down, t.lonca_state_down),
+            (e.lonca_title, t.lonca_title),
+            (e.lonca_pending_head, t.lonca_pending_head),
+            (e.lonca_pending_none, t.lonca_pending_none),
+            (e.lonca_shown, t.lonca_shown),
+            (e.lonca_before_trunk, t.lonca_before_trunk),
+            (e.lonca_leases_head, t.lonca_leases_head),
+            (e.lonca_leases_none, t.lonca_leases_none),
+            (e.lonca_not_shown, t.lonca_not_shown),
             (e.no_git, t.no_git),
             (e.ev_closed, t.ev_closed),
             (e.ev_renamed, t.ev_renamed),
