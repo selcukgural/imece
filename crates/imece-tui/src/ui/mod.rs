@@ -1170,25 +1170,18 @@ fn spans_width(spans: &[Span]) -> usize {
     spans.iter().map(Span::width).sum()
 }
 
-/// The footer's keys and the views' names in `room` cells: the views go
-/// first, then the keys from the end, but for the way back and the help,
-/// so a narrow footer loses what is least wanted, not `esc` or `?`.
-fn fit_hints<'a>(
-    mut hints: Vec<(&'a str, &'a str)>,
-    views: Vec<Span<'static>>,
-    room: usize,
-) -> (Vec<(&'a str, &'a str)>, Vec<Span<'static>>) {
+/// The footer's keys in `room` cells: they go from the end, but for the
+/// way back and the help, so a narrow footer loses what is least wanted,
+/// never `esc` or `?`.
+fn fit_hints<'a>(mut hints: Vec<(&'a str, &'a str)>, room: usize) -> Vec<(&'a str, &'a str)> {
     let width = |h: &[(&str, &str)]| spans_width(&hint_spans(h));
-    if width(&hints) + spans_width(&views) <= room {
-        return (hints, views);
-    }
     while width(&hints) > room {
         let Some(last) = hints.iter().rposition(|k| !matches!(k.0, "esc" | "?")) else {
             break;
         };
         hints.remove(last);
     }
-    (hints, Vec::new())
+    hints
 }
 
 /// A span that only leads a line: indent, a list marker (`• `, `3. `), a
@@ -2056,8 +2049,18 @@ fn footer(f: &mut Frame, area: Rect, app: &App) -> Option<Position> {
             Span::styled(format!(" {} ", app.spin().unwrap_or("…")), fg(pal().info)),
             Span::styled(asking.to_string(), dim()),
         ])
+    } else if let Some(chord) = which_key(app) {
+        chord
     } else {
-        let hints: Vec<(&str, &str)> = match app.zoom {
+        // The status line (record 125): where the person is, then at most
+        // three keys for the selected thing, the way back and the help.
+        let tail = |keys: &mut Vec<(&'static str, &'static str)>, back: bool| {
+            if back {
+                keys.push(("esc", t.back));
+            }
+            keys.push(("?", t.help));
+        };
+        let mut hints: Vec<(&str, &str)> = match app.zoom {
             _ if app.hints.is_some() => vec![
                 ("a-z", t.hint_pick),
                 ("A-Z", t.hint_open),
@@ -2068,57 +2071,45 @@ fn footer(f: &mut Frame, area: Rect, app: &App) -> Option<Position> {
             _ if app.plan_window.is_some() => t.plan_hints.to_vec(),
             // The conversation has its keys on its own last row.
             _ if app.thread.is_some() => vec![("esc", t.back), ("?", t.help)],
-            _ if app.peek.is_some() => vec![
-                ("j k", t.peek_next),
-                ("enter", t.focus),
-                ("@", t.write_this),
-                ("esc", t.back),
-                ("?", t.help),
-            ],
-            Zoom::None if app.card.is_some() => vec![
-                ("tab", t.panel),
-                ("enter", t.focus),
-                ("n p", t.next_card),
-                ("#", t.other_card),
-                ("esc", t.back),
-                ("?", t.help),
-            ],
+            _ if app.peek.is_some() => {
+                let mut keys = vec![("enter", t.focus), ("@", t.write_this)];
+                tail(&mut keys, true);
+                keys
+            }
+            Zoom::None if app.card.is_some() => {
+                let mut keys = vec![("enter", t.focus), ("n p", t.next_card)];
+                tail(&mut keys, true);
+                keys
+            }
             Zoom::None if app.view == View::Home => home_hints(app),
-            Zoom::None if app.view == View::Timeline => vec![
-                ("j k", t.peek_next),
-                ("[ ]", t.timeline_scale),
-                ("enter", t.focus),
-                ("@", t.to_agent),
-                ("?", t.help),
-            ],
-            Zoom::None => {
+            Zoom::None if app.view == View::Timeline => {
                 let mut keys = vec![
-                    ("/", t.write_lead),
-                    ("@", t.to_agent),
-                    ("#", t.find_card),
-                    ("tab", t.panel),
+                    ("[ ]", t.timeline_scale),
                     ("enter", t.focus),
-                    ("?", t.help),
+                    ("@", t.to_agent),
                 ];
+                tail(&mut keys, false);
+                keys
+            }
+            Zoom::None => {
+                let mut keys = vec![("/", t.write_lead), ("enter", t.focus)];
                 if !app.world.open_inbox().is_empty() {
                     keys.insert(0, ("W", t.next_waiting));
                 }
+                tail(&mut keys, false);
                 keys
             }
-            Zoom::Focus(_) => vec![
-                ("j k", t.entry_step),
-                ("h l", t.cut_whole),
-                ("enter", t.trace),
-                ("esc", t.back),
-                ("@", t.write_this),
-                ("?", t.help),
-            ],
-            Zoom::Trace(_) => vec![
-                ("j k", t.scroll),
-                ("esc", t.back),
-                ("@", t.write_this),
-                ("?", t.help),
-            ],
+            Zoom::Focus(_) => {
+                let mut keys =
+                    ask_hints(app).unwrap_or_else(|| vec![("enter", t.trace), ("@", t.write_this)]);
+                tail(&mut keys, true);
+                keys
+            }
+            Zoom::Trace(_) => {
+                let mut keys = ask_hints(app).unwrap_or_else(|| vec![("@", t.write_this)]);
+                tail(&mut keys, true);
+                keys
+            }
             // Choosing lines to copy: only copy mode's keys work.
             Zoom::Diff(id) if app.diff_copy_of(id).is_some() => {
                 let mut keys = t.copy_hints.to_vec();
@@ -2127,71 +2118,35 @@ fn footer(f: &mut Frame, area: Rect, app: &App) -> Option<Position> {
                 keys
             }
             Zoom::Diff(id) => {
-                let mut keys = vec![
-                    ("a x", t.apply_part),
-                    ("r", t.reject),
-                    ("c n", t.notes),
-                    ("[ ]", t.file),
-                    ("j k  w", t.scroll_wrap),
-                    (">", t.quote),
-                    ("v", t.copy_lines),
-                    ("esc", t.back),
-                    ("?", t.help),
-                ];
+                let mut keys = vec![("a", t.apply), ("r", t.reject), ("c", t.note_key)];
                 if app.world.clashes_of(id).is_some() {
-                    keys.insert(2, ("b", t.send_back));
+                    keys.pop();
+                    keys.insert(0, ("b", t.send_back));
                 }
+                tail(&mut keys, true);
                 keys
             }
         };
-        let hints = match ask_hints(app) {
-            Some(mut keys)
-                if app.hints.is_none()
-                    && app.script.is_none()
-                    && app.plan_window.is_none()
-                    && app.peek.is_none() =>
-            {
-                keys.extend(hints);
-                keys
-            }
-            _ => hints,
-        };
-        let mut hints = hints;
-        if app.zoom == Zoom::None && app.thread.is_none() && app.demo() {
-            hints.insert(hints.len() - 1, ("space", t.pause));
-        }
+        let width = usize::from(area.width);
         let mut spans = vec![Span::raw(" ")];
-        // The first key of a chord, imece's own or the key file's while it
-        // waits for its second, as vim shows it; first, so a long footer
-        // never cuts it off.
-        let held = (app.keys_held.as_ref())
-            .map(|(k, _)| crate::keys::Key::of(k).name())
-            .or_else(|| app.pending.map(String::from));
-        if let Some(c) = held {
-            spans.push(Span::styled(format!("{c}…   "), bold(pal().warn)));
-        }
-        let mut views = Vec::new();
-        for (i, view) in [
-            View::Salon,
-            View::Board,
-            View::Code,
-            View::Timeline,
-            View::Home,
-        ]
-        .into_iter()
-        .enumerate()
-        {
-            let style = if app.view == view {
-                bold(pal().strong)
+        let room = width.saturating_sub(1);
+        let place = place_spans(app);
+        let place_width = spans_width(&place);
+        // The place stays while its keys' tail fits beside it; then it
+        // goes, so the keys that decide are never what the edge cuts.
+        if place_width > 0 {
+            let beside = fit_hints(hints.clone(), room.saturating_sub(place_width + 3));
+            if place_width + 3 + spans_width(&hint_spans(&beside)) <= room {
+                spans.extend(place);
+                spans.push(Span::raw("   "));
+                hints = beside;
             } else {
-                dim()
-            };
-            views.push(Span::styled(format!(" {} {}", i + 1, t.views[i]), style));
+                hints = fit_hints(hints, room);
+            }
+        } else {
+            hints = fit_hints(hints, room);
         }
-        let room = usize::from(area.width).saturating_sub(spans_width(&spans));
-        let (hints, views) = fit_hints(hints, views, room);
         spans.extend(hint_spans(&hints));
-        spans.extend(views);
         Line::from(spans)
     };
     f.render_widget(Paragraph::new(line), area);
@@ -2208,38 +2163,17 @@ fn home_hints(app: &App) -> Vec<(&'static str, &'static str)> {
         _ => None,
     };
     let mut keys = match kind {
-        Some(InboxKind::Change) => vec![
-            ("enter", t.home_read),
-            ("a", t.apply),
-            ("r", t.reject),
-            ("s", t.home_later),
-        ],
+        Some(InboxKind::Change) => vec![("enter", t.home_read), ("a", t.apply), ("r", t.reject)],
         Some(InboxKind::Question | InboxKind::Fault) => vec![
             ("a", t.home_answer),
             ("enter", t.home_open),
             ("s", t.home_later),
         ],
-        Some(InboxKind::Approval) => vec![
-            ("a", t.allow_once),
-            ("r", t.refuse),
-            ("e", t.this_turn),
-            ("A", t.from_now_on),
-            ("s", t.home_later),
-        ],
-        Some(_) => vec![
-            ("enter", t.home_open),
-            ("a", t.home_yes),
-            ("r", t.home_no),
-            ("s", t.home_later),
-        ],
+        Some(InboxKind::Approval) => vec![("a", t.allow_once), ("r", t.refuse), ("e", t.this_turn)],
+        Some(_) => vec![("enter", t.home_open), ("a", t.home_yes), ("r", t.home_no)],
         None => vec![("enter", t.home_open), ("@", t.write_this)],
     };
-    keys.extend([
-        ("j k", t.home_move),
-        ("[ ]", t.home_project),
-        ("/", t.write_lead),
-        ("?", t.help),
-    ]);
+    keys.push(("?", t.help));
     keys
 }
 
@@ -2250,14 +2184,136 @@ fn ask_hints(app: &App) -> Option<Vec<(&'static str, &'static str)>> {
     let t = app.lang.text();
     let item = app.focus_ask(app.zoomed_agent()?)?;
     Some(match app.world.inbox[item].kind {
-        InboxKind::Approval => vec![
-            ("a", t.allow_once),
-            ("e", t.this_turn),
-            ("A", t.from_now_on),
-            ("r", t.refuse),
-        ],
+        InboxKind::Approval => vec![("a", t.allow_once), ("r", t.refuse), ("e", t.this_turn)],
         _ => vec![("a", t.apply), ("r", t.reject)],
     })
+}
+
+/// While the first key of a chord waits for its second (`g…`, `z…`,
+/// `q…`, or a key the person's file pairs), the footer lists what the
+/// second key can be and what each does, as which-key does in vim:
+/// imece's own pairs, then the file's, each as what it acts as. Nothing
+/// while no chord waits.
+fn which_key(app: &App) -> Option<Line<'static>> {
+    let t = app.lang.text();
+    let first = match (&app.keys_held, app.pending) {
+        (Some((k, _)), _) => crate::keys::Key::of(k),
+        (None, Some(c)) => crate::keys::Key::parse(&c.to_string())?,
+        (None, None) => return None,
+    };
+    let own: &[(&str, &str)] = match app.pending {
+        Some('g') => &t.chord_g,
+        Some('z') => &t.chord_z,
+        Some('q') => &t.chord_q,
+        _ => &[],
+    };
+    let mut keys: Vec<(String, String)> = own
+        .iter()
+        .map(|(k, w)| (k.to_string(), w.to_string()))
+        .collect();
+    for (from, to) in app.keys.given() {
+        let from = from.keys();
+        if from.len() == 2 && from[0] == first {
+            keys.push((from[1].name(), fill(t.chord_as, &[&to.name()])));
+        }
+    }
+    let mut spans = vec![Span::styled(
+        format!(" {}…  ", first.name()),
+        bold(pal().warn),
+    )];
+    for (k, what) in keys {
+        spans.push(Span::styled(format!(" {k} "), key_style()));
+        spans.push(Span::raw(format!(" {what}  ")));
+    }
+    Some(Line::from(spans))
+}
+
+/// Where the person is, dim, before the footer's keys: the view or the
+/// screen over it, the project at hand, and the card (else the agent)
+/// the open screen or the selected row is about. Nothing in a window
+/// that has a title of its own, or under hint letters.
+fn place_spans(app: &App) -> Vec<Span<'static>> {
+    let t = app.lang.text();
+    let w = &app.world;
+    let copying = matches!(app.zoom, Zoom::Diff(id) if app.diff_copy_of(id).is_some());
+    if app.hints.is_some() || app.script.is_some() || app.plan_window.is_some() || copying {
+        return Vec::new();
+    }
+    let place = if app.thread.is_some() {
+        t.places[3]
+    } else if app.peek.is_some() {
+        t.places[5]
+    } else {
+        match app.zoom {
+            Zoom::None if app.card.is_some() => t.places[4],
+            Zoom::None => t.views[view_index(app.view)],
+            Zoom::Focus(_) => t.places[0],
+            Zoom::Trace(_) => t.places[1],
+            Zoom::Diff(_) => t.places[2],
+        }
+    };
+    let mut words = vec![place.to_string()];
+    let p = app.project_at_hand();
+    if let Some(project) = w.projects.get(p) {
+        words.push(project.name.clone());
+    }
+    let about = match app.home_at() {
+        Some(crate::app::HomeRow::Item(i)) if app.view == View::Home && app.zoom == Zoom::None => {
+            w.inbox.get(i).map(|item| item.agent)
+        }
+        Some(crate::app::HomeRow::Agent(id))
+            if app.view == View::Home && app.zoom == Zoom::None =>
+        {
+            Some(id)
+        }
+        _ => app.agent_at_hand(),
+    };
+    if let Some(id) = about.filter(|&id| id < w.agents.len()) {
+        match w
+            .card_of(id)
+            .and_then(|c| w.cards.iter().find(|card| card.id == c))
+        {
+            Some(card) => words.push(format!(
+                "#{} {}",
+                card.id,
+                cut_title(&card.title, PLACE_TITLE)
+            )),
+            None => words.push(w.agents[id].name.clone()),
+        }
+    }
+    vec![Span::styled(clean(&words.join(" · ")), dim())]
+}
+
+/// How much of a card's title the status line carries.
+const PLACE_TITLE: usize = 30;
+
+/// `title` whole when it fits `room` cells, else its start and `…`.
+fn cut_title(title: &str, room: usize) -> String {
+    if title.width() <= room {
+        return title.to_string();
+    }
+    let mut out = String::new();
+    let mut used = 0;
+    for ch in title.chars() {
+        let w = ch.width().unwrap_or(0);
+        if used + w > room.saturating_sub(1) {
+            break;
+        }
+        out.push(ch);
+        used += w;
+    }
+    out.trim_end().to_string() + "…"
+}
+
+/// A view's place in `Text::views`.
+fn view_index(view: View) -> usize {
+    match view {
+        View::Salon => 0,
+        View::Board => 1,
+        View::Code => 2,
+        View::Timeline => 3,
+        View::Home => 4,
+    }
 }
 
 /// The cell `column` columns into row `row` of `area`, where the cursor
@@ -2584,7 +2640,6 @@ mod tests {
             &format!("{owner} finished: {}", card.title),
             "JOURNAL · #1 (",
             "n p  next / previous card",
-            "#  another card",
         ] {
             assert!(s.contains(want), "{want} missing:\n{s}");
         }
@@ -2862,7 +2917,7 @@ mod tests {
     #[test]
     fn the_salon_offers_cards_and_says_what_is_typed_after_a_hash() {
         let mut app = app_after(1, 4, 140, Lang::En);
-        assert!(render(&app, 140, 36).contains("#  card"));
+        assert!(render(&app, 140, 36).contains(" salon · "));
         app.on_key(KeyEvent::from(KeyCode::Char('#')));
         let s = render(&app, 140, 36);
         assert!(s.contains(" › card: #"), "{s}");
@@ -3174,7 +3229,10 @@ mod tests {
         let id = app.world.projects[0].leader + 1;
         app.zoom = Zoom::Focus(id);
         let calm = foot(&app);
-        assert!(calm.starts_with("  j k  step "), "{calm}");
+        assert!(
+            calm.contains("   enter  trace   @  write to this agent   esc  back   ?  help"),
+            "{calm}"
+        );
         for gone in [" a ", " A ", " r "] {
             assert!(!calm.contains(gone), "{calm}");
         }
@@ -3183,18 +3241,17 @@ mod tests {
         assert_eq!(foot(&app), calm);
         app.world.asks_you(id, "Bash: make");
         let asked = foot(&app);
+        // Three keys for the ask, the way back and the help; `A` is in the help.
         assert!(
-            asked.starts_with(
-                "  a  allow once   e  yes this turn   A  yes from now on   r  refuse   j k  step"
-            ),
+            asked.contains("   a  allow once   r  refuse   e  yes this turn   esc  back   ?  help"),
             "{asked}"
         );
+        assert!(!asked.contains(" A "), "{asked}");
         app.zoom = Zoom::Trace(id);
         let traced = foot(&app);
         assert!(
-            traced.starts_with(
-                "  a  allow once   e  yes this turn   A  yes from now on   r  refuse   j k  scroll"
-            ),
+            traced
+                .contains("   a  allow once   r  refuse   e  yes this turn   esc  back   ?  help"),
             "{traced}"
         );
         // A window over it has keys of its own.
@@ -3215,16 +3272,14 @@ mod tests {
         app.zoom = Zoom::Focus(id);
         let change = foot(&app);
         assert!(
-            change.starts_with("  a  apply   r  reject   j k  step"),
+            change.contains("   a  apply   r  reject   esc  back   ?  help"),
             "{change}"
         );
         app.lang = Lang::Tr;
         app.world.asks_you(id, "Bash: make");
         let tr = foot(&app);
         assert!(
-            tr.contains(
-                "a  bir kez izin ver   e  bu tur evet   A  bundan sonra hep evet   r  reddet"
-            ),
+            tr.contains("a  bir kez izin ver   r  reddet   e  bu tur evet   esc  geri   ?  yardım"),
             "{tr}"
         );
     }
@@ -6313,7 +6368,10 @@ mod tests {
         assert!(s.contains("█ writing"), "the legend: {s}");
         assert!(s.contains(" now"), "{s}");
         assert!(s.contains("  messages"), "{s}");
-        assert!(s.contains("4 timeline"), "the footer: {s}");
+        assert!(
+            s.lines().last().unwrap().starts_with(" timeline · "),
+            "the footer: {s}"
+        );
         let name = app.world.agents[h1].name.clone();
         let row = s.lines().find(|l| l.contains(&name)).unwrap();
         assert!(
@@ -6634,13 +6692,13 @@ mod tests {
         app.world.inbox.clear();
         assert!(!foot(&app, 200).contains("next for you"));
         app.world.inbox.push(item(InboxKind::Question, agent));
-        assert!(foot(&app, 200).trim_start().starts_with("W  next for you"));
-        // The demo's pause stands before the help, the first to go.
         let row = foot(&app, 200);
         assert!(
-            row.find("space").unwrap() < row.find("help").unwrap(),
+            row.contains("   W  next for you   /  write to the lead   enter  focus   ?  help"),
             "{row}"
         );
+        // The demo's pause is not a key of the footer: the header says PAUSED.
+        assert!(!row.contains("space"), "{row}");
     }
 
     #[test]
@@ -6713,31 +6771,255 @@ mod tests {
     }
 
     #[test]
-    fn a_short_footer_loses_the_views_then_the_last_keys_and_never_the_help() {
-        let views = || vec![Span::raw("12345")];
+    fn a_short_footer_loses_the_last_keys_first_and_never_the_way_back_or_the_help() {
         let hints = vec![("a", "one"), ("b", "two"), ("?", "help")];
         let all = spans_width(&hint_spans(&hints));
         let names = |h: &[(&str, &str)]| h.iter().map(|k| k.0.to_string()).collect::<Vec<_>>();
         // Exactly as wide as the room: everything stays.
-        let (h, v) = fit_hints(hints.clone(), views(), all + 5);
-        assert_eq!((names(&h).len(), spans_width(&v)), (3, 5));
-        // A cell short: the views go, the keys stay.
-        let (h, v) = fit_hints(hints.clone(), views(), all + 4);
-        assert_eq!((names(&h).len(), v.len()), (3, 0));
-        let (h, _) = fit_hints(hints.clone(), views(), all);
-        assert_eq!(names(&h), ["a", "b", "?"]);
-        // A cell short of the keys: the one before the help goes.
-        let (h, _) = fit_hints(hints.clone(), views(), all - 1);
-        assert_eq!(names(&h), ["a", "?"]);
+        assert_eq!(names(&fit_hints(hints.clone(), all)), ["a", "b", "?"]);
+        // A cell short: the one before the help goes.
+        assert_eq!(names(&fit_hints(hints.clone(), all - 1)), ["a", "?"]);
         // The way back and the help stay, however short the room.
-        let (h, _) = fit_hints(hints, views(), 0);
-        assert_eq!(names(&h), ["?"]);
-        let (h, _) = fit_hints(
-            vec![("esc", "back"), ("b", "two"), ("?", "help")],
-            views(),
-            0,
-        );
+        assert_eq!(names(&fit_hints(hints, 0)), ["?"]);
+        let h = fit_hints(vec![("esc", "back"), ("b", "two"), ("?", "help")], 0);
         assert_eq!(names(&h), ["esc", "?"]);
+    }
+
+    #[test]
+    fn the_status_line_says_where_you_are_and_drops_itself_before_the_keys_that_decide() {
+        let mut app = app_after(1, 2, 0, Lang::En);
+        let agent = app.world.agents[1].id;
+        app.world.agents[agent].card = Some(app.world.cards[0].id);
+        let card = app.world.card_of(agent).expect("a worker has a card");
+        let title = app
+            .world
+            .cards
+            .iter()
+            .find(|c| c.id == card)
+            .unwrap()
+            .title
+            .clone();
+        let project = app.world.projects[0].name.clone();
+        app.world.inbox.clear();
+        // The salon: the view, the project, the card of the selected row.
+        app.selected = Sel::Agent(agent);
+        let row = foot(&app, 200);
+        assert!(
+            row.starts_with(&format!(" salon · {project} · #{card} {title}    /  write")),
+            "{row}"
+        );
+        // A focus names its screen and the agent's card; a trace, a change too.
+        app.zoom = Zoom::Focus(agent);
+        assert!(
+            foot(&app, 200).starts_with(&format!(" focus · {project} · #{card}")),
+            "{}",
+            foot(&app, 200)
+        );
+        app.zoom = Zoom::Trace(agent);
+        assert!(
+            foot(&app, 200).starts_with(" trace · "),
+            "{}",
+            foot(&app, 200)
+        );
+        app.zoom = Zoom::Diff(agent);
+        assert!(
+            foot(&app, 200).starts_with(" change · "),
+            "{}",
+            foot(&app, 200)
+        );
+        app.zoom = Zoom::None;
+        // The other views and screens name themselves too.
+        app.view = View::Board;
+        assert!(
+            foot(&app, 200).starts_with(" board · "),
+            "{}",
+            foot(&app, 200)
+        );
+        app.view = View::Code;
+        assert!(
+            foot(&app, 200).starts_with(" code · "),
+            "{}",
+            foot(&app, 200)
+        );
+        app.view = View::Salon;
+        app.card = Some(card);
+        assert!(
+            foot(&app, 200).starts_with(&format!(" card · {project} · #{card} ")),
+            "{}",
+            foot(&app, 200)
+        );
+        app.card = None;
+        app.open_thread(agent);
+        assert!(
+            foot(&app, 200).starts_with(&format!(" conversation · {project} · #{card} ")),
+            "{}",
+            foot(&app, 200)
+        );
+        app.thread = None;
+        // Home: the row at hand's card; an item's, its agent's card.
+        app.view = View::Home;
+        app.world.inbox.push(item(InboxKind::Change, agent));
+        let row = foot(&app, 200);
+        assert!(
+            row.starts_with(&format!(
+                " home · {project} · #{card} {title}    enter  read the diff"
+            )),
+            "{row}"
+        );
+        // Turkish names the places in its own words.
+        app.lang = Lang::Tr;
+        assert!(
+            foot(&app, 200).starts_with(" ana ekran · "),
+            "{}",
+            foot(&app, 200)
+        );
+        app.lang = Lang::En;
+        app.view = View::Salon;
+        app.world.inbox.clear();
+        // A long title is cut to its start.
+        let long = "a".repeat(40);
+        app.world
+            .cards
+            .iter_mut()
+            .find(|c| c.id == card)
+            .unwrap()
+            .title = long.clone();
+        let row = foot(&app, 200);
+        assert!(
+            row.contains(&format!("#{card} {}…    /", "a".repeat(PLACE_TITLE - 1))),
+            "{row}"
+        );
+        assert!(!row.contains(&long), "{row}");
+        assert_eq!(cut_title("short", 30), "short");
+        assert_eq!(
+            cut_title("exactly thirty characters here", 30),
+            "exactly thirty characters here"
+        );
+        assert_eq!(
+            cut_title("exactly thirty characters here!", 30),
+            "exactly thirty characters her…"
+        );
+        assert_eq!(
+            cut_title("çok geniş bir başlık", 8),
+            "çok gen…",
+            "by cells, not bytes"
+        );
+        // Too narrow for the place and the keys: the keys go from the end
+        // first, then the place, and the help is the last thing standing.
+        let keys = |row: &str| row.matches("  ").count();
+        let wide = foot(&app, 200);
+        assert!(wide.starts_with(" salon · "), "{wide}");
+        let narrow = foot(&app, 70);
+        assert!(narrow.starts_with(" salon · "), "{narrow}");
+        assert!(keys(&narrow) < keys(&wide), "{narrow}");
+        let tight = foot(&app, 24);
+        assert!(!tight.contains("salon"), "{tight}");
+        assert!(tight.contains("?  help"), "{tight}");
+        // Nothing of it under hint letters or in a window with a title.
+        app.hints = Some(crate::app::Hints {
+            labels: Vec::new(),
+            typed: String::new(),
+        });
+        assert!(!foot(&app, 200).contains("salon ·"), "{}", foot(&app, 200));
+    }
+
+    #[test]
+    fn the_footer_has_at_most_three_keys_for_the_selected_thing_then_the_way_back_and_the_help() {
+        let mut app = app_after(1, 2, 0, Lang::En);
+        let agent = app.world.agents[1].id;
+        app.world.agents[agent].card = Some(app.world.cards[0].id);
+        app.world.inbox.clear();
+        let badges = |row: &str| -> Vec<String> {
+            // A key badge is ` k ` between two spaces of the label before it.
+            let keys: Vec<&str> = row.split("   ").collect();
+            keys.iter()
+                .skip(1)
+                .filter_map(|k| k.split("  ").next())
+                .map(|k| k.trim().to_string())
+                .filter(|k| !k.is_empty())
+                .collect()
+        };
+        app.zoom = Zoom::Diff(agent);
+        assert_eq!(badges(&foot(&app, 200)), ["a", "r", "c", "esc", "?"]);
+        // A clash's `b` comes first and the note goes, so there are still three.
+        app.world.change_ready(crate::model::Change {
+            agent,
+            title: "did it".into(),
+            files: Vec::new(),
+            patch: String::new(),
+            runs: Vec::new(),
+            check: Check::None,
+            spend: None,
+        });
+        app.world.change_clashed(
+            agent,
+            Clashes {
+                head: "abc1234".into(),
+                hunks: vec![Clash {
+                    file: "x.rs".into(),
+                    ..Clash::default()
+                }],
+                ..Clashes::default()
+            },
+        );
+        assert_eq!(badges(&foot(&app, 200)), ["b", "a", "r", "esc", "?"]);
+        app.world.change_clashed(agent, Clashes::default());
+        app.world.inbox.clear();
+        app.zoom = Zoom::None;
+        app.view = View::Timeline;
+        assert_eq!(badges(&foot(&app, 200)), ["[ ]", "enter", "@", "?"]);
+        app.view = View::Board;
+        assert_eq!(badges(&foot(&app, 200)), ["/", "enter", "?"]);
+        app.world.inbox.push(item(InboxKind::Question, agent));
+        assert_eq!(badges(&foot(&app, 200)), ["W", "/", "enter", "?"]);
+        app.view = View::Home;
+        assert_eq!(badges(&foot(&app, 200)), ["a", "enter", "s", "?"]);
+        app.card = Some(app.world.card_of(agent).unwrap());
+        assert_eq!(badges(&foot(&app, 200)), ["enter", "n p", "esc", "?"]);
+        app.card = None;
+        app.peek = Some(agent);
+        assert_eq!(badges(&foot(&app, 200)), ["enter", "@", "esc", "?"]);
+    }
+
+    #[test]
+    fn a_chord_s_first_key_lists_its_second_keys_as_which_key_does() {
+        let mut app = app_after(1, 2, 0, Lang::En);
+        assert!(!foot(&app, 200).contains('…'));
+        app.pending = Some('g');
+        assert_eq!(foot(&app, 200).trim_end(), " g…   g  first line");
+        app.pending = Some('z');
+        assert_eq!(
+            foot(&app, 200).trim_end(),
+            " z…   a  fold · unfold   M  fold all   R  unfold all"
+        );
+        app.pending = Some('q');
+        assert_eq!(
+            foot(&app, 200).trim_end(),
+            " q…   q  quit   s  what quitting leaves"
+        );
+        app.lang = Lang::Tr;
+        assert_eq!(
+            foot(&app, 200).trim_end(),
+            " q…   q  çık   s  çıkınca ne kalır"
+        );
+        app.lang = Lang::En;
+        // The person's file: its pairs that start with the key, as what they act as.
+        app.keys = crate::keys::Keymap::read("gt = G\ngn = j\nx = gg\n").unwrap();
+        app.pending = Some('g');
+        assert_eq!(
+            foot(&app, 200).trim_end(),
+            " g…   g  first line   t  as G   n  as j"
+        );
+        // A first key of the file's alone, held: only the file's pairs.
+        app.pending = None;
+        app.keys = crate::keys::Keymap::read("xa = G\n").unwrap();
+        app.keys_held = Some((
+            KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE),
+            std::time::Instant::now(),
+        ));
+        assert_eq!(foot(&app, 200).trim_end(), " x…   a  as G");
+        app.keys_held = None;
+        assert!(!foot(&app, 200).contains('…'));
     }
 
     #[test]
@@ -6754,18 +7036,31 @@ mod tests {
             app.world.inbox.push(item(kind, agent));
             foot(app, 200).trim_start().to_string()
         };
-        assert!(row(&mut app, InboxKind::Change).starts_with("enter  read the diff   a  apply"));
-        assert!(row(&mut app, InboxKind::Question).starts_with("a  answer   enter  open"));
-        assert!(row(&mut app, InboxKind::Fault).starts_with("a  answer   enter  open"));
-        assert!(row(&mut app, InboxKind::Approval).starts_with("a  allow once   r  refuse   e "));
-        assert!(row(&mut app, InboxKind::Plan).starts_with("enter  open   a  yes   r  no"));
+        assert!(
+            row(&mut app, InboxKind::Change)
+                .contains("   enter  read the diff   a  apply   r  reject   ?  help")
+        );
+        assert!(
+            row(&mut app, InboxKind::Question)
+                .contains("   a  answer   enter  open   s  later   ?  help")
+        );
+        assert!(
+            row(&mut app, InboxKind::Fault)
+                .contains("   a  answer   enter  open   s  later   ?  help")
+        );
+        assert!(
+            row(&mut app, InboxKind::Approval)
+                .contains("   a  allow once   r  refuse   e  yes this turn   ?  help")
+        );
+        assert!(
+            row(&mut app, InboxKind::Plan).contains("   enter  open   a  yes   r  no   ?  help")
+        );
         app.world.inbox.clear();
         let agent_row = foot(&app, 200);
         assert!(
-            agent_row.trim_start().starts_with("enter  open   @ "),
+            agent_row.contains("   enter  open   @  write to this agent   ?  help"),
             "{agent_row}"
         );
-        assert!(agent_row.contains("[ ]  project"), "{agent_row}");
     }
 
     #[test]
@@ -7573,7 +7868,10 @@ mod tests {
             format!("{plain} · b in the change sends it back")
         );
         let s = render(&app, 220, 40);
-        assert!(s.contains(" r  reject   b  send back   c n "), "{s}");
+        assert!(
+            s.contains(" b  send back   a  apply   r  reject   esc  back"),
+            "{s}"
+        );
         assert!(
             s.contains(&format!(
                 "✗ does not fit your checkout at abc1234: x.rs · b sends it back to {name}"
@@ -7625,10 +7923,14 @@ mod tests {
             s.contains("+Q-LINE \n") || s.contains("+Q-LINE "),
             "control characters go: {s}"
         );
-        assert!(s.contains(" a x  apply · choose a hunk"), "{s}");
-        let wide = render(&app, 200, 36);
         assert!(
-            wide.contains(" j k ") && wide.contains(" >  quote to it"),
+            s.contains(" a  apply   r  reject   c  note   esc  back"),
+            "{s}"
+        );
+        let wide = render(&app, 200, 36);
+        // Movement and the rest are in the help, however wide the screen.
+        assert!(
+            !wide.contains(" j k ") && !wide.contains(" >  quote to it"),
             "{wide}"
         );
         // The agent at hand is the change's: `@` writes to it.
@@ -10976,8 +11278,7 @@ mod tests {
     }
 
     #[test]
-    fn the_header_shows_what_is_spent_of_the_budget_and_the_footer_hides_pause_where_it_means_nothing()
-     {
+    fn the_header_shows_what_is_spent_of_the_budget_and_the_footer_no_longer_names_the_views() {
         let mut app = app_after(1, 2, 0, Lang::En);
         app.world.budget = 10_000;
         for a in &mut app.world.agents {
@@ -10988,25 +11289,13 @@ mod tests {
         let screen = render(&app, 170, 40);
         assert!(screen.contains("imece"));
         assert!(screen.contains("spent $0.50 of $1.00"), "{screen}");
+        // The footer names no view and no pause: the status line says where
+        // you are, the header says PAUSED.
         let footer = screen.lines().last().unwrap().to_string();
-        assert!(footer.contains("space"), "{footer}");
-        // The current view's name is the bold one.
-        let buf = buffer(&app, 170, 40);
-        let bold_runs: String = (0..170)
-            .map(|x| {
-                let c = &buf[(x, 39)];
-                if c.style().add_modifier.contains(Modifier::BOLD) {
-                    c.symbol().to_string()
-                } else {
-                    " ".into()
-                }
-            })
-            .collect();
-        assert!(bold_runs.contains("salon"), "{bold_runs:?}");
-        assert!(!bold_runs.contains("board"), "{bold_runs:?}");
-        app.zoom = Zoom::Focus(1);
-        let footer = render(&app, 170, 40).lines().last().unwrap().to_string();
-        assert!(!footer.contains("space"), "{footer}");
+        assert!(
+            !footer.contains("space") && !footer.contains("1 salon"),
+            "{footer}"
+        );
     }
 
     #[test]
@@ -12464,7 +12753,7 @@ mod tests {
         app.zoom = Zoom::Diff(worker);
         app.diff_scroll = 3;
         let screen = render(&app, 120, 20);
-        assert!(screen.contains(" c n  note · send notes"), "{screen}");
+        assert!(screen.contains(" c  note   esc  back"), "{screen}");
         key(&mut app, KeyCode::Char('c'));
         let screen = render(&app, 120, 20);
         assert!(screen.contains("note on x:1 ▸"), "{screen}");
@@ -12699,7 +12988,7 @@ mod tests {
         app.diff_copy = None;
         let s = render(&app, 160, 40);
         assert!(
-            s.contains("CHANGE ·") && s.contains(" v  copy lines   esc  back"),
+            s.contains("CHANGE ·") && s.contains(" c  note   esc  back"),
             "{s}"
         );
         app.lang = Lang::Tr;
@@ -13972,12 +14261,14 @@ after | not a table";
         // The footer has the peek's keys.
         let foot = s.lines().last().unwrap();
         assert!(
-            foot.contains(t.peek_next) && foot.contains(t.write_this),
+            foot.starts_with(&format!(" {} · ", t.places[5]))
+                && foot.contains(t.focus)
+                && foot.contains(t.write_this),
             "{foot}"
         );
         app.peek = None;
         let foot = render(&app, 100, 40).lines().last().unwrap().to_string();
-        assert!(!foot.contains(t.peek_next), "{foot}");
+        assert!(!foot.contains(t.places[5]), "{foot}");
     }
 
     /// The rows of `screen` (as `render` gives it), one string each.

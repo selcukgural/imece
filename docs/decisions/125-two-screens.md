@@ -110,3 +110,17 @@ missing a part (Lonca down, no check) says so in words, never a blank.
 Gaps: the vendor's own `AskUserQuestion` would carry options if a later
 Claude Code offered it under `-p`; the bus's `options` stays the path
 either way. The tour videos and the guide follow step 5.
+
+Step 1's status line as built: `ui::footer` draws `place_spans` (the
+view's name or the screen's, from `Text::views` and `Text::places`; the
+project at hand; the card of the open screen's agent or Home's row, else
+its name; `cut_title` to `PLACE_TITLE` 30 cells), then at most three keys
+for the selected thing, `esc` where there is a way back and `?`;
+`fit_hints` drops keys from the end, never `esc` or `?`, and the place
+goes only when its tail does not fit beside it. The views' names and the
+demo's `space` left the footer; the header says PAUSED. `which_key` lists
+a chord's second keys (`Text::chord_g`/`chord_z`/`chord_q`, then the key
+file's pairs that start with the key held, `Keys::keys`) while `pending`
+or `keys_held` waits. A window with a title of its own and copy mode keep
+their keys and show no place. Words the footer no longer says left
+`i18n.rs`. The header is the next step.

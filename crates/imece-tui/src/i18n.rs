@@ -223,23 +223,18 @@ pub struct Text {
     // Footer
     pub write_lead: &'static str,
     pub to_agent: &'static str,
-    pub panel: &'static str,
     pub next_waiting: &'static str,
     pub focus: &'static str,
-    pub pause: &'static str,
     pub help: &'static str,
     pub trace: &'static str,
     pub back: &'static str,
     pub write_this: &'static str,
-    pub file: &'static str,
     pub reject: &'static str,
     /// `>` in a change, and what it says where there is no hunk to quote.
-    pub quote: &'static str,
     pub no_hunk: &'static str,
     /// Notes on a change's lines: the hint, `c` off a hunk's lines, the
     /// writing's label (the place), one kept (how many now), one taken
     /// away, `n` with none, and `n` done (how many, to whom).
-    pub notes: &'static str,
     pub note_where: &'static str,
     pub typing_note: &'static str,
     pub noted: &'static str,
@@ -258,10 +253,8 @@ pub struct Text {
     /// more; the footer's `a x`.
     pub chosen: &'static str,
     pub unchosen: &'static str,
-    pub apply_part: &'static str,
     /// The diff's footer `j k  w`, its file list's binary file and the
     /// files it does not show.
-    pub scroll_wrap: &'static str,
     pub binary: &'static str,
     pub more_files: &'static str,
     /// What a changed file is, in the split above a change's files.
@@ -269,6 +262,19 @@ pub struct Text {
     pub kind_tests: &'static str,
     pub kind_generated: &'static str,
     pub views: [&'static str; 5],
+    /// The status line's word for a screen over the view: focus, trace,
+    /// change, conversation, card, peek (record 125).
+    pub places: [&'static str; 6],
+    /// Which-key: while `g`, `z` or `q` waits for its second key, the
+    /// footer lists the second keys with what each does; a key the
+    /// person's file pairs says what it acts as (`chord_as`, `{}` the
+    /// keys it stands for).
+    pub chord_g: [(&'static str, &'static str); 1],
+    pub chord_z: [(&'static str, &'static str); 3],
+    pub chord_q: [(&'static str, &'static str); 2],
+    pub chord_as: &'static str,
+    /// The status line's word for `c` on a change.
+    pub note_key: &'static str,
     /// The timeline (record 100): its title with a column's length, the
     /// lengths `[ ]` step through, `now` on its axis, nobody to show, the
     /// messages row, the legend, the footer's word for `[ ]`.
@@ -303,8 +309,6 @@ pub struct Text {
     pub no_jump: &'static str,
     /// The `&` menu's note after a project.
     pub jump_project: &'static str,
-    pub find_card: &'static str,
-    pub other_card: &'static str,
     pub next_card: &'static str,
     pub no_card_found: &'static str,
     pub shell_empty: &'static str,
@@ -560,7 +564,6 @@ pub struct Text {
     /// `:unsettle`: how many came back.
     pub unsettled: &'static str,
     /// In a peek: `j k`.
-    pub peek_next: &'static str,
     /// `F` where the screen has no rows to label.
     pub no_hints: &'static str,
     /// A label typed whose row left the screen since.
@@ -633,8 +636,6 @@ pub struct Text {
     pub home_tails: [&'static str; 7],
     pub home_more: &'static str,
     pub home_read: &'static str,
-    pub home_project: &'static str,
-    pub home_move: &'static str,
     pub home_later: &'static str,
     pub home_answer: &'static str,
     pub home_open: &'static str,
@@ -675,7 +676,6 @@ pub struct Text {
     /// `Y` in a change on lines that are all removed.
     pub copy_no_new: &'static str,
     /// Footer words in a change: `v`, and `Y` while copying.
-    pub copy_lines: &'static str,
     pub new_side: &'static str,
     /// Under a reply in a conversation: the first line of what it answers;
     /// or that the journal no longer has it.
@@ -925,9 +925,6 @@ pub struct Text {
     pub story_more: &'static str,
     /// The focus's and the raw stream's footer: `j k` steps, `h l` cut or
     /// whole, scrolling.
-    pub entry_step: &'static str,
-    pub cut_whole: &'static str,
-    pub scroll: &'static str,
     pub story_labels: [&'static str; 7],
     pub trace_title: &'static str,
     // Journal
@@ -1147,7 +1144,6 @@ pub struct Text {
     /// or for its change (`a`, `r`); `a` or `r` there when it waits for
     /// neither.
     pub allow_once: &'static str,
-    pub from_now_on: &'static str,
     pub refuse: &'static str,
     pub apply: &'static str,
     pub focus_no_ask: &'static str,
@@ -1267,19 +1263,14 @@ pub const EN: Text = Text {
     paused: " ‖ PAUSED ",
     write_lead: "write to the lead",
     to_agent: "to an agent",
-    panel: "panel",
     next_waiting: "next for you",
     focus: "focus",
-    pause: "pause",
     help: "help",
     trace: "trace",
     back: "back",
     write_this: "write to this agent",
-    file: "file",
     reject: "reject",
-    quote: "quote to it",
     no_hunk: "no hunk here to quote",
-    notes: "note · send notes",
     note_where: "a note goes on a line of a hunk: scroll one to the top",
     typing_note: "note on {} ▸ ",
     noted: "note kept ({} on this change); n sends them",
@@ -1293,14 +1284,22 @@ pub const EN: Text = Text {
     clash_line: "✗ does not fit your checkout at {}: {} · b sends it back to {}",
     chosen: "{} of {} hunks chosen; a applies only them, the rest waits",
     unchosen: "no hunk chosen; a applies the whole change",
-    apply_part: "apply · choose a hunk",
-    scroll_wrap: "scroll · wrap",
     binary: "binary",
     more_files: " … {} more files",
     kind_source: "source",
     kind_tests: "tests",
     kind_generated: "generated",
     views: ["salon", "board", "code", "timeline", "home"],
+    places: ["focus", "trace", "change", "conversation", "card", "peek"],
+    chord_g: [("g", "first line")],
+    chord_z: [
+        ("a", "fold · unfold"),
+        ("M", "fold all"),
+        ("R", "unfold all"),
+    ],
+    chord_q: [("q", "quit"), ("s", "what quitting leaves")],
+    chord_as: "as {}",
+    note_key: "note",
     timeline_title: " TIMELINE · a column is {} · [ ] scale ",
     timeline_scales: ["5 s", "30 s", "1 min"],
     timeline_now: "now",
@@ -1324,8 +1323,6 @@ pub const EN: Text = Text {
                   what was loaded",
     no_jump: "nothing called \"{}\" to go to: an agent or a project",
     jump_project: "project",
-    find_card: "card",
-    other_card: "another card",
     next_card: "next / previous card",
     no_card_found: "no card {}",
     shell_empty: "the command is empty",
@@ -1647,7 +1644,6 @@ pub const EN: Text = Text {
     settled_one: "{} settled: back when it needs you",
     settle_refused: "not settled: {} needs you",
     unsettled: "{} back in the salon",
-    peek_next: "next / previous agent",
     no_hints: "no rows to label here: F works on the salon's screen",
     hint_gone: "that row has left the screen",
     hint_pick: "a label selects",
@@ -1707,8 +1703,6 @@ pub const EN: Text = Text {
     ],
     home_more: "… {} more",
     home_read: "read the diff",
-    home_project: "project",
-    home_move: "move",
     home_later: "later",
     home_answer: "answer",
     home_open: "open",
@@ -1763,7 +1757,6 @@ pub const EN: Text = Text {
     ],
     diff_copy_title: " COPY · {} chosen · y as written · Y the new side · v esc leave ",
     copy_no_new: "nothing on the new side: the lines chosen were all removed",
-    copy_lines: "copy lines",
     new_side: "copy the new side",
     copied: "copied ({})",
     copy_failed: "could not copy: {}",
@@ -1986,9 +1979,6 @@ pub const EN: Text = Text {
     full: "tainted: reads the outside world, all its output comes to you",
     no_story: "No story yet. Enter for the raw stream.",
     story_more: "… +{} · l shows all",
-    entry_step: "step",
-    cut_whole: "cut · whole",
-    scroll: "scroll",
     story_labels: [
         "intent",
         "assumption",
@@ -2187,7 +2177,6 @@ pub const EN: Text = Text {
     in_fault: "{} API error, write to it once mended: {}",
     approval_keys: "  a yes · e this turn · A from now on · r no",
     allow_once: "allow once",
-    from_now_on: "yes from now on",
     refuse: "refuse",
     apply: "apply",
     focus_no_ask: "{} waits for no yes and no change of yours",
@@ -2453,19 +2442,14 @@ pub const TR: Text = Text {
     paused: " ‖ DURDU ",
     write_lead: "lidere yaz",
     to_agent: "agent'a",
-    panel: "panel",
     next_waiting: "sıradaki karar",
     focus: "odak",
-    pause: "durdur",
     help: "yardım",
     trace: "iz",
     back: "geri",
     write_this: "bu agent'a yaz",
-    file: "dosya",
     reject: "reddet",
-    quote: "ona alıntıla",
     no_hunk: "burada alıntılanacak bir parça yok",
-    notes: "not · notları gönder",
     note_where: "not bir parçanın satırına yazılır: bir satırı en üste kaydır",
     typing_note: "{} için not ▸ ",
     noted: "not tutuldu (bu değişiklikte {}); n gönderir",
@@ -2479,14 +2463,22 @@ pub const TR: Text = Text {
     clash_line: "✗ checkout'a ({}) uymuyor: {} · b onu {} adlı ajana geri gönderir",
     chosen: "{} / {} parça seçili; a yalnız onları uygular, kalanı bekler",
     unchosen: "seçili parça yok; a değişikliğin tamamını uygular",
-    apply_part: "uygula · parça seç",
-    scroll_wrap: "kaydır · sar",
     binary: "ikili",
     more_files: " … {} dosya daha",
     kind_source: "kaynak",
     kind_tests: "testler",
     kind_generated: "üretilmiş",
     views: ["salon", "pano", "kod", "zaman", "ana ekran"],
+    places: ["odak", "iz", "değişiklik", "konuşma", "iş", "bakış"],
+    chord_g: [("g", "ilk satır")],
+    chord_z: [
+        ("a", "katla · aç"),
+        ("M", "hepsini katla"),
+        ("R", "hepsini aç"),
+    ],
+    chord_q: [("q", "çık"), ("s", "çıkınca ne kalır")],
+    chord_as: "{} olarak",
+    note_key: "not",
     timeline_title: " ZAMAN ŞERİDİ · bir sütun {} · [ ] ölçek ",
     timeline_scales: ["5 sn", "30 sn", "1 dk"],
     timeline_now: "şimdi",
@@ -2509,8 +2501,6 @@ pub const TR: Text = Text {
     recall_away: "o satır ekranda değil: projesi kapalı ya da yüklenenden daha eski",
     no_jump: "\"{}\" adında gidilecek bir yer yok: bir agent ya da proje",
     jump_project: "proje",
-    find_card: "iş",
-    other_card: "başka iş",
     next_card: "sonraki / önceki iş",
     no_card_found: "{} diye bir iş yok",
     shell_empty: "komut boş",
@@ -2853,7 +2843,6 @@ pub const TR: Text = Text {
     settled_one: "{} kaldırıldı: sana ihtiyacı olunca döner",
     settle_refused: "kaldırılmadı: {} seni bekliyor",
     unsettled: "kaldırılan {} şey salona döndü",
-    peek_next: "sonraki / önceki agent",
     no_hints: "burada harf verilecek satır yok: F salon ekranında çalışır",
     hint_gone: "o satır ekrandan çıktı",
     hint_pick: "bir etiket seçer",
@@ -2913,8 +2902,6 @@ pub const TR: Text = Text {
     ],
     home_more: "… {} tane daha",
     home_read: "diff'i oku",
-    home_project: "proje",
-    home_move: "gez",
     home_later: "sonra",
     home_answer: "yanıtla",
     home_open: "aç",
@@ -2969,7 +2956,6 @@ pub const TR: Text = Text {
     ],
     diff_copy_title: " KOPYALA · {} seçili · y yazıldığı gibi · Y yeni hali · v esc çık ",
     copy_no_new: "yeni halde bir şey yok: seçilen satırların hepsi silinmiş",
-    copy_lines: "satır kopyala",
     new_side: "yeni hali kopyala",
     copied: "kopyalandı ({})",
     copy_failed: "kopyalanamadı: {}",
@@ -3198,9 +3184,6 @@ pub const TR: Text = Text {
     full: "kirli: dış dünyayı okuyor, her çıktısı sana gelir",
     no_story: "Hikâye yok. Ham akış için enter.",
     story_more: "… +{} · l hepsini gösterir",
-    entry_step: "gez",
-    cut_whole: "kes · tamamı",
-    scroll: "kaydır",
     story_labels: [
         "niyet",
         "varsayım",
@@ -3407,7 +3390,6 @@ pub const TR: Text = Text {
     in_fault: "{} API hatası, giderince ona yaz: {}",
     approval_keys: "  a evet · e bu tur · A hep evet · r hayır",
     allow_once: "bir kez izin ver",
-    from_now_on: "bundan sonra hep evet",
     refuse: "reddet",
     apply: "uygula",
     focus_no_ask: "{} senden ne bir evet ne de bir değişiklik onayı bekliyor",

@@ -5,7 +5,7 @@ description: The two other views of the salon - the board with every card in its
 
 # The board and the code map
 
-The salon shows the team; the board shows the work, and the code map shows the files. `2` (`:board`) and `3` (`:code`) open them in the salon's place; `1` (`:salon`) comes back. Both keep the header and the footer, and every key that works everywhere (`W`, `?`, `:` commands, writing) works on them.
+The salon shows the team; the board shows the work, and the code map shows the files. `2` (`:board`) and `3` (`:code`) open them in the salon's place; `1` (`:salon`) comes back. Both keep the header and the status line, and every key that works everywhere (`W`, `?`, `:` commands, writing) works on them.
 
 ## The board
 

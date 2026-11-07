@@ -13,6 +13,12 @@ The conventions are vim's: `h` `j` `k` `l` move and fold, `gg` and `G` go to the
 
 `?` (`:help`) opens HELP: every key with what it does, in two columns on a wide screen (a long text goes on under its key, whole; the wider the screen, the fewer do), then the legend of glyphs, then the new-line key your terminal has. On a screen too short for it, its lines scroll above its last line, which says how many are below (`↓ 12 more · j k scroll`) or, at the foot, that there is more above: `j` `k` (or `↓` `↑`) a line, `^d` `^u` half a page, `^f` `^b` (or `pgdn` `pgup`) a page, `gg` (or `home`) the top, `G` (or `end`) the foot. These keys never close it, wherever it fits. Any other key closes it, except `/`: that starts a filter, typed on the window's last line. Every key typed goes into it (`?`, `q` and `/` too), so the help stays open while you type; backspace takes a letter back, `^u` empties it. A key line or a legend line stays when it has every word of the filter, in either column: `zM` finds the fold keys, `first last` finds `gg` `G`. Case and the Turkish letters fold to plain Latin (`calis` finds `çalış`, `BÜTÇE` finds `bütçe`). Nothing matching says so. `enter` keeps the filter and ends the typing (then `/` changes it, any other key closes); `esc` drops it and the whole help is back; backspace on an empty filter leaves it too. The window keeps its size while filtered, so it does not jump; a change to the filter shows it from the top. The help always opens at its top.
 
+## The status line
+
+The last row, while you are not writing, is a status line: where you are (`home`, `salon`, `board`, `code`, `timeline`, or the screen over the view: `focus`, `trace`, `change`, `conversation`, `card`, `peek`), the project at hand and the card the open screen or the selected row is about (`#12 Refund flow`, a long title cut), dim; then at most three keys for the selected thing, `esc` where there is a way back, and `?`. Movement keys are never shown: they are vim's, and in this help. On a narrow screen the keys go from the end first, never `esc` or `?`; when even those do not fit beside it, the place goes. A window with a title of its own (a script, a plan, the hint letters, copy mode) keeps its own keys instead.
+
+While the first key of a chord waits for its second, the row lists what the second key can be and what it does, as which-key does in vim: `g…   g  first line`, `z…   a  fold · unfold   M  fold all   R  unfold all`, `q…   q  quit   s  what quitting leaves`. A pair from your [key file](#your-own-keys) whose first key is the one held is listed too, as what it acts as (`t  as G`).
+
 ## Writing
 
 | Key | What it does |
@@ -118,7 +124,7 @@ The conventions are vim's: `h` `j` `k` `l` move and fold, `gg` and `G` go to the
 | `l` `h`  `→` `←` | in a focus: the entry at hand whole · cut to its first eight lines again (`… +N · l shows all` says how many more) |
 | `za`  `zM`  `zR` | in a focus: the entry toggled · all cut · all whole |
 | `enter` `esc` | the raw stream · back |
-| `a`  `e`  `A`  `r` | in a focus or the raw stream, when its agent waits for you: on its ask (the one its status quotes), allow once · yes to all it asks this turn · yes from now on · refuse; on its change, apply · reject. Never what is selected in waiting for you. The footer shows these keys first while there is something to decide; with nothing, `a` and `r` say so and `A` is the archives |
+| `a`  `e`  `A`  `r` | in a focus or the raw stream, when its agent waits for you: on its ask (the one its status quotes), allow once · yes to all it asks this turn · yes from now on · refuse; on its change, apply · reject. Never what is selected in waiting for you. The status line shows `a` `r` `e` while there is something to decide (`A` is in this help); with nothing, `a` and `r` say so and `A` is the archives |
 
 The focus's `folder` line says where the agent works: the checkout for a leader, its worktree for a worker, a helper or a solo (`· worktree of ~/src/kule`), the folder itself without git. Under it, a writing agent's `scratch` line names its scratch directory, where its notes and logs go instead of its change. The salon's line of an open project ends with its folder too.
 

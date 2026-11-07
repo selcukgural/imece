@@ -13,6 +13,12 @@ Gelenekler vim'inkidir: `h` `j` `k` `l` hareket ve katlama, `gg` ve `G` uçlara,
 
 `?` (`:help`) YARDIM'ı açar: her tuş ne yaptığıyla, geniş ekranda iki sütunda (uzun bir metin tuşunun altında bütün olarak sürer; ekran genişledikçe daha azı sürer), sonra işaretlerin lejantı, sonra terminalinizin yeni satır tuşu. Ona fazla kısa bir ekranda satırları son satırının üstünde kayar; son satır aşağıda kaç satır olduğunu (`↓ 12 daha · j k kaydır`) ya da en altta yukarıda daha fazlası olduğunu söyler: `j` `k` (ya da `↓` `↑`) bir satır, `^d` `^u` yarım sayfa, `^f` `^b` (ya da `pgdn` `pgup`) bir sayfa, `gg` (ya da `home`) en üst, `G` (ya da `end`) en alt. Bu tuşlar sığdığı yerde de yardımı hiç kapatmaz. Başka herhangi bir tuş kapatır, `/` dışında: o bir süzgeç başlatır, pencerenin son satırında yazılır. Basılan her tuş süzgece girer (`?`, `q` ve `/` de), böylece yazarken yardım açık kalır; backspace bir harf geri alır, `^u` boşaltır. Bir tuş satırı ya da lejant satırı, süzgecin her sözcüğü iki sütundan birinde geçiyorsa kalır: `zM` katlama tuşlarını bulur, `ilk son` `gg` `G`'yi bulur. Büyük küçük harf ve Türkçe harfler düz Latin'e katlanır (`calis` `çalış`'ı bulur, `BÜTÇE` `bütçe`'yi). Hiçbir şey eşleşmezse söyler. `enter` süzgeci tutar ve yazmayı bitirir (sonra `/` değiştirir, başka bir tuş kapatır); `esc` süzgeci bırakır ve bütün yardım geri gelir; boş süzgeçte backspace de bırakır. Pencere süzülürken boyutunu korur, zıplamaz; süzgeç değişince en üstten gösterilir. Yardım hep en üstünden açılır.
 
+## Durum satırı
+
+Son satır, yazmadığınız sürece, bir durum satırıdır: nerede olduğunuz (`ana ekran`, `salon`, `pano`, `kod`, `zaman`, ya da görünümün üstündeki ekran: `odak`, `iz`, `değişiklik`, `konuşma`, `iş`, `bakış`), eldeki proje ve açık ekranın ya da seçili satırın ilgili olduğu iş (`#12 Refund flow`, uzun bir başlık kesilir), soluk; sonra seçili şey için en fazla üç tuş, geri dönüş varsa `esc`, ve `?`. Hareket tuşları hiç gösterilmez: vim'inkilerdir ve bu yardımdadır. Dar bir ekranda tuşlar sondan gider, `esc` ve `?` asla; onlar bile yanına sığmayınca yer sözcüğü gider. Kendi başlığı olan bir pencere (bir betik, bir plan, ipucu harfleri, kopyalama kipi) kendi tuşlarını gösterir.
+
+Bir akorun ilk tuşu ikincisini beklerken satır ikinci tuşun ne olabileceğini ve ne yaptığını listeler, vim'deki which-key gibi: `g…   g  ilk satır`, `z…   a  katla · aç   M  hepsini katla   R  hepsini aç`, `q…   q  çık   s  çıkınca ne kalır`. [Tuş dosyanızdan](#kendi-tuşlarınız) ilk tuşu basılı olan bir çift de listelenir, ne olarak davrandığıyla (`t  G olarak`).
+
 ## Yazmak
 
 | Tuş | Ne yapar |
@@ -118,7 +124,7 @@ Gelenekler vim'inkidir: `h` `j` `k` `l` hareket ve katlama, `gg` ve `G` uçlara,
 | `l` `h`  `→` `←` | odakta: eldeki kaydın tamamı · yine ilk sekiz satırına kes (`… +N · l hepsini gösterir` kaç satır daha olduğunu söyler) |
 | `za`  `zM`  `zR` | odakta: kaydı değiştir · hepsini kes · hepsinin tamamı |
 | `enter` `esc` | ham akış · geri |
-| `a`  `e`  `A`  `r` | odakta ya da ham akışta, ajanı sizi beklerken: isteğinde (durumunun alıntıladığı), bir kez izin ver · bu tur ne isterse evet · bundan sonra hep evet · reddet; değişikliğinde, uygula · reddet. Asla sizi bekleyenlerde seçili olanı değil. Karar verilecek bir şey varken alt satır bu tuşları önce gösterir; yoksa `a` ve `r` bunu söyler, `A` arşivlerdir |
+| `a`  `e`  `A`  `r` | odakta ya da ham akışta, ajanı sizi beklerken: isteğinde (durumunun alıntıladığı), bir kez izin ver · bu tur ne isterse evet · bundan sonra hep evet · reddet; değişikliğinde, uygula · reddet. Asla sizi bekleyenlerde seçili olanı değil. Karar verilecek bir şey varken durum satırı `a` `r` `e` tuşlarını gösterir (`A` bu yardımdadır); yoksa `a` ve `r` bunu söyler, `A` arşivlerdir |
 
 Odağın `klasör` satırı ajanın nerede çalıştığını söyler: lider için çalışma kopyası, işçi, yardımcı ya da solo için worktree'si (`· ~/src/kule için worktree`), git yoksa klasörün kendisi. Altında, yazan bir ajanın `karalama` satırı karalama dizinini gösterir; notları ve günlükleri değişikliğine değil oraya gider. Salonda açık bir projenin satırı da klasörüyle biter.
 

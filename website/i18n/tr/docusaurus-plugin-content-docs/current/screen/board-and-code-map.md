@@ -5,7 +5,7 @@ description: Salonun diğer iki görünümü - her kartı sütununda gösteren p
 
 # Pano ve kod haritası
 
-Salon takımı gösterir; pano işi, kod haritası dosyaları gösterir. `2` (`:board`) ve `3` (`:code`) onları salonun yerinde açar; `1` (`:salon`) geri getirir. İkisi de başlık satırını ve alt satırı korur; her yerde çalışan her tuş (`W`, `?`, `:` komutları, yazmak) onlarda da çalışır.
+Salon takımı gösterir; pano işi, kod haritası dosyaları gösterir. `2` (`:board`) ve `3` (`:code`) onları salonun yerinde açar; `1` (`:salon`) geri getirir. İkisi de başlık satırını ve durum satırını korur; her yerde çalışan her tuş (`W`, `?`, `:` komutları, yazmak) onlarda da çalışır.
 
 ## Pano
 
