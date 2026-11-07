@@ -296,6 +296,18 @@ mod tests {
         let spans = head_line(&app, a, Tab::Diff, 120);
         assert_eq!(spans.spans[1].style, bold(pal().strong), "the title");
         assert_eq!(spans.spans[3].style, fg(pal().agent), "the agent");
+        // The right part wants a gap of two cells at least.
+        let whole = head(&app, Tab::Diff);
+        let left = whole.trim_end_matches("change 1 of 2").trim_end();
+        let used = left.chars().count();
+        let tight = head_line(&app, a, Tab::Diff, used + 13 + 1);
+        assert!(!text(&tight).contains("change 1 of 2"), "{}", text(&tight));
+        let loose = head_line(&app, a, Tab::Diff, used + 13 + 2);
+        assert!(
+            text(&loose).ends_with("  change 1 of 2"),
+            "{}",
+            text(&loose)
+        );
     }
 
     #[test]
@@ -401,6 +413,11 @@ mod tests {
         let line = tab_line(&app, a, Tab::Log, 60);
         assert!(text(&line).ends_with("tab switches"), "{}", text(&line));
         assert_eq!(text(&line).chars().count(), 60);
+        // The hint wants a gap of two cells at least: 17 + 12 + 2.
+        let tight = tab_line(&app, a, Tab::Log, 30);
+        assert_eq!(text(&tight), "diff · talk · log");
+        let loose = tab_line(&app, a, Tab::Log, 31);
+        assert_eq!(text(&loose), "diff · talk · log  tab switches");
         assert_eq!(line.spans[0].style, Style::new(), "a change to show");
         let line = tab_line(&app, a, Tab::Diff, 60);
         assert_eq!(line.spans[0].style, bold(pal().strong));

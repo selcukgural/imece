@@ -363,6 +363,23 @@ mod tests {
         app.on_key(key(KeyCode::Char('/')));
         assert!(app.typing);
         assert_eq!(app.input, format!("@{} ", app.world.agents[one].name));
+        // On the talk tab too, a conversation open: an answer by digit,
+        // and a digit naming no answer is a view's as ever.
+        app.typing = false;
+        app.input.clear();
+        app.open_tab(one, Tab::Talk);
+        assert!(app.thread.is_some());
+        app.on_key(key(KeyCode::Char('3')));
+        assert!(app.world.has_question(one), "no third answer");
+        assert_eq!(app.view, View::Code, "the digit is the view's");
+        app.view = View::Salon;
+        app.open_tab(one, Tab::Talk);
+        app.on_key(key(KeyCode::Char('1')));
+        assert!(!app.world.has_question(one), "answered from the talk tab");
+        assert_eq!(app.view, View::Salon);
+        app.world.asked_you(one, "Once more?");
+        app.on_key(key(KeyCode::Char('/')));
+        assert_eq!(app.input, format!("@{} ", app.world.agents[one].name));
         // Without a question, `/` is writing as ever.
         app.typing = false;
         app.input.clear();
