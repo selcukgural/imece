@@ -254,7 +254,7 @@ pub struct Text {
     pub kind_source: &'static str,
     pub kind_tests: &'static str,
     pub kind_generated: &'static str,
-    pub views: [&'static str; 5],
+    pub views: [&'static str; 2],
     /// The status line's word for a screen over the view: focus, trace,
     /// change, conversation, card, peek (record 125).
     pub places: [&'static str; 6],
@@ -953,6 +953,8 @@ pub struct Text {
     pub columns: [&'static str; 5],
     // Code map
     pub code_title: &'static str,
+    /// The board's window: `{}` its cards.
+    pub board_title: &'static str,
     pub leases: &'static str,
     pub shared_files: &'static str,
     /// One short word per status glyph, in `ui::code::GLYPHS` order.
@@ -1225,7 +1227,7 @@ pub struct Text {
     pub waiting_yes: &'static str,
     // Overlays
     pub help_title: &'static str,
-    pub help_keys: [(&'static str, &'static str); 57],
+    pub help_keys: [(&'static str, &'static str); 56],
     /// What each `:` command does, in a line, in `complete::COMMANDS`'
     /// order: shown after the menu's keys once `tab` put one on the line.
     pub command_hints: [(&'static str, &'static str); 68],
@@ -1340,7 +1342,7 @@ pub const EN: Text = Text {
     kind_source: "source",
     kind_tests: "tests",
     kind_generated: "generated",
-    views: ["team", "board", "code", "timeline", "home"],
+    views: ["team", "home"],
     places: ["focus", "trace", "change", "conversation", "card", "peek"],
     chord_g: [("g", "first line")],
     chord_home: [("d", "to decide"), ("w", "at work")],
@@ -1438,11 +1440,11 @@ pub const EN: Text = Text {
         ("archives", "the archives as a tree; r brings one back (A)"),
         ("awake", "keep the machine awake while an agent is mid-turn"),
         ("away", "how long away before the digest opens by itself"),
-        ("board", "the board view (2)"),
+        ("board", "the board, in a window"),
         ("budget", "raise or lower the pot while agents run ($)"),
         ("clear", "take to decide and the journal off the screen"),
         ("close", "close a project: its agents leave, worktrees stay"),
-        ("code", "the code map (3)"),
+        ("code", "the code map, in a window"),
         (
             "commit",
             "a cheap model suggests a commit message for what is staged ($)",
@@ -1470,7 +1472,7 @@ pub const EN: Text = Text {
         ("help", "every key and command (?)"),
         ("hints", "letters over every row to jump to (F)"),
         ("history", "search the lines you sent (^r)"),
-        ("home", "what is your turn, beside what is at work (5)"),
+        ("home", "what is your turn, beside what is at work"),
         ("keys", "read your key file again"),
         ("lang", "Türkçe / English (L)"),
         ("lonca", "the Lonca window; NAME, import, login, off"),
@@ -1518,7 +1520,7 @@ pub const EN: Text = Text {
             "review",
             "a fresh session reviews the change at hand; on|off: every change ($)",
         ),
-        ("salon", "the team (1)"),
+        ("salon", "the team"),
         ("settle", "hide the selected row until it needs you (s)"),
         ("slower", "the demo runs slower (-)"),
         (
@@ -1530,7 +1532,10 @@ pub const EN: Text = Text {
         ("talk", "the agent's conversation with you (v)"),
         ("theme", "the next theme, or a theme by name or file (T)"),
         ("tidy", "worktrees no agent owns, to remove"),
-        ("timeline", "what each agent did over the last hour (4)"),
+        (
+            "timeline",
+            "what each agent did over the last hour, in a window",
+        ),
         ("trace", "the agent's raw stream (t)"),
         ("unclear", "bring back what :clear took off the screen"),
         (
@@ -2034,6 +2039,7 @@ pub const EN: Text = Text {
     researching: "researching: {}",
     columns: ["TO DO", "IN PROGRESS", "TO REVIEW", "VERIFYING", "DONE"],
     code_title: " CODE MAP · {} · who edits what ",
+    board_title: " BOARD · cards: {} ",
     leases: "{} being edited",
     shared_files: " · {} files with several agents at once",
     code_glyphs: ["idle", "working", "needs you", "stuck"],
@@ -2316,7 +2322,6 @@ pub const EN: Text = Text {
         ("^w ^u ^k ^y", "writing: cut a word / before / after; paste"),
         ("#N #word n p", "a card on one screen; n p: next / previous"),
         ("&  :goto", "to an agent or project; 1-9 nth, ! needs you"),
-        ("1 2 3 4 5", ":salon · :board · :code · :timeline · :home"),
         ("↑ ↓  j k", "select"),
         (
             "gg  G  gd  gw",
@@ -2544,7 +2549,7 @@ pub const TR: Text = Text {
     kind_source: "kaynak",
     kind_tests: "testler",
     kind_generated: "üretilmiş",
-    views: ["ekip", "pano", "kod", "zaman", "ana ekran"],
+    views: ["ekip", "ana ekran"],
     places: ["odak", "iz", "değişiklik", "konuşma", "iş", "bakış"],
     chord_g: [("g", "ilk satır")],
     chord_home: [("d", "karar bekleyen"), ("w", "çalışan")],
@@ -2647,14 +2652,14 @@ pub const TR: Text = Text {
             "away",
             "özet kendiliğinden açılmadan önce ne kadar uzakta kalınır",
         ),
-        ("board", "pano görünümü (2)"),
+        ("board", "pano, bir pencerede"),
         ("budget", "ajanlar çalışırken bütçeyi artır ya da azalt ($)"),
         ("clear", "karar bekleyenleri ve günlüğü ekrandan kaldır"),
         (
             "close",
             "bir projeyi kapat: ajanları ayrılır, worktree'ler kalır",
         ),
-        ("code", "kod haritası (3)"),
+        ("code", "kod haritası, bir pencerede"),
         (
             "commit",
             "ucuz bir model sahnelenen için commit mesajı önerir ($)",
@@ -2688,7 +2693,7 @@ pub const TR: Text = Text {
         ("help", "her tuş ve komut (?)"),
         ("hints", "atlamak için her satırın üstünde harfler (F)"),
         ("history", "gönderdiğin satırlarda ara (^r)"),
-        ("home", "sıra sizde olanlar ve çalışanlar (5)"),
+        ("home", "sıra sizde olanlar ve çalışanlar"),
         ("keys", "tuş dosyanı yeniden oku"),
         ("lang", "Türkçe / English (L)"),
         ("lonca", "Lonca penceresi; AD, import, login, off"),
@@ -2739,7 +2744,7 @@ pub const TR: Text = Text {
             "review",
             "taze bir oturum eldeki değişikliği inceler; on|off: her değişiklik ($)",
         ),
-        ("salon", "ekip (1)"),
+        ("salon", "ekip"),
         ("settle", "seçili satırı sana ihtiyacı olana dek gizle (s)"),
         ("slower", "demo yavaşlar (-)"),
         (
@@ -2757,7 +2762,10 @@ pub const TR: Text = Text {
             "tidy",
             "hiçbir ajanın sahiplenmediği worktree'ler, kaldırmak için",
         ),
-        ("timeline", "her ajanın son bir saatte ne yaptığı (4)"),
+        (
+            "timeline",
+            "her ajanın son bir saatte ne yaptığı, bir pencerede",
+        ),
         ("trace", "ajanın ham akışı (t)"),
         ("unclear", ":clear'ın ekrandan kaldırdığını geri getir"),
         ("undo", "geri sayan :close, :forget, … olmasın (u)"),
@@ -3267,6 +3275,7 @@ pub const TR: Text = Text {
         "BİTTİ",
     ],
     code_title: " KOD HARİTASI · {} · kim neyi düzenliyor ",
+    board_title: " PANO · kart: {} ",
     leases: "{} düzenleniyor",
     shared_files: " · {} dosyada birden çok agent aynı anda çalışıyor",
     code_glyphs: ["boşta", "çalışıyor", "seni bekliyor", "takıldı"],
@@ -3551,7 +3560,6 @@ pub const TR: Text = Text {
         ("^w ^u ^k ^y", "yazarken: kelime/öncesi/sonrası kes; koy"),
         ("#N #kelime", "başlıkla bir kart; n p: önceki / sonraki"),
         ("&  :goto", "agent'a/projeye git; 1-9 n'inci; ! bekleyen"),
-        ("1 2 3 4 5", ":salon · :board · :code · :timeline · :home"),
         ("↑ ↓  j k", "seç"),
         (
             "gg  G  gd  gw",

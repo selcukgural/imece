@@ -293,3 +293,25 @@ flashes `lonca_not_shown`; `esc` `q` close, `?` the help). Commands
 reference EN+TR. The demo's second project shows it with the stranger's
 proposal; the demo lists no held symbols (record 123: its map stays as it
 was), which the page says.
+
+Step 5's windows as built (its first piece): the board, the code map and
+the timeline left `View` (`View::Salon` and `View::Home` remain) for
+`App.window: Option<Window>` (`app/views.rs`): `:board`, `:code` and
+`:timeline` alone open one over whatever is on the screen (`open_window`;
+the timeline on its first lane), drawn by `overlay::view` on the shaded
+screen (the board under a title that counts its cards, the map and the
+timeline as they drew themselves); `window_key` takes every key: `esc`
+and `q` close, `?` opens the help over it, the timeline's `j k g G`
+(the arrows, Home, End), `[ ]`, `enter` (its focus in the window's
+place) and `@` (the line to it); nothing under the window moves. A view
+shown (`:home`, `:salon`, `:waiting` …) closes the window; a notice's
+click too. The digits `1`-`5` open nothing: `1`-`9` pick a question's
+answer on Home and the detail and do nothing else. The key file's places
+`[board]`, `[code]`, `[timeline]` are the windows' (`Window::scope`,
+`scope_below` first); the status line shows the window's keys and no
+place; the board's window breathes as the view did, and nothing is
+patched under a window; `at_rest` is false with one open. The help row
+`1 2 3 4 5` left, the `:` notes say "in a window", `Text::views` has the
+two views. Records 04, 17 and 100 say so; the keyboard, commands,
+board-and-code-map, timeline, salon, Home, cards and command-line pages
+in both languages.

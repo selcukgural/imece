@@ -5,7 +5,7 @@ description: The default screen of imece - the header, the guild tree grouped by
 
 # The team
 
-The team screen is `1` or `:salon`; imece opens on [Home](home.md). It shows the whole team at a glance: a header with the projects and the pot, the guild tree on the left (every project, its leader, its workers and their helpers), and on the right the two side panels, TO DECIDE and the [story](journal.md#the-story) (what happened, by card; `J` shows the journal line by line). The board and the code map are one key away (`2`, `3`); everything else opens over the team and `esc` brings it back.
+The team screen is `:salon`; imece opens on [Home](home.md). It shows the whole team at a glance: a header with the projects and the pot, the guild tree on the left (every project, its leader, its workers and their helpers), and on the right the two side panels, TO DECIDE and the [story](journal.md#the-story) (what happened, by card; `J` shows the journal line by line). The board, the code map and the timeline open as windows over it (`:board`, `:code`, `:timeline`); everything else opens over the team and `esc` brings it back.
 
 ```text
  imece  shop-api │  ! 2 to decide  │ $3.10 of $20.00  14:02

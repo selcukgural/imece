@@ -57,7 +57,7 @@ Step 0 as built:
 The demo draws the same screens, so it mirrors all of this with no change
 of its own. Nothing here grows or is kept.
 
-Step 1 as built: `View::Home` (`5`, `:home`), `app/home.rs` and `ui/home.rs`,
+Step 1 as built: `View::Home` (`:home`; `5` until record 125's step 5), `app/home.rs` and `ui/home.rs`,
 beside the salon, which stays one key away. imece opens on Home (the person,
 2026-11-07: `App::open_home` from `main`; a test's `App` starts on the salon). `App::home_rows_in` lists what waits in
 `W`'s order, then what is stuck, at work and quiet; an agent waiting on an ask

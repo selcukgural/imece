@@ -224,6 +224,7 @@ impl App {
         self.help = false;
         self.archives = None;
         self.peek = None;
+        self.window = None;
         self.hints = None;
         self.news.clear();
         self.welcome = false;
@@ -623,12 +624,14 @@ mod tests {
         // Over windows that would hide it.
         app.help = true;
         app.peek = Some(1);
+        app.window = Some(Window::Code);
         app.welcome = true;
         app.leaving = true;
         app.archives = Some(Browser::new(&app.world, Vec::new()));
         app.viewing = Some(Box::new(App::new(1, 1, 0, 1, Lang::En)));
         app.clicked(asked.id);
         assert!(!app.help && app.peek.is_none() && !app.welcome && !app.leaving);
+        assert_eq!(app.window, None, "a window over it closed too");
         assert!(app.archives.is_none() && app.viewing.is_none());
         assert_eq!(app.waiting_at, Some(q), "the question it was about");
         assert_eq!((app.view, app.pane), (View::Salon, Pane::Inbox));

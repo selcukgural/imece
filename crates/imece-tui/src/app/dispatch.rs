@@ -113,8 +113,8 @@ impl App {
 
     /// Whether nothing is open on this screen that `esc` would close: no
     /// window, line, chord, conversation, card, focus or change; the
-    /// salon, the board or the code map as they are.
-    fn at_rest(&self) -> bool {
+    /// salon or Home as they are.
+    pub(super) fn at_rest(&self) -> bool {
         use keys::Scope;
         !self.typing
             && !self.help
@@ -124,10 +124,7 @@ impl App {
             && self.noting.is_none()
             && self.card.is_none()
             && self.zoom == Zoom::None
-            && matches!(
-                self.scope_below(),
-                Some(Scope::Salon | Scope::Board | Scope::Code | Scope::Timeline)
-            )
+            && self.scope_below() == Some(Scope::Salon)
     }
 
     /// `enter` on an archive (or one of its agents, `agent`) in the
@@ -273,6 +270,9 @@ impl App {
         {
             return None;
         }
+        if let Some(win) = self.window {
+            return Some(win.scope());
+        }
         Some(if self.peek.is_some() {
             Scope::Peek
         } else if self.copying() {
@@ -282,13 +282,7 @@ impl App {
         } else if let Zoom::Diff(_) = self.zoom {
             Scope::Change
         } else {
-            match self.view {
-                View::Salon => Scope::Salon,
-                View::Board => Scope::Board,
-                View::Code => Scope::Code,
-                View::Timeline => Scope::Timeline,
-                View::Home => Scope::Salon,
-            }
+            Scope::Salon
         })
     }
 
@@ -369,6 +363,10 @@ impl App {
         }
         if let Some(win) = self.lonca_win {
             self.lonca_key(win, k);
+            return;
+        }
+        if let Some(win) = self.window {
+            self.window_key(win, k);
             return;
         }
         if self.hints.is_some() {
@@ -506,25 +504,11 @@ impl App {
                 };
                 self.menu = self.suggest();
             }
-            // On Home a digit picks one of the answers a question offers;
-            // with none to pick, the digits are the views'.
+            // A digit picks one of the answers a question offers (on Home
+            // or its detail); the digits do nothing else (record 125: the
+            // views they opened are `:` windows).
             KeyCode::Char(d @ '1'..='9') if self.option_at_hand(d).is_some() => {
                 self.answer_option(d);
-            }
-            KeyCode::Char('1') => self.show(View::Salon),
-            KeyCode::Char('2') => self.show(View::Board),
-            KeyCode::Char('3') => self.show(View::Code),
-            KeyCode::Char('4') => self.show(View::Timeline),
-            KeyCode::Char('5') => self.show(View::Home),
-            // The timeline's scale: a column of 5 s, 30 s, a minute.
-            KeyCode::Char(c @ ('[' | ']'))
-                if self.view == View::Timeline && self.zoom == Zoom::None =>
-            {
-                let last = ui::timeline::SCALES.len() - 1;
-                self.timeline_scale = match c {
-                    ']' => (self.timeline_scale + 1).min(last),
-                    _ => self.timeline_scale.saturating_sub(1),
-                };
             }
             KeyCode::Char('T') => self.next_theme(),
             KeyCode::Char('L') => self.set_lang(self.lang.other()),
@@ -652,11 +636,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_view_keys_and_l_do_what_their_colon_names_do() {
+    fn the_digits_open_no_view_and_l_does_what_its_colon_name_does() {
         let mut app = App::new(1, 1, 0, 1, Lang::En);
-        for (c, view) in [('3', View::Code), ('2', View::Board), ('1', View::Salon)] {
+        app.view = View::Home;
+        for c in ['1', '2', '3', '4', '5'] {
             app.on_key(key(KeyCode::Char(c)));
-            assert_eq!(app.view, view, "{c}");
+            assert_eq!((app.view, app.window), (View::Home, None), "{c}");
         }
         app.on_key(key(KeyCode::Char('L')));
         assert_eq!(app.lang, Lang::Tr);
@@ -695,11 +680,10 @@ mod tests {
     fn a_view_is_at_rest_only_with_nothing_open_that_esc_closes() {
         let mut rest = App::new(1, 1, 0, 1, Lang::En);
         assert!(rest.at_rest());
-        for v in [View::Board, View::Code] {
-            rest.view = v;
-            assert!(rest.at_rest(), "{v:?}");
-        }
-        let busy: [fn(&mut App); 11] = [
+        rest.view = View::Home;
+        assert!(rest.at_rest(), "Home");
+        let busy: [fn(&mut App); 12] = [
+            |a| a.window = Some(Window::Board),
             |a| a.typing = true,
             |a| a.help = true,
             |a| a.pending = Some('g'),
@@ -865,8 +849,9 @@ mod tests {
         assert_eq!(said(view(&app)), "no command nosuch; : and tab list them");
         // What only looks or goes runs; nothing pauses.
         view_typed(&mut app, ":board");
-        assert_eq!(view(&app).view, View::Board);
-        app.on_key(key(KeyCode::Char('1')));
+        assert_eq!(view(&app).window, Some(Window::Board));
+        app.on_key(key(KeyCode::Esc));
+        assert_eq!(view(&app).window, None);
         app.on_key(key(KeyCode::Char(' ')));
         assert!(!view(&app).paused);
         view_typed(&mut app, ":lang tr");
@@ -896,11 +881,11 @@ mod tests {
         assert!(app.changed, "still, with more");
         let mut app = App::new(1, 1, 0, 1, Lang::En);
         let now = Instant::now();
-        app.keys_held = Some((key(KeyCode::Char('2')), now));
+        app.keys_held = Some((key(KeyCode::Char('f')), now));
         app.keys_due(now);
         assert!(!app.changed, "still held");
         app.keys_due(now + keys::WAIT);
-        assert!(app.changed && app.view == View::Board);
+        assert!(app.changed && app.needs_only);
     }
 
     fn keymap(text: &str) -> Keymap {
@@ -910,13 +895,15 @@ mod tests {
     #[test]
     fn the_key_file_turns_keys_but_not_writing_the_help_filter_or_hints() {
         let (mut app, _) = drawn_for_hints();
-        app.keys = keymap("^n = 2\nd = 3\ne = /");
+        app.keys = keymap("^n = f\nd = L\ne = /");
         app.on_key(ctrl('n'));
-        assert_eq!(app.view, View::Board, "^n is 2");
+        assert!(app.needs_only, "^n is f");
         app.on_key(key(KeyCode::Char('d')));
-        assert_eq!(app.view, View::Code, "d is 3");
-        app.on_key(key(KeyCode::Char('1')));
-        assert_eq!(app.view, View::Salon, "a key not named is itself");
+        assert_eq!(app.lang, Lang::Tr, "d is L");
+        app.on_key(key(KeyCode::Char('d')));
+        assert_eq!(app.lang, Lang::En);
+        app.on_key(key(KeyCode::Char('f')));
+        assert!(!app.needs_only, "a key not named is itself");
         // Writing takes the letter.
         app.on_key(key(KeyCode::Char('/')));
         app.on_key(key(KeyCode::Char('d')));
@@ -954,9 +941,11 @@ mod tests {
     fn a_turned_key_acts_with_its_ctrl() {
         let mut app = App::new(1, 4, 0, 1, Lang::En);
         app.keys = keymap("x = ^o");
-        app.on_key(key(KeyCode::Char('2')));
+        app.selected = Sel::Agent(0);
+        app.on_key(key(KeyCode::Enter));
+        assert_eq!(app.zoom, Zoom::Focus(0));
         app.on_key(key(KeyCode::Char('x')));
-        assert_eq!(app.view, View::Salon, "x is ^o: back where the person was");
+        assert_eq!(app.zoom, Zoom::None, "x is ^o: back where the person was");
     }
 
     /// A demo app whose salon shows three rows.
@@ -969,22 +958,21 @@ mod tests {
     #[test]
     fn two_keys_of_the_person_act_as_one() {
         let mut app = three_rows();
-        app.keys = keymap("2x = 3\ngt = 2");
-        app.on_key(key(KeyCode::Char('2')));
-        assert_eq!(app.view, View::Salon, "2 waits for its second");
+        app.keys = keymap("fx = L\ngt = f");
+        app.on_key(key(KeyCode::Char('f')));
+        assert!(!app.needs_only, "f waits for its second");
         assert!(app.keys_held.is_some());
         app.on_key(key(KeyCode::Char('x')));
-        assert_eq!(app.view, View::Code, "2x is 3");
+        assert_eq!(app.lang, Lang::Tr, "fx is L");
         assert!(app.keys_held.is_none());
+        app.lang = Lang::En;
         // Another key: the first acts alone, then the other.
-        app.on_key(key(KeyCode::Char('1')));
-        app.on_key(key(KeyCode::Char('2')));
+        app.on_key(key(KeyCode::Char('f')));
         app.on_key(key(KeyCode::Char('?')));
-        assert_eq!(app.view, View::Board, "2 alone is 2");
+        assert!(app.needs_only, "f alone is f");
         assert!(app.help, "and ? acted after it");
         assert!(app.keys_held.is_none());
         app.on_key(key(KeyCode::Esc));
-        app.on_key(key(KeyCode::Char('1')));
         let top = app.selected;
         // g waits too, but imece's gg is not kept waiting.
         app.on_key(key(KeyCode::Char('G')));
@@ -1000,26 +988,24 @@ mod tests {
         );
         app.on_key(key(KeyCode::Char('g')));
         app.on_key(key(KeyCode::Char('t')));
-        assert_eq!(app.view, View::Board, "gt is 2");
+        assert!(!app.needs_only, "gt is f: off again");
         assert_eq!(app.pending, None);
     }
 
     #[test]
     fn a_first_key_alone_acts_after_its_wait() {
         let mut app = App::new(1, 4, 0, 1, Lang::En);
-        app.keys = keymap("2x = 3");
+        app.keys = keymap("fx = L");
         app.keys_due(Instant::now());
-        app.on_key(key(KeyCode::Char('2')));
+        app.on_key(key(KeyCode::Char('f')));
         let (_, at) = app.keys_held.unwrap();
         app.keys_due(at + keys::WAIT - Duration::from_millis(1));
-        assert_eq!(app.view, View::Salon, "still waiting");
+        assert!(!app.needs_only, "still waiting");
         app.keys_due(at + keys::WAIT);
-        assert_eq!(app.view, View::Board, "2 alone");
+        assert!(app.needs_only, "f alone");
         assert!(app.keys_held.is_none());
-        app.on_key(ctrl('o'));
-        assert_eq!(app.view, View::Salon, "the place it left is behind");
         app.keys_due(at + keys::WAIT * 3);
-        assert_eq!(app.view, View::Salon, "nothing held, nothing to do");
+        assert!(app.needs_only, "nothing held, nothing to do");
     }
 
     #[test]
@@ -1043,10 +1029,19 @@ mod tests {
         use keys::Scope;
         let mut app = App::new(1, 1, 0, 1, Lang::En);
         assert_eq!(app.key_scope(), Some(Scope::Salon));
-        app.view = View::Board;
+        app.view = View::Home;
+        assert_eq!(
+            app.key_scope(),
+            Some(Scope::Salon),
+            "Home has the team's keys"
+        );
+        app.window = Some(Window::Board);
         assert_eq!(app.key_scope(), Some(Scope::Board));
-        app.view = View::Code;
+        app.window = Some(Window::Code);
         assert_eq!(app.key_scope(), Some(Scope::Code));
+        app.window = Some(Window::Timeline);
+        assert_eq!(app.key_scope(), Some(Scope::Timeline));
+        app.window = None;
         app.view = View::Salon;
         app.help = true;
         assert_eq!(app.key_scope(), Some(Scope::Help));
@@ -1091,28 +1086,39 @@ mod tests {
     #[test]
     fn a_place_s_keys_hold_only_there() {
         let mut app = three_rows();
-        app.keys = keymap("d = 3\n[board]\nd = 1\ngt = 3\n[code]\ne = 2");
+        app.keys = keymap("d = L\n[board]\nd = q\ngt = esc\n[timeline]\ne = j");
         app.on_key(key(KeyCode::Char('d')));
-        assert_eq!(app.view, View::Code, "d is 3 where no place says else");
+        assert_eq!(app.lang, Lang::Tr, "d is L where no place says else");
+        app.command("timeline");
+        assert!(ui::timeline::agents(&app).len() > 1);
         app.on_key(key(KeyCode::Char('e')));
-        assert_eq!(app.view, View::Board, "e is 2 in the code map");
+        assert_eq!(app.timeline_sel, 1, "e is j on the timeline");
         app.on_key(key(KeyCode::Char('d')));
-        assert_eq!(app.view, View::Salon, "d is 1 on the board");
+        assert_eq!(
+            app.lang,
+            Lang::Tr,
+            "d is L on the timeline, which takes no L"
+        );
+        assert_eq!(app.window, Some(Window::Timeline));
+        app.on_key(key(KeyCode::Esc));
+        app.command("board");
+        app.on_key(key(KeyCode::Char('d')));
+        assert_eq!(app.window, None, "d is q on the board");
         app.on_key(key(KeyCode::Char('e')));
-        assert_eq!(app.view, View::Salon, "e is nothing in the salon");
+        assert_eq!(app.timeline_sel, 1, "e is nothing in the salon");
         app.on_key(key(KeyCode::Char('g')));
         assert!(app.keys_held.is_none(), "gt is the board's");
-        app.on_key(key(KeyCode::Char('2')));
-        assert_eq!(app.view, View::Salon, "g2 is no chord");
-        app.on_key(key(KeyCode::Char('2')));
+        app.on_key(key(KeyCode::Char('L')));
+        assert_eq!(app.lang, Lang::Tr, "gL is no chord");
+        app.command("board");
         app.on_key(key(KeyCode::Char('g')));
         assert!(app.keys_held.is_some(), "the board's g waits");
         app.keys_due(Instant::now() + keys::WAIT * 2);
-        assert_eq!(app.pending, Some('g'), "and goes alone as the board's");
-        app.on_key(key(KeyCode::Char('g')));
+        assert_eq!(app.pending, None, "goes alone, and the window takes it");
+        assert_eq!(app.window, Some(Window::Board));
         app.on_key(key(KeyCode::Char('g')));
         app.on_key(key(KeyCode::Char('t')));
-        assert_eq!(app.view, View::Code, "gt is 3 on the board");
+        assert_eq!(app.window, None, "gt is esc on the board");
         assert_eq!(app.command_note("keys"), "(4)", "every line counts");
     }
 

@@ -371,8 +371,7 @@ mod tests {
         assert!(app.thread.is_some());
         app.on_key(key(KeyCode::Char('3')));
         assert!(app.world.has_question(one), "no third answer");
-        assert_eq!(app.view, View::Code, "the digit is the view's");
-        app.view = View::Salon;
+        assert_eq!(app.view, View::Salon, "the digit does nothing else");
         app.open_tab(one, Tab::Talk);
         app.on_key(key(KeyCode::Char('1')));
         assert!(!app.world.has_question(one), "answered from the talk tab");

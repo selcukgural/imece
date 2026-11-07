@@ -95,7 +95,7 @@ What opens is [Home](../screen/home.md): what is your turn on top, what is at wo
  enter  open   @  write to this agent   j k  move   [ ]  project   /  write to the lead   ?  help
 ```
 
-The team is one key away, `1`: the guild on the left, TO DECIDE and the JOURNAL on the right.
+The team is one command away, `:salon`: the guild on the left, TO DECIDE and the JOURNAL on the right.
 
 The team is the leader alone (`○ lead`, idle until you write). The journal's first line, on the team, says, once per start that is not `--confine strict`, that isolation is not imece's.
 

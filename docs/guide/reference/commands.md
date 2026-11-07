@@ -25,11 +25,11 @@ A line that starts with `:` is a command to imece, not a message to an agent. Yo
 | `:allow [PROGRAM [WORD]]` | `A` (on an ask) | | | | the project's yes from now on, when there is one |
 | `:awake` | — | | | | on / off |
 | `:away [TIME\|off]` | — | | | | `30m` / `1h` / `off` |
-| `:board` | `2` | | | | |
+| `:board` | — | | | | |
 | `:budget USD` | — | `:b` | | | spent X of Y |
 | `:clear [inbox\|journal]` | — | | | | |
 | `:close [NAME]` | — | `:c` | | | the project at hand |
-| `:code` | `3` | | | | |
+| `:code` | — | | | | |
 | `:commit` | — | | | `$` | |
 | `:copy [PATH]` | — | | | | the list, when there is one |
 | `:defer` | `S` | | | | |
@@ -68,7 +68,7 @@ A line that starts with `:` is a command to imece, not a message to an agent. Yo
 | `:rename NAME` | — | | | | the project at hand |
 | `:restore [NAME]` | — | | | | |
 | `:review [on\|off]` | `R` (in a change: whole) | | | `$` | on / off |
-| `:salon` | `1` | | | | |
+| `:salon` | — | | | | |
 | `:settle` | `s` | | | | the selected row's agent or project |
 | `:slower` | `-` | | yes | | the speed, `×2` |
 | `:solo [PATH] [CHOICE] [NAME]` | — | | | `$` | |
@@ -77,8 +77,8 @@ A line that starts with `:` is a command to imece, not a message to an agent. Yo
 | `:talk [@NAME]` | `v` | | | | the agent at hand |
 | `:theme [NAME\|FILE]` | `T` | `:t` | | | the theme in use |
 | `:tidy` | — | | | | |
-| `:timeline` | `4` | | | | |
-| `:home` | `5` | | | | |
+| `:timeline` | — | | | | |
+| `:home` | — | | | | |
 | `:trace [@NAME]` | `t` | | | | the agent at hand |
 | `:unclear [inbox\|journal]` | — | | | | |
 | `:undo` | `u` | | | | |
@@ -117,7 +117,7 @@ How long you are away before WHILE YOU WERE AWAY opens by itself: back in the te
 
 ### `:board`
 
-The board view, as `2`. See [board and code map](../screen/board-and-code-map.md).
+The board, in a window over the screen; `esc` closes it. See [board and code map](../screen/board-and-code-map.md).
 
 ### `:budget USD`
 
@@ -133,7 +133,7 @@ Closes the project `NAME`, or the one at hand (`:c`), ten seconds after it is as
 
 ### `:code`
 
-The code map, as `3`. Live it says there is no shared trunk yet (each agent works in its own worktree, so there is nothing to show of who edits what); symbol leases are not built. See [board and code map](../screen/board-and-code-map.md).
+The code map, in a window over the screen; `esc` closes it. Live it says there is no shared trunk yet (each agent works in its own worktree, so there is nothing to show of who edits what); symbol leases are not built. See [board and code map](../screen/board-and-code-map.md).
 
 ### `:commit`
 
@@ -326,7 +326,7 @@ The note is advice: nothing waits for it and it never holds a change back; you s
 
 ### `:salon`
 
-The team, as `1`.
+The team: the view imece had before Home; `:home` is the other.
 
 ### `:settle`
 
@@ -362,11 +362,11 @@ The worktrees under imece's state that no agent owns (a crash, a removed store, 
 
 ### `:home`
 
-Home, as `5`: what is your turn across projects, what is stuck and what is at work, with what is at hand read beside it. See [Home](../screen/home.md).
+Home: what is your turn across projects, what is stuck and what is at work, with what is at hand read beside it. See [Home](../screen/home.md).
 
 ### `:timeline`
 
-The timeline, as `4`: one lane per agent of the open projects over the last hour, each column what it was doing, the messages under each project; `[` `]` change a column's length. See [the timeline](../screen/timeline.md).
+The timeline, in a window over the screen (`esc` closes it): one lane per agent of the open projects over the last hour, each column what it was doing, the messages under each project; `[` `]` change a column's length. See [the timeline](../screen/timeline.md).
 
 ### `:trace [@NAME]`
 

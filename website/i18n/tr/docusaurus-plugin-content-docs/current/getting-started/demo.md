@@ -52,7 +52,7 @@ Simülasyon canlının olaylarını canlının kullandığı aynı model çağr�
 - **Oturumlar**: bir oturum bir kez başlar (Claude Code'un `/` komutlarıyla; bir işçininki worktree'sinin taşındığını ya da yerinde kaldığını söyleyebilir), zaman zaman durur (`■ oturum bitti · yazınca yeniden başlar`), `:forget` ya da `/clear` ile unutulur ve yazılınca yeniden başlar; `/cost` ve `/compact` bir tur olarak yanıtlanır.
 - **Kese ve sınırlar**: ajan başına ve saat başına harcama, kesenin azalması, biten bir kesenin sözleri ve komutları reddetmesi; `:budget` notunda ve dolmak üzereyken başlıkta kullanım penceresi, ajanların harcadığından doldurulur.
 - **Projeler**: `:open YOL [AD]` bir lider, iki işçi ve üç kartla sahte bir proje ekler; `:close` ajanlarını gönderir; `:rename` canlıdaki gibi. `:pin` de.
-- **Bütün ekran**: ekip, katlama, `f`, pano (`2`), lease'leriyle kod haritası (`3`), kartlar (`#N`), söz sıraları ve yanıtlarıyla (`↩`) konuşmalar, işaretler, günlük, `W` `S`, çıkış sorusu, yardım, temalar, iki dil, readline tuşları, çok satırlı yazma ve yapıştırma. `Confine` başlangıçta canlının söylediği gibi söylenir.
+- **Bütün ekran**: ekip, katlama, `f`, pano (`:board`), lease'leriyle kod haritası (`:code`), kartlar (`#N`), söz sıraları ve yanıtlarıyla (`↩`) konuşmalar, işaretler, günlük, `W` `S`, çıkış sorusu, yardım, temalar, iki dil, readline tuşları, çok satırlı yazma ve yapıştırma. `Confine` başlangıçta canlının söylediği gibi söylenir.
 
 ## Demo canlıyı yansıtır
 

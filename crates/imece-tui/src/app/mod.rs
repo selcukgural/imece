@@ -46,6 +46,7 @@ mod notices;
 mod projects;
 mod salon;
 mod talk;
+mod views;
 mod waiting;
 mod windows;
 
@@ -219,12 +220,19 @@ pub enum Moves {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum View {
     Salon,
-    Board,
-    Code,
-    /// One lane per agent over time (record 100).
-    Timeline,
     /// What is the person's turn, beside what is at work (record 124).
     Home,
+}
+
+/// A view that became a window over the screen (record 125, step 5):
+/// the board, the code map, the timeline (one lane per agent over time,
+/// record 100). Opened by its `:` name alone, closed by `esc`; it takes
+/// every key while it is open.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Window {
+    Board,
+    Code,
+    Timeline,
 }
 
 /// How deep the person looks: the whole guild, one agent's card, the
@@ -951,6 +959,9 @@ pub struct App {
     /// The project at hand's Lonca repository in a window over the screen
     /// (bare `:lonca`, record 125): what waits for a human, what is held.
     pub lonca_win: Option<LoncaWin>,
+    /// The board, the code map or the timeline in a window over the
+    /// screen (`:board` `:code` `:timeline`, record 125).
+    pub window: Option<Window>,
     /// A checkout the person is asked to import into Lonca, in a window
     /// over everything (record 117).
     pub importing: Option<ImportAsk>,
@@ -1274,6 +1285,7 @@ impl App {
             plan_window: None,
             tidy: None,
             lonca_win: None,
+            window: None,
             importing: None,
             teardown: None,
             tidy_start: false,

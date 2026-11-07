@@ -1,11 +1,11 @@
 ---
 title: The board and the code map
-description: The two other views of the team - the board with every card in its column, and the code map that shows who edits what once symbol leases exist.
+description: Two windows over the screen - the board with every card in its column, and the code map that shows who edits what once symbol leases exist.
 ---
 
 # The board and the code map
 
-The team shows the team; the board shows the work, and the code map shows the files. `2` (`:board`) and `3` (`:code`) open them in the team's place; `1` (`:salon`) comes back. Both keep the header and the status line, and every key that works everywhere (`W`, `?`, `:` commands, writing) works on them.
+The team shows the team; the board shows the work, and the code map shows the files. `:board` and `:code` open them in a window over whatever is on the screen; `esc` (or `q`) closes the window. While it is open it takes every key, so `W`, `/` and the rest wait for it to close; `?` opens the help over it. Neither has keys of its own.
 
 ## The board
 
@@ -34,7 +34,7 @@ What a card is, how the leader posts and assigns and how a worker claims, is in 
 
 ## The code map
 
-`3` opens CODE MAP · project · who edits what. It is meant to show one row per file of the project, and on that row one cell per symbol lease held in it:
+`:code` opens CODE MAP · project · who edits what. It is meant to show one row per file of the project, and on that row one cell per symbol lease held in it:
 
 ```text
 ┌ CODE MAP · shop-api · who edits what ───────────────────────────────────────┐

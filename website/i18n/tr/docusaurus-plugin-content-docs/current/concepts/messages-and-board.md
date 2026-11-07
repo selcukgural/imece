@@ -5,7 +5,7 @@ description: Ajanlar imece'nin bus'ında nasıl konuşur - türlü zarf, on mesa
 
 # Mesajlar ve pano
 
-Ajanlar birbirleriyle ve sizinle imece'nin bus'ı üzerinden tek bir araçla, `send` ile konuşur; henüz kimsenin olmayan işi pano üzerinden paylaşır (`post`, `board`, `claim`). Mesajlarla bir kartın hikâyesinde, bir konuşmada ve günlükte karşılaşırsınız; panoyla ikinci görünümde (`2`).
+Ajanlar birbirleriyle ve sizinle imece'nin bus'ı üzerinden tek bir araçla, `send` ile konuşur; henüz kimsenin olmayan işi pano üzerinden paylaşır (`post`, `board`, `claim`). Mesajlarla bir kartın hikâyesinde, bir konuşmada ve günlükte karşılaşırsınız; panoyla penceresinde (`:board`).
 
 ## Zarf
 

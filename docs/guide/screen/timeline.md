@@ -1,11 +1,11 @@
 ---
 title: The timeline
-description: View 4 - one lane per agent over the last hour, what each did in every column, the messages under each project, the scale and the keys.
+description: The timeline window (`:timeline`) - one lane per agent over the last hour, what each did in every column, the messages under each project, the scale and the keys.
 ---
 
 # The timeline
 
-The timeline shows the team over time: one lane per agent of the open projects, time going right to now, each column what the agent was doing then. What works side by side, who sat idle, where something got stuck and since when, read at a glance. `4` (`:timeline`) opens it in the team's place; `1` comes back. It is at its best with a small team; with many agents the lanes scroll.
+The timeline shows the team over time: one lane per agent of the open projects, time going right to now, each column what the agent was doing then. What works side by side, who sat idle, where something got stuck and since when, read at a glance. `:timeline` opens it in a window over the screen; `esc` closes it. It is at its best with a small team; with many agents the lanes scroll.
 
 ```text
 ┌ TIMELINE · a column is 5 s · [ ] scale ─────────────────────────────────────────────┐
@@ -45,10 +45,11 @@ A column is a tick, 5 seconds; `]` makes it 30 seconds, then a minute, `[` back.
 
 | Key | What it does |
 | --- | --- |
-| `4`  `:timeline` | open the timeline |
+| `:timeline` | open the window; `esc` `q` close it |
 | `[`  `]` | a column of 5 s · 30 s · 1 min |
 | `j` `k`  `gg` `G` | select an agent; the selected row is reversed and kept in view |
-| `enter` | the selected agent's focus; `esc` comes back |
-| `K` `t` `@` | peek, its raw stream, write to it: the selected agent is the one at hand |
+| `enter` | the selected agent's focus, in the window's place |
+| `@` | write to the selected agent: the window closes, the line opens |
+| `?` | the help, over the window; the window takes every other key |
 
 The demo fills the lanes the same way, so `imece --demo` shows the timeline as a live run does. See [the decision](https://github.com/selcukgural/imece/blob/main/docs/decisions/100-timeline.md).

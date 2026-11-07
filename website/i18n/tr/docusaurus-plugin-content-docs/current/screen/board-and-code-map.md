@@ -1,11 +1,11 @@
 ---
 title: Pano ve kod haritası
-description: Ekibin diğer iki görünümü - her kartı sütununda gösteren pano ve sembol lease'leri geldiğinde kimin neyi düzenlediğini gösterecek kod haritası.
+description: Ekranın üstünde iki pencere - her kartı kendi sütununda gösteren pano ve sembol lease'leri gelince kimin neyi düzenlediğini gösteren kod haritası.
 ---
 
 # Pano ve kod haritası
 
-Ekip takımı gösterir; pano işi, kod haritası dosyaları gösterir. `2` (`:board`) ve `3` (`:code`) onları ekibin yerinde açar; `1` (`:salon`) geri getirir. İkisi de başlık satırını ve durum satırını korur; her yerde çalışan her tuş (`W`, `?`, `:` komutları, yazmak) onlarda da çalışır.
+Ekip takımı gösterir; pano işi, kod haritası dosyaları gösterir. `:board` ve `:code` onları ekranda ne varsa onun üstünde bir pencerede açar; `esc` (ya da `q`) pencereyi kapatır. Açıkken her tuşu alır, bu yüzden `W`, `/` ve gerisi kapanmasını bekler; `?` yardımı üstünde açar. İkisinin de kendi tuşu yoktur.
 
 ## Pano
 
@@ -34,7 +34,7 @@ Kartın ne olduğu, liderin nasıl astığı ve görev verdiği, bir işçinin n
 
 ## Kod haritası
 
-`3`, KOD HARİTASI · proje · kim neyi düzenliyor görünümünü açar. Projenin her dosyası için bir satır ve o satırda dosyada tutulan her sembol lease'i için bir hücre göstermek üzere tasarlandı:
+`:code`, KOD HARİTASI · proje · kim neyi düzenliyor penceresini açar. Projenin her dosyası için bir satır ve o satırda dosyada tutulan her sembol lease'i için bir hücre göstermek üzere tasarlandı:
 
 ```text
 ┌ KOD HARİTASI · shop-api · kim neyi düzenliyor ──────────────────────────────┐

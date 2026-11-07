@@ -262,7 +262,7 @@ impl App {
     }
 
     /// The timeline's selected agent.
-    fn timeline_agent(&self) -> Option<AgentId> {
+    pub(super) fn timeline_agent(&self) -> Option<AgentId> {
         let shown = ui::timeline::agents(self);
         let at = self.timeline_sel.min(shown.len().saturating_sub(1));
         shown.get(at).map(|&(id, _)| id)
@@ -275,7 +275,7 @@ impl App {
             Zoom::Focus(id) | Zoom::Trace(id) | Zoom::Diff(id) => return Some(id),
             Zoom::None => {}
         }
-        if self.view == View::Timeline {
+        if self.window == Some(Window::Timeline) {
             return self.timeline_agent();
         }
         match self.pane {
@@ -329,11 +329,6 @@ impl App {
         if let Zoom::Trace(id) = self.zoom {
             self.reading_for(id);
             self.reading.trace_top = first.then_some(0);
-            return;
-        }
-        if self.view == View::Timeline && self.zoom == Zoom::None {
-            let n = ui::timeline::agents(self).len();
-            self.timeline_sel = if first { 0 } else { n.saturating_sub(1) };
             return;
         }
         match self.pane {
@@ -452,9 +447,12 @@ impl App {
             && self.card.is_none()
     }
 
+    /// To a view: Home or the salon, whole, any window over the screen
+    /// closed with it.
     pub(super) fn show(&mut self, view: View) {
         self.view = view;
         self.zoom = Zoom::None;
+        self.window = None;
         self.leave_card();
         if view != View::Salon {
             self.pane = Pane::Salon;
@@ -580,14 +578,6 @@ impl App {
     }
 
     pub(super) fn move_selection(&mut self, down: bool) {
-        if self.view == View::Timeline {
-            let n = ui::timeline::agents(self).len();
-            self.timeline_sel = match down {
-                true => (self.timeline_sel + 1).min(n.saturating_sub(1)),
-                false => self.timeline_sel.saturating_sub(1),
-            };
-            return;
-        }
         match self.pane {
             Pane::Journal if self.story_on() => {
                 let n = self.story_items.borrow().len();
@@ -629,12 +619,6 @@ impl App {
     }
 
     pub(super) fn deeper(&mut self) {
-        if self.view == View::Timeline && self.zoom == Zoom::None {
-            if let Some(id) = self.timeline_agent() {
-                self.zoom = Zoom::Focus(id);
-            }
-            return;
-        }
         let zoom = match self.zoom {
             Zoom::None => match (self.pane, self.selected) {
                 (Pane::Inbox, _) => {
@@ -1021,8 +1005,8 @@ mod tests {
         assert_eq!((app.zoom, app.card), (Zoom::None, None), "nothing to leave");
         // Another view leaves it too.
         app.open_card(0);
-        app.on_key(key(KeyCode::Char('2')));
-        assert_eq!((app.view, app.card), (View::Board, None));
+        app.command("home");
+        assert_eq!((app.view, app.card), (View::Home, None));
     }
 
     #[test]
@@ -1170,7 +1154,7 @@ mod tests {
         assert_eq!(app.selected, Sel::Agent(0));
         // `:settle` from elsewhere: the salon's selection.
         app.selected = Sel::Agent(3);
-        app.view = View::Board;
+        app.view = View::Home;
         app.pane = Pane::Journal;
         app.command("settle");
         assert_eq!(app.settled, BTreeSet::from([1, 2, 3]));
@@ -1274,7 +1258,7 @@ mod tests {
         app.settled.extend([1, 2]);
         app.settled_projects.insert(0);
         assert_eq!(app.command_note("unsettle"), "(3)");
-        app.view = View::Board;
+        app.view = View::Home;
         app.pane = Pane::Inbox;
         app.command("unsettle");
         assert!(app.settled.is_empty() && app.settled_projects.is_empty());

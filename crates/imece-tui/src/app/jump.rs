@@ -971,15 +971,18 @@ mod tests {
         let mut app = App::new(1, 1, 0, 1, Lang::En);
         let t = app.lang.text();
         let salon = app.place();
-        app.on_key(key(KeyCode::Char('2')));
-        let board = app.place();
-        app.on_key(key(KeyCode::Char('3')));
-        assert_eq!(app.been, [salon, board]);
+        app.selected = Sel::Agent(0);
+        app.on_key(key(KeyCode::Enter));
+        let focus = app.place();
+        assert_eq!(focus.zoom, Zoom::Focus(0));
+        app.on_key(key(KeyCode::Char('t')));
+        assert_eq!(app.zoom, Zoom::Trace(0));
+        assert_eq!(app.been, [salon, focus]);
         // A key that goes nowhere leaves nothing.
-        app.on_key(key(KeyCode::Char('j')));
+        app.on_key(key(KeyCode::Char('2')));
         assert_eq!(app.been.len(), 2);
         app.on_key(ctrl('o'));
-        assert_eq!(app.place(), board);
+        assert_eq!(app.place(), focus);
         assert_eq!(app.been, [salon], "going back leaves nothing behind");
         app.on_key(ctrl('o'));
         assert_eq!(app.place(), salon);
@@ -1038,14 +1041,15 @@ mod tests {
     #[test]
     fn the_places_left_are_kept_up_to_fifty_the_oldest_going_first() {
         let mut app = App::new(1, 1, 0, 1, Lang::En);
+        app.selected = Sel::Agent(0);
         for n in 0..60 {
-            let c = ['2', '1'][n % 2];
-            app.on_key(key(KeyCode::Char(c)));
+            let c = [KeyCode::Enter, KeyCode::Esc][n % 2];
+            app.on_key(key(c));
         }
         assert_eq!(app.been.len(), 50);
-        // The last place left was the board, the one before the salon.
-        assert_eq!(app.been[49].view, View::Board);
-        assert_eq!(app.been[48].view, View::Salon);
-        assert_eq!(app.been[0].view, View::Salon);
+        // The last place left was the focus, the one before the team.
+        assert_eq!(app.been[49].zoom, Zoom::Focus(0));
+        assert_eq!(app.been[48].zoom, Zoom::None);
+        assert_eq!(app.been[0].zoom, Zoom::None);
     }
 }

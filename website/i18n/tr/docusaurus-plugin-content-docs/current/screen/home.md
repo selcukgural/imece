@@ -5,7 +5,7 @@ description: Görünüm 5 - karar listesi - karar bekleyenler, karar vermenin ma
 
 # Ana ekran
 
-Ana ekran, imece'nin açıldığı ve karar verdiğiniz ekrandır; `5` ya da `:home` geri getirir. Açık projelerin hepsi için tek liste: önce karar bekleyenler, karar vermenin size maliyetine göre gruplu, sonra çalışanlar. Her satır isteğin tamamını söyler, eldeki satırı karara bağlayan tuşlar satırın sonunda durur ve bir evet imleci aşağı indirir. 120 kolondan itibaren eldeki satır listenin yanında okunur.
+Ana ekran, imece'nin açıldığı ve karar verdiğiniz ekrandır; `:home` geri getirir. Açık projelerin hepsi için tek liste: önce karar bekleyenler, karar vermenin size maliyetine göre gruplu, sonra çalışanlar. Her satır isteğin tamamını söyler, eldeki satırı karara bağlayan tuşlar satırın sonunda durur ve bir evet imleci aşağı indirir. 120 kolondan itibaren eldeki satır listenin yanında okunur.
 
 ```text
  imece  shop-api │  ! 5 karar bekliyor  │ $0.49 / $200.00  14:20

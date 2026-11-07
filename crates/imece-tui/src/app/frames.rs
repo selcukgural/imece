@@ -156,7 +156,7 @@ impl App {
         }
         let w = &self.world;
         let mut parts = Vec::new();
-        if self.zoom == Zoom::None && self.view == View::Salon {
+        if self.zoom == Zoom::None && self.view == View::Salon && self.window.is_none() {
             let rungs = self.rungs();
             let shown = |a: &&Agent| !a.gone && !w.put_away(a.id);
             if (w.agents.iter().filter(shown)).any(|a| ui::breathes(a, rungs[a.id])) {
@@ -166,8 +166,8 @@ impl App {
                 parts.push((Moves::Dots, motion::DOTS));
             }
         }
-        // The board shows the owners of the cards taken.
-        if self.zoom == Zoom::None && self.view == View::Board {
+        // The board's window shows the owners of the cards taken.
+        if self.window == Some(Window::Board) {
             let rungs = self.rungs();
             let owners = (w.shown_cards())
                 .filter(|c| c.column != Column::Waiting)
@@ -735,7 +735,7 @@ mod tests {
         app.world.agents[w].status = Status::Working;
         assert_eq!(app.next_motion(now), Some(e + ms(600)), "it breathes");
         assert_eq!(app.next_motion(e + ms(600)), Some(e + ms(1200)));
-        app.view = View::Board;
+        app.window = Some(Window::Board);
         app.world.cards.clear();
         assert_eq!(app.next_motion(now), None, "not on the screen");
         // On the board, the owner of a card taken breathes.
@@ -774,11 +774,15 @@ mod tests {
         assert_eq!(app.next_motion(now), None, "in its archive");
         app.world.projects[0].archived = None;
         app.zoom = Zoom::Focus(w);
-        assert_eq!(app.next_motion(now), None, "the board under a zoom");
+        assert_eq!(
+            app.next_motion(now),
+            Some(e + ms(600)),
+            "the board's window over a zoom"
+        );
         app.zoom = Zoom::None;
-        app.view = View::Code;
-        assert_eq!(app.next_motion(now), None, "the code map");
-        app.view = View::Salon;
+        app.window = Some(Window::Code);
+        assert_eq!(app.next_motion(now), None, "the code map over the team");
+        app.window = None;
         app.zoom = Zoom::Focus(w);
         assert_eq!(app.next_motion(now), None);
         app.zoom = Zoom::None;
@@ -834,11 +838,11 @@ mod tests {
         assert_eq!(app.next_motion(now), None, "not shown");
         // Full: the header spins while anyone works, on any screen.
         app.motion = Motion::Full;
-        app.view = View::Board;
+        app.window = Some(Window::Board);
         assert_eq!(app.next_motion(now), None, "no one works");
         app.world.agents[lead].status = Status::Working;
         assert_eq!(app.next_motion(now), Some(e + ms(200)));
-        app.view = View::Salon;
+        app.window = None;
         app.world.agents[lead].status = Status::Idle;
         app.motion = Motion::Calm;
         // A glow: from its beat to its end, then nothing.

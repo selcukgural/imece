@@ -56,7 +56,7 @@ On [Home](../screen/home.md) the row says the question and, under it, each answe
                     3  whichever it was paid with
 ```
 
-- `1`-`9` on that row sends the answer it names to the agent as your message: the question closes and the agent's next turn starts with it. The digits are Home's only while a question with answers is at hand; elsewhere they are the views' as ever.
+- `1`-`9` on that row sends the answer it names to the agent as your message: the question closes and the agent's next turn starts with it. The digits pick an answer on Home and on the question's detail; anywhere else they do nothing (the views they once opened are the `:board`, `:code` and `:timeline` windows).
 - `/` on the row, or `a` or `r`, open the composer `@claude-2 ` for an answer in your own words; anything you write to that agent closes the question and starts its next turn.
 - `enter` opens the conversation at the question. The preview beside the list (from 120 columns) reads the question whole, its answers, and what the agent did so far: its status, its to-do list and its newest trace lines.
 - A question of an agent that is gone or stopped stays open until you write to it.

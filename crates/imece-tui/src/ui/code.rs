@@ -248,7 +248,6 @@ mod tests {
     use ratatui::backend::TestBackend;
 
     use super::*;
-    use crate::app::View;
     use crate::i18n::Lang;
 
     #[test]
@@ -318,7 +317,9 @@ mod tests {
 
     fn render(app: &App, width: u16, height: u16) -> Vec<String> {
         let mut t = Terminal::new(TestBackend::new(width, height)).unwrap();
-        t.draw(|f| super::super::draw(f, app)).unwrap();
+        // The map alone, as its window draws it (`overlay::view`), so a row
+        // is the map's row.
+        t.draw(|f| super::draw(f, f.area(), app)).unwrap();
         let buf = t.backend().buffer();
         buf.content
             .chunks(usize::from(width))
@@ -331,7 +332,6 @@ mod tests {
         for _ in 0..300 {
             app.step();
         }
-        app.view = View::Code;
         app
     }
 

@@ -25,11 +25,11 @@ description: imece'nin aldığı her `:` komutu; argümanları, karşılığı o
 | `:allow [PROGRAM [WORD]]` | `A` (bir istekte) | | | | projenin hep eveti, varsa |
 | `:awake` | — | | | | açık / kapalı |
 | `:away [TIME\|off]` | — | | | | `30m` / `1h` / `off` |
-| `:board` | `2` | | | | |
+| `:board` | — | | | | |
 | `:budget USD` | — | `:b` | | | harcanan / bütçe |
 | `:clear [inbox\|journal]` | — | | | | |
 | `:close [NAME]` | — | `:c` | | | eldeki proje |
-| `:code` | `3` | | | | |
+| `:code` | — | | | | |
 | `:commit` | — | | | `$` | |
 | `:copy [PATH]` | — | | | | liste, varsa |
 | `:defer` | `S` | | | | |
@@ -68,7 +68,7 @@ description: imece'nin aldığı her `:` komutu; argümanları, karşılığı o
 | `:rename NAME` | — | | | | eldeki proje |
 | `:restore [NAME]` | — | | | | |
 | `:review [on\|off]` | `R` (değişiklikte: tamamı) | | | `$` | on / off |
-| `:salon` | `1` | | | | |
+| `:salon` | — | | | | |
 | `:settle` | `s` | | | | seçili satırın ajanı ya da projesi |
 | `:slower` | `-` | | evet | | hız, `×2` |
 | `:solo [PATH] [CHOICE] [NAME]` | — | | | `$` | |
@@ -77,8 +77,8 @@ description: imece'nin aldığı her `:` komutu; argümanları, karşılığı o
 | `:talk [@NAME]` | `v` | | | | eldeki ajan |
 | `:theme [NAME\|FILE]` | `T` | `:t` | | | kullanılan tema |
 | `:tidy` | — | | | | |
-| `:timeline` | `4` | | | | |
-| `:home` | `5` | | | | |
+| `:timeline` | — | | | | |
+| `:home` | — | | | | |
 | `:trace [@NAME]` | `t` | | | | eldeki ajan |
 | `:unclear [inbox\|journal]` | — | | | | |
 | `:undo` | `u` | | | | |
@@ -117,7 +117,7 @@ SEN YOKKEN penceresinin kendiliğinden açılması için ne kadar uzakta kalman�
 
 ### `:board`
 
-Pano görünümü, `2` gibi. Bkz. [pano ve kod haritası](../screen/board-and-code-map.md).
+Pano, ekranın üstünde bir pencerede; `esc` kapatır. Bkz. [pano ve kod haritası](../screen/board-and-code-map.md).
 
 ### `:budget USD`
 
@@ -133,7 +133,7 @@ KARAR BEKLEYEN'in listelediklerini ve günlüğün satırlarını ekibin ekranı
 
 ### `:code`
 
-Kod haritası, `3` gibi. Canlıda henüz ortak trunk olmadığını söyler (her ajan kendi worktree'sinde çalışır, kimin neyi düzenlediği gösterilemez); sembol lease'leri yapılmamıştır. Bkz. [pano ve kod haritası](../screen/board-and-code-map.md).
+Kod haritası, ekranın üstünde bir pencerede; `esc` kapatır. Canlıda henüz ortak trunk olmadığını söyler (her ajan kendi worktree'sinde çalışır, kimin neyi düzenlediği gösterilemez); sembol lease'leri yapılmamıştır. Bkz. [pano ve kod haritası](../screen/board-and-code-map.md).
 
 ### `:commit`
 
@@ -326,7 +326,7 @@ Not bir öneridir: hiçbir şey onu beklemez ve bir değişikliği asla tutmaz; 
 
 ### `:salon`
 
-Ekip, `1` gibi.
+Ekip: imece'nin ana ekrandan önceki görünümü; diğeri `:home`.
 
 ### `:settle`
 
@@ -362,11 +362,11 @@ imece'nin durum dizininde hiçbir ajanın sahip olmadığı worktree'ler (bir ç
 
 ### `:home`
 
-Ana ekran, `5` gibi: projeler arası sıra sizde olanlar, takılanlar ve çalışanlar, eldeki satır yanında okunur. Bkz. [ana ekran](../screen/home.md).
+Ana ekran: projeler arası sıra sizde olanlar, takılanlar ve çalışanlar, eldeki satır yanında okunur. Bkz. [ana ekran](../screen/home.md).
 
 ### `:timeline`
 
-Zaman şeridi, `4` gibi: açık projelerin her agent'ı için son bir saatte bir şerit, her sütun ne yaptığı, her projenin altında mesajlar; `[` `]` bir sütunun uzunluğunu değiştirir. Bkz. [zaman şeridi](../screen/timeline.md).
+Zaman şeridi, ekranın üstünde bir pencerede (`esc` kapatır): açık projelerin her agent'ı için son bir saatte bir şerit, her sütun ne yaptığı, her projenin altında mesajlar; `[` `]` bir sütunun uzunluğunu değiştirir. Bkz. [zaman şeridi](../screen/timeline.md).
 
 ### `:trace [@NAME]`
 

@@ -675,9 +675,9 @@ impl App {
             "output" => self.quote_output(),
             "edit" => self.open_editor(arg.to_string()),
             "salon" => self.show(View::Salon),
-            "board" => self.show(View::Board),
-            "code" => self.show(View::Code),
-            "timeline" => self.show(View::Timeline),
+            "board" => self.open_window(Window::Board),
+            "code" => self.open_window(Window::Code),
+            "timeline" => self.open_window(Window::Timeline),
             "home" => self.show(View::Home),
             "lang" if arg.is_empty() => self.set_lang(self.lang.other()),
             "lang" => match Lang::parse(arg) {
@@ -980,11 +980,11 @@ mod tests {
         let mut app = App::new(1, 1, 0, 1, Lang::En);
         let said = |app: &mut App| app.flash.take().map(|f| f.0).unwrap_or_default();
         app.command("board");
-        assert_eq!(app.view, View::Board);
+        assert_eq!(app.window, Some(Window::Board));
         app.command("code");
-        assert_eq!(app.view, View::Code);
+        assert_eq!(app.window, Some(Window::Code));
         app.command("salon");
-        assert_eq!(app.view, View::Salon);
+        assert_eq!((app.view, app.window), (View::Salon, None));
         // The language: turned over, or named.
         app.command("lang");
         assert_eq!(app.lang, Lang::Tr);
@@ -1023,15 +1023,15 @@ mod tests {
         assert_eq!(app.waiting_at, Some(0));
         app.command("defer");
         assert_eq!(app.waiting_at, Some(1));
-        app.show(View::Board);
+        app.show(View::Home);
         app.command("waiting");
         assert_eq!((app.view, app.pane), (View::Salon, Pane::Inbox));
-        app.show(View::Board);
+        app.show(View::Home);
         app.pane = Pane::Inbox;
         app.command("needs");
         assert_eq!((app.view, app.pane), (View::Salon, Pane::Salon));
         assert!(app.needs_only);
-        app.show(View::Code);
+        app.show(View::Home);
         app.command("fold");
         assert_eq!(app.view, View::Salon);
         assert!(app.collapsed.iter().all(|&c| c));

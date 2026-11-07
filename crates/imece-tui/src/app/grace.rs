@@ -415,13 +415,13 @@ mod tests {
         let mut app = quiet();
         app.world.change_ready(a_change(3));
         app.world.agents[3].status = Status::Idle;
-        app.view = View::Board;
+        app.view = View::Home;
         app.on_key(key(KeyCode::Char('q')));
         app.on_key(key(KeyCode::Char('s')));
         assert!(app.leaving);
         app.on_key(key(KeyCode::Char('W')));
         assert!(!app.leaving && !app.quit);
-        assert_eq!((app.view, app.zoom), (View::Salon, Zoom::Diff(3)));
+        assert_eq!((app.view, app.zoom), (View::Home, Zoom::Diff(3)));
     }
 
     #[test]

@@ -52,7 +52,7 @@ The simulation produces live's events through the same model calls live uses, so
 - **Sessions**: a session starts once (with Claude Code's `/` commands; a worker's may say its worktree was moved or kept), stops now and then (`■ session ended · write to it to restart`), is forgotten with `:forget` or `/clear` and restarted when told; `/cost` and `/compact` answer as a turn.
 - **The pot and the limits**: spending per agent and per hour, the pot running low, a spent pot refusing words and commands; the usage window in the `:budget` note and, nearly full, in the header, filled from what the agents spent.
 - **Projects**: `:open PATH [NAME]` adds a fake project with a leader, two workers and three cards; `:close` sends its agents away; `:rename` as live. `:pin` too.
-- **The whole screen**: the team, folding, `f`, the board (`2`), the code map (`3`) with leases, cards (`#N`), conversations with turns and replies (`↩`), marks, the journal, `W` `S`, the quit question, the help, themes, both languages, the readline keys, multi-line writing and paste. `Confine` is said at the start as live says it.
+- **The whole screen**: the team, folding, `f`, the board (`:board`), the code map (`:code`) with leases, cards (`#N`), conversations with turns and replies (`↩`), marks, the journal, `W` `S`, the quit question, the help, themes, both languages, the readline keys, multi-line writing and paste. `Confine` is said at the start as live says it.
 
 ## The demo mirrors live
 

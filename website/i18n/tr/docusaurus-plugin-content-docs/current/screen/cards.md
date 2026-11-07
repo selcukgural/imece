@@ -59,7 +59,7 @@ Her tuş ana ekranda yaptığını yapar: `tab` panelleri döndürür, bir günl
 | `esc` | buradan açılan bir odak, iz ya da diff'ten karta geri; kartta ekibe geri |
 | `^o` | olduğunuz yere geri; kart ekranı da yerlerden biridir |
 | `:export [YOL]` | kartın ekranı Markdown dosyası olarak |
-| `1` `2` `3` | kartı bırakıp ekibe, panoya ya da kod haritasına |
+| `:home` `:salon` | kartı bırakıp ana ekrana ya da ekibe |
 
 Ekibin katlama tuşları (`h` `l`, `za` `zM` `zR`) ve `f` burada bir şey yapmaz.
 
