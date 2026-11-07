@@ -9,6 +9,7 @@ mod code;
 mod diff;
 pub(crate) mod export;
 mod focus;
+mod home;
 pub(crate) mod overlay;
 pub(crate) mod salon;
 pub(crate) mod story;
@@ -74,6 +75,7 @@ pub fn draw(f: &mut Frame, app: &App) {
             View::Board => board::draw(f, body, app),
             View::Code => code::draw(f, body, app),
             View::Timeline => timeline::draw(f, body, app),
+            View::Home => home::draw(f, body, app),
         },
     }
     if let Some(m) = &app.menu
@@ -2081,6 +2083,7 @@ fn footer(f: &mut Frame, area: Rect, app: &App) -> Option<Position> {
                 ("esc", t.back),
                 ("?", t.help),
             ],
+            Zoom::None if app.view == View::Home => home_hints(app),
             Zoom::None if app.view == View::Timeline => vec![
                 ("j k", t.peek_next),
                 ("[ ]", t.timeline_scale),
@@ -2168,9 +2171,15 @@ fn footer(f: &mut Frame, area: Rect, app: &App) -> Option<Position> {
             spans.push(Span::styled(format!("{c}…   "), bold(pal().warn)));
         }
         let mut views = Vec::new();
-        for (i, view) in [View::Salon, View::Board, View::Code, View::Timeline]
-            .into_iter()
-            .enumerate()
+        for (i, view) in [
+            View::Salon,
+            View::Board,
+            View::Code,
+            View::Timeline,
+            View::Home,
+        ]
+        .into_iter()
+        .enumerate()
         {
             let style = if app.view == view {
                 bold(pal().strong)
@@ -2187,6 +2196,51 @@ fn footer(f: &mut Frame, area: Rect, app: &App) -> Option<Position> {
     };
     f.render_widget(Paragraph::new(line), area);
     None
+}
+
+/// The keys of Home: what the row at hand comes to first, a row's own
+/// keys never out of sight.
+fn home_hints(app: &App) -> Vec<(&'static str, &'static str)> {
+    let t = app.lang.text();
+    let w = &app.world;
+    let kind = match app.home_at() {
+        Some(crate::app::HomeRow::Item(i)) => Some(w.inbox[i].kind),
+        _ => None,
+    };
+    let mut keys = match kind {
+        Some(InboxKind::Change) => vec![
+            ("enter", t.home_read),
+            ("a", t.apply),
+            ("r", t.reject),
+            ("s", t.home_later),
+        ],
+        Some(InboxKind::Question | InboxKind::Fault) => vec![
+            ("a", t.home_answer),
+            ("enter", t.home_open),
+            ("s", t.home_later),
+        ],
+        Some(InboxKind::Approval) => vec![
+            ("a", t.allow_once),
+            ("r", t.refuse),
+            ("e", t.this_turn),
+            ("A", t.from_now_on),
+            ("s", t.home_later),
+        ],
+        Some(_) => vec![
+            ("enter", t.home_open),
+            ("a", t.home_yes),
+            ("r", t.home_no),
+            ("s", t.home_later),
+        ],
+        None => vec![("enter", t.home_open), ("@", t.write_this)],
+    };
+    keys.extend([
+        ("j k", t.home_move),
+        ("[ ]", t.home_project),
+        ("/", t.write_lead),
+        ("?", t.help),
+    ]);
+    keys
 }
 
 /// The keys that decide what the agent of the open focus or raw stream
@@ -6675,6 +6729,34 @@ mod tests {
     }
 
     #[test]
+    fn home_s_footer_leads_with_what_the_row_at_hand_takes() {
+        let mut app = app_after(1, 2, 0, Lang::En);
+        let agent = app.world.agents[1].id;
+        app.view = View::Home;
+        for a in &mut app.world.agents {
+            a.status = Status::Idle;
+            a.starting = false;
+        }
+        let row = |app: &mut App, kind| {
+            app.world.inbox.clear();
+            app.world.inbox.push(item(kind, agent));
+            foot(app, 200).trim_start().to_string()
+        };
+        assert!(row(&mut app, InboxKind::Change).starts_with("enter  read the diff   a  apply"));
+        assert!(row(&mut app, InboxKind::Question).starts_with("a  answer   enter  open"));
+        assert!(row(&mut app, InboxKind::Fault).starts_with("a  answer   enter  open"));
+        assert!(row(&mut app, InboxKind::Approval).starts_with("a  allow once   r  refuse   e "));
+        assert!(row(&mut app, InboxKind::Plan).starts_with("enter  open   a  yes   r  no"));
+        app.world.inbox.clear();
+        let agent_row = foot(&app, 200);
+        assert!(
+            agent_row.trim_start().starts_with("enter  open   @ "),
+            "{agent_row}"
+        );
+        assert!(agent_row.contains("[ ]  project"), "{agent_row}");
+    }
+
+    #[test]
     fn a_change_s_footer_keeps_the_help_at_any_width() {
         let mut app = app_after(1, 2, 0, Lang::En);
         app.zoom = Zoom::Diff(app.world.agents[1].id);
@@ -10828,14 +10910,14 @@ mod tests {
         }
         app.world.agents[0].cost = 2_500;
         app.world.agents[1].cost = 2_500;
-        let screen = render(&app, 140, 40);
+        let screen = render(&app, 170, 40);
         assert!(screen.contains("imece"));
         assert!(screen.contains("spent $0.50 of $1.00"), "{screen}");
         let footer = screen.lines().last().unwrap().to_string();
         assert!(footer.contains("space"), "{footer}");
         // The current view's name is the bold one.
-        let buf = buffer(&app, 140, 40);
-        let bold_runs: String = (0..140)
+        let buf = buffer(&app, 170, 40);
+        let bold_runs: String = (0..170)
             .map(|x| {
                 let c = &buf[(x, 39)];
                 if c.style().add_modifier.contains(Modifier::BOLD) {
@@ -10848,7 +10930,7 @@ mod tests {
         assert!(bold_runs.contains("salon"), "{bold_runs:?}");
         assert!(!bold_runs.contains("board"), "{bold_runs:?}");
         app.zoom = Zoom::Focus(1);
-        let footer = render(&app, 140, 40).lines().last().unwrap().to_string();
+        let footer = render(&app, 170, 40).lines().last().unwrap().to_string();
         assert!(!footer.contains("space"), "{footer}");
     }
 

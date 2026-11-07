@@ -53,7 +53,7 @@ Gelenekler vim'inkidir: `h` `j` `k` `l` hareket ve katlama, `gg` ve `G` uçlara,
 | --- | --- |
 | `#N`  `#word`  `n` `p` | numara ya da başlıkla bir kart, hepsi tek ekranda; o ekranda `n` `p`: sonraki / önceki kart |
 | `&`  `:goto` | bir agent'a ya da projeye git: bir ad yazın, `1`-`9` listedeki n'inci, `!` yalnız sizi bekleyenleri tutar; `&#` kartlara döner |
-| `1` `2` `3` `4` | `:salon` · `:board` pano · `:code` harita · `:timeline` zaman şeridi |
+| `1` `2` `3` `4` `5` | `:salon` · `:board` pano · `:code` harita · `:timeline` zaman şeridi · [`:home`](home.md) ana ekran |
 | `[`  `]` | zaman şeridinde: bir sütun 5 sn · 30 sn · 1 dk |
 | `↑` `↓`  `j` `k` | seç |
 | `gg`  `G` | ilk / son satır |
@@ -185,7 +185,7 @@ Odağın `klasör` satırı ajanın nerede çalıştığını söyler: lider iç
 
 | Komut | Tuş |
 | --- | --- |
-| `:salon` `:board` `:code` `:timeline` | `1` `2` `3` `4` |
+| `:salon` `:board` `:code` `:timeline` `:home` | `1` `2` `3` `4` `5` |
 | `:lang` | `L` |
 | `:theme` | `T` |
 | `:help` | `?` |

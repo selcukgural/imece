@@ -664,6 +664,7 @@ impl App {
             "board" => self.show(View::Board),
             "code" => self.show(View::Code),
             "timeline" => self.show(View::Timeline),
+            "home" => self.show(View::Home),
             "lang" if arg.is_empty() => self.set_lang(self.lang.other()),
             "lang" => match Lang::parse(arg) {
                 Some(lang) => self.set_lang(lang),

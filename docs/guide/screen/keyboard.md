@@ -53,7 +53,7 @@ The conventions are vim's: `h` `j` `k` `l` move and fold, `gg` and `G` go to the
 | --- | --- |
 | `#N`  `#word`  `n` `p` | a card by number or title, all of it on one screen; on it `n` `p`: next / previous card |
 | `&`  `:goto` | go to an agent or a project: type a name, `1`-`9` the nth on the list, `!` keeps only what needs you; `&#` turns to the cards |
-| `1` `2` `3` `4` | `:salon` · `:board` · `:code` map · `:timeline` |
+| `1` `2` `3` `4` `5` | `:salon` · `:board` · `:code` map · `:timeline` · [`:home`](home.md) |
 | `[`  `]` | on the timeline: a column of 5 s · 30 s · 1 min |
 | `↑` `↓`  `j` `k` | select |
 | `gg`  `G` | first / last line |
@@ -185,7 +185,7 @@ The focus's `folder` line says where the agent works: the checkout for a leader,
 
 | Command | Key |
 | --- | --- |
-| `:salon` `:board` `:code` `:timeline` | `1` `2` `3` `4` |
+| `:salon` `:board` `:code` `:timeline` `:home` | `1` `2` `3` `4` `5` |
 | `:lang` | `L` |
 | `:theme` | `T` |
 | `:help` | `?` |

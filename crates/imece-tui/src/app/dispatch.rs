@@ -287,6 +287,7 @@ impl App {
                 View::Board => Scope::Board,
                 View::Code => Scope::Code,
                 View::Timeline => Scope::Timeline,
+                View::Home => Scope::Salon,
             }
         })
     }
@@ -412,6 +413,9 @@ impl App {
         {
             return;
         }
+        if self.home_keys() && self.home_key(k) {
+            return;
+        }
 
         match k.code {
             // `q` asks; `qq` quits (ctrl-c still quits at once).
@@ -486,6 +490,7 @@ impl App {
             KeyCode::Char('2') => self.show(View::Board),
             KeyCode::Char('3') => self.show(View::Code),
             KeyCode::Char('4') => self.show(View::Timeline),
+            KeyCode::Char('5') => self.show(View::Home),
             // The timeline's scale: a column of 5 s, 30 s, a minute.
             KeyCode::Char(c @ ('[' | ']'))
                 if self.view == View::Timeline && self.zoom == Zoom::None =>
@@ -566,6 +571,7 @@ impl App {
         match (first, k.code) {
             ('q', KeyCode::Char('q')) => self.quit = true,
             ('q', KeyCode::Char('s')) => self.leaving = self.in_flight(),
+            ('g', KeyCode::Char('g')) if self.home_keys() => self.home_go(0),
             ('g', KeyCode::Char('g')) => self.jump(true),
             ('z', KeyCode::Char('a')) if self.thread.is_some() => self.toggle_fold(),
             ('z', KeyCode::Char('a')) if self.diff_zoom().is_some() => {
