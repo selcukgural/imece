@@ -127,6 +127,10 @@ impl App {
     /// else the agent's.
     pub fn detail_card(&self, id: AgentId) -> Option<CardId> {
         let w = &self.world;
+        // A card's own screen is about that card.
+        if let Some(c) = self.card {
+            return Some(c);
+        }
         (w.open_inbox().into_iter())
             .map(|i| &w.inbox[i])
             .filter(|it| it.agent == id)

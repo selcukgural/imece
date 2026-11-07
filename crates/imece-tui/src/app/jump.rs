@@ -102,6 +102,19 @@ impl App {
                 self.thread = None;
                 self.settled_projects.remove(&p);
                 self.selected = Sel::Project(p);
+                // Its heading on Home, else its first row.
+                let rows = self.home_rows();
+                let w = &self.world;
+                let mine = |r: &(HomeGroup, HomeRow)| match r.1 {
+                    HomeRow::Project(q) => q == p,
+                    HomeRow::Agent(id) => w.agents[id].project == p,
+                    HomeRow::Item(i) => w.agents[w.inbox[i].agent].project == p,
+                };
+                let heading = rows.iter().find(|r| r.1 == HomeRow::Project(p));
+                if let Some(row) = heading.or_else(|| rows.iter().find(|r| mine(r))) {
+                    self.at_home.at = Some(row.1);
+                    self.home_settle();
+                }
             }
             None => self.flash(fill(self.lang.text().no_jump, &[name])),
         }
@@ -312,6 +325,20 @@ impl App {
             self.needs_only = false;
         }
         self.selected = Sel::Agent(id);
+        // On Home: its row, else the item that stands for it.
+        let rows = self.home_rows();
+        let w = &self.world;
+        let row = if rows.iter().any(|r| r.1 == HomeRow::Agent(id)) {
+            Some(HomeRow::Agent(id))
+        } else {
+            (w.open_inbox().into_iter())
+                .find(|&i| w.inbox[i].agent == id)
+                .map(HomeRow::Item)
+        };
+        if let Some(row) = row {
+            self.at_home.at = Some(row);
+            self.home_settle();
+        }
     }
 
     /// Where the person is now.
@@ -453,8 +480,9 @@ mod tests {
         assert_eq!(app.selected, Sel::Agent(w[2]));
         assert_eq!(
             (app.view, app.zoom, app.pane),
-            (View::Salon, Zoom::None, Pane::Salon)
+            (View::Home, Zoom::None, Pane::Salon)
         );
+        assert_eq!(app.at_home.at, Some(HomeRow::Agent(w[2])), "Home's row");
         assert!(app.jumps.is_empty(), "the list went with the line");
         // `0` only filters.
         app.on_key(KeyEvent::from(KeyCode::Char('&')));
@@ -924,9 +952,16 @@ mod tests {
         app.on_key(KeyEvent::from(KeyCode::Char('&')));
         type_in(&mut app, &project);
         app.on_key(KeyEvent::from(KeyCode::Enter));
-        assert_eq!(app.selected, Sel::Project(0));
+        // One project in view: no heading on Home, its first row instead.
+        assert_eq!(app.view, View::Home);
         assert_eq!(app.pane, Pane::Salon);
+        assert!(
+            matches!(app.at_home.at, Some(HomeRow::Agent(id)) if app.world.agents[id].project == 0),
+            "{:?}",
+            app.at_home.at
+        );
         // Nothing of the name: said, nothing moves.
+        let before = (app.selected, app.at_home.at);
         app.on_key(KeyEvent::from(KeyCode::Char('&')));
         type_in(&mut app, "zzz");
         app.on_key(KeyEvent::from(KeyCode::Enter));
@@ -934,7 +969,7 @@ mod tests {
             said(&mut app),
             "nothing called \"zzz\" to go to: an agent or a project"
         );
-        assert_eq!(app.selected, Sel::Project(0));
+        assert_eq!((app.selected, app.at_home.at), before);
         // A gone agent is nobody.
         app.world.agents[w[2]].gone = true;
         app.command(&format!("goto {}", app.world.agents[w[2]].name.clone()));

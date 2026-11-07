@@ -376,6 +376,7 @@ pub fn view(f: &mut Frame, app: &App, win: Window) -> Rect {
         }
         Window::Code => super::code::draw(f, area, app),
         Window::Timeline => super::timeline::draw(f, area, app),
+        Window::Journal => super::salon::journal_pane(f, area, app),
     }
     area
 }

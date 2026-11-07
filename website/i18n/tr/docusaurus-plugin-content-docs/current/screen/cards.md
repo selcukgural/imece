@@ -5,7 +5,7 @@ description: Bir kartın her şeyi tek ekranda - kim çalıştı, hikâyesi, ond
 
 # Bir kartın ekranı
 
-Bir kart tek bir iş birimidir: lider asar (ya da boşta bir işçiye mesajınız açar), bir işçi alır, bir `done` ile biter. Numarası, `#3`, ekipte işçisinin satırında, panoda ve günlükte görünür. `#` bir kartın ekranını açar: ana ekranın üç paneli, ama yalnız tek bir kart için. Onunla, bütün günlüğü okumadan tek bir işe ne olduğunu öğrenmek istediğinizde karşılaşırsınız. Türkçe ekran karta `#` menüsünde "iş" der.
+Bir kart tek bir iş birimidir: lider asar (ya da boşta bir işçiye mesajınız açar), bir işçi alır, bir `done` ile biter. Numarası, `#3`, ekipte işçisinin satırında, panoda ve günlükte görünür. `#` bir kartın ekranını açar: [detayının](changes.md#detay) log sekmesi (iş sahibinindir, yoksa ilk pay alanın), detayın başlığı altında kartın durumu, kimlerin payı olduğu ve hikâyesi; `tab` sahibinin diff'ine ve konuşmasına geçer, `esc` ana ekrana döner. Onunla, bütün günlüğü okumadan tek bir işe ne olduğunu öğrenmek istediğinizde karşılaşırsınız. Türkçe ekran karta `#` menüsünde "iş" der.
 
 ```text
 ┌ #3 Parse the manifest ──────────────────────────────┐┌ KARAR BEKLEYEN · #3 (1) ──────────────┐

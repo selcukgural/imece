@@ -72,19 +72,20 @@ description: imece'nin aldığı her `:` komutu; argümanları, karşılığı o
 | `:settle` | `s` | | | | seçili satırın ajanı ya da projesi |
 | `:slower` | `-` | | evet | | hız, `×2` |
 | `:solo [PATH] [CHOICE] [NAME]` | — | | | `$` | |
-| `:story` | `J` | | | | açık / kapalı |
+| `:story` | — | | | | açık / kapalı |
 | `:sync` | — | | | | trunk'ın ne kadar gerisinde (`↓3`) |
 | `:talk [@NAME]` | `v` | | | | eldeki ajan |
 | `:theme [NAME\|FILE]` | `T` | `:t` | | | kullanılan tema |
 | `:tidy` | — | | | | |
 | `:timeline` | — | | | | |
 | `:home` | — | | | | |
+| `:journal` | `J` | | | | |
 | `:trace [@NAME]` | `t` | | | | eldeki ajan |
 | `:unclear [inbox\|journal]` | — | | | | |
 | `:undo` | `u` | | | | |
 | `:unfold` | `zR` | | | | |
 | `:unsettle` | — | | | | kaç şeyin gizlendiği |
-| `:waiting` | `w` | | | | N bekliyor |
+| `:waiting` | — | | | | N bekliyor |
 | `:welcome` | — | | | | |
 | `:why [@NAME]` | — | | | | eldeki ajan |
 | `:yes [@NAME]` | `e` | | | | eldeki ajan |
@@ -204,6 +205,10 @@ Gönderdiğiniz satırları arar, `^r` gibi: komut satırı üstünde `WORDS` il
 ### `:hints`
 
 İpucu harfleri, `F` gibi: ekip ekranında seçilebilen her satırın (proje başlıkları, ajanlar, bir kartın ekranındaki kişiler, bekleyen kalemler, günlük satırları) başına bir ya da iki harflik bir etiket. Bir etiketi yazmak satırını kendi panelinde seçer; son harfi büyük yazılırsa onu `enter` gibi açar da. `backspace` bir harfi geri alır, `esc` kapatır. O arada ekrandan çıkan bir satır: `o satır ekrandan çıktı`. Ekip ekranı dışında: `burada harf verilecek satır yok: F ekip ekranında çalışır`. Bkz. [ekip](../screen/salon.md).
+
+### `:journal`
+
+Günlük, ekranın üstünde bir pencerede, `J` gibi: satırları en yeni önce, ya da açıkken karta göre hikâye (penceredeki `J` çevirir); `j` `k` `gg` `G` ve sayfalar gezer, `m` işaretler, `'` sonraki işarete gider, `c` kopyalar, `enter` satırın konuşmasını pencerenin yerinde açar, `esc` ya da `q` kapatır. Bkz. [günlük](../screen/journal.md).
 
 ### `:keys`
 
@@ -326,7 +331,7 @@ Not bir öneridir: hiçbir şey onu beklemez ve bir değişikliği asla tutmaz; 
 
 ### `:salon`
 
-Ekip: imece'nin ana ekrandan önceki görünümü; diğeri `:home`.
+Ekip: ana ekranın ÇALIŞAN'ı, `gw` gibi (kayıt 125: ekip ana ekranın alt yarısıdır).
 
 ### `:settle`
 
@@ -342,7 +347,7 @@ Bir solo oturum açar: lideri ve takımı olmayan, kendinizin sürdüğü tek bi
 
 ### `:story`
 
-Alt yan panel, `J` gibi, hikâyeyi anlatır: ne olduğunu, karta göre, en yeni önce, en üstte kimi bekletiyor olduğunuzla (bkz. [hikâye](../screen/journal.md#hikâye)); yeniden: defter. Önce ekibe gider. Menü notu: `(açık)` / `(kapalı)`; depoda hatırlanır, varsayılan olarak açıktır.
+Günlük penceresini açar ve hikâyeyi açar, oradaki `J` gibi: ne olduğunu, karta göre, en yeni önce, en üstte kimi bekletiyor olduğunuzla (bkz. [hikâye](../screen/journal.md#hikâye)); yeniden: satırlar. Menü notu: `(açık)` / `(kapalı)`; depoda hatırlanır, varsayılan olarak açıktır.
 
 ### `:sync`
 
@@ -390,7 +395,7 @@ Ekipte her şeyi açar, `zR` gibi (ana ekranda orada kalır); açık bir konuşm
 
 ### `:waiting`
 
-Doğrudan KARAR BEKLEYEN'e, `w` gibi. Menü notu kaç kalemin beklediğini söyler.
+Ana ekran, karar bekleyen ilk satırı. Menü notu kaç kalemin beklediğini söyler.
 
 ### `:welcome`
 

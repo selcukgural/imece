@@ -46,3 +46,8 @@ marks end with the run.
 
 Not done: `:export` does not show the marks; there is no list of all
 marks across projects (the journal with `'` stands for it).
+
+Since record 125's step 5 (2026-11-07) `m` marks the journal's line at
+hand in the journal's window (or a conversation's), and `'` from anywhere
+else opens the window at the next mark (the lines in the story's place
+while the story is on).

@@ -634,7 +634,7 @@ mod tests {
         assert_eq!(app.window, None, "a window over it closed too");
         assert!(app.archives.is_none() && app.viewing.is_none());
         assert_eq!(app.waiting_at, Some(q), "the question it was about");
-        assert_eq!((app.view, app.pane), (View::Salon, Pane::Inbox));
+        assert_eq!((app.view, app.pane), (View::Home, Pane::Inbox));
         app.clicked(stuck.id);
         assert_eq!(app.selected, Sel::Agent(0), "the stuck agent");
         // The question answered meanwhile: the next item waiting instead.

@@ -58,7 +58,7 @@ Bir akorun ilk tuşu ikincisini beklerken satır ikinci tuşun ne olabileceğini
 
 | Tuş | Ne yapar |
 | --- | --- |
-| `#N`  `#word`  `n` `p` | numara ya da başlıkla bir kart, hepsi tek ekranda; o ekranda `n` `p`: sonraki / önceki kart |
+| `#N`  `#word`  `n` `p` | numara ya da başlıkla bir kart: detayı (log sekmesi: durumu, kimlerin payı olduğu, hikâyesi); o ekranda `n` `p`: sonraki / önceki kart |
 | `&`  `:goto` | bir agent'a ya da projeye git: bir ad yazın, `1`-`9` listedeki n'inci, `!` yalnız sizi bekleyenleri tutar; `&#` kartlara döner |
 | `1`-`9` | Ana ekranda ya da bir sorunun detayında, elde yanıt sunan bir soru varken birini seçer ([sorular](../concepts/approvals-and-questions.md#sorular-)); rakamlar başka bir şey yapmaz. Bir zamanlar açtıkları görünümler artık adıyla açılan pencerelerdir: `:board`, `:code`, `:timeline` ([pano ve kod haritası](board-and-code-map.md), [zaman şeridi](timeline.md)); `:salon` ve [`:home`](home.md) iki görünümdür |
 | `[`  `]` | zaman şeridinin penceresinde: bir sütun 5 sn · 30 sn · 1 dk |
@@ -77,7 +77,7 @@ Bir akorun ilk tuşu ikincisini beklerken satır ikinci tuşun ne olabileceğini
 | `A`  `:archives` | arşivler bir ağaç olarak (çalışma kopyası → arşiv → ajanları); içinde `j` `k` `gg` `G` gezer, `h` `l` `za` katlar, `enter` bir arşivi salt okunur açar (`esc` ya da `q` geri), `/` süzer, `r` eldekini geri getirir (`:restore`), `esc` kapatır; `:archive` eldeki projeyi kaldırır |
 | `tab` `⇧tab` `[` `]` | sonraki / önceki panel |
 | `,`  `.`  `<`  `>` | yan paneli genişlet / daralt |
-| `J`  `:story` | alt yan panel: karta göre hikâye · defter |
+| `J`  `:journal` | günlük bir pencerede; oradaki `J`: karta göre hikâye · satırlar (`:story`) |
 
 ## Ekip
 
@@ -92,7 +92,7 @@ Bir akorun ilk tuşu ikincisini beklerken satır ikinci tuşun ne olabileceğini
 
 | Tuş | Ne yapar |
 | --- | --- |
-| `w`  `:waiting` | doğrudan sizi bekleyenlere |
+| `w`  `:waiting` | ana ekran, karar bekleyen ilk satırı |
 | `W`  `S` | `:next` bekleyen, her yerden · `:defer` bunu ertele ve sıradakini aç; bir betiğin penceresinde önce onu kapatırlar |
 | `a`  `r` | onayla / bir kez izin ver · geri gönder / reddet (karar bekleyenlerde, bir de odakta: aşağıda) |
 | `A`  `:allow` | sizi bekleyenlerdeki bir istekte ya da ajanının odağında: proje için komutlarına artık hep evet (başka yerde `A` arşivlerdir) |

@@ -15,10 +15,8 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, c: CardId) {
     let w = &app.world;
     let t = app.lang.text();
     let card = &w.cards[c];
-    let block = salon::pane_block(
-        format!(" #{} {} ", c + 1, clean(&card.title)),
-        app.pane == Pane::Salon,
-    );
+    // The detail's head names the card: the block has no title of its own.
+    let block = salon::pane_block(String::new(), app.pane == Pane::Salon);
     let inner = block.inner(area);
     f.render_widget(block, area);
 

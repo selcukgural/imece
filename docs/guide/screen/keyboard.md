@@ -57,7 +57,7 @@ While the first key of a chord waits for its second, the row lists what the seco
 
 | Key | What it does |
 | --- | --- |
-| `#N`  `#word`  `n` `p` | a card by number or title, all of it on one screen; on it `n` `p`: next / previous card |
+| `#N`  `#word`  `n` `p` | a card by number or title: its detail (the log tab: its standing, who had a part, its story); on it `n` `p`: next / previous card |
 | `&`  `:goto` | go to an agent or a project: type a name, `1`-`9` the nth on the list, `!` keeps only what needs you; `&#` turns to the cards |
 | `1`-`9` | on Home, or on a question's detail, with a question that offers answers at hand: pick one ([questions](../concepts/approvals-and-questions.md#questions-)); the digits do nothing else. The views they once opened are windows by name: `:board`, `:code`, `:timeline` ([board and code map](board-and-code-map.md), [timeline](timeline.md)); `:salon` and [`:home`](home.md) are the two views |
 | `[`  `]` | in the timeline's window: a column of 5 s · 30 s · 1 min |
@@ -77,7 +77,7 @@ While the first key of a chord waits for its second, the row lists what the seco
 | `A`  `:archives` | the archives as a tree (checkout → archive → its agents); in it `j` `k` `gg` `G` move, `h` `l` `za` fold, `enter` opens an archive read-only (`esc` or `q` back), `/` filters, `r` brings the one at hand back (`:restore`), `esc` closes; `:archive` puts the project at hand away |
 | `tab` `⇧tab` `[` `]` | next / previous panel |
 | `,`  `.`  `<`  `>` | wider / narrower side panel |
-| `J`  `:story` | the lower side panel: the story, by card · the journal |
+| `J`  `:journal` | the journal in a window; `J` there: the story, by card · the lines (`:story`) |
 
 ## The team
 
@@ -92,7 +92,7 @@ While the first key of a chord waits for its second, the row lists what the seco
 
 | Key | What it does |
 | --- | --- |
-| `w`  `:waiting` | straight to TO DECIDE |
+| `w`  `:waiting` | Home, its first row to decide |
 | `W`  `S` | `:next` waiting, from anywhere · `:defer` this one and open the next; in a script's window they close it first |
 | `a`  `r` | approve / allow once · send back / refuse (in TO DECIDE, and on a focus: below) |
 | `A`  `:allow` | on an ask in TO DECIDE or on its agent's focus: yes from now on to its commands for the project (elsewhere `A` is the archives) |

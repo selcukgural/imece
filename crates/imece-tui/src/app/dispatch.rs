@@ -523,9 +523,8 @@ impl App {
             // From anywhere: what waits for the person, one item after
             // the other; `S` puts this one off first.
             KeyCode::Char('W') => self.next_waiting(false),
-            KeyCode::Char('J') if self.view == View::Salon && self.card.is_none() => {
-                self.toggle_story()
-            }
+            // The journal in a window; `J` there turns the story on and off.
+            KeyCode::Char('J') => self.open_window(Window::Journal),
             KeyCode::Char('S') => self.next_waiting(true),
             // `,` and `.` are the same keys without shift.
             KeyCode::Char('<') | KeyCode::Char(',') => self.resize(true),
@@ -553,6 +552,9 @@ impl App {
             }
             KeyCode::Enter => self.deeper(),
             KeyCode::Esc if self.on_card() => self.leave_card(),
+            KeyCode::Esc if self.card.is_some() && matches!(self.zoom, Zoom::Focus(_)) => {
+                self.leave_card();
+            }
             KeyCode::Esc if self.story_away && self.zoom == Zoom::None => self.story_back(),
             KeyCode::Esc => {
                 self.zoom = match self.zoom {

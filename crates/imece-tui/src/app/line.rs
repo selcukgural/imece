@@ -613,7 +613,7 @@ impl App {
     /// Every key that acts has a name here too (`:salon`, `:lang`,
     /// `:quit` ...; `complete::COMMANDS`), doing what the key does from
     /// wherever the person is.
-    pub(super) fn command(&mut self, line: &str) {
+    pub(crate) fn command(&mut self, line: &str) {
         let t = self.lang.text();
         let (name, arg) = line
             .split_once(char::is_whitespace)
@@ -674,7 +674,11 @@ impl App {
             "mark" => self.toggle_mark(),
             "output" => self.quote_output(),
             "edit" => self.open_editor(arg.to_string()),
-            "salon" => self.show(View::Salon),
+            // The team is Home's lower half (record 125, step 5).
+            "salon" => {
+                self.show(View::Home);
+                self.home_go_heading(Heading::Work);
+            }
             "board" => self.open_window(Window::Board),
             "code" => self.open_window(Window::Code),
             "timeline" => self.open_window(Window::Timeline),
@@ -695,9 +699,10 @@ impl App {
                 self.toggle_needs();
             }
             "story" => {
-                self.show(View::Salon);
+                self.open_window(Window::Journal);
                 self.toggle_story();
             }
+            "journal" => self.open_window(Window::Journal),
             which @ ("fold" | "unfold") if self.thread.is_none() && self.diff_zoom().is_some() => {
                 if let Some(id) = self.diff_zoom() {
                     self.fold_files(id, |f, _| *f = Folds::every(which == "fold"));
@@ -991,7 +996,11 @@ mod tests {
         app.command("code");
         assert_eq!(app.window, Some(Window::Code));
         app.command("salon");
-        assert_eq!((app.view, app.window), (View::Salon, None));
+        assert_eq!(
+            (app.view, app.window),
+            (View::Home, None),
+            "the team is Home's"
+        );
         // The language: turned over, or named.
         app.command("lang");
         assert_eq!(app.lang, Lang::Tr);
@@ -1032,11 +1041,16 @@ mod tests {
         assert_eq!(app.waiting_at, Some(1));
         app.show(View::Home);
         app.command("waiting");
-        assert_eq!((app.view, app.pane), (View::Salon, Pane::Inbox));
+        assert_eq!(
+            (app.view, app.pane),
+            (View::Home, Pane::Inbox),
+            "Home's first row to decide"
+        );
+        assert_eq!(app.at_home.at, Some(HomeRow::Item(1)), "item 0 was put off");
         app.show(View::Home);
         app.pane = Pane::Inbox;
         app.command("needs");
-        assert_eq!((app.view, app.pane), (View::Salon, Pane::Salon));
+        assert_eq!((app.view, app.pane), (View::Home, Pane::Salon));
         assert!(app.needs_only);
         app.show(View::Home);
         app.command("fold");
@@ -1047,7 +1061,11 @@ mod tests {
         app.show(View::Salon);
         app.zoom = Zoom::Focus(0);
         app.command("fold");
-        assert_eq!((app.view, app.zoom), (View::Salon, Zoom::None));
+        assert_eq!(
+            (app.view, app.zoom),
+            (View::Home, Zoom::None),
+            "the team is Home's"
+        );
         assert!(app.collapsed.iter().all(|&c| c));
         app.command("unfold");
         assert!(app.collapsed.iter().all(|&c| !c));

@@ -469,8 +469,11 @@ fn row_lines(app: &App, row: HomeRow, width: usize, here: bool) -> Vec<Line<'sta
         ));
         head.push(Span::raw(" "));
     }
-    let card = card_of(w, row).map_or(String::new(), |c| words::card_ref(c.id));
-    head.push(Span::styled(format!("{card:<5}"), dim()));
+    // A helper's row has no card of its own: its branch takes the column.
+    if !under {
+        let card = card_of(w, row).map_or(String::new(), |c| words::card_ref(c.id));
+        head.push(Span::styled(format!("{card:<5}"), dim()));
+    }
     let title_width = TITLE.min(width.saturating_sub(40)).max(TITLE_MIN);
     let style = if here {
         Style::new().add_modifier(Modifier::BOLD)

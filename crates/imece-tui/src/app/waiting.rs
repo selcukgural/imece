@@ -227,9 +227,8 @@ impl App {
         self.world.cleared.inbox.remove(&i);
         self.card = None;
         self.thread = None;
-        if self.view != View::Home {
-            self.view = View::Salon;
-        }
+        self.window = None;
+        self.view = View::Home;
         self.at_home.at = Some(HomeRow::Item(i));
         self.zoom = Zoom::None;
         self.pane = Pane::Inbox;

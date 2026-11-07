@@ -1143,6 +1143,27 @@ fn side(f: &mut Frame, area: Rect, app: &App) {
     }
     f.render_widget(Paragraph::new(lines), inner);
 
+    journal_pane_in(f, bottom, app, journal_title);
+}
+
+/// The journal in a window over the screen (`:journal`, `J`; record 125,
+/// step 5): the story by card while it is on, else the lines newest first
+/// with their days and marks, the line at hand and its keys.
+pub(crate) fn journal_pane(f: &mut Frame, area: Rect, app: &App) {
+    let t = app.lang.text();
+    let title = match app.story_away {
+        true => t.journal_away,
+        false => t.journal_story,
+    }
+    .to_string();
+    journal_pane_in(f, area, app, title);
+}
+
+/// The journal (or the story) in `bottom`, titled `journal_title`.
+fn journal_pane_in(f: &mut Frame, bottom: Rect, app: &App, journal_title: String) {
+    let w = &app.world;
+    let t = app.lang.text();
+    let rows = app.journal_rows();
     // The story in the journal's place, but on a card's screen.
     if app.story_on() {
         super::story::draw(f, bottom, app);

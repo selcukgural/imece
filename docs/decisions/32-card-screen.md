@@ -60,3 +60,9 @@ journal (the user chose number and title for now); the menu shows 30
 cards at most; a card's own Δ line in the journal (`ChangeReady`,
 `Applied`) does not name the card, so it is on the card's screen only
 through the inbox.
+
+Since record 125's step 5 (2026-11-07) a card's screen is the log tab of
+its detail (`App::open_card` → `Zoom::Focus` of its owner, else the first
+who had a part, else the leader; `ui::card::draw` under the detail's
+head, no title of its own); its inbox and journal panes went with the
+salon's; `n p` and `esc` as before.

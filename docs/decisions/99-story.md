@@ -91,3 +91,9 @@ did not know `J`, found no way back, not even after a restart. Now it
 shows the journal only for now (above), and the journal's title says the
 key back: `JOURNAL · esc story` then, `JOURNAL · J story` while the story
 is off (`Text::journal_away`, `journal_story`).
+
+Since record 125's step 5 (2026-11-07) the story and the journal live in
+a window (`Window::Journal`, `:journal`, `J`): `J` in the window turns
+the story, `:story` opens the window and turns it; `enter` on a card opens
+its detail and closes the window, on a line of no card the journal in the
+story's place as before.
