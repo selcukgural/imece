@@ -170,8 +170,7 @@ fn group_line(app: &App, group: HomeGroup, listed: &Listed, width: usize) -> Lin
                     HomeRow::Item(i) => {
                         let item = &w.inbox[i];
                         item.kind == InboxKind::Change
-                            && w.change_of(item.agent)
-                                .is_some_and(|c| c.easy(item.card.and_then(|c| w.cards.get(c))))
+                            && w.verdict(item.agent).is_some_and(|v| v.ready)
                     }
                     HomeRow::Agent(_) => false,
                 })
@@ -318,13 +317,9 @@ fn item_tail(app: &App, i: usize) -> Tail {
         }
         InboxKind::Sensitive => fill(t.row_sensitive, &[&item.detail]),
         InboxKind::Change => {
-            return match w.change_of(item.agent) {
-                Some(c) => Tail::Spans(change_spans(
-                    app.lang,
-                    c,
-                    item.card.and_then(|c| w.cards.get(c)),
-                )),
-                None => Tail::Words(clean(&item.detail)),
+            return match (w.change_of(item.agent), w.verdict(item.agent)) {
+                (Some(c), Some(v)) => Tail::Spans(change_spans(app.lang, c, &v)),
+                _ => Tail::Words(clean(&item.detail)),
             };
         }
     };
@@ -334,49 +329,8 @@ fn item_tail(app: &App, i: usize) -> Tail {
 /// A change's figures: its files and lines, what was proved on its tree
 /// (the check, else the runs, else that nothing ran), and the files
 /// outside its card's paths.
-pub(crate) fn change_spans(lang: Lang, c: &Change, card: Option<&Card>) -> Vec<Span<'static>> {
-    let t = lang.text();
-    let (added, removed) = c.counts();
-    let files = match c.files.len() {
-        1 => t.row_file.to_string(),
-        n => fill(t.row_files, &[&n.to_string()]),
-    };
-    let mut spans = vec![Span::styled(format!("{files} +{added} −{removed}"), dim())];
-    let proof = match c.proof() {
-        Some(ok) => {
-            let what = match &c.check {
-                Check::Ran(_) => t.row_check_word.to_string(),
-                _ => c
-                    .runs
-                    .iter()
-                    .map(|r| r.line.as_str())
-                    .collect::<Vec<_>>()
-                    .join(", "),
-            };
-            let (mark, colour) = if ok {
-                ("✓", pal().ok)
-            } else {
-                ("✗", pal().bad)
-            };
-            Span::styled(format!(" · {mark} {}", clean(&what)), fg(colour))
-        }
-        None => Span::styled(format!(" · {}", t.row_not_run), fg(pal().warn)),
-    };
-    spans.push(proof);
-    let outside = c.outside(card);
-    if let (false, Some(card)) = (outside.is_empty(), card) {
-        spans.push(Span::styled(
-            format!(
-                " · {}",
-                fill(
-                    t.row_outside,
-                    &[&outside.len().to_string(), &words::card_ref(card.id)]
-                )
-            ),
-            fg(pal().bad),
-        ));
-    }
-    spans
+pub(crate) fn change_spans(lang: Lang, c: &Change, v: &Verdict) -> Vec<Span<'static>> {
+    diff::verdict_spans(lang, v, false, Some(c.counts()))
 }
 
 /// What an agent's row says: the step it is on, else its status, then
@@ -587,28 +541,17 @@ fn labelled_text(lines: &mut Vec<Line<'static>>, label: &str, text: &str, room: 
 /// and the top of its patch.
 fn change_lines(lang: Lang, w: &World, c: &Change, lines: &mut Vec<Line<'static>>, room: usize) {
     let t = lang.text();
-    let [why, proof, cost, gate, files] = t.home_labels;
-    labelled_text(lines, why, w.done_why(c.agent).unwrap_or(&c.title), room);
-    let mut evidence = Vec::new();
-    if let Some((mark, good)) = words::check_mark(lang, &c.check) {
-        let style = match good {
-            Some(true) => fg(pal().ok),
-            Some(false) => fg(pal().bad),
-            None => dim(),
-        };
-        evidence.push(Span::styled(mark, style));
+    let [verdict, why, cost, gate, files] = t.home_labels;
+    if let Some(v) = w.verdict(c.agent) {
+        let said = Line::from(diff::verdict_spans(lang, &v, true, None));
+        for (n, line) in wrap(said, room.saturating_sub(9).max(12))
+            .into_iter()
+            .enumerate()
+        {
+            lines.push(labelled(if n == 0 { verdict } else { "" }, line.spans));
+        }
     }
-    let colour = if c.runs.is_empty() {
-        pal().warn
-    } else if c.runs.iter().all(Ran::ok) {
-        pal().ok
-    } else {
-        pal().bad
-    };
-    let ran = words::evidence(lang, &c.runs);
-    let ran = ran.strip_prefix(" · ").unwrap_or(&ran).to_string();
-    evidence.push(Span::styled(ran, fg(colour)));
-    lines.push(labelled(proof, evidence));
+    labelled_text(lines, why, w.done_why(c.agent).unwrap_or(&c.title), room);
     if let Some(s) = c.spend {
         lines.push(labelled(
             cost,
@@ -1084,57 +1027,75 @@ mod tests {
     }
 
     #[test]
-    fn a_change_s_row_says_its_files_its_proof_and_what_is_outside_its_card() {
-        let t = |c: &Change, card: Option<&Card>| -> String {
-            change_spans(Lang::En, c, card)
-                .iter()
+    fn a_change_s_row_is_its_verdict_without_the_head_the_lines_with_the_files() {
+        let mut app = home(Lang::En);
+        let a = worker(&app);
+        app.world.agents[a].card = None;
+        let said = |app: &App, lang: Lang| -> String {
+            let c = app.world.change_of(a).unwrap();
+            let v = app.world.verdict(a).unwrap();
+            (change_spans(lang, c, &v).iter())
                 .map(|s| s.content.as_ref())
                 .collect()
         };
-        let mut c = change(0, Vec::new());
-        assert_eq!(t(&c, None), "1 file +19 −6 · nothing ran");
-        c.runs = vec![ran("dotnet build", 0), ran("dotnet test", 0)];
-        assert_eq!(t(&c, None), "1 file +19 −6 · ✓ dotnet build, dotnet test");
-        c.runs.push(ran("lint", 1));
+        app.world.changes.push(change(a, Vec::new()));
+        assert_eq!(said(&app, Lang::En), "nothing ran · 1 file +19 −6");
+        app.world.changes[0].runs = vec![ran("dotnet build", 0), ran("dotnet test", 0)];
         assert_eq!(
-            t(&c, None),
-            "1 file +19 −6 · ✗ dotnet build, dotnet test, lint"
+            said(&app, Lang::En),
+            "✓ dotnet build · ✓ dotnet test · 1 file +19 −6"
         );
-        let spans = change_spans(Lang::En, &c, None);
-        assert_eq!(spans[1].style, fg(pal().bad));
-        // The repository's check speaks over the runs.
-        c.check = Check::Ran(Checked {
+        app.world.changes[0].runs.push(ran("lint", 1));
+        assert_eq!(
+            said(&app, Lang::En),
+            "✓ dotnet build · ✓ dotnet test · ✗ lint: exit 1 · 1 file +19 −6"
+        );
+        let v = app.world.verdict(a).unwrap();
+        let spans = change_spans(Lang::En, app.world.change_of(a).unwrap(), &v);
+        assert_eq!(spans[4].style, fg(pal().bad));
+        // The repository's check comes first.
+        app.world.changes[0].check = Check::Ran(Checked {
             ok: true,
             end: "exit 0".into(),
             lines: Vec::new(),
         });
-        assert_eq!(t(&c, None), "1 file +19 −6 · ✓ check");
-        assert_eq!(change_spans(Lang::En, &c, None)[1].style, fg(pal().ok));
-        c.files.push(ChangedFile {
+        app.world.changes[0].runs.truncate(1);
+        assert_eq!(
+            said(&app, Lang::En),
+            "✓ check · ✓ dotnet build · 1 file +19 −6"
+        );
+        // The card's paths: inside, else what is outside, by name.
+        let mut card = app.world.cards[0].clone();
+        card.id = app.world.cards.len();
+        card.paths = crate::paths::parse(&serde_json::json!(["src/"])).unwrap();
+        app.world.cards.push(card);
+        let n = app.world.cards.len();
+        app.world.agents[a].card = Some(n - 1);
+        assert_eq!(
+            said(&app, Lang::En),
+            format!("✓ check · ✓ dotnet build · 1 file +19 −6, inside #{n}")
+        );
+        app.world.changes[0].files.push(ChangedFile {
             path: "tests/paging.rs".into(),
             added: 2,
             removed: 0,
             binary: false,
         });
-        let app = home(Lang::En);
-        let mut card = app.world.cards[0].clone();
-        card.paths = crate::paths::parse(&serde_json::json!(["src/"])).unwrap();
         assert_eq!(
-            t(&c, Some(&card)),
-            format!("2 files +21 −6 · ✓ check · 1 outside #{}", card.id + 1)
+            said(&app, Lang::En),
+            format!("✓ check · ✓ dotnet build · 2 files +21 −6 · 1 outside #{n}: tests/paging.rs")
         );
         assert_eq!(
-            change_spans(Lang::En, &c, Some(&card))[2].style,
-            fg(pal().bad)
+            said(&app, Lang::Tr),
+            format!(
+                "✓ kontrol · ✓ dotnet build · 2 dosya +21 −6 · 1 kartın dışında (#{n}): tests/paging.rs"
+            )
         );
-        card.paths.clear();
-        assert_eq!(t(&c, Some(&card)), "2 files +21 −6 · ✓ check");
+        app.world.cards[n - 1].paths.clear();
         assert_eq!(
-            change_spans(Lang::Tr, &c, None)
-                .iter()
-                .map(|s| s.content.as_ref())
-                .collect::<String>(),
-            "2 dosya +21 −6 · ✓ kontrol"
+            said(&app, Lang::En),
+            "✓ check · ✓ dotnet build · 2 files +21 −6",
+            "a card without paths bounds nothing"
         );
     }
 
@@ -1142,6 +1103,7 @@ mod tests {
     fn a_part_of_a_change_s_row_that_does_not_fit_goes_under_without_its_dot() {
         let mut app = home(Lang::En);
         let a = worker(&app);
+        app.world.agents[a].card = None;
         app.world.changes.push(change(
             a,
             vec![ran("dotnet build", 0), ran("dotnet test", 0)],
@@ -1153,11 +1115,15 @@ mod tests {
         app.at_home.scope = Some(app.world.agents[a].project);
         let wide = lines(&app, 100);
         let row = wide.iter().position(|l| l.contains("+19 −6")).unwrap();
-        assert!(wide[row].contains("+19 −6 · ✓ dotnet build, dotnet test"));
-        let narrow = lines(&app, 62);
-        assert!(narrow[row].ends_with("1 file +19 −6"), "{}", narrow[row]);
-        assert_eq!(narrow[row + 1].trim(), "✓ dotnet build, dotnet test");
-        let column = narrow[row].find("1 file").unwrap();
+        assert!(wide[row].contains("✓ dotnet build · ✓ dotnet test · 1 file +19 −6"));
+        let narrow = lines(&app, 66);
+        assert!(
+            narrow[row].ends_with("✓ dotnet build · ✓ dotnet test"),
+            "{}",
+            narrow[row]
+        );
+        assert_eq!(narrow[row + 1].trim(), "1 file +19 −6");
+        let column = narrow[row].find("✓ dotnet").unwrap();
         let cells = narrow[row][..column].chars().count();
         let next: Vec<char> = narrow[row + 1].chars().collect();
         assert!(
@@ -1165,11 +1131,11 @@ mod tests {
             "{}",
             narrow[row + 1]
         );
-        assert_eq!(next[cells], '✓', "{}", narrow[row + 1]);
+        assert_eq!(next[cells], '1', "{}", narrow[row + 1]);
         // A part wider than a whole line is cut, never dropped.
         let tiny = lines(&app, 50);
         assert!(
-            tiny[row + 1].trim().starts_with("✓ dotnet"),
+            tiny[row + 1].trim().starts_with("✓ dotnet test"),
             "{}",
             tiny[row + 1]
         );
@@ -1414,14 +1380,45 @@ mod tests {
     }
 
     #[test]
-    fn the_proof_in_the_preview_starts_clean() {
-        let app = home(Lang::En);
+    fn the_verdict_heads_the_preview_and_wraps_under_its_label() {
+        let mut app = home(Lang::En);
         let a = worker(&app);
+        app.world.agents[a].card = None;
+        app.world
+            .changes
+            .push(change(a, vec![ran("cargo test", 0)]));
+        let c = app.world.change_of(a).unwrap();
         let mut got = Vec::new();
-        let c = change(a, vec![ran("cargo test", 0)]);
-        change_lines(Lang::En, &app.world, &c, &mut got, 80);
-        let proof = text(&got[1]);
-        assert!(proof.starts_with("proof    ✓"), "{proof}");
+        change_lines(Lang::En, &app.world, c, &mut got, 80);
+        assert_eq!(
+            text(&got[0]),
+            "verdict  ✓ ready to approve · ✓ cargo test · 1 file"
+        );
+        assert!(text(&got[1]).starts_with("why      "), "{}", text(&got[1]));
+        let mut narrow = Vec::new();
+        change_lines(Lang::En, &app.world, c, &mut narrow, 30);
+        assert!(
+            text(&narrow[0]).starts_with("verdict  ✓ ready"),
+            "{}",
+            text(&narrow[0])
+        );
+        assert!(
+            text(&narrow[1]).starts_with("         "),
+            "{}",
+            text(&narrow[1])
+        );
+        assert!(
+            text(&narrow[1]).contains("cargo test"),
+            "{}",
+            text(&narrow[1])
+        );
+        let mut tr = Vec::new();
+        change_lines(Lang::Tr, &app.world, c, &mut tr, 80);
+        assert!(
+            text(&tr[0]).starts_with("hüküm    ✓ onaya hazır"),
+            "{}",
+            text(&tr[0])
+        );
     }
 
     #[test]

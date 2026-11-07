@@ -18,8 +18,8 @@ use imece_agent::worktree::{self, Forward};
 use super::Live;
 use super::Slot;
 use crate::model::{
-    Agent, AgentId, Attested, Behind, Change, ChangedFile, Check, ImportAsk, Landed, MsgKind,
-    ProjectId, Role, StoreDown, StoreJob, StoreLease, StoreProposal, StoreSeen, Synced, Verdict,
+    Agent, AgentId, Attested, Behind, Change, ChangedFile, Check, Decision, ImportAsk, Landed,
+    MsgKind, ProjectId, Role, StoreDown, StoreJob, StoreLease, StoreProposal, StoreSeen, Synced,
     World,
 };
 
@@ -337,15 +337,15 @@ fn decide(
     repo: &str,
     dir: &Path,
     proposal: &StoreProposal,
-    verdict: &Verdict,
+    verdict: &Decision,
 ) -> Result<(), Failed> {
     let replaced = format!("replaced by proposal {}", proposal.seq);
     for &older in &proposal.older {
         place.reject(repo, dir, older, &replaced)?;
     }
     match verdict {
-        Verdict::Approve => place.approve(repo, dir, proposal.seq),
-        Verdict::Reject(reason) => place.reject(repo, dir, proposal.seq, reason),
+        Decision::Approve => place.approve(repo, dir, proposal.seq),
+        Decision::Reject(reason) => place.reject(repo, dir, proposal.seq, reason),
     }
 }
 
@@ -923,7 +923,7 @@ impl Live {
         &mut self,
         w: &World,
         id: AgentId,
-        verdict: Verdict,
+        verdict: Decision,
     ) -> Result<(), String> {
         let project = w.agents[id].project;
         if let Some(why) = w.store_closed(project) {
@@ -953,7 +953,7 @@ impl Live {
     /// as their message, which this note comes before.
     pub fn reject_proposal(&mut self, w: &World, id: AgentId, reason: &str) -> Result<(), String> {
         let shown = w.proposal_of(id).map(|p| p.change.clone());
-        self.decide_proposal(w, id, Verdict::Reject(reason.to_string()))?;
+        self.decide_proposal(w, id, Decision::Reject(reason.to_string()))?;
         self.lonca.worded.extend(shown);
         let title = w.change_of(id).map(|c| c.title.clone()).unwrap_or_default();
         self.notes[id].push(format!(
@@ -2371,7 +2371,7 @@ mod tests {
             repo: "demo".into(),
             agent: 1,
             proposal: offer("w1", 9, "c9").proposal,
-            verdict: Verdict::Approve,
+            verdict: Decision::Approve,
         }));
         job_ends(&mut live, &mut w);
         assert_eq!(w.journal.len(), before, "a look says what came of it");
@@ -2385,7 +2385,7 @@ mod tests {
         let calls = |dir: &Path| std::fs::read_to_string(dir.join("all")).unwrap();
         let mut proposal = offer("w1", 9, "c9").proposal;
         proposal.older = vec![5, 7];
-        decide(&place, "demo", &dir, &proposal, &Verdict::Approve).unwrap();
+        decide(&place, "demo", &dir, &proposal, &Decision::Approve).unwrap();
         assert_eq!(
             calls(&dir),
             "reject 5 --repo=demo --reason=replaced by proposal 9 --json\n\
@@ -2394,7 +2394,7 @@ mod tests {
         );
         std::fs::remove_file(dir.join("all")).unwrap();
         proposal.older = Vec::new();
-        let no = Verdict::Reject("not this".into());
+        let no = Decision::Reject("not this".into());
         decide(&place, "demo", &dir, &proposal, &no).unwrap();
         assert_eq!(
             calls(&dir),
@@ -2410,7 +2410,7 @@ mod tests {
         );
         let mut proposal = offer("w1", 9, "c9").proposal;
         proposal.older = vec![5, 7];
-        let got = decide(&place, "demo", &dir, &proposal, &Verdict::Approve);
+        let got = decide(&place, "demo", &dir, &proposal, &Decision::Approve);
         assert_eq!(got, Err(Failed::Said("no".into())));
         let calls = std::fs::read_to_string(dir.join("all")).unwrap();
         assert_eq!(calls.lines().count(), 1, "{calls}");
@@ -2700,7 +2700,7 @@ mod tests {
         w.store_seen(0, "demo", up);
         let no_proposal = "no proposal of theirs waits".to_string();
         assert_eq!(
-            live.decide_proposal(&w, 1, Verdict::Approve),
+            live.decide_proposal(&w, 1, Decision::Approve),
             Err(no_proposal)
         );
         w.change_proposed(
@@ -2715,7 +2715,7 @@ mod tests {
         );
         live.applying[1] = false;
         assert_eq!(
-            live.decide_proposal(&w, 1, Verdict::Approve),
+            live.decide_proposal(&w, 1, Decision::Approve),
             Err("another lonca command is under way".to_string())
         );
         live.applying[1] = true;

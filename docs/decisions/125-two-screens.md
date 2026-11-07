@@ -193,3 +193,29 @@ numbered. The header has the projects (`ui::projects_spans`, the narrowed
 one lit) in the fleet's place and the pot as `$3.10 of $20.00`; the
 project bar and `/ writes to` left Home. The status line names the card
 an item came on, as the screen numbers it.
+
+Step 3's verdict line as built (the first of its three pieces): a
+change's view and its Home preview start with `World::verdict` (model.rs:
+`Verdict { ready, proof: Vec<Proof>, files, card, outside, others,
+overlaps: Vec<Overlap>, clashes, partial, verifies }`), ready when the
+change is `easy` (proved clean, inside its card's paths), overlaps no
+other change waiting in its project (`Change::shared_files`, the other's
+card from `change_card`: the item's, else the worker's), fits the
+checkout (`clashes_of`) and is shown whole (a proposal's `redacted` or
+`cut`); `Change::proofs` is the check when it ran, then the runs.
+`ui::diff::verdict_spans` words it (`verdict_*` in `i18n.rs`, both
+languages; `✓ ready to approve` / `! look first` bold, each part in its
+own colour, `VERDICT_NAMES` 3 names and the rest counted) and
+`verdict_lines` wraps it to the window; the runs' lines, the check's
+`✓`/`✗` line, the outside line and the proposal's verifies line left the
+change view (`check_lines` keeps a failure's output and a check not
+ended), the words `ran_none_long`, `check_ok`, `row_outside`,
+`diff_verifies*` left `i18n.rs`. Home's change row is the verdict without
+its head, the lines added and removed on the files part
+(`home::change_spans`), and the preview's first label is `verdict`;
+`waiting_rank` and the changes heading's `N ready to approve` count
+`Verdict::ready`, so an overlapping change is no longer easy. The
+proposal's `Verdict` enum became `Decision`. The demo's workers already
+overlap through their strays (`the_demo_shows_a_change_that_overlaps…`).
+Left for the step: the question screen with options, and the detail's
+tabs.
