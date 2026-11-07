@@ -111,6 +111,9 @@ pub fn draw(f: &mut Frame, app: &App) {
     if let Some(win) = app.tidy {
         over.push(overlay::tidy(f, app, win));
     }
+    if let Some(win) = app.lonca_win {
+        over.push(overlay::lonca(f, app, win));
+    }
     if let Some(ask) = &app.teardown {
         over.push(overlay::teardown(f, app, ask));
     }
@@ -2393,6 +2396,156 @@ mod tests {
             "{s}"
         );
         assert!(!s.contains("removing…"), "{s}");
+    }
+
+    #[test]
+    fn the_lonca_window_lists_what_waits_for_a_human_and_what_is_held() {
+        use crate::app::LoncaWin;
+        use crate::model::{Role, StoreLease, StorePending, StoreProposal};
+        let mut app = app_after(2, 2, 0, Lang::En);
+        let (name, repo) = (
+            app.world.projects[1].name.clone(),
+            app.world.projects[1].name.clone(),
+        );
+        let id = (app.world.agents.iter())
+            .find(|a| a.project == 1 && a.role == Role::Worker)
+            .map(|a| a.id)
+            .unwrap();
+        let worker = app.world.agents[id].name.clone();
+        app.world.agents[id].workspace = Some(repo.clone());
+        let mut change = a_change(id);
+        change.files = vec![ChangedFile {
+            path: "x.kt".into(),
+            added: 1,
+            removed: 0,
+            binary: false,
+        }];
+        app.world.change_proposed(
+            change,
+            StoreProposal {
+                seq: 4,
+                change: "demo2".into(),
+                older: Vec::new(),
+                why: Vec::new(),
+                redacted: Vec::new(),
+                cut: false,
+                verifies: Vec::new(),
+                on_trunk: true,
+            },
+        );
+        app.selected = crate::app::Sel::Project(1);
+        app.step();
+        let lease = |symbol: &str, holder, who: &str| StoreLease {
+            file: "app/cart/CartViewModel.kt".into(),
+            symbol: symbol.into(),
+            holder,
+            name: who.into(),
+        };
+        app.world.store_leases(
+            1,
+            &repo,
+            vec![
+                lease("CartViewModel.add", Some(id), "x"),
+                lease("CartViewModel.total\u{1b}[31m", None, "someone"),
+            ],
+        );
+        app.lonca_win = Some(LoncaWin::default());
+        let s = render(&app, 120, 40);
+        assert!(s.contains(&format!("LONCA · {repo}")), "{s}");
+        assert!(
+            s.contains(&format!(
+                "{name} is on Lonca repository {repo}: trunk 9d3f1c2, 2 waiting for a human"
+            )),
+            "{s}"
+        );
+        assert!(s.contains("WAITING FOR A HUMAN · 2"), "{s}");
+        let row = |s: &str, word: &str| {
+            (s.lines()
+                .find(|l| l.contains(word))
+                .map(|l| l.trim_end().to_string()))
+            .unwrap_or_else(|| panic!("no row with {word}: {s}"))
+        };
+        let shown = row(&s, "Δ shown");
+        assert!(
+            shown.contains(&format!("▶    4  {worker}  x.kt  Δ shown")),
+            "{shown}"
+        );
+        assert!(!shown.contains("based before trunk"));
+        let stranger = row(&s, "ayse");
+        let pad = " ".repeat(worker.chars().count() - 4);
+        assert!(
+            stranger.contains(&format!(
+                "     1  ayse{pad}  app/cart/CartViewModel.kt  based before trunk"
+            )),
+            "{stranger}"
+        );
+        assert!(!stranger.contains('▶'));
+        assert!(s.contains("HELD · 2"), "{s}");
+        assert!(
+            s.contains(&format!(
+                "  app/cart/CartViewModel.kt · CartViewModel.add · {worker}"
+            )),
+            "{s}"
+        );
+        let total = clean("CartViewModel.total\u{1b}[31m");
+        assert!(
+            s.contains(&format!("  app/cart/CartViewModel.kt · {total} · someone")),
+            "cleaned: {s}"
+        );
+        assert!(s.contains("move") && s.contains("open the change") && s.contains("back"));
+        // The row at hand marked.
+        app.lonca_win = Some(LoncaWin { at: 1 });
+        let s = render(&app, 120, 40);
+        assert!(
+            row(&s, "ayse").starts_with('▶') || row(&s, "ayse").contains("▶    1"),
+            "{s}"
+        );
+        assert!(!row(&s, "Δ shown").contains('▶'));
+        // In Turkish.
+        app.lang = Lang::Tr;
+        let s = render(&app, 120, 40);
+        for word in [
+            "İNSAN BEKLEYEN · 2",
+            "TUTULAN · 2",
+            "Δ gösteriliyor",
+            "temeli gövdenin gerisinde",
+            "değişikliği aç",
+        ] {
+            assert!(s.contains(word), "{word}: {s}");
+        }
+        // Nothing waiting, nothing held: said.
+        app.lang = Lang::En;
+        app.world.store_pending(1, &repo, Vec::new());
+        app.world.store_leases(1, &repo, Vec::new());
+        app.lonca_win = Some(LoncaWin::default());
+        let s = render(&app, 120, 40);
+        assert!(
+            s.contains("WAITING FOR A HUMAN · 0") && s.contains("nothing waits for a human"),
+            "{s}"
+        );
+        assert!(
+            s.contains("HELD · 0") && s.contains("nothing is held"),
+            "{s}"
+        );
+        // On a short screen the row at hand stays in view.
+        let many = (10..=15)
+            .map(|seq| StorePending {
+                seq,
+                change: format!("c{seq}"),
+                name: format!("p{seq}"),
+                holder: None,
+                paths: Vec::new(),
+                on_trunk: true,
+            })
+            .collect();
+        app.world.store_pending(1, &repo, many);
+        app.lonca_win = Some(LoncaWin { at: 5 });
+        let s = render(&app, 100, 12);
+        assert!(s.contains("▶   15  p15"), "{s}");
+        assert!(!s.contains("  10  p10"), "scrolled away: {s}");
+        app.lonca_win = Some(LoncaWin { at: 0 });
+        let s = render(&app, 100, 12);
+        assert!(s.contains("▶   10  p10") && !s.contains("p15"), "{s}");
     }
 
     #[test]

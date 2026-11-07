@@ -277,5 +277,19 @@ merged after your yes` as a dim fact: the queue merges a stale base
 (record 115's probe), so it leaves the change ready. The demo's table
 holds a stranger's proposal on each repository's first file
 (`sim::STRANGER`, `demo_pending`), and each third demo proposal is based
-before trunk. Left for the step: the `:lonca` window (trunk, pending,
-leases).
+before trunk.
+
+Step 4's window as built (its second piece, the step's last): bare
+`:lonca` on a project on Lonca opens `App.lonca_win: Option<LoncaWin {
+at }>` (`open_lonca`; off Lonca the flash as before), drawn by
+`overlay::lonca` over the screen: `lonca_state` as the head, `WAITING FOR
+A HUMAN · N` with a row per `OnLonca.pending` (number, the holder's name
+here else Lonca's, `diff::named` paths, `Δ shown` when `lonca_row_shown`:
+its holder's `proposal_of` is this seq, `based before trunk`), the row at
+hand marked and kept in view, `HELD · N` from `OnLonca.leases`. `lonca_key`
+takes every key (`j k g G`, `enter` → `lonca_open_change`: the change's
+`Zoom::Diff`, on Home its row at hand; a proposal that is no change shown
+flashes `lonca_not_shown`; `esc` `q` close, `?` the help). Commands
+reference EN+TR. The demo's second project shows it with the stranger's
+proposal; the demo lists no held symbols (record 123: its map stays as it
+was), which the page says.

@@ -71,6 +71,13 @@ pub struct TidyWin {
     pub sure: bool,
 }
 
+/// The `:lonca` window (record 125, step 4): the row at hand among the
+/// proposals waiting in the project's repository.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct LoncaWin {
+    pub at: usize,
+}
+
 /// A teardown script a removal waits on the person's answer to: its
 /// bytes, how far down they are scrolled, and the removal asked (its
 /// rows of the list, with work or not).
@@ -941,6 +948,9 @@ pub struct App {
     /// The worktrees no agent owns, in a window over the screen (`:tidy`,
     /// record 96).
     pub tidy: Option<TidyWin>,
+    /// The project at hand's Lonca repository in a window over the screen
+    /// (bare `:lonca`, record 125): what waits for a human, what is held.
+    pub lonca_win: Option<LoncaWin>,
     /// A checkout the person is asked to import into Lonca, in a window
     /// over everything (record 117).
     pub importing: Option<ImportAsk>,
@@ -1263,6 +1273,7 @@ impl App {
             script: None,
             plan_window: None,
             tidy: None,
+            lonca_win: None,
             importing: None,
             teardown: None,
             tidy_start: false,

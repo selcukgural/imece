@@ -3,17 +3,19 @@
 use super::*;
 
 impl App {
-    /// `:lonca` says how the project at hand stands on Lonca, `:lonca
-    /// NAME` names its repository (the daemon is asked at once, and until
-    /// it answers the project is closed: record 116), `:lonca off` leaves
-    /// it, `:lonca login` signs the person in and `:lonca import [NAME]`
-    /// asks to make a repository of the checkout (record 117).
+    /// `:lonca` opens the window on the project at hand's repository
+    /// (how it stands, what waits for a human, what is held: record 125),
+    /// `:lonca NAME` names its repository (the daemon is asked at once,
+    /// and until it answers the project is closed: record 116), `:lonca
+    /// off` leaves it, `:lonca login` signs the person in and `:lonca
+    /// import [NAME]` asks to make a repository of the checkout (record
+    /// 117).
     pub(super) fn lonca_command(&mut self, arg: &str) {
         let t = self.lang.text();
         let p = self.current_project();
         let name = self.world.projects[p].name.clone();
         match arg {
-            "" => self.flash(self.lonca_state(p)),
+            "" => self.open_lonca(p),
             "off" => {
                 self.world.on_lonca(p, None);
                 self.flash(fill(t.lonca_off, &[&name]));
@@ -122,8 +124,79 @@ impl App {
         }
     }
 
+    /// Bare `:lonca`: the window on project `p`'s repository; off Lonca,
+    /// a flash says so and how to get on.
+    fn open_lonca(&mut self, p: ProjectId) {
+        if self.world.projects[p].lonca.is_none() {
+            return self.flash(self.lonca_state(p));
+        }
+        self.lonca_win = Some(LoncaWin::default());
+    }
+
+    /// The proposals the `:lonca` window lists: those waiting in the
+    /// project at hand's repository, as the last look read them.
+    pub(crate) fn lonca_rows(&self) -> &[StorePending] {
+        let p = self.current_project();
+        match &self.world.projects[p].lonca {
+            Some(on) => &on.pending,
+            None => &[],
+        }
+    }
+
+    /// Whether `row` of the window is a worker's change waiting for the
+    /// person: its holder's proposal shown as a Δ is this one.
+    pub(crate) fn lonca_row_shown(&self, row: &StorePending) -> Option<AgentId> {
+        let id = row.holder?;
+        (self.world.proposal_of(id).is_some_and(|p| p.seq == row.seq)).then_some(id)
+    }
+
+    /// A key while the `:lonca` window is open: `j k` (the arrows), `g G`
+    /// move over the proposals, `enter` opens the change of one shown as
+    /// a Δ, `esc` or `q` close, `?` the help; the rest do nothing.
+    pub(super) fn lonca_key(&mut self, win: LoncaWin, k: KeyEvent) {
+        let last = self.lonca_rows().len().saturating_sub(1);
+        let at = match k.code {
+            KeyCode::Down | KeyCode::Char('j') => (win.at + 1).min(last),
+            KeyCode::Up | KeyCode::Char('k') => win.at.saturating_sub(1),
+            KeyCode::Char('g') | KeyCode::Home => 0,
+            KeyCode::Char('G') | KeyCode::End => last,
+            KeyCode::Enter => return self.lonca_open_change(win.at),
+            KeyCode::Esc | KeyCode::Char('q') => {
+                self.lonca_win = None;
+                return;
+            }
+            KeyCode::Char('?') => return self.open_help(),
+            _ => return,
+        };
+        self.lonca_win = Some(LoncaWin { at });
+    }
+
+    /// `enter` on row `at` of the window: the change it is opens in the
+    /// window's place (on Home, as its row at hand); one that is no change
+    /// shown here is said so.
+    fn lonca_open_change(&mut self, at: usize) {
+        let t = self.lang.text();
+        let Some(row) = self.lonca_rows().get(at).cloned() else {
+            return;
+        };
+        let Some(id) = self.lonca_row_shown(&row) else {
+            return self.flash(fill(t.lonca_not_shown, &[&row.seq.to_string()]));
+        };
+        self.lonca_win = None;
+        if self.view == View::Home {
+            let w = &self.world;
+            let item = (w.open_inbox().into_iter())
+                .find(|&i| w.inbox[i].kind == InboxKind::Change && w.inbox[i].agent == id);
+            if let Some(i) = item {
+                self.at_home.at = Some(HomeRow::Item(i));
+            }
+        }
+        self.diff_scroll = 0;
+        self.zoom = Zoom::Diff(id);
+    }
+
     /// How project `p` stands on Lonca, in words.
-    fn lonca_state(&self, p: ProjectId) -> String {
+    pub(crate) fn lonca_state(&self, p: ProjectId) -> String {
         let t = self.lang.text();
         let project = &self.world.projects[p];
         let name = &project.name;
@@ -193,26 +266,36 @@ mod tests {
         assert_eq!(flashed(&app).unwrap(), asked);
         assert_eq!(app.command_note("lonca"), "(demo)");
         assert!(app.world.store_closed(0).is_some());
+        // On Lonca, bare `:lonca` is the window, headed by how it stands.
+        app.flash = None;
         app.command("lonca");
-        assert_eq!(flashed(&app).unwrap(), asked, "still asking");
+        assert_eq!(app.lonca_win, Some(LoncaWin::default()));
+        assert_eq!(flashed(&app), None);
+        assert_eq!(app.lonca_state(0), asked, "still asking");
+        app.lonca_win = None;
         let up = StoreSeen::Up {
             trunk: "693d62952cd8f7ce58b0de780cf5d998b2f5c1a6".into(),
             pending: 2,
             behind: Behind::By(0),
         };
         app.world.store_seen(0, "demo", up);
-        app.command("lonca");
         assert_eq!(
-            flashed(&app).unwrap(),
+            app.lonca_state(0),
             format!("{name} is on Lonca repository demo: trunk 693d629, 2 waiting for a human")
         );
         app.world
             .store_seen(0, "demo", StoreSeen::Down(StoreDown::SignedOut));
-        app.command("lonca");
         assert_eq!(
-            flashed(&app).unwrap(),
+            app.lonca_state(0),
             format!("{name} is on Lonca repository demo: you are not signed in (:lonca login)")
         );
+        app.command("lonca");
+        assert_eq!(
+            app.lonca_win,
+            Some(LoncaWin::default()),
+            "down: still the window"
+        );
+        app.lonca_win = None;
         app.command("lonca off");
         assert_eq!(
             flashed(&app).unwrap(),
@@ -355,12 +438,168 @@ mod tests {
             (Behind::Unknown, up.clone(), ""),
         ] {
             app.world.store_seen(0, "shop", shop_up(behind));
-            app.command("lonca");
-            assert_eq!(flashed(&app).unwrap(), said);
+            assert_eq!(app.lonca_state(0), said);
             assert_eq!(app.command_note("sync"), note);
         }
         app.world.on_lonca(0, None);
         assert_eq!(app.command_note("sync"), "");
+    }
+
+    /// The demo of two projects, the second on its table, a worker of it
+    /// with a proposal shown as its Δ; the project at hand is the second,
+    /// its store answered. The worker and its repository returned.
+    fn lonca_window_demo() -> (App, AgentId, String) {
+        let (mut world, sim) = crate::sim::world(2, 2, 0, 1, Lang::En);
+        let repo = world.projects[1].name.clone();
+        let id = (world.agents.iter())
+            .find(|a| a.project == 1 && a.role == Role::Worker)
+            .map(|a| a.id)
+            .expect("a worker of the second project");
+        world.agents[id].workspace = Some(repo.clone());
+        // A question of the worker's before its change: another open item.
+        world.asked_you(id, "Which?");
+        world.change_proposed(
+            Change {
+                agent: id,
+                title: "T".into(),
+                files: vec![ChangedFile {
+                    path: "x.kt".into(),
+                    added: 1,
+                    removed: 0,
+                    binary: false,
+                }],
+                patch: "diff --git a/x.kt b/x.kt\n".into(),
+                runs: Vec::new(),
+                check: Check::None,
+                spend: None,
+            },
+            StoreProposal {
+                seq: 4,
+                change: "demo2".into(),
+                older: Vec::new(),
+                why: Vec::new(),
+                redacted: Vec::new(),
+                cut: false,
+                verifies: Vec::new(),
+                on_trunk: true,
+            },
+        );
+        let mut app = App::with(world, Engine::Sim(sim), Lang::En);
+        app.selected = Sel::Project(1);
+        app.step();
+        assert_eq!(app.current_project(), 1);
+        (app, id, repo)
+    }
+
+    #[test]
+    fn lonca_opens_the_window_on_the_proposals_waiting_and_its_keys_move_on_them() {
+        let (mut app, id, _) = lonca_window_demo();
+        let rows: Vec<(u64, Option<AgentId>)> = (app.lonca_rows().iter())
+            .map(|r| (r.seq, r.holder))
+            .collect();
+        assert_eq!(
+            rows,
+            [(4, Some(id)), (1, None)],
+            "the worker's, the stranger's"
+        );
+        app.command("lonca");
+        assert_eq!(app.lonca_win, Some(LoncaWin::default()));
+        let at = |app: &App| app.lonca_win.unwrap().at;
+        app.key(key(KeyCode::Char('j')));
+        assert_eq!(at(&app), 1);
+        app.key(key(KeyCode::Down));
+        assert_eq!(at(&app), 1, "past the last");
+        app.key(key(KeyCode::Char('k')));
+        assert_eq!(at(&app), 0);
+        app.key(key(KeyCode::Up));
+        assert_eq!(at(&app), 0, "before the first");
+        app.key(key(KeyCode::Char('G')));
+        assert_eq!(at(&app), 1);
+        app.key(key(KeyCode::Char('g')));
+        assert_eq!(at(&app), 0);
+        app.key(key(KeyCode::End));
+        assert_eq!(at(&app), 1);
+        app.key(key(KeyCode::Home));
+        assert_eq!(at(&app), 0);
+        app.key(key(KeyCode::Char('x')));
+        assert_eq!(at(&app), 0, "another key does nothing");
+        assert_eq!(app.selected, Sel::Project(1), "the salon did not move");
+        app.key(key(KeyCode::Char('?')));
+        assert!(app.help, "the help over it");
+        app.key(key(KeyCode::Esc));
+        assert!(!app.help);
+        assert!(app.lonca_win.is_some(), "the window stays under the help");
+        app.key(key(KeyCode::Char('q')));
+        assert_eq!(app.lonca_win, None);
+        app.command("lonca");
+        app.key(key(KeyCode::Esc));
+        assert_eq!(app.lonca_win, None);
+        // The rows go with a store that is down.
+        app.world.store_seen(
+            1,
+            &app.world.projects[1].lonca.clone().unwrap().repo,
+            StoreSeen::Down(StoreDown::NoDaemon),
+        );
+        assert!(app.lonca_rows().is_empty());
+        app.command("lonca");
+        app.key(key(KeyCode::Char('j')));
+        assert_eq!(at(&app), 0, "nothing to move on");
+    }
+
+    #[test]
+    fn enter_in_the_lonca_window_opens_the_change_shown_and_says_so_of_another() {
+        let (mut app, id, repo) = lonca_window_demo();
+        let item = (app.world.open_inbox().into_iter())
+            .find(|&i| {
+                app.world.inbox[i].kind == InboxKind::Change && app.world.inbox[i].agent == id
+            })
+            .expect("the change waits");
+        app.diff_scroll = 7;
+        app.command("lonca");
+        app.key(key(KeyCode::Enter));
+        assert_eq!(app.lonca_win, None, "closed");
+        assert_eq!(app.zoom, Zoom::Diff(id));
+        assert_eq!(app.diff_scroll, 0);
+        assert_eq!(app.at_home.at, None, "not on Home: its row untouched");
+        // From Home the change is its row at hand too.
+        app.zoom = Zoom::None;
+        app.view = View::Home;
+        app.command("lonca");
+        app.key(key(KeyCode::Enter));
+        assert_eq!(app.zoom, Zoom::Diff(id));
+        assert_eq!(app.at_home.at, Some(HomeRow::Item(item)));
+        // The stranger's is no change here.
+        app.zoom = Zoom::None;
+        app.command("lonca");
+        app.key(key(KeyCode::Char('j')));
+        app.key(key(KeyCode::Enter));
+        assert_eq!(app.lonca_win, Some(LoncaWin { at: 1 }), "stays");
+        assert_eq!(app.zoom, Zoom::None);
+        assert_eq!(
+            flashed(&app).unwrap(),
+            "proposal 1 is no change shown here: nobody's of this project, or its worker's turn goes on"
+        );
+        // Nor is an older proposal of the worker's own.
+        let older = StorePending {
+            seq: 2,
+            change: "demo1".into(),
+            name: app.world.agents[id].name.clone(),
+            holder: Some(id),
+            paths: vec!["x.kt".into()],
+            on_trunk: true,
+        };
+        app.world.store_pending(1, &repo, vec![older]);
+        app.key(key(KeyCode::Char('g')));
+        app.key(key(KeyCode::Enter));
+        assert_eq!(app.zoom, Zoom::None);
+        assert!(
+            flashed(&app)
+                .unwrap()
+                .starts_with("proposal 2 is no change shown here")
+        );
+        app.world.store_pending(1, &repo, Vec::new());
+        app.key(key(KeyCode::Enter));
+        assert_eq!(app.lonca_win, Some(LoncaWin { at: 0 }), "nothing to open");
     }
 
     #[test]
