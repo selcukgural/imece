@@ -8,7 +8,7 @@ cannot reach past what is on screen, and cuts a wrapped line in two. `c`
 and `y` copied one whole message, `C` and `Y` the whole conversation, and
 a change could not be copied at all.
 
-**State.** `Copying { anchor, at }` (`app.rs`): the line the choice
+**State.** `Copying { anchor, at }` (`app/mod.rs`): the line the choice
 started on and the cursor; `span`, `len`, `holds` read it either way
 round. A conversation keeps its own in `Thread::copy`, so it closes with
 the window. A change's is `App::diff_copy`, kept against the worker and
