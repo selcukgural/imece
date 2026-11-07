@@ -31,7 +31,7 @@ says what the agent does; the salon's `!` still says what waits.
 `App::watch_lanes` marks every agent not gone at every step (`App::step`,
 the demo's and live's), after `watch_turns`.
 
-The view: `View::Timeline`, `4`, `:timeline` (allowed in an archive's
+The view (until record 125's step 5): `View::Timeline`, `4`, `:timeline` (allowed in an archive's
 view), key-file place `[timeline]` (`keys::Scope::Timeline`), the
 footer's fourth view. `ui/timeline.rs`: per open project in the salon's
 order (not closed, not settled) its name and an axis (`axis`: the first
@@ -55,3 +55,9 @@ do and `App::step` marks both, so `--demo` shows the timeline the same.
 
 Not done: scrolling back in time (the view always ends at now), lanes
 kept between runs, a row for the person.
+
+Since record 125's step 5 (2026-11-07) the timeline is no view: `:timeline`
+alone opens it in a window over the screen (`App.window`,
+`overlay::view`; `App::window_key` has its `j k g G [ ] enter @`, the
+window takes every other key), `esc` or `q` closes it; `4` does nothing,
+`K` and `t` are not its.

@@ -95,7 +95,7 @@ Açılan [ana ekrandır](../screen/home.md): üstte sıranın sizde olduğu işl
  enter  aç   @  bu ajana yaz   j k  gez   [ ]  proje   /  lidere yaz   ?  yardım
 ```
 
-Ekip bir tuş uzakta, `1`: solda lonca, sağda KARAR BEKLEYEN ve DEFTER.
+Ekip bir komut uzakta, `:salon`: solda lonca, sağda KARAR BEKLEYEN ve DEFTER.
 
 Takım yalnız liderdir (`○ lead`, siz yazana dek boşta). Ekipteki günlüğün ilk satırı, `--confine strict` olmayan her başlangıçta bir kez, yalıtımın imece'nin işi olmadığını söyler.
 

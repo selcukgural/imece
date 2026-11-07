@@ -1,11 +1,11 @@
 ---
 title: Zaman şeridi
-description: Görünüm 4 - son bir saatte agent başına bir şerit, her sütunda ne yaptığı, her projenin altındaki mesajlar, ölçek ve tuşlar.
+description: `:timeline` penceresi - son bir saatte agent başına bir şerit, her sütunda ne yaptığı, her projenin altındaki mesajlar, ölçek ve tuşlar.
 ---
 
 # Zaman şeridi
 
-Zaman şeridi takımı zaman içinde gösterir: açık projelerin her agent'ı için bir şerit, zaman sağa doğru şimdiye akar, her sütun agent'ın o anda ne yaptığıdır. Kimin yan yana çalıştığı, kimin boşta oturduğu, bir şeyin nerede ve ne zamandan beri takıldığı bir bakışta okunur. `4` (`:timeline`) onu ekibin yerinde açar; `1` geri getirir. En çok küçük bir takımda işe yarar; çok agent'la şeritler kayar.
+Zaman şeridi takımı zaman içinde gösterir: açık projelerin her agent'ı için bir şerit, zaman sağa doğru şimdiye akar, her sütun agent'ın o anda ne yaptığıdır. Kimin yan yana çalıştığı, kimin boşta oturduğu, bir şeyin nerede ve ne zamandan beri takıldığı bir bakışta okunur. `:timeline` onu ekranın üstünde bir pencerede açar; `esc` kapatır. En çok küçük bir takımda işe yarar; çok agent'la şeritler kayar.
 
 ```text
 ┌ ZAMAN ŞERİDİ · bir sütun 5 sn · [ ] ölçek ──────────────────────────────────────────┐
@@ -45,10 +45,11 @@ Bir sütun bir tick'tir, 5 saniye; `]` onu 30 saniye, sonra bir dakika yapar, `[
 
 | Tuş | Ne yapar |
 | --- | --- |
-| `4`  `:timeline` | zaman şeridini aç |
+| `:timeline` | pencereyi aç; `esc` `q` kapatır |
 | `[`  `]` | bir sütun 5 sn · 30 sn · 1 dk |
 | `j` `k`  `gg` `G` | bir agent seç; seçili satır ters ve görünür tutulur |
-| `enter` | seçili agent'ın odağı; `esc` geri getirir |
-| `K` `t` `@` | peek, ham akışı, ona yaz: seçili agent eldeki agent'tır |
+| `enter` | seçili agent'ın odağı, pencerenin yerinde |
+| `@` | seçili agent'a yaz: pencere kapanır, satır açılır |
+| `?` | yardım, pencerenin üstünde; pencere diğer her tuşu alır |
 
 Demo şeritleri aynı biçimde doldurur, böylece `imece --demo` zaman şeridini canlı bir çalıştırma gibi gösterir. Bkz. [karar](https://github.com/selcukgural/imece/blob/main/docs/decisions/100-timeline.md).

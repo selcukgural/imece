@@ -9,3 +9,8 @@ wakes each worker at most once, never a broadcast. One card at a time
 per worker; the worker sends `done` to whoever posted it. Caps: title one
 line of 120 chars, 20 open cards per project, 10 posts per agent until
 the person speaks again; offers count as message-driven turns.
+
+Since record 125's step 5 (2026-11-07) the board is no view: `:board`
+alone opens it in a window over the screen (`App.window`,
+`overlay::view`), `esc` or `q` closes it, and it takes every key while
+it is open; `2` does nothing.

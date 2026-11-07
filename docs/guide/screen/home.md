@@ -5,7 +5,7 @@ description: View 5 - the triage list - what is to decide, grouped by what decid
 
 # Home
 
-Home is the screen imece opens on, the one for deciding; `5` or `:home` comes back to it. One list across the open projects: what is to decide first, grouped by what deciding costs you, then who is at work. Every row says the whole ask, the keys that decide the row at hand stand at its end, and a yes moves the cursor down. From 120 columns on, the row at hand is read beside the list.
+Home is the screen imece opens on, the one for deciding; `:home` comes back to it. One list across the open projects: what is to decide first, grouped by what deciding costs you, then who is at work. Every row says the whole ask, the keys that decide the row at hand stand at its end, and a yes moves the cursor down. From 120 columns on, the row at hand is read beside the list.
 
 ```text
  imece  shop-api │  ! 5 to decide  │ $0.49 of $200.00  14:20

@@ -27,7 +27,9 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Clear, Paragraph, Wrap};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
-use crate::app::{App, Caret, FLASH, Field, Hints, Noting, Rung, Target, Undoable, View, Zoom};
+use crate::app::{
+    App, Caret, FLASH, Field, Hints, Noting, Rung, Target, Undoable, View, Window, Zoom,
+};
 use crate::i18n::{Lang, clean, fill};
 use crate::model::*;
 use crate::motion::{GlowOn, Lit};
@@ -79,9 +81,6 @@ pub fn draw(f: &mut Frame, app: &App) {
         Zoom::Diff(id) => diff::draw(f, body, app, id),
         Zoom::None => match app.view {
             View::Salon => salon::draw(f, body, app),
-            View::Board => board::draw(f, body, app),
-            View::Code => code::draw(f, body, app),
-            View::Timeline => timeline::draw(f, body, app),
             View::Home => home::draw(f, body, app),
         },
     }
@@ -113,6 +112,9 @@ pub fn draw(f: &mut Frame, app: &App) {
     }
     if let Some(win) = app.lonca_win {
         over.push(overlay::lonca(f, app, win));
+    }
+    if let Some(win) = app.window {
+        over.push(overlay::view(f, app, win));
     }
     if let Some(ask) = &app.teardown {
         over.push(overlay::teardown(f, app, ask));
@@ -2017,6 +2019,17 @@ fn footer(f: &mut Frame, area: Rect, app: &App) -> Option<Position> {
             ],
             _ if app.script.is_some() => t.setup_hints.to_vec(),
             _ if app.plan_window.is_some() => t.plan_hints.to_vec(),
+            // A window over the screen: its own keys, no place.
+            _ if app.window == Some(Window::Timeline) => {
+                let mut keys = vec![
+                    ("[ ]", t.timeline_scale),
+                    ("enter", t.focus),
+                    ("@", t.to_agent),
+                ];
+                tail(&mut keys, true);
+                keys
+            }
+            _ if app.window.is_some() => vec![("esc", t.back), ("?", t.help)],
             // The conversation has its keys on its own last row.
             _ if app.thread.is_some() => vec![("esc", t.back), ("?", t.help)],
             _ if app.peek.is_some() => {
@@ -2030,15 +2043,6 @@ fn footer(f: &mut Frame, area: Rect, app: &App) -> Option<Position> {
                 keys
             }
             Zoom::None if app.view == View::Home => home_hints(app),
-            Zoom::None if app.view == View::Timeline => {
-                let mut keys = vec![
-                    ("[ ]", t.timeline_scale),
-                    ("enter", t.focus),
-                    ("@", t.to_agent),
-                ];
-                tail(&mut keys, false);
-                keys
-            }
             Zoom::None => {
                 let mut keys = vec![("/", t.write_lead), ("enter", t.focus)];
                 if !app.world.open_inbox().is_empty() {
@@ -2188,7 +2192,12 @@ fn place_spans(app: &App) -> Vec<Span<'static>> {
     let t = app.lang.text();
     let w = &app.world;
     let copying = matches!(app.zoom, Zoom::Diff(id) if app.diff_copy_of(id).is_some());
-    if app.hints.is_some() || app.script.is_some() || app.plan_window.is_some() || copying {
+    if app.hints.is_some()
+        || app.script.is_some()
+        || app.plan_window.is_some()
+        || app.window.is_some()
+        || copying
+    {
         return Vec::new();
     }
     let place = if app.thread.is_some() {
@@ -2266,10 +2275,7 @@ fn cut_title(title: &str, room: usize) -> String {
 fn view_index(view: View) -> usize {
     match view {
         View::Salon => 0,
-        View::Board => 1,
-        View::Code => 2,
-        View::Timeline => 3,
-        View::Home => 4,
+        View::Home => 1,
     }
 }
 
@@ -4415,12 +4421,15 @@ mod tests {
     }
 
     #[test]
-    fn a_working_owner_breathes_on_the_board_and_its_frame_is_patched() {
+    fn a_working_owner_breathes_on_the_board_s_window_and_nothing_is_patched() {
         use crate::motion::Motion;
         let ms = std::time::Duration::from_millis;
         let (mut app, w, _) = calm_team();
         app.motion = Motion::Calm;
-        app.view = View::Board;
+        app.window = Some(Window::Board);
+        // The team under the window tells of cards the test replaces.
+        app.world.journal.clear();
+        app.world.inbox.clear();
         let card = |id, owner, column| Card {
             id,
             project: 0,
@@ -4443,52 +4452,42 @@ mod tests {
         app.world.agents[w[1]].status = Status::Idle;
         app.world.agents[w[3]].status = Status::Working;
         let width = 160;
-        // In progress: the second of five columns, its border at 32, its rows from
-        // the header's and its own border's below (y 2); the glyph after
-        // four cells, two wide.
+        // The window starts four columns and two rows in, its border one
+        // more; in progress is the second of five columns of 30, its
+        // border at 35, its rows under its own border (y 4); the glyph
+        // after four cells, two wide, under the card's title.
+        let (x, y) = (40, 5);
         app.frame_after(ms(600));
         let (first, _) = whole(&app, width);
-        let known = app.breathing.borrow().clone().unwrap();
-        assert_eq!(
-            known,
-            [Glyph {
-                x: 37,
-                y: 3,
-                width: 2
-            }],
-            "the working owner in progress, not the idle one, a waiting card's or a done card's"
-        );
-        assert_eq!(first[(37, 3)].symbol(), "●");
-        assert!(
-            first[(37, 3)].modifier.contains(Modifier::DIM),
-            "the second tone"
-        );
-        assert_eq!(first[(37, 5)].symbol(), "○", "the idle owner");
-        // A waiting card shows no owner and takes one row: the next
-        // card's title right under it.
-        assert_eq!(first[(1, 2)].symbol(), "#");
-        assert_eq!(first[(2, 2)].symbol(), "3");
-        assert_eq!(first[(1, 3)].symbol(), "#");
-        assert_eq!(first[(2, 3)].symbol(), "6");
-        assert!(!first[(37, 5)].modifier.contains(Modifier::DIM));
-        app.drawn(app.after(ms(600)));
-        assert!(app.patch_due(app.after(ms(1200))));
-        app.frame_after(ms(1200));
-        let got = patched(&app, &first, width).expect("patched");
-        let want = whole(&app, width);
-        assert_eq!(got, want);
-        assert!(
-            !want.0[(37, 3)].modifier.contains(Modifier::DIM),
-            "the first tone"
-        );
-        // A card past the column's foot is not on the screen.
-        let mut t = Terminal::new(TestBackend::new(width, 6)).unwrap();
-        app.world.cards.insert(0, card(4, None, Column::Working));
-        t.draw(|f| draw(f, &app)).unwrap();
         assert_eq!(
             *app.breathing.borrow(),
-            Some(Vec::new()),
-            "row 4 of the column is past a 6-row screen's body"
+            None,
+            "a window over the screen: no patch"
+        );
+        assert!(!app.patchable());
+        assert_eq!(first[(x, y)].symbol(), "●");
+        assert!(
+            first[(x, y)].modifier.contains(Modifier::DIM),
+            "the second tone"
+        );
+        assert_eq!(first[(x, y + 2)].symbol(), "○", "the idle owner");
+        // A waiting card shows no owner and takes one row: the next
+        // card's title right under it.
+        assert_eq!(first[(6, 4)].symbol(), "#");
+        assert_eq!(first[(7, 4)].symbol(), "3");
+        assert_eq!(first[(6, 5)].symbol(), "#");
+        assert_eq!(first[(7, 5)].symbol(), "6");
+        assert!(!first[(x, y + 2)].modifier.contains(Modifier::DIM));
+        // The next beat draws the first tone, whole.
+        app.drawn(app.after(ms(600)));
+        assert!(!app.patch_due(app.after(ms(1200))));
+        app.frame_after(ms(1200));
+        assert!(patched(&app, &first, width).is_none());
+        let (second, _) = whole(&app, width);
+        assert_eq!(second[(x, y)].symbol(), "●");
+        assert!(
+            !second[(x, y)].modifier.contains(Modifier::DIM),
+            "the first tone"
         );
     }
 
@@ -5001,8 +5000,7 @@ mod tests {
             let mut app = app_after(3, 30, 400, lang);
             let views = [
                 (View::Salon, Zoom::None),
-                (View::Board, Zoom::None),
-                (View::Code, Zoom::None),
+                (View::Home, Zoom::None),
                 (View::Salon, Zoom::Focus(5)),
                 (View::Salon, Zoom::Trace(5)),
                 (View::Salon, Zoom::Focus(0)),
@@ -5017,6 +5015,15 @@ mod tests {
                     render(&app, w, h);
                 }
             }
+            app.view = View::Salon;
+            app.zoom = Zoom::None;
+            for win in [Window::Board, Window::Code, Window::Timeline] {
+                app.window = Some(win);
+                for (w, h) in [(1, 1), (10, 3), (40, 12), (80, 24), (200, 60)] {
+                    render(&app, w, h);
+                }
+            }
+            app.window = None;
             app.help = true;
             render(&app, 30, 10);
         }
@@ -5074,10 +5081,14 @@ mod tests {
     #[test]
     fn the_views_name_themselves() {
         let mut app = app_after(2, 12, 300, Lang::En);
-        app.view = View::Board;
-        assert!(render(&app, 140, 40).contains("IN PROGRESS"));
-        app.view = View::Code;
+        app.window = Some(Window::Board);
+        let s = render(&app, 140, 40);
+        assert!(s.contains("IN PROGRESS"), "{s}");
+        let cards = app.world.shown_cards().count();
+        assert!(s.contains(&format!(" BOARD · cards: {cards} ")), "{s}");
+        app.window = Some(Window::Code);
         assert!(render(&app, 140, 40).contains("CODE MAP"));
+        app.window = None;
         app.zoom = Zoom::Focus(3);
         assert!(render(&app, 140, 40).contains("FOCUS"));
     }
@@ -6368,8 +6379,11 @@ mod tests {
         // `]` in the salon is a panel, not the scale.
         key(&mut app, KeyCode::Char(']'));
         assert_eq!(app.timeline_scale, 0);
-        key(&mut app, KeyCode::Char('4'));
-        assert_eq!(app.view, View::Timeline);
+        for c in ":timeline".chars() {
+            key(&mut app, KeyCode::Char(c));
+        }
+        key(&mut app, KeyCode::Enter);
+        assert_eq!(app.window, Some(Window::Timeline));
         assert_eq!(app.key_scope(), Some(crate::keys::Scope::Timeline));
         let s = render(&app, 160, 40);
         assert!(s.contains("TIMELINE · a column is 5 s"), "{s}");
@@ -6377,7 +6391,7 @@ mod tests {
         assert!(s.contains(" now"), "{s}");
         assert!(s.contains("  messages"), "{s}");
         assert!(
-            s.lines().last().unwrap().starts_with(" timeline · "),
+            s.lines().last().unwrap().trim_start().starts_with("[ ]"),
             "the footer: {s}"
         );
         let name = app.world.agents[h1].name.clone();
@@ -6438,31 +6452,33 @@ mod tests {
                 .modifier
                 .contains(Modifier::REVERSED)
         );
+        // The window takes `K`; `enter` opens the focus in its place.
         key(&mut app, KeyCode::Char('K'));
-        assert_eq!(app.peek, Some(worker));
-        app.peek = None;
+        assert_eq!(app.peek, None);
         key(&mut app, KeyCode::Enter);
-        assert_eq!(app.zoom, Zoom::Focus(worker));
+        assert_eq!((app.window, app.zoom), (None, Zoom::Focus(worker)));
         key(&mut app, KeyCode::Esc);
-        assert_eq!((app.view, app.zoom), (View::Timeline, Zoom::None));
+        assert_eq!((app.view, app.zoom), (View::Salon, Zoom::None));
         // A narrow screen: the status goes; Turkish words.
+        app.window = Some(Window::Timeline);
         app.lang = Lang::Tr;
         let s = render(&app, 55, 30);
         assert!(s.contains("ZAMAN ŞERİDİ · bir sütun 5 sn"), "{s}");
         assert!(!s.contains("koordine ediyor"), "{s}");
-        // :timeline from the salon.
-        key(&mut app, KeyCode::Char('1'));
+        // :timeline typed from the salon.
+        key(&mut app, KeyCode::Esc);
+        assert_eq!(app.window, None);
         for c in ":timeline".chars() {
             key(&mut app, KeyCode::Char(c));
         }
         key(&mut app, KeyCode::Enter);
-        assert_eq!(app.view, View::Timeline);
+        assert_eq!(app.window, Some(Window::Timeline));
     }
 
     #[test]
     fn the_timeline_keeps_the_selected_agent_in_view() {
         let mut app = app_after(1, 12, 0, Lang::En);
-        app.view = View::Timeline;
+        app.window = Some(Window::Timeline);
         let n = timeline::agents(&app).len();
         app.timeline_sel = n - 1;
         let s = render(&app, 120, 14);
@@ -6738,7 +6754,7 @@ mod tests {
             change.card = Some(c);
             app.world.inbox.push(change);
         }
-        app.view = View::Board;
+        app.window = Some(Window::Board);
         let s = render(&app, 160, 40);
         let at = |word: &str| s.find(word).unwrap_or_else(|| panic!("{word}: {s}"));
         assert!(s.contains("TO REVIEW (2)") && s.contains("DONE (2)"), "{s}");
@@ -6839,19 +6855,14 @@ mod tests {
             foot(&app, 200)
         );
         app.zoom = Zoom::None;
-        // The other views and screens name themselves too.
-        app.view = View::Board;
-        assert!(
-            foot(&app, 200).starts_with(" board · "),
-            "{}",
-            foot(&app, 200)
-        );
-        app.view = View::Code;
-        assert!(
-            foot(&app, 200).starts_with(" code · "),
-            "{}",
-            foot(&app, 200)
-        );
+        // A window over the screen has its keys and no place.
+        for win in [Window::Board, Window::Code, Window::Timeline] {
+            app.window = Some(win);
+            let line = foot(&app, 200);
+            assert!(!line.contains(" · "), "{win:?}: {line}");
+            assert!(line.contains(" esc "), "{win:?}: {line}");
+        }
+        app.window = None;
         app.view = View::Salon;
         app.card = Some(card);
         assert!(
@@ -7069,9 +7080,15 @@ mod tests {
         app.world.change_clashed(agent, Clashes::default());
         app.world.inbox.clear();
         app.zoom = Zoom::None;
-        app.view = View::Timeline;
-        assert_eq!(badges(&foot(&app, 200)), ["[ ]", "enter", "@", "?"]);
-        app.view = View::Board;
+        // A window has no place before its keys: the badges start the line.
+        let win_badges = |app: &App| badges(&format!("x {}", foot(app, 200)));
+        app.window = Some(Window::Timeline);
+        assert_eq!(win_badges(&app), ["[ ]", "enter", "@", "esc", "?"]);
+        app.window = Some(Window::Board);
+        assert_eq!(win_badges(&app), ["esc", "?"]);
+        app.window = Some(Window::Code);
+        assert_eq!(win_badges(&app), ["esc", "?"]);
+        app.window = None;
         assert_eq!(badges(&foot(&app, 200)), ["/", "enter", "?"]);
         app.world.inbox.push(item(InboxKind::Question, agent));
         assert_eq!(badges(&foot(&app, 200)), ["W", "/", "enter", "?"]);
@@ -10730,7 +10747,7 @@ mod tests {
         assert!(theirs.len() >= 2, "the demo has cards");
         app.world.cards[0].column = Column::Done;
         app.world.cards[1].column = Column::Verifying;
-        app.view = View::Board;
+        app.window = Some(Window::Board);
         let before = render(&app, 200, 40);
         assert!(before.contains(&theirs[0]));
         let fresh = app.world.archive_project(0, "x".into());
@@ -10764,7 +10781,7 @@ mod tests {
             board.contains("IN PROGRESS (1)") && board.contains("DONE (0)"),
             "{board}"
         );
-        app.view = View::Salon;
+        app.window = None;
         let salon = render(&app, 200, 40);
         let queue = salon.lines().find(|l| l.contains("QUEUE")).unwrap();
         assert!(!queue.contains("#1") && !queue.contains("#2"), "{queue}");
@@ -10776,7 +10793,7 @@ mod tests {
         app.world.cards.last_mut().unwrap().column = Column::Working;
         // Two projects in sight: each card names its own.
         app.world.projects[0].archived = None;
-        app.view = View::Board;
+        app.window = Some(Window::Board);
         let board = render(&app, 200, 40);
         let row = (board.lines())
             .skip_while(|l| !l.contains("the next epic"))
@@ -11876,8 +11893,9 @@ mod tests {
         assert!(app.help);
         key(&mut app, KeyCode::Esc);
         assert!(!app.help, "any key closes the help");
-        // Panels cycle only on the salon, outside a focus.
-        app.view = View::Board;
+        // Panels cycle only on the salon, outside a focus: a window over
+        // it takes the keys.
+        app.window = Some(Window::Board);
         for code in [
             KeyCode::Tab,
             KeyCode::BackTab,
@@ -11886,8 +11904,9 @@ mod tests {
             KeyCode::Char('w'),
         ] {
             key(&mut app, code);
-            assert_eq!(app.pane, Pane::Salon, "{code:?} on the board");
+            assert_eq!(app.pane, Pane::Salon, "{code:?} in a window");
         }
+        app.window = None;
         app.view = View::Salon;
         app.zoom = Zoom::Focus(1);
         // `tab` in a focus is the detail's: it moves to another tab of
@@ -11917,11 +11936,11 @@ mod tests {
             key(&mut app, KeyCode::Char(second));
             assert_eq!(app.collapsed, [false, false], "z{second} outside the salon");
         }
-        app.view = View::Board;
+        app.view = View::Home;
         app.collapsed = vec![true, true];
         key(&mut app, KeyCode::Char('z'));
         key(&mut app, KeyCode::Char('R'));
-        assert_eq!(app.collapsed, [true, true], "zR on the board");
+        assert_eq!(app.collapsed, [true, true], "zR on Home");
         app.view = View::Salon;
         app.pane = Pane::Salon;
         key(&mut app, KeyCode::Char('z'));
@@ -12048,10 +12067,10 @@ mod tests {
         app.zoom = Zoom::Focus(1);
         assert!(!render(&app, 140, 40).contains("lease"));
         app.zoom = Zoom::None;
-        app.view = View::Code;
+        app.window = Some(Window::Code);
         assert!(render(&app, 140, 40).contains("no shared trunk yet"));
         // Before any card exists there is no "0/0 cards" either.
-        app.view = View::Salon;
+        app.window = None;
         app.world.cards.clear();
         app.world.journal.clear();
         app.world.inbox.clear();
@@ -14504,7 +14523,6 @@ after | not a table";
     #[test]
     fn a_peek_is_the_focus_in_a_window_over_the_view() {
         let mut app = row_of_three();
-        app.view = View::Board;
         app.peek = Some(2);
         let t = Lang::En.text();
         let s = render(&app, 100, 40);

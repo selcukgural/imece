@@ -15,7 +15,7 @@ Gelenekler vim'inkidir: `h` `j` `k` `l` hareket ve katlama, `gg` ve `G` uçlara,
 
 ## Durum satırı
 
-Son satır, yazmadığınız sürece, bir durum satırıdır: nerede olduğunuz (`ana ekran`, `salon`, `pano`, `kod`, `zaman`, ya da görünümün üstündeki ekran: `odak`, `iz`, `değişiklik`, `konuşma`, `iş`, `bakış`), eldeki proje ve açık ekranın ya da seçili satırın ilgili olduğu iş (`#12 Refund flow`, uzun bir başlık kesilir), soluk; sonra seçili şey için en fazla üç tuş, geri dönüş varsa `esc`, ve `?`. Hareket tuşları hiç gösterilmez: vim'inkilerdir ve bu yardımdadır. Dar bir ekranda tuşlar sondan gider, `esc` ve `?` asla; onlar bile yanına sığmayınca yer sözcüğü gider. Kendi başlığı olan bir pencere (bir betik, bir plan, ipucu harfleri, kopyalama kipi) kendi tuşlarını gösterir.
+Son satır, yazmadığınız sürece, bir durum satırıdır: nerede olduğunuz (`ana ekran`, `salon`, ya da görünümün üstündeki ekran: `odak`, `iz`, `değişiklik`, `konuşma`, `iş`, `bakış`), eldeki proje ve açık ekranın ya da seçili satırın ilgili olduğu iş (`#12 Refund flow`, uzun bir başlık kesilir), soluk; sonra seçili şey için en fazla üç tuş, geri dönüş varsa `esc`, ve `?`. Hareket tuşları hiç gösterilmez: vim'inkilerdir ve bu yardımdadır. Dar bir ekranda tuşlar sondan gider, `esc` ve `?` asla; onlar bile yanına sığmayınca yer sözcüğü gider. Kendi başlığı olan bir pencere (bir script, bir plan, pano, kod haritası, zaman şeridi, ipucu harfleri, kopyalama kipi) kendi tuşlarını gösterir.
 
 Bir akorun ilk tuşu ikincisini beklerken satır ikinci tuşun ne olabileceğini ve ne yaptığını listeler, vim'deki which-key gibi: `g…   g  ilk satır`, `z…   a  katla · aç   M  hepsini katla   R  hepsini aç`, `q…   q  çık   s  çıkınca ne kalır`. [Tuş dosyanızdan](#kendi-tuşlarınız) ilk tuşu basılı olan bir çift de listelenir, ne olarak davrandığıyla (`t  G olarak`).
 
@@ -60,8 +60,8 @@ Bir akorun ilk tuşu ikincisini beklerken satır ikinci tuşun ne olabileceğini
 | --- | --- |
 | `#N`  `#word`  `n` `p` | numara ya da başlıkla bir kart, hepsi tek ekranda; o ekranda `n` `p`: sonraki / önceki kart |
 | `&`  `:goto` | bir agent'a ya da projeye git: bir ad yazın, `1`-`9` listedeki n'inci, `!` yalnız sizi bekleyenleri tutar; `&#` kartlara döner |
-| `1` `2` `3` `4` `5` | `:salon` · `:board` pano · `:code` harita · `:timeline` zaman şeridi · [`:home`](home.md) ana ekran; Ana ekranda elde yanıt sunan bir soru varken `1`-`9` onlardan birini seçer ([sorular](../concepts/approvals-and-questions.md#sorular-)) |
-| `[`  `]` | zaman şeridinde: bir sütun 5 sn · 30 sn · 1 dk |
+| `1`-`9` | Ana ekranda ya da bir sorunun detayında, elde yanıt sunan bir soru varken birini seçer ([sorular](../concepts/approvals-and-questions.md#sorular-)); rakamlar başka bir şey yapmaz. Bir zamanlar açtıkları görünümler artık adıyla açılan pencerelerdir: `:board`, `:code`, `:timeline` ([pano ve kod haritası](board-and-code-map.md), [zaman şeridi](timeline.md)); `:salon` ve [`:home`](home.md) iki görünümdür |
+| `[`  `]` | zaman şeridinin penceresinde: bir sütun 5 sn · 30 sn · 1 dk |
 | `↑` `↓`  `j` `k` | seç |
 | `gg`  `G`  `gd`  `gw` | ilk / son satır · ana ekranda: karar bekleyen ilk satır · çalışan ilk satır |
 | `^d` `^u` `^f` `^b` | yarım sayfa / tam sayfa |
@@ -192,7 +192,8 @@ Odağın `klasör` satırı ajanın nerede çalıştığını söyler: lider iç
 
 | Komut | Tuş |
 | --- | --- |
-| `:salon` `:board` `:code` `:timeline` `:home` | `1` `2` `3` `4` `5` |
+| `:salon` `:home` | yok: iki görünüm, adıyla |
+| `:board` `:code` `:timeline` | yok: ekranın üstünde pencereler; `esc` kapatır |
 | `:lang` | `L` |
 | `:theme` | `T` |
 | `:help` | `?` |
@@ -256,7 +257,7 @@ x = j
 X = x
 ```
 
-Yerler `salon`, `board` (pano), `code` (kod haritası), `timeline` (zaman şeridi), `talk` (bir konuşma), `change` (açık bir değişiklik), `choose` (bir konuşmada ya da değişiklikte kopyalamak için satır seçerken), `peek` ve `help`'tir (yerlerin adları İngilizce yazılır). Yer, tuşların gittiği yerdir: bir değişikliğin üstünde açık bir konuşma `talk`'tır, içinde satır seçmek `choose`'dur. Herhangi bir tuşla kapanan pencereler (yenilikler, hoş geldin, uzaktayken özeti, kaldığın yer), çıkış sorusu ve solo seçimi yalnız her yerde geçerli satırları alır. Bir yer aşağıda yeniden gelebilir; bir yerde iki kez verilen tuş reddedilir, bir yerde tek başına verilen tuş da aynı yerde ya da her yerde iki tuşun ilki olamaz.
+Yerler `salon` (ana ekran da), `board` (pano), `code` (kod haritası) ve `timeline` (zaman şeridi: `:board`, `:code` ve `:timeline` komutlarının açtığı pencereler), `talk` (bir konuşma), `change` (açık bir değişiklik), `choose` (bir konuşmada ya da değişiklikte kopyalamak için satır seçerken), `peek` ve `help`'tir (yerlerin adları İngilizce yazılır). Yer, tuşların gittiği yerdir: bir değişikliğin üstünde açık bir konuşma `talk`'tır, içinde satır seçmek `choose`'dur. Herhangi bir tuşla kapanan pencereler (yenilikler, hoş geldin, uzaktayken özeti, kaldığın yer), çıkış sorusu ve solo seçimi yalnız her yerde geçerli satırları alır. Bir yer aşağıda yeniden gelebilir; bir yerde iki kez verilen tuş reddedilir, bir yerde tek başına verilen tuş da aynı yerde ya da her yerde iki tuşun ilki olamaz.
 
 imece dosyayı başta, `:keys` ile ve siz kaydettiğinizde yeniden okur: iki saniyede bir bakar, penceresine döndüğünüzde de hemen; ne çıktığını `:keys` gibi söyler. Bütünüyle alamadığı bir dosyayı reddeder ve elinizdeki tuşlar kalır: `TUŞ = TUŞ` olmayan bir satır (`satır 3: TUŞ = TUŞ diye yaz`), tuş olmayan bir ad (`` `nope` bir tuş değil ``), sağda imece'nin bir şey yapmadığı bir tuş (`imece d ile bir şey yapmıyor`), iki kez verilen bir tuş (`^n 1. satırda zaten verilmiş`), bir yanda üç tuş, bunlardan biri olmayan bir yer (`` `[nope]` bir yer değil ``), iki yanda da `^c`, 200'den fazla tuş, 64 KiB'tan büyük ya da metin olmayan bir dosya. Son iyi dosya store'da tutulur; böylece dosyası reddedilen bir başlangıç da tuşlarınızla açılır ve nedenini söyler. Hatalı bir düzenleme bir kez söylenir ve elinizdeki tuşları bırakır. Dosya yoksa imece'nin kendi tuşları geri gelir.
 

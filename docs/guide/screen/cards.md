@@ -59,7 +59,7 @@ Every key does what it does on the main screen: `tab` cycles the panels, `enter`
 | `esc` | from a focus, trace or diff opened here, back to the card; on the card, back to the team |
 | `^o` | back where you were, the card screen being one of the places |
 | `:export [PATH]` | the card's screen as a Markdown file |
-| `1` `2` `3` | leave the card for the team, the board or the code map |
+| `:home` `:salon` | leave the card for Home or the team |
 
 The team's fold keys (`h` `l`, `za` `zM` `zR`) and `f` do nothing here.
 

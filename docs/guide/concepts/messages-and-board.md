@@ -5,7 +5,7 @@ description: How agents talk on imece's bus - the typed envelope, the ten messag
 
 # Messages and the board
 
-Agents talk to each other and to you over imece's bus with one tool, `send`, and share work nobody owns yet through the board (`post`, `board`, `claim`). You meet the messages in a card's story, in a conversation and in the journal; you meet the board as the second view (`2`).
+Agents talk to each other and to you over imece's bus with one tool, `send`, and share work nobody owns yet through the board (`post`, `board`, `claim`). You meet the messages in a card's story, in a conversation and in the journal; you meet the board in its window (`:board`).
 
 ## The envelope
 

@@ -995,9 +995,8 @@ mod tests {
                 card: None,
             });
         }
-        // A card's screen, the board, a conversation and a raw stream.
+        // A card's screen, a conversation and a raw stream.
         app.open_card(0);
-        app.view = View::Board;
         app.zoom = Zoom::Trace(0);
         app.thread = Some(Thread {
             entries: vec![0],
@@ -1095,12 +1094,12 @@ mod tests {
     fn capital_w_with_nothing_waiting_says_so_and_stays() {
         let mut app = waiting(&[InboxKind::Sensitive]);
         app.world.inbox[0].open = false;
-        app.view = View::Board;
+        app.view = View::Home;
         for c in ['W', 'S'] {
             app.on_key(key(KeyCode::Char(c)));
             assert_eq!(
                 (app.view, app.pane, app.zoom),
-                (View::Board, Pane::Salon, Zoom::None)
+                (View::Home, Pane::Salon, Zoom::None)
             );
             let said = app.flash.as_ref().map(|(m, _)| m.as_str());
             assert_eq!(said, Some(Lang::En.text().nothing_needed));

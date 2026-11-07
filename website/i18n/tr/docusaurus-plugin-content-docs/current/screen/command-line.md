@@ -49,7 +49,8 @@ Bir mesaj birkaç satıra yayılabilir; kart açan bir mesajın ilk satırı kar
 | `:awake` | | bir agent tur ortasındayken makineyi uyanık tut; yine basılınca kapatır |
 | `:notify [off\|bell\|text\|push]` | | başka penceredeyken sizi bekleyen bir şey gelirse zil ya da masaüstü bildirimi; `push`: uzaktayken ntfy üzerinden telefonunuza; yalın yazılınca sıradaki |
 | `:motion [off\|calm\|full]` | | ekranda ne hareket eder: çalışan satır nefes alır, bekleyen yanıp söner; full dönücüleri de ekler; yalın yazılınca sıradaki |
-| `:salon` `:board` `:code` | `1` `2` `3` | üç görünüm |
+| `:salon` `:home` | | iki görünüm |
+| `:board` `:code` `:timeline` | | ekranın üstünde pencereler; `esc` kapatır |
 | `:lang [en\|tr]` | `L` | diğer dil, ya da adı verilen |
 | `:theme [NAME\|FILE]` (`:t`) | `T` | sonraki yerleşik tema, ya da adı verilen (`:theme AD ya da DOSYA`) |
 | `:help` | `?` | yardım |

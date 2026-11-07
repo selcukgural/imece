@@ -33,7 +33,7 @@ imece is a terminal program, written in Rust, that drives Claude Code sessions a
 
 - **Not a sandbox.** imece switches on Claude Code's own restrictions (`--restricted`) and checks, fail closed, that a session runs with what was asked: a session that reports other tools stops. But an agent with a shell can do what your account can. Isolation beyond that is a container's job. See [security](concepts/security.md).
 - **Not a model and not a tool list as the gate.** The person is the last gate: a worker's change reaches your checkout only when you apply it (the `Δ` review), and a command Claude Code would ask about runs only when you allow it.
-- **Not a merge tool.** Two workers in one file are still a problem that the leader avoids by handing a shared file (a changelog, a version) to one worker at a time; symbol leases, the real fix, are not built yet. The code map (`3`) is a preview of them.
+- **Not a merge tool.** Two workers in one file are still a problem that the leader avoids by handing a shared file (a changelog, a version) to one worker at a time; symbol leases, the real fix, are not built yet. The code map (`:code`) is a preview of them.
 - **Not finished.** Researchers (a capped pool that answers questions from trusted sources) are designed but not built; the demo shows them as a preview. A colour per project is not done either.
 
 ## The loop

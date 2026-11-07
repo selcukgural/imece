@@ -590,14 +590,15 @@ mod tests {
         app.key(key(KeyCode::Char('W')));
         assert_eq!(app.view, View::Home);
         assert_eq!(app.at_home.at, Some(HomeRow::Item(0)));
-        // From another view it stays the salon.
+        // A window over the screen takes the key: nothing opens.
         let mut app = quiet();
-        app.view = View::Board;
         app.world
             .inbox
             .push(item(InboxKind::Sensitive, workers(&app)[0], true));
+        app.window = Some(Window::Board);
         app.key(key(KeyCode::Char('W')));
-        assert_eq!(app.view, View::Salon);
+        assert_eq!((app.view, app.window), (View::Home, Some(Window::Board)));
+        assert_eq!(app.at_home.at, None);
     }
 
     #[test]
@@ -639,10 +640,10 @@ mod tests {
         assert_eq!(app.option_at_hand('3'), None, "no third answer");
         assert_eq!(app.option_at_hand('0'), None);
         assert_eq!(app.option_at_hand('a'), None);
-        // `3` is the code map's, as ever; `2` answers and Home stays.
+        // `3` names no answer and does nothing; `2` answers and Home stays.
         app.key(key(KeyCode::Char('3')));
-        assert_eq!(app.view, View::Code);
-        app.view = View::Home;
+        assert_eq!((app.view, app.window), (View::Home, None));
+        assert!(app.world.inbox[0].open, "not answered");
         app.key(key(KeyCode::Char('2')));
         assert_eq!(app.view, View::Home);
         assert!(!app.world.inbox[0].open, "answered");
@@ -655,19 +656,19 @@ mod tests {
             app.world.journal.last()
         );
         assert_eq!(app.option_at_hand('1'), None, "nothing at hand");
-        // Off Home the digits are the views', question or not.
+        // Off Home the digits do nothing, question or not.
         ask(&mut app, w[1], &["a"]);
         app.view = View::Salon;
         assert_eq!(app.option_at_hand('1'), None);
         app.key(key(KeyCode::Char('1')));
-        assert_eq!(app.view, View::Salon);
+        assert_eq!((app.view, app.window), (View::Salon, None));
         assert!(app.world.has_question(w[1]));
-        // A question without answers to pick: `1` is the team's.
+        // A question without answers to pick: `1` does nothing either.
         app.view = View::Home;
         ask(&mut app, w[1], &[]);
         assert_eq!(app.option_at_hand('1'), None);
         app.key(key(KeyCode::Char('1')));
-        assert_eq!(app.view, View::Salon);
+        assert_eq!((app.view, app.window), (View::Home, None));
         assert!(app.world.has_question(w[1]));
     }
 
@@ -694,12 +695,11 @@ mod tests {
     }
 
     #[test]
-    fn five_and_colon_home_open_it() {
+    fn colon_home_opens_it_and_five_does_not() {
         let mut app = quiet();
         app.view = View::Salon;
         app.key(key(KeyCode::Char('5')));
-        assert_eq!(app.view, View::Home);
-        app.view = View::Salon;
+        assert_eq!(app.view, View::Salon, "the digits open no view");
         app.command("home");
         assert_eq!(app.view, View::Home);
         assert_eq!(groups(&app)[0], HomeGroup::Quiet);

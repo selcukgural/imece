@@ -131,7 +131,7 @@ imece fails closed: when a file, a session or a change is not what it expects, i
 
 **Why.** iTerm2's *Save lines to scrollback in alternate screen mode* copies an erased alternate screen into the scrollback. imece erases row by row and turns auto-wrap off while it has the screen, so this should not happen on current builds; if it does, that option is where to look.
 
-### `3` opened the code map and `/` the composer by themselves at start
+### The code map and the composer opened by themselves at start
 
 **Why.** A terminal's late answer to the colour probe was once read as keys (Terminal.app answered after the probe's first deadline). The probe now waits for a cursor-position report, so this is fixed; a report of it on a current build is a bug.
 

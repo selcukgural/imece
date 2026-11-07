@@ -869,7 +869,7 @@ mod tests {
         for at in [
             |a: &mut App| a.pane = Pane::Salon,
             |a: &mut App| a.zoom = Zoom::Focus(0),
-            |a: &mut App| a.view = View::Board,
+            |a: &mut App| a.view = View::Home,
         ] {
             let mut app = journal_of(3);
             app.journal_sel = Some(0);
@@ -893,7 +893,7 @@ mod tests {
         let t = app.lang.text();
         // Rows newest first: journal lines 4 3 2 1 0.
         app.world.marks.extend([3, 1]);
-        app.view = View::Board;
+        app.view = View::Home;
         app.zoom = Zoom::Focus(0);
         app.pane = Pane::Salon;
         app.on_key(key(KeyCode::Char('\'')));

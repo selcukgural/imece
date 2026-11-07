@@ -20,3 +20,8 @@ names exactly the glyphs shown.
 Record 67 completes the map's files and leased symbols in a message;
 live's map is empty, its files come from git instead. On Lonca the map
 is what the daemon says is held (record 123).
+
+Since record 125's step 5 (2026-11-07) the map is no view: `:code` alone
+opens it in a window over the screen (`App.window`, `overlay::view`),
+`esc` or `q` closes it, and it takes every key while it is open; `3`
+does nothing.

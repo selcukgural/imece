@@ -131,7 +131,7 @@ imece kapalı düşer (fail closed): bir dosya, bir oturum ya da bir değişikli
 
 **Neden.** iTerm2'nin *Save lines to scrollback in alternate screen mode* seçeneği silinen bir alternatif ekranı geçmişe kopyalar. imece satır satır siler ve ekranı tutarken otomatik sarmayı kapatır, bu yüzden güncel derlemelerde bu olmamalıdır; olursa bakılacak yer o seçenektir.
 
-### Başlangıçta `3` kendiliğinden kod haritasını, `/` yazma satırını açtı
+### Başlangıçta kod haritası ve yazma satırı kendiliğinden açıldı
 
 **Neden.** Bir terminalin renk sondasına geç yanıtı bir zamanlar tuş olarak okunuyordu (Terminal.app sondanın ilk süresinden sonra yanıtladı). Sonda şimdi bir imleç konumu raporunu bekler, bu düzeltildi; güncel bir derlemede görülmesi bir hatadır.
 

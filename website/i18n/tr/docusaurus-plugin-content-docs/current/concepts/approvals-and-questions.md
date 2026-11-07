@@ -56,7 +56,7 @@ Bir ajan size `send(to: "you", type: "ask", body)` ile sorar ve seçilecek yanı
                     3  hangisiyle ödendiyse ona
 ```
 
-- O satırda `1`-`9`, adlandırdığı yanıtı ajana sizin mesajınız olarak gönderir: soru kapanır ve ajanın sonraki turu onunla başlar. Rakamlar yalnız elde yanıtlı bir soru varken Ana ekranındır; başka yerde her zamanki gibi görünümlerindir.
+- O satırda `1`-`9`, adlandırdığı yanıtı ajana sizin mesajınız olarak gönderir: soru kapanır ve ajanın sonraki turu onunla başlar. Rakamlar Ana ekranda ve sorunun detayında bir yanıt seçer; başka yerde bir şey yapmaz (bir zamanlar açtıkları görünümler artık `:board`, `:code` ve `:timeline` pencereleridir).
 - Satırda `/`, ya da `a` ya da `r`, kendi sözcüklerinizle yanıt için yazma satırını `@claude-2 ` ile açar; o ajana yazdığınız her şey soruyu kapatır ve sonraki turunu başlatır.
 - `enter` konuşmayı soruda açar. Listenin yanındaki önizleme (120 kolondan itibaren) soruyu bütün olarak, yanıtlarını ve ajanın şimdiye dek yaptığını okur: durumu, yapılacaklar listesi ve en yeni iz satırları.
 - Gitmiş ya da durmuş bir ajanın sorusu siz ona yazana dek açık kalır.

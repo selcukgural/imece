@@ -784,13 +784,12 @@ mod tests {
     #[test]
     fn k_peeks_at_the_agent_at_hand_over_the_view_and_j_k_step() {
         let mut app = quiet();
-        app.view = View::Board;
         app.selected = Sel::Agent(2);
         app.unseen.insert(2);
         app.on_key(key(KeyCode::Char('K')));
         assert_eq!(app.peek, Some(2));
         assert!(!app.unseen.contains(&2), "looked at: seen");
-        assert_eq!((app.view, app.zoom), (View::Board, Zoom::None));
+        assert_eq!((app.view, app.zoom), (View::Salon, Zoom::None));
         // The salon's order: the lead, then the workers.
         let mut steps = Vec::new();
         for code in [
@@ -812,7 +811,7 @@ mod tests {
             app.on_key(key(KeyCode::Char(c)));
         }
         assert_eq!(app.pending, None);
-        assert_eq!(app.view, View::Board);
+        assert_eq!(app.view, View::Salon);
         assert!(app.settled.is_empty() && !app.needs_only);
         assert_eq!(app.peek, Some(0));
         // The help over it; closing the help leaves the peek.
@@ -831,7 +830,7 @@ mod tests {
         app.on_key(key(KeyCode::Char('K')));
         app.on_key(key(KeyCode::Enter));
         assert_eq!((app.peek, app.zoom), (None, Zoom::Focus(2)));
-        assert_eq!(app.view, View::Board);
+        assert_eq!(app.view, View::Salon);
         // @: a message to it.
         app.on_key(key(KeyCode::Esc));
         app.on_key(key(KeyCode::Char('K')));
@@ -1066,7 +1065,7 @@ mod tests {
         assert!(app.hints.is_none());
         assert_eq!(flashed(&app), none);
         app.zoom = Zoom::None;
-        app.view = View::Board;
+        app.view = View::Home;
         app.flash = None;
         app.on_key(shift('F'));
         assert!(app.hints.is_none());

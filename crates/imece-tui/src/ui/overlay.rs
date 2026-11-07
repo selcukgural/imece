@@ -9,6 +9,7 @@ use ratatui::widgets::{Block, Paragraph, Wrap};
 use super::*;
 use crate::app::{
     App, Digest, LeftOff, LoncaWin, PickStep, SoloPick, TalkNote, TeardownAsk, Thread, TidyWin,
+    Window,
 };
 use crate::archives::{self, Browser, Row};
 use crate::keys::{Keymap, Scope};
@@ -347,6 +348,35 @@ pub fn tidy(f: &mut Frame, app: &App, win: TidyWin) -> Rect {
         _ => Line::from(hint_spans(&t.tidy_hints)),
     };
     f.render_widget(Paragraph::new(foot), keys);
+    area
+}
+
+/// A view in a window over the screen (record 125, step 5): the board
+/// under a title that counts its cards, the code map or the timeline as
+/// they drew themselves, each on the shaded screen.
+pub fn view(f: &mut Frame, app: &App, win: Window) -> Rect {
+    let full = f.area();
+    let area = centered(
+        full,
+        full.width.saturating_sub(8),
+        full.height.saturating_sub(4),
+    );
+    shade(f, area);
+    clear(f, area);
+    match win {
+        Window::Board => {
+            let t = app.lang.text();
+            let cards = app.world.shown_cards().count();
+            let block = Block::bordered()
+                .title(fill(t.board_title, &[&cards.to_string()]))
+                .border_style(fg(pal().accent));
+            let inner = block.inner(area);
+            f.render_widget(block, area);
+            super::board::draw(f, inner, app);
+        }
+        Window::Code => super::code::draw(f, area, app),
+        Window::Timeline => super::timeline::draw(f, area, app),
+    }
     area
 }
 
