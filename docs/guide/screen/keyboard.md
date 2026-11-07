@@ -66,6 +66,7 @@ While the first key of a chord waits for its second, the row lists what the seco
 | `^d` `^u` `^f` `^b` | half a page / a page |
 | `^o` | back where you were: view, panel, focus, card (vim's jump list, fifty places; an open conversation closes first) |
 | `enter` | look deeper: focus, then the raw stream |
+| `tab`  `⇧tab` | on a piece of work (a change, a conversation, a focus): the next / previous of its tabs, `diff · talk · log`; a tab with nothing to show is skipped ([the detail](changes.md#the-detail)) |
 | `K`  `:peek` | a peek: the focus of the agent at hand in a window over the view, which stays as it was; in it `j` `k` the next / previous agent of the team, `enter` its whole focus, `@` write to it, `esc` or `K` close |
 | `F`  `:hints` | hint letters: a label of one or two letters on every row of the team's screen you can select (project headers, agents, waiting items, journal lines, the people on a card's screen); typing a label selects its row in its panel, its last letter in capitals opens it too (as `enter`); `backspace` takes a letter back, `esc` closes |
 | `t`  `:trace` | the raw stream of the agent at hand |

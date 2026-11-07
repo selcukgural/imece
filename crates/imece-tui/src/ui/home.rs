@@ -1166,6 +1166,51 @@ mod tests {
     }
 
     #[test]
+    fn the_preview_repeats_an_item_s_words_only_when_its_line_lacks_them() {
+        let mut app = home(Lang::En);
+        let a = worker(&app);
+        let preview = |app: &App| -> Vec<String> {
+            let s = render(app, 150, 40);
+            (s.lines())
+                .filter_map(|l| l.split_once('│').map(|(_, right)| right.trim().to_string()))
+                .collect()
+        };
+        // The leader's plan: its line counts cards and dollars, so the
+        // words stand on their own under it.
+        app.world
+            .inbox
+            .push(item(InboxKind::Plan, a, "Three cards, the parser first"));
+        let said = words::inbox(Lang::En, &app.world, &app.world.inbox[0]);
+        assert!(!said.contains("Three cards"), "{said}");
+        let right = preview(&app);
+        assert!(right.iter().any(|l| l == &said), "{right:?}");
+        assert!(
+            right.iter().any(|l| l == "Three cards, the parser first"),
+            "{right:?}"
+        );
+        // An ask: its line says the command already, once.
+        app.world.inbox.clear();
+        app.world
+            .inbox
+            .push(item(InboxKind::Approval, a, "Bash: npm test"));
+        let said = words::inbox(Lang::En, &app.world, &app.world.inbox[0]);
+        assert!(said.contains("npm test"), "{said}");
+        let right = preview(&app);
+        assert_eq!(
+            right.iter().filter(|l| l.contains("npm test")).count(),
+            1,
+            "{right:?}"
+        );
+        // Nothing to say: nothing under the line.
+        app.world.inbox.clear();
+        app.world.inbox.push(item(InboxKind::Approval, a, ""));
+        let right = preview(&app);
+        let said = words::inbox(Lang::En, &app.world, &app.world.inbox[0]);
+        let at = right.iter().position(|l| l == said.trim()).unwrap();
+        assert!(right[at + 1..].iter().all(|l| l.is_empty()), "{right:?}");
+    }
+
+    #[test]
     fn a_question_s_preview_reads_it_whole_its_answers_and_what_the_agent_did() {
         let mut app = home(Lang::En);
         let a = worker(&app);

@@ -29,7 +29,17 @@ Bir işçi `done` gönderdiğinde imece worktree'sini okur ve değişiklik KARAR
   j k  w kaydır · sar  [ ] dosya  a x onayla · parça seç  r geri gönder  > ona alıntıla  c n not · notları gönder  v satır kopyala  esc geri  ? yardım
 ```
 
-Başlık: işçi, dosyalar ve satırlar, done'un ilk satırı.
+## Detay
+
+Bir değişiklik, bir konuşma ve bir odak, tek ekranın üç sekmesidir: bir işin detayı (kayıt 125). Sekmenin kendi çerçevesinin üstünde bir baş satırı kartı ve başlığını, projeyi, ajanı, ne zamandır böyle olduğunu ve kaça mal olduğunu söyler; diff'te dosyalar ve satırlar, birden çok değişiklik bekliyorsa sağda `değişiklik 2 / 5`. Ajanın açık bir sorusu varsa soru, sunduğu yanıtlar ve tuşlarıyla (`1`-`9` birini seçer, `/` kendinizinkini yazar) başın altında durur, hangi sekme açık olursa olsun. Sonra sekme çubuğu, `diff · konuşma · log`: açık sekme kalın, gösterecek bir şeyi olmayan (değişiklik yok, henüz bir şey söylenmemiş) soluk; `tab` ve `⇧tab` bir şeyi olan sonraki ve önceki sekmeye gider. Diff bu sayfadır; konuşma ajanla [konuşmadır](conversations.md) (varsa sizinle, yoksa bir ekip arkadaşıyla en yenisi); log odağıdır, ya da `enter` açtıysa ham akışı. `esc` sekmeyi eskisi gibi bırakır: konuşma altındakine kapanır, diff ve odak Ana ekrana ya da ekibe döner.
+
+```text
+#6 E-posta şablonları · shop-api · claude-9 · 6 dk · $0.06 · 3 dosya +41 −6                           değişiklik 1 / 3
+
+diff · konuşma · log                                                                                    tab geçer
+┌─────────────────────────────────────────────────────────────────────────────────────────────┐
+│✓ onaya hazır · ✓ cargo test · 3 dosya, hepsi #6 içinde · başka değişiklikle çakışmıyor     │
+```
 
 ## Yamanın üstündekiler
 

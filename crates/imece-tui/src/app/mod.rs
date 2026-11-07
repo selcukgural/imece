@@ -33,6 +33,7 @@ use std::sync::mpsc::TryRecvError;
 
 mod change;
 mod copy;
+mod detail;
 mod dispatch;
 mod focus;
 mod frames;
@@ -48,6 +49,7 @@ mod talk;
 mod waiting;
 mod windows;
 
+pub use detail::Tab;
 pub use home::{Heading, Home, HomeGroup, HomeRow};
 
 /// What drives the agents.

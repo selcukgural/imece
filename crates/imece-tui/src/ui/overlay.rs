@@ -49,7 +49,7 @@ pub fn peek(f: &mut Frame, app: &App, id: AgentId) -> Rect {
     );
     shade(f, area);
     clear(f, area);
-    super::focus::draw(f, area, app, id);
+    super::focus::draw(f, area, app, id, false);
     area
 }
 
@@ -1468,14 +1468,13 @@ pub(crate) fn thread_layout(
 
 /// A conversation read whole, oldest first; the selected message is
 /// marked on every row and kept in view.
-pub fn thread(f: &mut Frame, app: &App, th: &Thread) -> Rect {
+pub fn thread(f: &mut Frame, app: &App, th: &Thread, within: Rect) -> Rect {
     let w = &app.world;
     let t = app.lang.text();
-    let screen = f.area();
     let area = centered(
-        screen,
-        screen.width.saturating_sub(4).min(120),
-        screen.height.saturating_sub(2),
+        within,
+        within.width.saturating_sub(4).min(120),
+        within.height,
     );
     shade(f, area);
     clear(f, area);

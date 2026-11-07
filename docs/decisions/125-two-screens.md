@@ -233,3 +233,28 @@ agent (`question_at_hand`, `answer_item`), both on Home only, and the
 digits stay the views' otherwise. The demo's questions offer answers on
 two of four (`Content.ask_options`). Left for the step: the detail's tabs
 (diff · talk · log); the question's own detail screen comes with them.
+
+Step 3's detail frame as built (its third piece): `App::detail` names the
+piece of work on screen and its tab (`app/detail.rs`: `Tab` Diff/Talk/Log;
+a conversation first (`thread_agent`: the first line's writer, else the
+one written to), else `Zoom::Diff` → diff, `Zoom::Focus`/`Trace` → log);
+`tab`/`⇧tab` (`next_tab`, before the conversation's and the zooms' keys)
+go round to the next tab that has something (`tab_has`: a change, a line
+said with the person else with anyone; the log always), `open_tab` (the
+diff and the log close a conversation; the talk opens over what was
+there); a digit and `/` work on a question's detail as on Home
+(`question_at_hand` covers the detail). `ui::detail::frame` draws the
+head (`head_line`: the card the open item came on else the agent's
+(`detail_card`), the card's title else the change's on the diff else the
+focus's first words, project, agent, `ago` since `App::since`, cost; on
+the diff the files and lines and `place_among` at the right), a question's
+block (`question_lines`: `{} asks you`, the ask whole cleaned line by
+line, the answers with their key badges and `/ write your own answer`),
+and the tab bar (`tab_line`: the open tab bold, one without content dim,
+`tab switches` when another has); the bodies draw under it: `focus::draw`
+framed skips its own title line (the peek keeps it), the change's block
+lost its `CHANGE · …` title (`diff_title` left `i18n.rs`; the copy title
+stays), `overlay::thread` takes the area it may use (the body under the
+frame, so it no longer covers the composer). Help row `tab`, keyboard page.
+Left: the question's own detail screen and the detail as the one place
+of a card's screen, the story and the peek (step 5).

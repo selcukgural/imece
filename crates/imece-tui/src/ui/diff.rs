@@ -295,7 +295,7 @@ fn why_lines(why: &str, width: usize) -> Vec<Line<'static>> {
 }
 
 /// Which of the changes waiting worker `id`'s is, when there are several.
-fn place_among(lang: Lang, w: &World, id: AgentId) -> Option<String> {
+pub(crate) fn place_among(lang: Lang, w: &World, id: AgentId) -> Option<String> {
     let changes: Vec<AgentId> = (w.shown_inbox().into_iter())
         .filter(|&i| w.inbox[i].kind == InboxKind::Change)
         .map(|i| w.inbox[i].agent)
@@ -382,9 +382,7 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, id: AgentId) {
     let t = app.lang.text();
     let a = &w.agents[id];
     let Some(c) = w.change_of(id) else {
-        let block = Block::bordered()
-            .title(fill(t.diff_title, &[&a.name, "", "", "", ""]))
-            .border_style(fg(pal().agent));
+        let block = Block::bordered().border_style(fg(pal().agent));
         let inner = block.inner(area);
         f.render_widget(block, area);
         f.render_widget(
@@ -396,25 +394,12 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, id: AgentId) {
         );
         return;
     };
-    let (added, removed) = c.counts();
     let copy = app.diff_copy_of(id);
-    // Choosing lines to copy: the title counts them and says the keys.
-    let title = match copy {
-        Some(copy) => fill(t.diff_copy_title, &[&copy.len().to_string()]),
-        None => fill(
-            t.diff_title,
-            &[
-                &a.name,
-                &c.files.len().to_string(),
-                &added.to_string(),
-                &removed.to_string(),
-                &c.title,
-            ],
-        ),
-    };
-    let mut block = Block::bordered().title(title).border_style(fg(pal().agent));
-    if let Some(place) = place_among(app.lang, w, id) {
-        block = block.title_top(Line::from(place).right_aligned());
+    // The head line above says whose change and of what (record 125);
+    // choosing lines to copy, the title counts them and says the keys.
+    let mut block = Block::bordered().border_style(fg(pal().agent));
+    if let Some(copy) = copy {
+        block = block.title(fill(t.diff_copy_title, &[&copy.len().to_string()]));
     }
     let inner = block.inner(area);
     f.render_widget(block, area);

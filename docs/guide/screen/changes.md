@@ -29,7 +29,17 @@ When a worker sends `done`, imece reads its worktree and the change waits for yo
   j k  w scroll · wrap  [ ] file  a x approve · choose a hunk  r send back  > quote to it  c n note · send notes  v copy lines  esc back  ? help
 ```
 
-The title: the worker, the files and lines, the done's first line.
+## The detail
+
+A change, a conversation and a focus are the three tabs of one screen, the detail of a piece of work (record 125): above the tab's own frame a head line says the card and its title, the project, the agent, how long it has been as it is and what it cost; on the diff, the files and lines, and `change 2 of 5` at the right when several wait. When the agent has a question open, the question stands under the head with the answers it offers and their keys (`1`-`9` pick one, `/` writes your own), whatever the tab. Then the tab bar, `diff · talk · log`: the open tab bold, one with nothing to show (no change, nothing said yet) dim; `tab` and `⇧tab` go to the next and the previous tab that has something. The diff is this page; talk is the [conversation](conversations.md) with the agent (with you when there is one, else its newest with a teammate); log is its focus, or its raw stream once `enter` opened it. `esc` leaves the tab as it did before: the conversation closes back to what was under it, the diff and the focus back to Home or the team.
+
+```text
+#6 E-mail templates · shop-api · claude-9 · 6 min · $0.06 · 3 files +41 −6                            change 1 of 3
+
+diff · talk · log                                                                                   tab switches
+┌─────────────────────────────────────────────────────────────────────────────────────────────┐
+│✓ ready to approve · ✓ cargo test · 3 files, all inside #6 · no overlap with other changes   │
+```
 
 ## What is above the patch
 

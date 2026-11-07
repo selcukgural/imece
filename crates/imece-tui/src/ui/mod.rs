@@ -6,6 +6,7 @@ mod board;
 pub(crate) mod brand;
 mod card;
 mod code;
+pub(crate) mod detail;
 mod diff;
 pub(crate) mod export;
 mod focus;
@@ -66,8 +67,14 @@ pub fn draw(f: &mut Frame, app: &App) {
     ])
     .areas(f.area());
     header(f, head, app);
+    // A piece of work on screen is framed (record 125): its head, a
+    // question of it, the tabs; the tab's own screen draws under them.
+    let body = match app.detail() {
+        Some((id, tab)) => detail::frame(f, body, app, id, tab),
+        None => body,
+    };
     match app.zoom {
-        Zoom::Focus(id) => focus::draw(f, body, app, id),
+        Zoom::Focus(id) => focus::draw(f, body, app, id, true),
         Zoom::Trace(id) => focus::trace(f, body, app, id),
         Zoom::Diff(id) => diff::draw(f, body, app, id),
         Zoom::None => match app.view {
@@ -90,7 +97,7 @@ pub fn draw(f: &mut Frame, app: &App) {
         hint_labels(f, app, h);
     }
     if let Some(th) = &app.thread {
-        over.push(overlay::thread(f, app, th));
+        over.push(overlay::thread(f, app, th, body));
     }
     if let Some(id) = app.peek {
         over.push(overlay::peek(f, app, id));
@@ -7058,11 +7065,21 @@ mod tests {
         });
         app.zoom = Zoom::Diff(id);
         let s = render(&app, 120, 30);
-        let verdict = s.lines().nth(2).unwrap();
-        assert!(verdict.contains("! look first · nothing ran"), "{s}");
-        let body = s.lines().nth(3).unwrap();
+        let rows: Vec<&str> = s.lines().collect();
+        // The detail's head, then the tabs, then the change's own frame
+        // with the verdict first and the worker's words under it.
         assert!(
-            body.contains("Kept the old shape; next is a new field."),
+            rows[1].contains("Paging") && rows[1].contains("· 0 files +0 −0"),
+            "{s}"
+        );
+        assert!(rows[3].contains("diff · talk · log"), "{s}");
+        let v = rows
+            .iter()
+            .position(|l| l.contains("! look first · nothing ran"))
+            .unwrap();
+        assert_eq!(v, 5, "{s}");
+        assert!(
+            rows[v + 1].contains("Kept the old shape; next is a new field."),
             "the worker's words under the verdict: {s}"
         );
     }
@@ -7910,10 +7927,18 @@ mod tests {
         key(&mut app, KeyCode::Enter);
         assert_eq!(app.zoom, Zoom::Diff(1));
         let s = render(&app, 118, 40);
+        // The head names the card, the project and the worker, then the
+        // files and lines; the tabs under it.
+        let head = s.lines().nth(1).unwrap();
         assert!(
-            s.contains(&format!("CHANGE · {name} · 2 files +3 −1 · Fix the parser")),
+            head.contains(&format!(" · {name} · ")) && head.contains("2 files +3 −1"),
             "{s}"
         );
+        assert!(
+            s.lines().nth(3).unwrap().contains("diff · talk · log"),
+            "{s}"
+        );
+        assert!(!s.contains("CHANGE ·"), "{s}");
         assert!(s.contains("-OLD-LINE") && s.contains("+NEW-LINE"), "{s}");
         // The verdict heads the diff, its files under that, then the
         // patch. The demo's card owns the files of its leases, which this
@@ -9300,8 +9325,8 @@ mod tests {
             "the foot is clear of the window"
         );
         app.input = "one\ntwo\nthree".into();
-        app.after = 8; // on the middle line, under the window
-        assert_eq!(caret_of(&app, 140, 40), None);
+        app.after = 8; // on the middle line: the window stays above the composer
+        assert_eq!(caret_of(&app, 140, 40).map(|(_, y)| y), Some(38));
         app.thread = None;
         assert_eq!(caret_of(&app, 140, 40).map(|(_, y)| y), Some(38));
         app.peek = Some(1);
@@ -10734,15 +10759,23 @@ mod tests {
             wide.contains("gg  G") && wide.contains("za  zM  zR"),
             "{wide}"
         );
-        // Two columns: a line of the first half carries one of the second.
+        // Two columns: a line of the first half carries one of the second
+        // (the split is by rows drawn, so which one depends on wrapping).
         let keys = overlay::help_keys(Lang::En, false);
-        let row = keys.iter().position(|k| k.0 == "gg  G  gd  gw").unwrap();
-        let other = keys[row + keys.len().div_ceil(2)].1;
+        // A long text wraps under its key, so the key is what the line
+        // surely carries.
+        let second: Vec<&str> = keys[keys.len() / 2..].iter().map(|k| k.0).collect();
         let line = wide.lines().find(|l| l.contains("gg  G")).unwrap();
-        assert!(line.contains(other), "two columns: {line}");
+        assert!(
+            second.iter().any(|o| line.contains(o)),
+            "two columns: {line}"
+        );
         let narrow = render(&app, 80, 40);
         let line = narrow.lines().find(|l| l.contains("gg  G")).unwrap();
-        assert!(!line.contains(other), "one column: {line}");
+        assert!(
+            !second.iter().any(|o| line.contains(o)),
+            "one column: {line}"
+        );
     }
 
     #[test]
@@ -11703,8 +11736,16 @@ mod tests {
         }
         app.view = View::Salon;
         app.zoom = Zoom::Focus(1);
+        // `tab` in a focus is the detail's: it moves to another tab of
+        // the same agent's work, never a pane.
         key(&mut app, KeyCode::Tab);
         assert_eq!(app.pane, Pane::Salon, "tab in a focus");
+        assert_ne!(
+            app.detail().map(|d| d.1),
+            Some(crate::app::Tab::Log),
+            "another tab"
+        );
+        app.thread = None;
         app.zoom = Zoom::None;
         // Copying is the journal's; chords that fold are the salon's. A
         // stale journal selection must not make c copy elsewhere.
@@ -13056,7 +13097,7 @@ mod tests {
         app.diff_copy = None;
         let s = render(&app, 160, 40);
         assert!(
-            s.contains("CHANGE ·") && s.contains(" c  note   esc  back"),
+            !s.contains("COPY ·") && s.contains(" c  note   esc  back"),
             "{s}"
         );
         app.lang = Lang::Tr;
@@ -13591,17 +13632,18 @@ mod tests {
             "going back down: still in view, no scroll"
         );
         // Paging stops at the last row; a page is the body less one row of
-        // overlap (20 rows: 2 bars, 2 border, 1 hints: 15 of text).
+        // overlap (20 rows: 2 bars, 3 of the detail's frame, 2 border, 1
+        // hints: 12 of text).
         let th = app.thread.as_ref().unwrap();
-        assert_eq!(th.page.get(), 14);
+        assert_eq!(th.page.get(), 11);
         for _ in 0..9 {
             key(&mut app, KeyCode::PageDown);
         }
         render(&app, 100, 20);
         assert_eq!(
             usize::from(app.thread.as_ref().unwrap().scroll.get()),
-            rows.len() - 15,
-            "{} rows, 15 shown",
+            rows.len() - 12,
+            "{} rows, 12 shown",
             rows.len()
         );
     }
