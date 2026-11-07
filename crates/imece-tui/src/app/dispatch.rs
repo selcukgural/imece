@@ -818,7 +818,9 @@ mod tests {
             |v, _| v.restore_at(1),
             |v, id| v.forget_now(id),
             |v, _| v.forget_agent(""),
-            |v, id| v.decide_change(id, true),
+            |v, id| {
+                v.decide_change(id, true);
+            },
         ];
         for (i, call) in calls.iter().enumerate() {
             let v = app.viewing.as_mut().unwrap();

@@ -33,12 +33,16 @@ The title: the worker, the files and lines, the done's first line.
 
 ## What is above the patch
 
+First, when the worker wrote more in its `done` than the first line, what it said: why, what it decided, what to look at; four rows at most, cut with `…`. With several changes waiting the window's top right says which this is, `change 2 of 5`.
+
 1. **The repository's check**, when your checkout has `.imece/check` ([changes](../concepts/changes.md#the-repositorys-check)): `✓ check · exit 0, 41.2 s` in the ok colour; `✗ check · exit 1, 38.7 s` in the bad colour, the last lines of its output under it; `◌ the check runs on this change…` while it runs; `▶ the repository's check waits for your yes in WAITING FOR YOU` until you answer its ask; or why it could not run. Its mark also starts the item's evidence in WAITING FOR YOU (`✓ check ·`, `✗ check ·`, `◌ check ·`, `▶ check ·`).
 2. **The runs on this tree.** Every `run` the worker made through imece's `run` tool on exactly this change, each with how it ended: `✓ cargo test`, `✗ cargo clippy: exit 1`, killed at the deadline, killed. With none it says, in the warning colour, that no imece run was made on exactly this change, so whether it builds and passes its tests is not known. The same evidence follows the item's row in WAITING FOR YOU.
 3. **What it cost**, once the worker's turn ended: `cost · $0.84 · 12 min`, dim, the worker's spend (its helpers' counted in) from its first prompt after its last change to this `done`, and the time it worked; a change sent back and sent again adds its rounds (`$1.20 · 25 min · 3 rounds`). The same figure ends the item's row in WAITING FOR YOU and the journal says it (`claude-1's change cost $0.84 · 12 min`). A `done` read mid-turn shows it a moment later, when the turn's cost is known.
 4. **The lines by kind**, when the files are of more than one kind: `source +23 −6 (2) · tests +18 −0 (1) · generated +7 −5 (1)`. A file is sorted by its path alone: generated when it is a lock file (`Cargo.lock`, `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `go.sum`, `poetry.lock`, `Gemfile.lock`, `composer.lock`), minified or generated code (`.min.js`, `.min.css`, `.pb.go`, `_pb2.py`, `.g.dart`, `.Designer.cs`) or under `generated/`, `dist/` or `vendor/`; tests when under `tests/`, `test/`, `__tests__/` or `spec/`, named `test_*` or ending in a test suffix (`_test.go`, `_test.rs`, `_test.py`, `.test.ts`, `.spec.ts`, `Tests.cs`, `Test.java`, …); source otherwise. Generated wins over tests. Nothing is read from the files. A change of `+400 −20` that is twenty lines of code and a regenerated lock file says so here.
 5. **The files outside the card**, when the worker's card owns paths ([the paths a card owns](../concepts/messages-and-board.md#the-paths-a-card-owns)) and the change touches files none of them names: `2 outside #12: src/other.rs, Cargo.toml`, in the warning colour. The card is the worker's last, done or not; a card without paths says nothing here.
-6. **The file list**, for a change of two files or more: each file with `+N −M` or `binary`, six at most and the rest counted (`… 2 more files`). A change of one file shows no list; its title says it.
+6. **The file list**, for a change of two files or more: each file with `+N −M` or `binary`, six at most and the rest counted (`… 2 more files`). A change of one file shows no list; its title says it. From 120 columns on, a change of two files or more lists all of them beside the patch instead, the file at hand marked `▸`, and `[` `]` go through them.
+
+The patch shows a file's path where git writes `diff --git`, and leaves out the `index`, `---` and `+++` lines above its first hunk. A line of the file that starts the same way stays. Copying, notes and quotes still work on the patch as git wrote it.
 
 ## Moving
 
@@ -60,7 +64,7 @@ Added and removed lines have their own colours; headers stand out. Every line go
 
 | Key | What it does |
 | --- | --- |
-| `a` | apply the change to your checkout, staged, for you to look over and commit. With hunks chosen (`x`), only those |
+| `a` | apply the change to your checkout, staged, for you to look over and commit. With hunks chosen (`x`), only those. Opened from [Home](home.md), the next change waiting opens; after the last, Home again |
 | `r` | reject: the item closes, the change stays in the worktree, the composer opens `@worker ` so you say why |
 | `c` | a note on the top line |
 | `n` | send the notes to the worker in one message; the change goes back |
@@ -92,7 +96,7 @@ Refused: `a` while that change is being applied, or while a newer `done` of the 
 
 ### A proposal on Lonca
 
-A worker in a Lonca workspace has a proposal for a Δ ([more](../concepts/changes.md#on-lonca)). Above the patch it says `proposal 5 · waits: unobserved_session`, with `· holds 1 older` when it does, what runs after your yes (`after your yes Lonca runs: build, test`, or `nothing runs after your yes`), and loud lines for files Lonca redacted or a patch it cut. `a` approves it. `r` opens the composer at `@claude-1 ` and flashes `say why`; the line you send rejects it and goes to the worker, and `esc` leaves it waiting. Notes sent with `n` are a rejection the same way. `x` says `a proposal is approved whole`, and `b` has nothing to send: a clash is the queue's, and it tells the worker itself.
+A worker in a Lonca workspace has a proposal for a Δ ([more](../concepts/changes.md#on-lonca)). Above the patch it says why it needs you, in words (`needs your yes: nobody watched this session's tools · proposal 5`, or `it changes a critical path: Cargo.toml`; a reason imece has no words for stands as Lonca wrote it), with `· holds 1 older` when it does, what runs after your yes (`after your yes Lonca runs: build, test`, or `nothing runs after your yes`), and loud lines for files Lonca redacted or a patch it cut. `a` approves it. `r` opens the composer at `@claude-1 ` and flashes `say why`; the line you send rejects it and goes to the worker, and `esc` leaves it waiting. Notes sent with `n` are a rejection the same way. `x` says `a proposal is approved whole`, and `b` has nothing to send: a clash is the queue's, and it tells the worker itself.
 
 ### Notes on lines
 

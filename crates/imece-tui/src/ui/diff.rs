@@ -10,6 +10,7 @@ use ratatui::widgets::{Block, Paragraph};
 
 use super::*;
 use crate::app::{App, Copying, DiffNote, Folds};
+use crate::i18n::Text;
 use crate::paths;
 use crate::ui::words::card_ref;
 
@@ -22,6 +23,17 @@ pub fn file_starts(patch: &str) -> Vec<usize> {
         .filter(|(_, l)| l.starts_with("diff --git "))
         .map(|(i, _)| i)
         .collect()
+}
+
+/// A line git writes above a file's hunks that says nothing the file's
+/// name and counts do not.
+fn git_says(l: &str) -> bool {
+    ["index ", "--- ", "+++ "].iter().any(|p| l.starts_with(p))
+}
+
+/// The file a `diff --git` line is about, as it is now.
+pub(crate) fn head_path(l: &str) -> &str {
+    l.rsplit_once(" b/").map_or(l, |(_, path)| path)
 }
 
 /// The lines of a change the view shows, its files folded as `folds`
@@ -41,10 +53,14 @@ impl Shown {
     pub fn of(patch: &str, folds: &Folds) -> Shown {
         let mut shown = Shown::default();
         let mut file: Option<usize> = None;
+        // Above a file's first hunk: `--- ` there is git's, not a line
+        // of the file that starts with `-- `.
+        let mut head = false;
         for (i, l) in patch.lines().enumerate() {
             if l.starts_with("diff --git ") {
                 let n = file.map_or(0, |n| n + 1);
                 file = Some(n);
+                head = true;
                 shown.lines.push(i);
                 if folds.folded(n) {
                     shown.hidden.push((i, 0));
@@ -53,7 +69,8 @@ impl Shown {
                 if let Some(last) = shown.hidden.last_mut() {
                     last.1 += 1;
                 }
-            } else {
+            } else if !(head && git_says(l)) {
+                head = head && !l.starts_with("@@");
                 shown.lines.push(i);
             }
         }
@@ -257,6 +274,87 @@ pub fn clash_message(c: &Clashes, solo: bool) -> String {
 
 /// The line above a change that clashes with the checkout: where, and
 /// that `b` sends it back to `name`.
+/// From this wide a change of several files lists them beside its patch.
+const TREE_WIDE: u16 = 120;
+/// How wide that list is.
+const TREE_WIDTH: u16 = 36;
+/// The rows of what the worker said of its change, above everything.
+const WHY_ROWS: usize = 4;
+
+/// What the worker said of its change, wrapped at `width`, its first
+/// [`WHY_ROWS`] rows, the last of them cut when there is more.
+fn why_lines(why: &str, width: usize) -> Vec<Line<'static>> {
+    let mut rows = overlay::wrap_words(&clean(why), width.saturating_sub(2));
+    let more = rows.len() > WHY_ROWS;
+    rows.truncate(WHY_ROWS);
+    if more && let Some(last) = rows.last_mut() {
+        last.push('…');
+    }
+    (rows.into_iter())
+        .map(|row| Line::from(format!(" {row}")))
+        .collect()
+}
+
+/// Which of the changes waiting worker `id`'s is, when there are several.
+fn place_among(lang: Lang, w: &World, id: AgentId) -> Option<String> {
+    let changes: Vec<AgentId> = (w.shown_inbox().into_iter())
+        .filter(|&i| w.inbox[i].kind == InboxKind::Change)
+        .map(|i| w.inbox[i].agent)
+        .collect();
+    let at = changes.iter().position(|&a| a == id)?;
+    let of = changes.len();
+    (of > 1).then(|| {
+        let at = (at + 1).to_string();
+        fill(lang.text().diff_place, &[&at, &of.to_string()])
+    })
+}
+
+/// The file `top`, a line of `patch`, is in, by its path.
+fn file_at(patch: &str, top: usize) -> Option<&str> {
+    let lines: Vec<&str> = patch.lines().collect();
+    let starts = file_starts(patch);
+    let at = starts.partition_point(|&i| i <= top).checked_sub(1)?;
+    Some(head_path(lines[starts[at]]))
+}
+
+/// A path in `room` cells: its end, where its name is.
+fn path_end(path: &str, room: usize) -> String {
+    let chars: Vec<char> = clean(path).chars().collect();
+    match chars.len().checked_sub(room.saturating_sub(1)) {
+        Some(cut) if chars.len() > room => {
+            let end: String = chars[cut..].iter().collect();
+            format!("…{end}")
+        }
+        _ => chars.into_iter().collect(),
+    }
+}
+
+/// A change's files beside its patch, the one at hand marked, `height`
+/// rows of them with that one among them.
+fn tree_lines(
+    files: &[ChangedFile],
+    at: Option<&str>,
+    width: usize,
+    height: usize,
+) -> Vec<Line<'static>> {
+    let here = files.iter().position(|f| Some(f.path.as_str()) == at);
+    let skip = here.map_or(0, |n| (n + 1).saturating_sub(height));
+    (files.iter().enumerate().skip(skip).take(height))
+        .map(|(n, f)| {
+            let on = here == Some(n);
+            let counts = format!(" +{} −{}", f.added, f.removed);
+            let room = width.saturating_sub(counts.chars().count() + 2);
+            let name = path_end(&f.path, room);
+            let style = if on { bold(pal().strong) } else { Style::new() };
+            Line::from(vec![
+                Span::styled(if on { "▸ " } else { "  " }, bold(pal().strong)),
+                Span::styled(name, style),
+                Span::styled(counts, dim()),
+            ])
+        })
+        .collect()
+}
+
 fn clash_line(lang: Lang, c: &Clashes, name: &str) -> Line<'static> {
     let mut files: Vec<&str> = c.hunks.iter().map(|h| h.file.as_str()).collect();
     files.dedup();
@@ -315,7 +413,10 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, id: AgentId) {
             ],
         ),
     };
-    let block = Block::bordered().title(title).border_style(fg(pal().agent));
+    let mut block = Block::bordered().title(title).border_style(fg(pal().agent));
+    if let Some(place) = place_among(app.lang, w, id) {
+        block = block.title_top(Line::from(place).right_aligned());
+    }
     let inner = block.inner(area);
     f.render_widget(block, area);
     let mut ran = check_lines(app.lang, &c.check);
@@ -326,6 +427,9 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, id: AgentId) {
     if let Some(proposal) = w.proposal_of(id) {
         ran.splice(0..0, proposal_lines(app.lang, proposal));
     }
+    if let Some(why) = w.done_why(id) {
+        ran.splice(0..0, why_lines(why, usize::from(inner.width)));
+    }
     let review = review_lines(
         app.lang,
         w.review_of(id),
@@ -334,7 +438,12 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, id: AgentId) {
         usize::from(inner.width),
         usize::from(inner.height / 2),
     );
-    let mut files = file_lines(app.lang, &c.files);
+    let tree = inner.width >= TREE_WIDE && c.files.len() > 1;
+    let mut files = if tree {
+        Vec::new()
+    } else {
+        file_lines(app.lang, &c.files)
+    };
     if let Some(card) = a.card
         && let Some(outside) = outside_line(app.lang, &c.files, &w.cards[card])
     {
@@ -357,6 +466,23 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, id: AgentId) {
     f.render_widget(Paragraph::new(ran), runs);
     f.render_widget(Paragraph::new(review), said);
     f.render_widget(Paragraph::new(files), list);
+    let inner = if tree {
+        let [side, rule, patch] = Layout::horizontal([
+            Constraint::Length(TREE_WIDTH),
+            Constraint::Length(1),
+            Constraint::Min(0),
+        ])
+        .areas(inner);
+        let height = usize::from(side.height);
+        let at = file_at(&c.patch, app.diff_scroll);
+        let names = tree_lines(&c.files, at, usize::from(side.width), height);
+        f.render_widget(Paragraph::new(names), side);
+        let bar = vec![Line::from(Span::styled("│", dim())); usize::from(rule.height)];
+        f.render_widget(Paragraph::new(bar), rule);
+        patch
+    } else {
+        inner
+    };
     app.diff_page.set(inner.height);
     let height = usize::from(inner.height);
     let wrap = app.diff_wrap.then_some(usize::from(inner.width));
@@ -400,7 +526,12 @@ fn patch_rows(
     // Each line takes a row at least: `height` lines fill the rows.
     for &i in shown.lines.iter().skip(from).take(height) {
         let l = lines[i];
-        let mut row = Line::from(Span::styled(clean(l), line_style(l)));
+        let text = if l.starts_with("diff --git ") {
+            head_path(l)
+        } else {
+            l
+        };
+        let mut row = Line::from(Span::styled(clean(text), line_style(l)));
         if let Some(n) = shown.hides(i) {
             let said = match n {
                 1 => t.folded_line.to_string(),
@@ -605,12 +736,32 @@ fn outside_line(lang: Lang, files: &[ChangedFile], card: &Card) -> Option<Line<'
     )))
 }
 
+/// Lonca's word for why a change waits for a human, as a person says it;
+/// a word imece does not know, as Lonca said it.
+fn why_it_waits(t: &Text, why: &str) -> String {
+    let (word, path) = why.split_once(':').unwrap_or((why, ""));
+    let [unwatched, tainted, critical, outside, written] = t.diff_whys;
+    match word {
+        "unobserved_session" => unwatched.to_string(),
+        "tainted_session" => tainted.to_string(),
+        "critical_path" | "unobserved_critical_path" | "tainted_critical_path" => {
+            fill(critical, &[path])
+        }
+        "scope_path" => fill(outside, &[path]),
+        "unobserved_write" => fill(written, &[path]),
+        _ => clean(why),
+    }
+    .trim_end_matches([':', ' '])
+    .to_string()
+}
+
 /// Which proposal in Lonca a change is (record 120): its number, why it
 /// waits, how many older ones of the worker's it holds; then what the
 /// patch below does not show, loud.
 pub(crate) fn proposal_lines(lang: Lang, p: &StoreProposal) -> Vec<Line<'static>> {
     let t = lang.text();
-    let mut said = fill(t.diff_proposal, &[&p.seq.to_string(), &p.why.join(", ")]);
+    let why: Vec<String> = p.why.iter().map(|w| why_it_waits(t, w)).collect();
+    let mut said = fill(t.diff_proposal, &[&why.join(", "), &p.seq.to_string()]);
     if !p.older.is_empty() {
         said.push_str(&fill(t.diff_proposal_older, &[&p.older.len().to_string()]));
     }
@@ -806,6 +957,141 @@ mod tests {
     }
 
     #[test]
+    fn git_s_lines_above_a_hunk_go_and_a_line_that_only_looks_like_them_stays() {
+        let patch = "diff --git a/q.sql b/q.sql\nindex 1..2\n--- a/q.sql\n+++ b/q.sql\n\
+                     @@ -1,2 +1,2 @@\n--- a comment\n+++ a sum\n index stays\n";
+        let shown = Shown::of(patch, &Folds::default());
+        assert_eq!(shown.lines, [0, 4, 5, 6, 7]);
+        // A second file's head goes too.
+        let two = format!("{patch}diff --git a/r b/r\nindex 3..4\n--- a/r\n+++ b/r\n@@ -1 +1 @@\n");
+        let shown = Shown::of(&two, &Folds::default());
+        assert_eq!(shown.lines, [0, 4, 5, 6, 7, 8, 12]);
+    }
+
+    #[test]
+    fn a_file_s_head_is_its_path() {
+        assert_eq!(head_path("diff --git a/src/x.rs b/src/x.rs"), "src/x.rs");
+        assert_eq!(head_path("no such thing"), "no such thing");
+        let patch = "diff --git a/x b/x\n@@ -1 +1 @@\n-a\n+b\n";
+        let rows = patch_rows(
+            Lang::En,
+            patch,
+            &Shown::of(patch, &Folds::default()),
+            0,
+            &[],
+            &[],
+            None,
+            10,
+            None,
+        );
+        assert_eq!(rows[0].spans[0].content, "x");
+    }
+
+    #[test]
+    fn what_the_worker_said_takes_four_rows_and_says_when_there_is_more() {
+        let texts = |lines: Vec<Line>| {
+            lines
+                .iter()
+                .map(|l| l.spans[0].content.to_string())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(texts(why_lines("one two", 20)), [" one two"]);
+        let four = "aaaa bbbb cccc dddd";
+        assert_eq!(texts(why_lines(four, 6)).len(), 4);
+        assert!(!texts(why_lines(four, 6))[3].ends_with('…'));
+        let five = "aaaa bbbb cccc dddd eeee";
+        let rows = texts(why_lines(five, 6));
+        assert_eq!(rows.len(), 4);
+        assert_eq!(rows[3], " dddd…");
+    }
+
+    #[test]
+    fn a_change_says_its_place_only_among_several() {
+        let (mut w, _) = crate::sim::world(1, 3, 0, 1, Lang::En);
+        let change = |agent| InboxItem {
+            kind: InboxKind::Change,
+            agent,
+            detail: String::new(),
+            researcher: None,
+            open: true,
+            tick: 0,
+            card: None,
+        };
+        w.inbox.clear();
+        w.inbox.push(change(1));
+        assert_eq!(place_among(Lang::En, &w, 1), None);
+        assert_eq!(place_among(Lang::En, &w, 2), None, "it has none waiting");
+        w.inbox.push(change(2));
+        w.inbox.push(InboxItem {
+            kind: InboxKind::Reply,
+            ..change(3)
+        });
+        assert_eq!(
+            place_among(Lang::En, &w, 2).as_deref(),
+            Some(" change 2 of 2 ")
+        );
+    }
+
+    #[test]
+    fn the_list_marks_the_file_the_top_line_is_in_and_keeps_it_in_view() {
+        let patch = "@@ head\ndiff --git a/a b/a\n+x\ndiff --git a/b b/b\n+y\n";
+        assert_eq!(file_at(patch, 0), None, "above the first file");
+        assert_eq!(file_at(patch, 1), Some("a"));
+        assert_eq!(file_at(patch, 2), Some("a"));
+        assert_eq!(file_at(patch, 3), Some("b"));
+        let file = |path: &str| ChangedFile {
+            path: path.into(),
+            added: 1,
+            removed: 2,
+            binary: false,
+        };
+        let files = [file("a"), file("b"), file("c")];
+        let text = |l: &Line| {
+            l.spans
+                .iter()
+                .map(|s| s.content.as_ref())
+                .collect::<String>()
+        };
+        let rows = tree_lines(&files, Some("b"), 20, 3);
+        assert_eq!(text(&rows[0]), "  a +1 −2");
+        assert_eq!(text(&rows[1]), "▸ b +1 −2");
+        // Two rows, the third file at hand: it shows, the first went.
+        let rows = tree_lines(&files, Some("c"), 20, 2);
+        assert_eq!(text(&rows[0]), "  b +1 −2");
+        assert_eq!(text(&rows[1]), "▸ c +1 −2");
+        // Exactly as many rows as it needs: nothing goes.
+        let rows = tree_lines(&files, Some("b"), 20, 2);
+        assert_eq!(text(&rows[0]), "  a +1 −2");
+    }
+
+    #[test]
+    fn a_long_path_keeps_its_end() {
+        assert_eq!(path_end("abcd", 4), "abcd");
+        assert_eq!(path_end("abcde", 4), "…cde");
+        assert_eq!(path_end("ab", 4), "ab");
+    }
+
+    #[test]
+    fn lonca_s_words_for_why_a_change_waits_are_said_as_a_person_says_them() {
+        let t = Lang::En.text();
+        for (word, said) in [
+            ("unobserved_session", "nobody watched this session's tools"),
+            ("tainted_session", "this session read something untrusted"),
+            (
+                "critical_path:Cargo.toml",
+                "it changes a critical path: Cargo.toml",
+            ),
+            ("unobserved_critical_path", "it changes a critical path"),
+            ("tainted_critical_path", "it changes a critical path"),
+            ("scope_path:a.rs", "a file outside its scope: a.rs"),
+            ("unobserved_write:b.rs", "a file written unseen: b.rs"),
+            ("something_new", "something_new"),
+        ] {
+            assert_eq!(why_it_waits(t, word), said);
+        }
+    }
+
+    #[test]
     fn the_message_says_what_to_do_and_what_does_not_fit() {
         let got = clash_message(&clashes(), false);
         let (head, rest) = got.split_once("\n\n").unwrap();
@@ -953,8 +1239,8 @@ mod tests {
 
     /// A line before the first header, a file of three more lines, one
     /// of four.
-    const TWO: &str = "note\ndiff --git a/x b/x\n--- a/x\n+++ b/x\n+one\n\
-                       diff --git a/y b/y\n--- a/y\n+++ b/y\n+two\n+three\n";
+    const TWO: &str = "note\ndiff --git a/x b/x\nnew file mode 1\n@@ -0 +1 @@\n+one\n\
+                       diff --git a/y b/y\nnew file mode 1\n@@ -0 +1 @@\n+two\n+three\n";
 
     #[test]
     fn a_folded_file_shows_its_header_only() {
@@ -1004,16 +1290,13 @@ mod tests {
         let text: Vec<String> = rows.iter().map(|r| r.to_string()).collect();
         assert_eq!(
             text,
-            [
-                "diff --git a/x b/x  ▸ 3 lines",
-                "diff --git a/y b/y  ▸ 4 lines"
-            ],
+            ["x  ▸ 3 lines", "y  ▸ 4 lines"],
             "from the line at hand on"
         );
         let one = "diff --git a/x b/x\n+one\ndiff --git a/y b/y\n+two\n";
         let all = Shown::of(one, &Folds::every(true));
         let rows = patch_rows(Lang::Tr, one, &all, 0, &[], &[], None, 8, None);
-        assert_eq!(rows[0].to_string(), "diff --git a/x b/x  ▸ 1 satır");
+        assert_eq!(rows[0].to_string(), "x  ▸ 1 satır");
         assert_eq!(rows.len(), 2);
     }
 
@@ -1128,18 +1411,17 @@ diff --git a/c.rs b/c.rs
 
     #[test]
     fn lines_chosen_to_copy_are_marked_instead_of_the_top_one() {
-        let copy = Copying { anchor: 4, at: 2 };
+        let copy = Copying { anchor: 6, at: 4 };
         let rows = open_rows(PATCH, 0, &[], &[], Some(copy), 8, None);
         assert_eq!(rows[0].style, Style::new(), "not the line at hand");
-        assert_eq!(rows[1].style, Style::new());
         assert_eq!(
-            rows[2].style,
+            rows[1].style,
             changed().add_modifier(Modifier::BOLD),
             "the cursor"
         );
+        assert_eq!(rows[2].style, changed());
         assert_eq!(rows[3].style, changed());
-        assert_eq!(rows[4].style, changed());
-        assert_eq!(rows[5].style, Style::new());
+        assert_eq!(rows[4].style, Style::new());
     }
 
     #[test]
@@ -1614,7 +1896,7 @@ diff --git a/c.rs b/c.rs
         assert_eq!(
             said(&lines),
             [
-                " proposal 5 · waits: unobserved_session, approvals=1",
+                " needs your yes: nobody watched this session's tools, approvals=1 · proposal 5",
                 " nothing runs after your yes: no build or test in lonca.toml"
             ]
         );

@@ -357,7 +357,8 @@ impl App {
         let open = self.inbox_rows();
         let t = self.lang.text();
         if self.world.inbox[item].kind == InboxKind::Change {
-            return self.decide_change(self.world.inbox[item].agent, approve);
+            self.decide_change(self.world.inbox[item].agent, approve);
+            return;
         }
         if matches!(
             self.world.inbox[item].kind,

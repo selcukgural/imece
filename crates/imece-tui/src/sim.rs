@@ -260,6 +260,8 @@ struct Content {
     assume: &'static str,
     /// A helper's done to its worker.
     helper_done: &'static str,
+    /// What a worker's `done` says under its title.
+    done_why: &'static str,
     /// The leader's inform to its other workers when the person applied
     /// a change, sent to the group `workers` as live's leader may.
     moved: &'static str,
@@ -358,6 +360,7 @@ const EN: Content = Content {
     plan_asked: "You said no to the plan: what should change before I hire?",
     assume: "Assuming {}.",
     helper_done: "Tests written; they pass.",
+    done_why: "Kept to what the card asked. The tests cover the new path, and the old callers read as they did.",
     moved: "A change was applied: the checkout moved; your worktree follows it when clean.",
     tests: "tests",
     docs: "docs",
@@ -455,6 +458,7 @@ const TR: Content = Content {
     plan_asked: "Plana hayır dediniz: işe almadan önce ne değişmeli?",
     assume: "Varsayım: {}.",
     helper_done: "Testler yazıldı, geçiyor.",
+    done_why: "Kartın istediğiyle sınırlı kaldım. Testler yeni yolu kapsıyor, eski çağıranlar eskisi gibi.",
     moved: "Bir değişiklik uygulandı: checkout ilerledi; worktree'n temizken onu izler.",
     tests: "testler",
     docs: "doküman",
@@ -3572,7 +3576,8 @@ impl Sim {
             self.gated(w, id);
         }
         let re = self.mind(id).assigned.take();
-        self.send(w, id, leader, MsgKind::Done, &title, re);
+        let said = format!("{title}\n\n{}", self.content.done_why);
+        self.send(w, id, leader, MsgKind::Done, &said, re);
         // The change holds what the card leased, and the file its worker
         // strayed into (record 114), so the Δ says what is outside.
         let mut symbols = w.cards[card].symbols.clone();
@@ -4273,7 +4278,7 @@ mod tests {
         let n = w.journal.len();
         assert!(matches!(
             &w.journal[n - 2].event,
-            Event::Sent { from, to, kind: MsgKind::Done, text, .. } if *from == worker && *to == lead && *text == title
+            Event::Sent { from, to, kind: MsgKind::Done, text, .. } if *from == worker && *to == lead && text.starts_with(&title)
         ));
         assert!(matches!(
             w.journal[n - 1].event,

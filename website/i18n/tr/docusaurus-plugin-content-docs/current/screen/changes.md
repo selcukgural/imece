@@ -33,12 +33,16 @@ Başlık: işçi, dosyalar ve satırlar, done'un ilk satırı.
 
 ## Yamanın üstündekiler
 
+Önce, işçi `done`'ında ilk satırdan fazlasını yazdıysa söyledikleri gelir: neden, ne kararlaştırdı, nereye bakılmalı; en çok dört satır, fazlası `…` ile kesilir. Birden çok değişiklik bekliyorsa pencerenin sağ üstü bunun hangisi olduğunu söyler: `değişiklik 2 / 5`.
+
 1. **Deponun kontrolü**, checkout'unuzda `.imece/check` varsa ([değişiklikler](../concepts/changes.md#deponun-kontrolü)): tamam renginde `✓ kontrol · exit 0, 41.2 s`; kötü renginde, çıktısının son satırları altında, `✗ kontrol · exit 1, 38.7 s`; çalışırken `◌ kontrol bu değişiklikte çalışıyor…`; sorusunu yanıtlayana dek `▶ deponun kontrolü SENİ BEKLEYEN'de onayını bekliyor`; ya da neden çalışamadığı. İşareti SENİ BEKLEYEN'de ögenin kanıtını da başlatır (`✓ kontrol ·`, `✗ kontrol ·`, `◌ kontrol ·`, `▶ kontrol ·`).
 2. **Bu ağaçtaki çalıştırmalar.** İşçinin imece'nin `run` aracıyla tam bu değişiklik üzerinde yaptığı her `run`, nasıl bittiğiyle: `✓ cargo test`, `✗ cargo clippy: exit 1`, süre dolunca durduruldu, durduruldu. Hiç yoksa uyarı renginde, tam bu değişiklik üzerinde imece çalıştırması olmadığını, derlenip derlenmediğinin ve testlerinin geçip geçmediğinin bilinmediğini söyler. Aynı kanıt SENİ BEKLEYEN'de ögenin satırını izler.
 3. **Maliyeti**, işçinin turu bitince: `maliyet · $0.84 · 12 dk`, soluk; işçinin (yardımcıları dahil) son değişikliğinden sonraki ilk isteminden bu `done`'a harcadığı ve çalıştığı süre; geri gönderilip yeniden gönderilen bir değişiklik turlarını ekler (`$1.20 · 25 dk · 3 tur`). Aynı rakam SENİ BEKLEYEN'de ögenin satırını bitirir ve günlük söyler (`claude-1 değişikliği $0.84 · 12 dk tuttu`). Tur ortasında okunan bir `done` onu bir an sonra, turun maliyeti bilinince gösterir.
 4. **Türe göre satırlar**, dosyalar birden çok türdense: `kaynak +23 −6 (2) · testler +18 −0 (1) · üretilmiş +7 −5 (1)`. Bir dosya yalnız yoluna göre sınıflanır: bir lock dosyasıysa (`Cargo.lock`, `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `go.sum`, `poetry.lock`, `Gemfile.lock`, `composer.lock`), küçültülmüş ya da üretilmiş kodsa (`.min.js`, `.min.css`, `.pb.go`, `_pb2.py`, `.g.dart`, `.Designer.cs`) ya da `generated/`, `dist/` ya da `vendor/` altındaysa üretilmiş; `tests/`, `test/`, `__tests__/` ya da `spec/` altındaysa, `test_*` adlıysa ya da bir test sonekiyle bitiyorsa (`_test.go`, `_test.rs`, `_test.py`, `.test.ts`, `.spec.ts`, `Tests.cs`, `Test.java`, …) test; yoksa kaynak. Üretilmiş, teste baskındır. Dosyalardan hiçbir şey okunmaz. Yirmi satır kod ve yeniden üretilmiş bir lock dosyası olan bir `+400 −20` değişikliği bunu burada söyler.
 5. **Kartın dışındaki dosyalar**, işçinin kartının yolları varsa ([kartın sahip olduğu yollar](../concepts/messages-and-board.md#kartın-sahip-olduğu-yollar)) ve değişiklik hiçbirinin adlandırmadığı dosyalara dokunuyorsa: `2 kartın dışında (#12): src/other.rs, Cargo.toml`, uyarı renginde. Kart, işçinin son kartıdır, bitmiş olsun olmasın; yolsuz bir kart burada bir şey söylemez.
-6. **Dosya listesi**, iki ya da daha çok dosyalı bir değişiklik için: her dosya `+N −M` ya da `ikili` ile, en çok altı, kalanı sayılmış (`… 2 dosya daha`). Tek dosyalı değişiklik liste göstermez; başlığı söyler.
+6. **Dosya listesi**, iki ya da daha çok dosyalı bir değişiklik için: her dosya `+N −M` ya da `ikili` ile, en çok altı, kalanı sayılmış (`… 2 dosya daha`). Tek dosyalı değişiklik liste göstermez; başlığı söyler. 120 kolondan itibaren iki ya da daha çok dosyalı bir değişiklik hepsini yamanın yanında listeler, eldeki dosya `▸` ile işaretlidir ve `[` `]` aralarında gezer.
+
+Yama, git'in `diff --git` yazdığı yerde dosyanın yolunu gösterir ve ilk hunk'ın üstündeki `index`, `---`, `+++` satırlarını atlar. Dosyanın aynı biçimde başlayan bir satırı yerinde kalır. Kopyalama, notlar ve alıntılar yine git'in yazdığı yama üzerinde çalışır.
 
 ## Hareket
 
@@ -60,7 +64,7 @@ Eklenen ve silinen satırların kendi renkleri vardır; başlıklar öne çıkar
 
 | Tuş | Ne yapar |
 | --- | --- |
-| `a` | değişikliği checkout'unuza uygula, stage'de, bakıp commit etmeniz için. Parça seçiliyse (`x`) yalnız onları |
+| `a` | değişikliği checkout'unuza uygula, stage'de, bakıp commit etmeniz için. Parça seçiliyse (`x`) yalnız onları. [Ana ekrandan](home.md) açıldıysa sıradaki değişiklik açılır; sonuncudan sonra ana ekrana döner |
 | `r` | reddet: öge kapanır, değişiklik worktree'de kalır, nedenini yazmanız için yazma satırı `@worker ` ile açılır |
 | `c` | en üstteki satıra bir not |
 | `n` | notları işçiye tek mesajda gönder; değişiklik geri döner |
@@ -92,7 +96,7 @@ Reddedilir: o değişiklik uygulanırken ya da aynı işçinin daha yeni bir `do
 
 ### Lonca'daki bir öneri
 
-Lonca workspace'indeki bir işçinin Δ'sı önerisidir ([daha fazlası](../concepts/changes.md#loncada)). Yamanın üstünde `öneri 5 · bekleme nedeni: unobserved_session` der, varsa `· 1 eski öneriyi kapsıyor` da; onayından sonra ne çalışacağını söyler (`onayından sonra Lonca şunları çalıştırır: build, test` ya da `onayından sonra hiçbir şey çalışmaz`); Lonca'nın sansürlediği dosyalar ya da kestiği bir yama için göze çarpan satırlar gelir. `a` onaylar. `r` yazma satırını `@claude-1 ` ile açar ve `gerekçeni yaz` der; gönderdiğiniz satır öneriyi reddeder ve işçiye gider, `esc` ise onu bekler bırakır. `n` ile gönderilen notlar da aynı şekilde bir rettir. `x` `bir öneri bütün olarak onaylanır` der, `b`'nin de gönderecek bir şeyi yoktur: çakışma kuyruğundur ve işçiye kendisi söyler.
+Lonca workspace'indeki bir işçinin Δ'sı önerisidir ([daha fazlası](../concepts/changes.md#loncada)). Yamanın üstünde sizi neden beklediğini sözcüklerle söyler (`evetiniz gerekiyor: bu oturumun araçlarını kimse izlemedi · öneri 5` ya da `kritik bir yolu değiştiriyor: Cargo.toml`; imece'nin sözcüğü olmayan neden Lonca'nın yazdığı gibi durur), varsa `· 1 eski öneriyi kapsıyor` da; onayından sonra ne çalışacağını söyler (`onayından sonra Lonca şunları çalıştırır: build, test` ya da `onayından sonra hiçbir şey çalışmaz`); Lonca'nın sansürlediği dosyalar ya da kestiği bir yama için göze çarpan satırlar gelir. `a` onaylar. `r` yazma satırını `@claude-1 ` ile açar ve `gerekçeni yaz` der; gönderdiğiniz satır öneriyi reddeder ve işçiye gider, `esc` ise onu bekler bırakır. `n` ile gönderilen notlar da aynı şekilde bir rettir. `x` `bir öneri bütün olarak onaylanır` der, `b`'nin de gönderecek bir şeyi yoktur: çakışma kuyruğundur ve işçiye kendisi söyler.
 
 ### Satırlara notlar
 

@@ -366,7 +366,7 @@ fn labelled_text(lines: &mut Vec<Line<'static>>, label: &str, text: &str, room: 
 fn change_lines(lang: Lang, w: &World, c: &Change, lines: &mut Vec<Line<'static>>, room: usize) {
     let t = lang.text();
     let [why, proof, cost, gate, files] = t.home_labels;
-    labelled_text(lines, why, &c.title, room);
+    labelled_text(lines, why, w.done_why(c.agent).unwrap_or(&c.title), room);
     let mut evidence = Vec::new();
     if let Some((mark, good)) = words::check_mark(lang, &c.check) {
         let style = match good {

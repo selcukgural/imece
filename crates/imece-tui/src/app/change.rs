@@ -50,8 +50,14 @@ impl App {
                     self.diff_scroll = to;
                 }
             }
-            KeyCode::Char('a') => self.decide_change(id, true),
-            KeyCode::Char('r') => self.decide_change(id, false),
+            KeyCode::Char('a') => {
+                if self.decide_change(id, true) {
+                    self.next_change(id);
+                }
+            }
+            KeyCode::Char('r') => {
+                self.decide_change(id, false);
+            }
             KeyCode::Char('>') => self.quote_hunk(id),
             KeyCode::Char('c') => self.note_line(id),
             KeyCode::Char('x') => self.choose_hunk(id),
@@ -464,7 +470,7 @@ impl App {
     /// does it on a thread of its own; the journal says how it went), or
     /// rejects it; a rejection opens the composer to that worker, so they
     /// say why. The change's view closes either way.
-    pub(super) fn decide_change(&mut self, id: AgentId, apply: bool) {
+    pub(super) fn decide_change(&mut self, id: AgentId, apply: bool) -> bool {
         let t = self.lang.text();
         let name = self.world.agents[id].name.clone();
         let open = self.inbox_rows().len();
@@ -479,15 +485,19 @@ impl App {
             self.after = self.input.chars().count();
             self.flash(fill(t.say_why, &[&name]));
             self.close_change(id);
-            return;
+            return false;
         }
         let decided = match &mut self.engine {
             Engine::Live(l) if apply => l.apply_change(&self.world, id, hunks),
             Engine::Sim(s) if apply => s.apply_change(&self.world, id, hunks),
             Engine::Live(l) => l.reject_change(&mut self.world, id),
             Engine::Sim(s) => s.reject_change(&mut self.world, id),
-            Engine::View(_) => return self.read_only(),
+            Engine::View(_) => {
+                self.read_only();
+                return false;
+            }
         };
+        let went = decided.is_ok();
         match decided {
             Ok(()) if proposed => self.flash(fill(t.approving, &[&name])),
             Ok(()) if apply => self.flash(fill(t.applying, &[&name])),
@@ -501,6 +511,27 @@ impl App {
         }
         self.close_change(id);
         self.inbox_sel = self.inbox_sel.min(open.saturating_sub(2));
+        went
+    }
+
+    /// Worker `from`'s change was decided from Home: the next change
+    /// waiting opens, so a queue is read in one go; none, Home again.
+    fn next_change(&mut self, from: AgentId) {
+        if self.view != View::Home {
+            return;
+        }
+        let w = &self.world;
+        let next = (self.home_rows().into_iter()).find_map(|(_, row)| match row {
+            HomeRow::Item(i) if w.inbox[i].kind == InboxKind::Change => {
+                Some((i, w.inbox[i].agent)).filter(|&(_, a)| a != from)
+            }
+            _ => None,
+        });
+        if let Some((i, agent)) = next {
+            self.at_home.at = Some(HomeRow::Item(i));
+            self.diff_scroll = 0;
+            self.zoom = Zoom::Diff(agent);
+        }
     }
 
     /// Worker `id`'s change's view closes, if it is open.
@@ -526,8 +557,8 @@ mod tests {
     use super::*;
 
     fn two_files() -> String {
-        let mut p = String::from("diff --git a/x b/x\n--- a/x\n+++ b/x\n+one\n");
-        p.push_str("diff --git a/y b/y\n--- a/y\n+++ b/y\n+two\n+three\n");
+        let mut p = String::from("diff --git a/x b/x\nnew file mode 1\n@@ -0 +1 @@\n+one\n");
+        p.push_str("diff --git a/y b/y\nnew file mode 1\n@@ -0 +1 @@\n+two\n+three\n");
         p
     }
 
@@ -1375,6 +1406,49 @@ mod tests {
         app.on_key(key(KeyCode::Char('>')));
         assert!(!app.typing && app.input.is_empty());
         assert_eq!(flashed(&app).as_deref(), Some(app.lang.text().no_hunk));
+    }
+
+    /// Home with the changes of workers 1 and 2 waiting, the first open.
+    fn two_changes_at_home() -> App {
+        let mut app = App::new(1, 4, 0, 1, Lang::En);
+        app.world.inbox.clear();
+        app.world.change_ready(a_change(1));
+        app.world.change_ready(a_change(2));
+        app.view = View::Home;
+        app.zoom = Zoom::Diff(1);
+        app.diff_scroll = 3;
+        app
+    }
+
+    #[test]
+    fn a_change_applied_from_home_opens_the_next_and_the_last_comes_home() {
+        let mut app = two_changes_at_home();
+        app.on_key(key(KeyCode::Char('a')));
+        assert_eq!(app.zoom, Zoom::Diff(2));
+        assert_eq!(app.diff_scroll, 0);
+        let Some(HomeRow::Item(i)) = app.at_home.at else {
+            panic!("an item at hand")
+        };
+        assert_eq!(app.world.inbox[i].agent, 2);
+        // Nothing after it but what was just decided.
+        app.world.inbox.retain(|i| i.agent == 2);
+        app.on_key(key(KeyCode::Char('a')));
+        assert_eq!((app.view, app.zoom), (View::Home, Zoom::None));
+    }
+
+    #[test]
+    fn a_change_applied_from_the_salon_goes_back_to_its_panel() {
+        let mut app = two_changes_at_home();
+        app.view = View::Salon;
+        app.on_key(key(KeyCode::Char('a')));
+        assert_eq!(app.zoom, Zoom::None);
+    }
+
+    #[test]
+    fn a_change_sent_back_opens_nothing_else() {
+        let mut app = two_changes_at_home();
+        app.on_key(key(KeyCode::Char('r')));
+        assert_eq!(app.zoom, Zoom::None);
     }
 
     /// A demo with worker 1's proposal waiting and its view open.

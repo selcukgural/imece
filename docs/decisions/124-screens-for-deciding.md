@@ -72,3 +72,19 @@ place was not read. The person's `[salon]` keys hold on Home (`Scope::Salon`):
 a place of its own can follow if a key file wants one. Hints (`F`) are not on
 Home, and a start's notes land in the journal, on the salon. The rows are drawn from the world each frame, so nothing is kept but the
 row and the scope, for the run; the demo shows it through the same code.
+
+Step 2 as built, the change: what the worker said under the first line of its
+newest `done` heads the view (`World::done_why`, read from the journal, so
+nothing new is stored and an older change has it too; four rows), and Home's
+preview says the same. `ui::diff::why_it_waits` puts Lonca's reasons in words;
+a reason it does not know stands as Lonca wrote it, so a new one is never
+hidden. `Shown::of` leaves out git's `index`, `---` and `+++`, only above a
+file's first hunk: below it `--- x` is a removed line `-- x`. The patch is
+kept as git wrote it, so copying, notes, quotes and the scroll's numbers do not
+change. From 120 columns a change of several files lists them beside the patch
+(`tree_lines`, by path, for `Change.files` need not follow the patch's order).
+`a` from Home opens the next change waiting; a failed apply stays (`decide_change
+-> bool`), and from the salon it goes back to the panel as before. The demo's
+`done` says why, so it shows all this through the same code. Risk beyond what
+the view said before (overlaps with other changes) is step 3's: it needs
+`status.changes`.
