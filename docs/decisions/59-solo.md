@@ -108,7 +108,7 @@ role.
 The pick screen, `:effort` and `:model` (PR 3, the `solo-pick` branch,
 2026-11-01): a bare `:solo` (no `VENDOR[:MODEL][@EFFORT]` word) opens a
 screen of its own instead of guessing (`App::solo_pick`, `SoloPick` in
-`app.rs`, drawn by `overlay::solo_pick`, keys before the help's): the
+`app/mod.rs`, drawn by `overlay::solo_pick`, keys before the help's): the
 vendor (`Live::vendors`, the hireable ones with the lead vendor first; the
 demo's three), then the model (`default` for the vendor's own, then its
 aliases: `claude::ALIASES` fable/opus/sonnet/haiku, `codex::ALIASES` none,

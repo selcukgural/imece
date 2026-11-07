@@ -4,7 +4,7 @@ Backlog item B1 of #55 (2026-10-31, from cmux, herdr and openharness):
 a state ladder per agent row, states that differ by shape and not only
 by colour, a folded group that shows its loudest member.
 
-The ladder is `Rung` (`app.rs`), lowest first: idle (also asleep, also
+The ladder is `Rung` (`app/mod.rs`), lowest first: idle (also asleep, also
 gone) < done, not seen (record 35) < starting < working (mid-turn, asking
 a teammate, researching) < waiting (something of the agent in WAITING
 FOR YOU, or the `WaitingHuman` status) < stuck (blocked, or its session

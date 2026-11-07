@@ -42,6 +42,14 @@ The first round, each its own pull request and record:
    to `app/<concern>.rs` with their tests, in slices of about 800 lines a
    pull request. Behaviour does not change. Meant for imece's own
    cheap-tier workers: the issue is the module map.
+   As built for `app` (2026-11-07): not by workers but by one script, a
+   move checked item by item, so sixteen pull requests with the same 1,670
+   tests in each. A private method lives in the module it is written in,
+   so one called across files is `pub(super)`: what private meant before,
+   nothing wider. `frames`, `dispatch`, `notices` and not `motion`, `keys`,
+   `notify`, which `app` imports from the crate. `app/mod.rs` keeps the
+   types, `struct App`, its core and the free functions; `app/tests.rs` the
+   helpers shared by slices. `ui/mod.rs` is still to do.
 2. Evidence on a Δ (#288). A project's check (`.imece/check`, run on the
    setup script's terms, record 92) runs in the worker's worktree when its
    `done` makes a Δ, and the Δ's header says what passed and what failed
@@ -69,7 +77,7 @@ sandbox switched on for workers and verified fail closed, its sub-agents
 shown as rows under the worker in place of or beside helpers, a
 repository's skills under `standard`); the demo on the real `Live` with a
 `claude` stand-in that speaks stream-json, so `Engine::Sim` and its 52
-arms in `app.rs` can go; the researchers record (01) closed, since
+arms in `app/` can go; the researchers record (01) closed, since
 workers read the web themselves since record 26.
 
 What is not touched: the `Agent` trait and `Event` stay as they are, the

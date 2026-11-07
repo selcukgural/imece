@@ -7,7 +7,7 @@ on chosen words of a conversation and reach the agents. They chose that
 the notes go to the agents (not that agents write notes), and that the
 choice is word by word, not line by line.
 
-**Folds.** `Thread::folds: Folds { all, except }` (`app.rs`): every
+**Folds.** `Thread::folds: Folds { all, except }` (`app/mod.rs`): every
 message folded or none (`zM` `zR`, `:fold` `:unfold` with a conversation
 open), less or more the ones folded or opened one by one since (`h l ←
 →`, `za` on the selected message), by their place in the conversation.
