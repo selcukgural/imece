@@ -179,7 +179,7 @@ Yalnız demo, `+` gibi: simülasyon hızlanır. Menü notu hızı gösterir (`×
 
 ### `:fold`
 
-Ekipte her projeyi ve her işçinin yardımcılarını katlar, `zM` gibi; başka bir görünümden önce ekibe gider. Açık bir konuşma varken bunun yerine onun her mesajını tek satıra katlar, bu çalıştırmada sonra açılan konuşmalar da katlı başlar. Bkz. [ekip](../screen/salon.md) ve [konuşmalar](../screen/conversations.md).
+Ekipte her projeyi ve her işçinin yardımcılarını katlar, `zM` gibi; ana ekranda satırların başındaki projeleri katlar ve orada kalır; başka bir ekrandan önce ekibe gider. Açık bir konuşma varken bunun yerine onun her mesajını tek satıra katlar, bu çalıştırmada sonra açılan konuşmalar da katlı başlar. Bkz. [ekip](../screen/salon.md) ve [konuşmalar](../screen/conversations.md).
 
 ### `:forget [@NAME]`
 
@@ -330,7 +330,7 @@ Ekip: imece'nin ana ekrandan önceki görünümü; diğeri `:home`.
 
 ### `:settle`
 
-Ekibin seçili satırını gizler, oradaki `s` gibi: bir işçinin satırını (yardımcıları ve araştırmacısıyla) ya da bir projenin başlığında veya liderinde bütün projeyi, size yeniden ihtiyacı olana dek ekipten çıkarır. Önce ekibe gider. Bir şeyi sizi bekliyorsa ya da takılmışsa reddedilir: `gizlenmedi: claude-2 seni bekliyor`. Bitmiş turları görülmüş sayılır. Flaş: `claude-2 gizlendi: sana ihtiyacı olunca döner`. Menü notu satırın adını verir. Bkz. [ekip](../screen/salon.md).
+Ekibin seçili satırını gizler, oradaki `s` gibi: bir işçinin satırını (yardımcıları ve araştırmacısıyla) ya da bir projenin başlığında veya liderinde bütün projeyi, size yeniden ihtiyacı olana dek ekipten çıkarır. Ana ekranda eldeki satırın ajanını ya da projesini gizler ve orada kalır; başka bir ekrandan önce ekibe gider. Bir şeyi sizi bekliyorsa ya da takılmışsa reddedilir: `gizlenmedi: claude-2 seni bekliyor`. Bitmiş turları görülmüş sayılır. Flaş: `claude-2 gizlendi: sana ihtiyacı olunca döner`. Menü notu satırın adını verir. Bkz. [ekip](../screen/salon.md).
 
 ### `:slower`
 
@@ -382,11 +382,11 @@ Bir `:close`, `:forget`, `:archive` ya da `:clear`'ın olmasını önler, `u` gi
 
 ### `:unfold`
 
-Ekipte her şeyi açar, `zR` gibi; açık bir konuşma varken onun her mesajını açar, sonra açılan konuşmalar da yine açık başlar.
+Ekipte her şeyi açar, `zR` gibi (ana ekranda orada kalır); açık bir konuşma varken onun her mesajını açar, sonra açılan konuşmalar da yine açık başlar.
 
 ### `:unsettle`
 
-`s` ya da `:settle` ile gizlenen her şeyi geri getirir ve ekibe gider. Flaş: `gizlenen 3 şey ekibe döndü`. Menü notu kaç şeyin gizlendiğini söyler.
+`s` ya da `:settle` ile gizlenen her şeyi geri getirir ve ekibe gider (ekibi de gösteren ana ekran olduğu yerde kalır). Flaş: `gizlenen 3 şey ekibe döndü`. Menü notu kaç şeyin gizlendiğini söyler.
 
 ### `:waiting`
 

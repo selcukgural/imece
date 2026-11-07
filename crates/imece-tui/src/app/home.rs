@@ -7,23 +7,27 @@
 use super::*;
 
 /// A row of Home: an item waiting for the person, by its index in
-/// `World::inbox`, or an agent.
+/// `World::inbox`, an agent, or a project's heading over its agents
+/// (record 125, step 5: the team is Home's lower half).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum HomeRow {
     Item(usize),
     Agent(AgentId),
+    Project(ProjectId),
 }
 
 /// The groups of Home's list, in their order (record 125): what is to
 /// decide by what deciding costs (a permission is one key, a question is
 /// read and answered, a change is a diff read; what the person put off
-/// with `s` last), then who is at work.
+/// with `s` last), then who is at work: a project's heading, then its
+/// agents stuck, at work and quiet.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum HomeGroup {
     Permission,
     Question,
     Change,
     Later,
+    Team,
     Stuck,
     Work,
     Quiet,
@@ -56,7 +60,9 @@ impl HomeGroup {
             HomeGroup::Permission | HomeGroup::Question | HomeGroup::Change | HomeGroup::Later => {
                 Heading::Decide
             }
-            HomeGroup::Stuck | HomeGroup::Work | HomeGroup::Quiet => Heading::Work,
+            HomeGroup::Team | HomeGroup::Stuck | HomeGroup::Work | HomeGroup::Quiet => {
+                Heading::Work
+            }
         }
     }
 }
@@ -83,10 +89,15 @@ impl App {
 
     /// Home's rows for `scope`, group by group: what waits in `W`'s
     /// order (permissions, questions, changes; among the changes the
-    /// easy ones first; what was put off last), then what is stuck, at
-    /// work and quiet. An agent with an ask or a question open is that
-    /// item; one with a change waiting that went on to other work is
-    /// both, for they are two pieces of work.
+    /// easy ones first; what was put off last), then the team, project by
+    /// project in the salon's order: a heading when more than one project
+    /// is in view (a folded project is its heading alone), its workers
+    /// and solos stuck, at work and quiet, each with its helpers and
+    /// researcher under it, then the helpers whose worker has no row. An
+    /// agent with an ask or a question open is that item; one with a
+    /// change waiting that went on to other work is both, for they are
+    /// two pieces of work; a leader has no row unless it is stuck; an
+    /// agent `s` hid is out until it needs the person.
     pub fn home_rows_in(&self, scope: Option<ProjectId>) -> Vec<(HomeGroup, HomeRow)> {
         let w = &self.world;
         let ours = |a: AgentId| scope.is_none_or(|p| w.agents[a].project == p);
@@ -102,29 +113,131 @@ impl App {
             let open = |kind| w.open_item(id, kind).is_some();
             open(InboxKind::Approval) || open(InboxKind::Question)
         };
-        let mut agents: Vec<_> = (w.agents.iter())
-            .filter(|a| ours(a.id) && !a.gone && !w.put_away(a.id))
-            .filter(|a| !w.projects[a.project].closed)
-            .filter_map(|a| {
-                let at_work = a.status.busy() || matches!(a.status, Status::Asking { .. });
-                let group = if rungs[a.id] == Rung::Stuck {
-                    HomeGroup::Stuck
-                } else if waits_on_item(a.id) {
-                    return None;
-                } else if at_work {
-                    HomeGroup::Work
-                } else if a.role == Role::Leader || items.iter().any(|&i| w.inbox[i].agent == a.id)
-                {
-                    return None;
-                } else {
-                    HomeGroup::Quiet
-                };
-                Some((group, HomeRow::Agent(a.id)))
-            })
-            .collect();
-        agents.sort_by_key(|&(group, _)| group);
-        rows.extend(agents);
+        // Hidden by `s`: the agent, or the worker it hangs under.
+        let hidden = |a: &Agent| {
+            let worker = match (a.role, a.status) {
+                (Role::Helper, _) => a.parent,
+                (Role::Researcher, Status::Researching { for_agent, .. }) => Some(for_agent),
+                _ => None,
+            };
+            self.settled.contains(&a.id) || worker.is_some_and(|id| self.settled.contains(&id))
+        };
+        let group_of = |a: &Agent| -> Option<HomeGroup> {
+            if a.gone || w.put_away(a.id) || hidden(a) {
+                return None;
+            }
+            let at_work = a.status.busy() || matches!(a.status, Status::Asking { .. });
+            if rungs[a.id] == Rung::Stuck {
+                Some(HomeGroup::Stuck)
+            } else if waits_on_item(a.id) {
+                None
+            } else if at_work {
+                Some(HomeGroup::Work)
+            } else if a.role == Role::Leader || items.iter().any(|&i| w.inbox[i].agent == a.id) {
+                None
+            } else {
+                Some(HomeGroup::Quiet)
+            }
+        };
+        let in_view = |p: &Project| {
+            !p.closed && !self.settled_projects.contains(&p.id) && scope.is_none_or(|s| s == p.id)
+        };
+        let headed = scope.is_none() && w.projects.iter().filter(|p| in_view(p)).count() > 1;
+        for p in w.salon_order() {
+            if !in_view(&w.projects[p]) {
+                continue;
+            }
+            let mut under = Vec::new();
+            let of_p = |a: &&Agent| a.project == p;
+            let mut tops: Vec<(HomeGroup, AgentId)> = (w.agents.iter().filter(of_p))
+                .filter(|a| matches!(a.role, Role::Worker | Role::Solo))
+                .filter_map(|a| group_of(a).map(|g| (g, a.id)))
+                .collect();
+            tops.sort_by_key(|&(group, _)| group);
+            let mut listed = Vec::new();
+            for (group, id) in tops {
+                under.push((group, HomeRow::Agent(id)));
+                listed.push(id);
+                for hung in self.row_group(id).into_iter().skip(1) {
+                    if let Some(g) = group_of(&w.agents[hung]) {
+                        under.push((g, HomeRow::Agent(hung)));
+                        listed.push(hung);
+                    }
+                }
+            }
+            let mut loose: Vec<(HomeGroup, AgentId)> = (w.agents.iter().filter(of_p))
+                .filter(|a| {
+                    !listed.contains(&a.id) && a.role != Role::Worker && a.role != Role::Solo
+                })
+                .filter_map(|a| group_of(a).map(|g| (g, a.id)))
+                .collect();
+            loose.sort_by_key(|&(group, _)| group);
+            under.extend(loose.into_iter().map(|(g, id)| (g, HomeRow::Agent(id))));
+            // A heading stands over rows, or folded over the rows it hides;
+            // a project with nobody on the list has none.
+            if under.is_empty() {
+                continue;
+            }
+            if headed {
+                rows.push((HomeGroup::Team, HomeRow::Project(p)));
+                if self.collapsed[p] {
+                    continue;
+                }
+            }
+            rows.extend(under);
+        }
         rows
+    }
+
+    /// Whether Home heads its agents with their projects: more than one
+    /// in view, none narrowed to.
+    pub(crate) fn home_headed(&self) -> bool {
+        self.home_rows()
+            .iter()
+            .any(|r| matches!(r.1, HomeRow::Project(_)))
+    }
+
+    /// The project the row at hand belongs to.
+    fn home_project(&self) -> Option<ProjectId> {
+        let w = &self.world;
+        Some(match self.home_at()? {
+            HomeRow::Project(p) => p,
+            HomeRow::Agent(id) => w.agents[id].project,
+            HomeRow::Item(i) => w.agents[w.inbox[i].agent].project,
+        })
+    }
+
+    /// `h` `l` (`za`) on Home: the row at hand's project folds to its
+    /// heading or unfolds, when the projects head their rows; folding
+    /// brings the heading to hand, so the cursor does not vanish with the
+    /// rows.
+    pub(super) fn home_fold(&mut self, fold: bool) {
+        let Some(p) = self.home_project() else {
+            return;
+        };
+        if !self.home_headed() {
+            return;
+        }
+        self.collapsed[p] = fold;
+        if fold {
+            self.at_home.at = Some(HomeRow::Project(p));
+        }
+        self.home_settle();
+    }
+
+    /// `za` on Home: the row at hand's project, the other way.
+    pub(super) fn home_fold_toggle(&mut self) {
+        if let Some(p) = self.home_project() {
+            self.home_fold(!self.collapsed[p]);
+        }
+    }
+
+    /// `s` on an agent's row or a project's heading: hidden until it
+    /// needs the person (`:settle`); the row in its place comes to hand.
+    pub(super) fn home_hide(&mut self) {
+        self.settle_at_hand();
+        self.at_home.at = None;
+        self.home_go(self.at_home.row);
     }
 
     /// Home's rows as it stands.
@@ -181,6 +294,10 @@ impl App {
                 self.pane = Pane::Salon;
                 self.selected = Sel::Agent(id);
             }
+            Some(HomeRow::Project(p)) => {
+                self.pane = Pane::Salon;
+                self.selected = Sel::Project(p);
+            }
             None => {
                 self.pane = Pane::Salon;
                 if let Some(p) = self.at_home.scope {
@@ -225,10 +342,11 @@ impl App {
     }
 
     /// `s`: the item at hand after everything else waiting, staying on
-    /// the list; the row in its place comes to hand.
+    /// the list; an agent or a project hidden instead (`home_hide`); the
+    /// row in its place comes to hand.
     fn home_later(&mut self) {
         let Some(HomeRow::Item(i)) = self.at_home.at else {
-            return;
+            return self.home_hide();
         };
         self.deferred.retain(|&d| d != i);
         self.deferred.push(i);
@@ -247,6 +365,14 @@ impl App {
             KeyCode::Char(']') => self.home_scope(true),
             KeyCode::Char('[') => self.home_scope(false),
             KeyCode::Char('s') => self.home_later(),
+            KeyCode::Left | KeyCode::Char('h') => self.home_fold(true),
+            KeyCode::Right | KeyCode::Char('l') => self.home_fold(false),
+            // A project's heading opens its leader's work.
+            KeyCode::Enter if matches!(self.at_home.at, Some(HomeRow::Project(_))) => {
+                if let Some(HomeRow::Project(p)) = self.at_home.at {
+                    self.zoom = Zoom::Focus(self.world.projects[p].leader);
+                }
+            }
             // A decision is on what was read: the row it was read on went,
             // and the one in its place is new.
             KeyCode::Char('a' | 'r' | 'e' | 'A') if lost => {
@@ -274,7 +400,7 @@ impl App {
         }
         match self.home_at()? {
             HomeRow::Item(i) if w.inbox[i].kind == InboxKind::Question => Some(i),
-            _ => None,
+            HomeRow::Item(_) | HomeRow::Agent(_) | HomeRow::Project(_) => None,
         }
     }
 
@@ -354,19 +480,70 @@ mod tests {
         app.world.agents[w[2]].status = Status::Blocked;
         app.world.inbox.push(item(InboxKind::Change, w[1], true));
         let rows = app.home_rows();
-        assert_eq!(rows[0], (HomeGroup::Change, HomeRow::Item(0)));
-        assert_eq!(rows[1], (HomeGroup::Stuck, HomeRow::Agent(w[2])));
-        assert_eq!(rows[2], (HomeGroup::Work, HomeRow::Agent(w[3])));
-        assert_eq!(rows[3].0, HomeGroup::Quiet);
+        // Two projects in view: each heads its own, stuck, at work, quiet;
+        // w[1] is its change's row, not an agent's.
+        let projects: Vec<ProjectId> = app.world.agents.iter().map(|a| a.project).collect();
+        let project = |id: AgentId| projects[id];
+        let mut want = vec![(HomeGroup::Change, HomeRow::Item(0))];
+        for p in app.world.salon_order() {
+            let mine: Vec<_> = [
+                (HomeGroup::Stuck, w[2]),
+                (HomeGroup::Work, w[3]),
+                (HomeGroup::Quiet, w[0]),
+            ]
+            .into_iter()
+            .filter(|&(_, id)| project(id) == p)
+            .map(|(g, id)| (g, HomeRow::Agent(id)))
+            .collect();
+            if !mine.is_empty() {
+                want.push((HomeGroup::Team, HomeRow::Project(p)));
+                want.extend(mine);
+            }
+        }
+        assert_eq!(rows, want);
+        assert_eq!(rows.iter().filter(|r| r.0 == HomeGroup::Team).count(), 2);
         assert!(!rows.contains(&(HomeGroup::Quiet, HomeRow::Agent(w[1]))));
-        // The leaders stand on the list only while they work.
+        // The leaders stand on the list only while they work, after
+        // their project's workers, before the next project's heading.
         let lead = app.world.projects[0].leader;
         assert!(!rows.iter().any(|r| r.1 == HomeRow::Agent(lead)));
         app.world.agents[lead].status = Status::Working;
+        let rows = app.home_rows();
+        let at = |row: HomeRow| rows.iter().position(|r| r.1 == row).unwrap();
+        assert_eq!(rows[at(HomeRow::Agent(lead))].0, HomeGroup::Work);
+        let heads: Vec<usize> = (rows.iter().enumerate())
+            .filter(|(_, r)| r.0 == HomeGroup::Team)
+            .map(|(i, _)| i)
+            .collect();
+        let mine = at(HomeRow::Project(0));
+        let next = heads
+            .iter()
+            .find(|&&h| h > mine)
+            .copied()
+            .unwrap_or(rows.len());
+        assert!(mine < at(HomeRow::Agent(lead)) && at(HomeRow::Agent(lead)) < next);
+        assert_eq!(at(HomeRow::Agent(lead)), next - 1, "last of its project");
+        // Narrowed to one project, or with one open: no heading.
+        app.at_home.scope = Some(project(w[2]));
+        let rows = app.home_rows();
+        assert_eq!(rows[0], (HomeGroup::Stuck, HomeRow::Agent(w[2])));
+        assert!(!rows.iter().any(|r| matches!(r.1, HomeRow::Project(_))));
+        app.at_home.scope = None;
+        app.world.projects[1].closed = true;
         assert!(
-            app.home_rows()
-                .contains(&(HomeGroup::Work, HomeRow::Agent(lead)))
+            !app.home_rows()
+                .iter()
+                .any(|r| matches!(r.1, HomeRow::Project(_)))
         );
+        // A project with nobody on the list has no heading.
+        app.world.projects[1].closed = false;
+        for a in &mut app.world.agents {
+            if a.project == 0 {
+                a.gone = true;
+            }
+        }
+        assert!(!app.home_rows().iter().any(|r| r.1 == HomeRow::Project(0)));
+        assert!(app.home_rows().iter().any(|r| r.1 == HomeRow::Project(1)));
     }
 
     #[test]
@@ -419,9 +596,9 @@ mod tests {
         assert!(of_p.len() < all);
         let shown = |r: &(HomeGroup, HomeRow)| match r.1 {
             HomeRow::Agent(id) => app.world.agents[id].project == 0,
-            HomeRow::Item(_) => false,
+            HomeRow::Item(_) | HomeRow::Project(_) => false,
         };
-        assert!(of_p.iter().all(shown));
+        assert!(of_p.iter().all(shown), "narrowed: no heading either");
         app.home_key(key(KeyCode::Char(']')));
         assert_eq!(app.at_home.scope, Some(1));
         app.home_key(key(KeyCode::Char(']')));
@@ -473,6 +650,10 @@ mod tests {
         assert_eq!(app.selected, Sel::Agent(w[1]));
         assert_eq!(app.waiting_at, None);
         app.home_go(1);
+        assert_eq!(app.pane, Pane::Salon);
+        assert_eq!(app.at_home.at, Some(HomeRow::Project(0)), "the heading");
+        assert_eq!(app.selected, Sel::Project(0));
+        app.home_go(2);
         assert_eq!(app.pane, Pane::Salon);
         let Some(HomeRow::Agent(id)) = app.at_home.at else {
             panic!("an agent")
@@ -566,6 +747,11 @@ mod tests {
         assert!(!app.world.inbox[0].open, "allowed");
         assert_eq!(app.view, View::Home);
         app.at_home.at = None;
+        // The first row is the project's heading: its leader's work opens.
+        app.key(key(KeyCode::Enter));
+        assert_eq!(app.zoom, Zoom::Focus(app.world.projects[0].leader));
+        app.key(key(KeyCode::Esc));
+        app.home_go(1);
         app.key(key(KeyCode::Enter));
         let Zoom::Focus(id) = app.zoom else {
             panic!("an agent opens: {:?}", app.zoom)
@@ -702,7 +888,8 @@ mod tests {
         assert_eq!(app.view, View::Salon, "the digits open no view");
         app.command("home");
         assert_eq!(app.view, View::Home);
-        assert_eq!(groups(&app)[0], HomeGroup::Quiet);
+        assert_eq!(groups(&app)[0], HomeGroup::Team);
+        assert_eq!(groups(&app)[1], HomeGroup::Quiet);
         assert_eq!(app.key_scope(), Some(keys::Scope::Salon));
     }
 }
@@ -815,9 +1002,15 @@ mod triage_tests {
         app.world.inbox.push(item(InboxKind::Question, w[0]));
         app.world.inbox.push(item(InboxKind::Question, w[1]));
         app.world.agents[w[2]].status = Status::Working;
+        // Under AT WORK the first row is a heading, the working worker's
+        // project's (the two with questions are their items); `j` goes on
+        // to the worker, first of its project as it works.
         keys(&mut app, "gw");
-        assert_eq!(app.at_home.at, Some(HomeRow::Agent(w[2])));
+        let p = app.world.agents[w[2]].project;
+        assert_eq!(app.at_home.at, Some(HomeRow::Project(p)));
         assert_eq!(app.at_home.row, 2);
+        keys(&mut app, "j");
+        assert_eq!(app.at_home.at, Some(HomeRow::Agent(w[2])));
         keys(&mut app, "jgd");
         assert_eq!(app.at_home.at, Some(HomeRow::Item(0)));
         assert_eq!(app.at_home.row, 0);
@@ -865,11 +1058,11 @@ mod triage_tests {
         // The last one: the row in its place is whatever is next.
         keys(&mut app, "a");
         assert!(!app.world.inbox[4].open);
-        assert!(matches!(app.at_home.at, Some(HomeRow::Agent(_))));
+        assert!(matches!(app.at_home.at, Some(HomeRow::Project(_))));
         // A row gone by itself is still told once.
         app.world.inbox.push(item(InboxKind::Approval, w[0]));
         app.world.inbox.push(item(InboxKind::Approval, w[1]));
-        app.home_settle();
+        app.home_go(0);
         assert_eq!(app.at_home.at, Some(HomeRow::Item(5)));
         app.world.inbox[5].open = false;
         keys(&mut app, "a");
@@ -889,5 +1082,243 @@ mod triage_tests {
         keys(&mut app, "a");
         assert!(!app.world.inbox[0].open);
         assert_eq!(app.at_home.at, None);
+    }
+}
+
+#[cfg(test)]
+mod team_tests {
+    use super::super::tests::*;
+    use super::*;
+
+    fn item(kind: InboxKind, agent: AgentId) -> InboxItem {
+        InboxItem {
+            kind,
+            agent,
+            detail: "the words".into(),
+            researcher: None,
+            open: true,
+            tick: 0,
+            card: None,
+        }
+    }
+
+    /// Two quiet projects of two workers each on Home, the first worker
+    /// of project 0 with a helper and a researcher under it.
+    fn team() -> (App, Vec<AgentId>, AgentId, AgentId) {
+        let (world, sim) = crate::sim::world(2, 4, 2, 1, Lang::En);
+        let mut app = App::with(world, Engine::Sim(sim), Lang::En);
+        app.world.inbox.clear();
+        for a in &mut app.world.agents {
+            a.status = Status::Idle;
+            a.starting = false;
+        }
+        app.view = View::Home;
+        let w: Vec<AgentId> = (app.world.agents.iter())
+            .filter(|a| a.role == Role::Worker && a.project == 0)
+            .map(|a| a.id)
+            .collect();
+        let worker = w[0];
+        let n = app.world.agents.len();
+        let mut helper = app.world.agents[worker].clone();
+        helper.id = n;
+        helper.name = "claude-9.1".into();
+        helper.role = Role::Helper;
+        helper.parent = Some(worker);
+        helper.status = Status::Working;
+        app.world.agents.push(helper);
+        let mut researcher = app.world.agents[worker].clone();
+        researcher.id = n + 1;
+        researcher.name = "scout".into();
+        researcher.role = Role::Researcher;
+        researcher.parent = None;
+        researcher.status = Status::Researching {
+            for_agent: worker,
+            until: 99,
+        };
+        app.world.agents.push(researcher);
+        (app, w, n, n + 1)
+    }
+
+    fn rows(app: &App) -> Vec<HomeRow> {
+        app.home_rows().iter().map(|r| r.1).collect()
+    }
+
+    fn keys(app: &mut App, text: &str) {
+        for c in text.chars() {
+            app.key(key(KeyCode::Char(c)));
+        }
+    }
+
+    #[test]
+    fn helpers_and_researchers_hang_under_their_worker_or_stand_alone_after() {
+        let (mut app, w, helper, researcher) = team();
+        let worker = w[0];
+        let got = rows(&app);
+        let at = |row: HomeRow| got.iter().position(|&r| r == row).unwrap();
+        assert_eq!(got[0], HomeRow::Project(0));
+        assert_eq!(at(HomeRow::Agent(helper)), at(HomeRow::Agent(worker)) + 1);
+        assert_eq!(
+            at(HomeRow::Agent(researcher)),
+            at(HomeRow::Agent(worker)) + 2
+        );
+        assert_eq!(
+            app.home_rows()[at(HomeRow::Agent(helper))].0,
+            HomeGroup::Work
+        );
+        // The worker waits on an ask: its item is its row, the helper and
+        // the researcher stand on their own after the project's workers.
+        app.world.inbox.push(item(InboxKind::Approval, worker));
+        let got = rows(&app);
+        assert_eq!(got[0], HomeRow::Item(0));
+        assert!(!got.contains(&HomeRow::Agent(worker)));
+        let heading = got.iter().position(|&r| r == HomeRow::Project(0)).unwrap();
+        let next = (got.iter().enumerate())
+            .find(|(i, r)| *i > heading && matches!(r, HomeRow::Project(_)))
+            .map_or(got.len(), |(i, _)| i);
+        let at = |row: HomeRow| got.iter().position(|&r| r == row).unwrap();
+        assert!(at(HomeRow::Agent(helper)) < next && at(HomeRow::Agent(researcher)) < next);
+        assert!(
+            at(HomeRow::Agent(w[1])) < at(HomeRow::Agent(helper)),
+            "workers first"
+        );
+        assert_eq!(
+            at(HomeRow::Agent(researcher)),
+            at(HomeRow::Agent(helper)) + 1
+        );
+        // A hidden helper is left out, its worker stays.
+        app.world.inbox.clear();
+        app.settled.insert(helper);
+        let got = rows(&app);
+        assert!(!got.contains(&HomeRow::Agent(helper)));
+        assert!(got.contains(&HomeRow::Agent(worker)));
+        assert!(got.contains(&HomeRow::Agent(researcher)));
+    }
+
+    #[test]
+    fn h_l_and_za_fold_the_row_at_hand_s_project_to_its_heading() {
+        let (mut app, w, helper, _) = team();
+        app.home_go(1);
+        assert_eq!(app.at_home.at, Some(HomeRow::Agent(w[0])));
+        keys(&mut app, "h");
+        assert!(app.collapsed[0]);
+        assert_eq!(
+            app.at_home.at,
+            Some(HomeRow::Project(0)),
+            "the heading comes to hand"
+        );
+        let got = rows(&app);
+        assert_eq!(got[0], HomeRow::Project(0));
+        assert_eq!(got[1], HomeRow::Project(1), "folded: its rows are gone");
+        assert!(!got.contains(&HomeRow::Agent(helper)));
+        keys(&mut app, "l");
+        assert!(!app.collapsed[0]);
+        assert_eq!(rows(&app)[1], HomeRow::Agent(w[0]));
+        assert_eq!(app.at_home.at, Some(HomeRow::Project(0)));
+        app.key(key(KeyCode::Left));
+        assert!(app.collapsed[0], "the arrows too");
+        app.key(key(KeyCode::Right));
+        assert!(!app.collapsed[0]);
+        keys(&mut app, "za");
+        assert!(app.collapsed[0], "za folds");
+        keys(&mut app, "za");
+        assert!(!app.collapsed[0], "and unfolds");
+        // From an item's row: its agent's project folds.
+        app.world.inbox.push(item(InboxKind::Question, w[1]));
+        app.home_go(0);
+        assert_eq!(app.at_home.at, Some(HomeRow::Item(0)));
+        keys(&mut app, "h");
+        assert_eq!(app.collapsed, [true, false]);
+        assert_eq!(app.at_home.at, Some(HomeRow::Project(0)));
+        // zM and zR fold and unfold every project, as :fold and :unfold
+        // do, without leaving Home.
+        keys(&mut app, "zR");
+        assert_eq!(app.collapsed, [false, false]);
+        keys(&mut app, "zM");
+        assert_eq!(app.collapsed, [true, true]);
+        app.command("unfold");
+        assert_eq!(app.collapsed, [false, false]);
+        assert_eq!(app.view, View::Home);
+        app.command("fold");
+        assert_eq!(app.collapsed, [true, true]);
+        assert_eq!(app.view, View::Home);
+        app.collapsed = vec![false, false];
+        // One project in view: nothing heads the rows, so nothing folds.
+        app.at_home.scope = Some(0);
+        app.home_go(0);
+        keys(&mut app, "h");
+        assert_eq!(app.collapsed, [false, false], "no heading to fold to");
+        assert!(!app.home_headed());
+        app.at_home.scope = None;
+        assert!(app.home_headed());
+    }
+
+    #[test]
+    fn s_hides_an_agent_or_a_project_until_it_needs_the_person() {
+        let (mut app, w, helper, researcher) = team();
+        app.home_go(1);
+        assert_eq!(app.at_home.at, Some(HomeRow::Agent(w[0])));
+        keys(&mut app, "s");
+        assert!(app.settled.contains(&w[0]));
+        let name = app.world.agents[w[0]].name.clone();
+        assert_eq!(
+            flashed(&app).as_deref(),
+            Some(format!("{name} hidden until it needs you").as_str())
+        );
+        let got = rows(&app);
+        for id in [w[0], helper, researcher] {
+            assert!(!got.contains(&HomeRow::Agent(id)), "{id} hangs under it");
+        }
+        assert_eq!(
+            app.at_home.at,
+            Some(HomeRow::Agent(w[1])),
+            "the row in its place"
+        );
+        // The heading: the whole project.
+        app.home_go(0);
+        assert_eq!(app.at_home.at, Some(HomeRow::Project(0)));
+        keys(&mut app, "s");
+        assert!(app.settled_projects.contains(&0));
+        // One project left in view: no heading over it.
+        assert!(!app.home_headed());
+        let first = rows(&app)[0];
+        assert!(matches!(first, HomeRow::Agent(id) if app.world.agents[id].project == 1));
+        assert_eq!(app.at_home.at, Some(first));
+        // `:unsettle` brings them back and stays on Home.
+        app.command("unsettle");
+        assert!(app.settled.is_empty() && app.settled_projects.is_empty());
+        assert_eq!(app.view, View::Home);
+        assert_eq!(rows(&app)[0], HomeRow::Project(0));
+        // Refused for one that needs the person: its row stays.
+        app.world.agents[w[1]].status = Status::Blocked;
+        let stuck = rows(&app)
+            .iter()
+            .position(|&r| r == HomeRow::Agent(w[1]))
+            .unwrap();
+        assert_eq!(stuck, 1, "stuck: first of its project, under the heading");
+        app.home_go(stuck);
+        assert_eq!(app.at_home.at, Some(HomeRow::Agent(w[1])));
+        keys(&mut app, "s");
+        assert!(!app.settled.contains(&w[1]));
+        let name = app.world.agents[w[1]].name.clone();
+        assert_eq!(
+            flashed(&app).as_deref(),
+            Some(format!("not hidden: {name} needs you").as_str())
+        );
+        // `:settle` on Home is `s` there.
+        app.world.agents[w[1]].status = Status::Idle;
+        app.command("settle");
+        assert!(app.settled.contains(&w[1]));
+        assert_eq!(app.view, View::Home);
+    }
+
+    #[test]
+    fn enter_on_a_heading_opens_the_leader_and_the_preview_names_the_project() {
+        let (mut app, _, _, _) = team();
+        app.home_go(0);
+        assert_eq!(app.home_at(), Some(HomeRow::Project(0)));
+        assert_eq!(app.agent_at_hand(), Some(app.world.projects[0].leader));
+        assert_eq!(app.question_at_hand(), None);
+        app.key(key(KeyCode::Enter));
+        assert_eq!(app.zoom, Zoom::Focus(app.world.projects[0].leader));
     }
 }

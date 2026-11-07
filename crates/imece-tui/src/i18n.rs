@@ -633,6 +633,9 @@ pub struct Text {
     /// The preview's line before what the asking agent did so far.
     pub home_so_far: &'static str,
     pub home_open: &'static str,
+    /// Home's keys on a project's heading and an agent's row.
+    pub home_fold: &'static str,
+    pub home_hide: &'static str,
     pub home_yes: &'static str,
     pub home_no: &'static str,
     /// Home's TO DECIDE heading counts each kind: one, and many (`{}`).
@@ -1749,6 +1752,8 @@ pub const EN: Text = Text {
     home_pick: "pick",
     home_so_far: "so far:",
     home_open: "open",
+    home_fold: "fold · unfold",
+    home_hide: "hide",
     home_yes: "yes",
     home_no: "no",
     home_counts: [
@@ -2979,6 +2984,8 @@ pub const TR: Text = Text {
     home_pick: "seç",
     home_so_far: "şimdiye dek:",
     home_open: "aç",
+    home_fold: "katla · aç",
+    home_hide: "gizle",
     home_yes: "evet",
     home_no: "hayır",
     home_counts: [

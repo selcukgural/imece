@@ -440,7 +440,7 @@ fn member(app: &App, id: AgentId, rungs: &[Rung]) -> Vec<Span<'static>> {
 /// costs, how many are stuck (`■`: blocked or stopped), and (even when
 /// folded) how much waits for the person. A folded project ends with its
 /// loudest member.
-pub(super) fn project_line(app: &App, p: ProjectId, rungs: &[Rung]) -> Line<'static> {
+pub(crate) fn project_line(app: &App, p: ProjectId, rungs: &[Rung]) -> Line<'static> {
     let w = &app.world;
     let t = app.lang.text();
     let project = &w.projects[p];

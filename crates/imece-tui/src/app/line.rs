@@ -706,8 +706,11 @@ impl App {
             which @ ("fold" | "unfold") if self.thread.is_some() => {
                 self.fold_talk(which == "fold");
             }
+            // On Home the team is its lower half: the folding stays there.
             which @ ("fold" | "unfold") => {
-                self.go_salon();
+                if self.view != View::Home {
+                    self.go_salon();
+                }
                 self.fold_all(which == "fold");
             }
             "trace" => {
@@ -743,6 +746,10 @@ impl App {
             "tidy" => self.open_tidy(),
             "welcome" => self.open_welcome(),
             "news" => self.open_news(),
+            "settle" if self.view == View::Home => {
+                self.home_settle();
+                self.home_hide();
+            }
             "settle" => {
                 self.go_salon();
                 self.settle_at_hand();
@@ -1033,7 +1040,14 @@ mod tests {
         assert!(app.needs_only);
         app.show(View::Home);
         app.command("fold");
-        assert_eq!(app.view, View::Salon);
+        assert_eq!(app.view, View::Home, "Home folds its own team");
+        assert!(app.collapsed.iter().all(|&c| c));
+        app.command("unfold");
+        assert!(app.collapsed.iter().all(|&c| !c));
+        app.show(View::Salon);
+        app.zoom = Zoom::Focus(0);
+        app.command("fold");
+        assert_eq!((app.view, app.zoom), (View::Salon, Zoom::None));
         assert!(app.collapsed.iter().all(|&c| c));
         app.command("unfold");
         assert!(app.collapsed.iter().all(|&c| !c));

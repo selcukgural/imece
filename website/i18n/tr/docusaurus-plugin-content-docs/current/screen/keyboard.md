@@ -83,10 +83,10 @@ Bir akorun ilk tuşu ikincisini beklerken satır ikinci tuşun ne olabileceğini
 
 | Tuş | Ne yapar |
 | --- | --- |
-| `←` `→`  `h` `l` | projeyi ya da işçinin yardımcılarını katla / aç (konuşmada: bir mesajı) |
-| `za`  `zM`  `zR` | katla: değiştir · hepsi (`:fold`) · hiçbiri (`:unfold`); konuşmada mesajlarını |
+| `←` `→`  `h` `l` | bir projeyi ya da bir işçinin yardımcılarını katla / aç; ana ekranda eldeki satırın projesini, başlığına (konuşmada: bir mesajı) |
+| `za`  `zM`  `zR` | katla: değiştir · hepsi (`:fold`) · hiçbiri (`:unfold`), ekipte ve ana ekranda; konuşmada mesajlarını |
 | `f`  `:needs` | ekip: yalnız sizi bekleyenler · herkes |
-| `s`  `:settle` | seçili işçinin satırını ya da projeyi (başlığında ya da liderinde) size yeniden ihtiyacı olana dek gizle; `:unsettle` hepsini geri getirir |
+| `s`  `:settle` | seçili işçinin satırını ya da projeyi (başlığında ya da liderinde) size yeniden ihtiyacı olana dek gizle; ana ekranda eldeki satırın ajanını ya da projesini (bir öge ise `sonraya` gider); `:unsettle` hepsini geri getirir |
 
 ## KARAR BEKLEYEN
 

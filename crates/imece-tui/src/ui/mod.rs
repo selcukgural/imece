@@ -2123,7 +2123,20 @@ pub(crate) fn home_hints(app: &App) -> Vec<(&'static str, &'static str)> {
         ],
         Some(InboxKind::Approval) => vec![("a", t.allow_once), ("r", t.refuse), ("e", t.this_turn)],
         Some(_) => vec![("enter", t.home_open), ("a", t.home_yes), ("r", t.home_no)],
-        None => vec![("enter", t.home_open), ("@", t.write_this)],
+        None => match app.home_at() {
+            Some(crate::app::HomeRow::Project(_)) => {
+                vec![
+                    ("enter", t.home_open),
+                    ("h l", t.home_fold),
+                    ("s", t.home_hide),
+                ]
+            }
+            _ => vec![
+                ("enter", t.home_open),
+                ("s", t.home_hide),
+                ("@", t.write_this),
+            ],
+        },
     };
     keys.push(("?", t.help));
     keys
@@ -2229,7 +2242,8 @@ fn place_spans(app: &App) -> Vec<Span<'static>> {
                 (item.map(|item| item.agent), item.and_then(|item| item.card))
             }
             Some(crate::app::HomeRow::Agent(id)) => (Some(id), None),
-            None => (None, None),
+            // A project's heading is about no card: the project is named.
+            Some(crate::app::HomeRow::Project(_)) | None => (None, None),
         }
     } else {
         (app.agent_at_hand(), None)
@@ -7178,7 +7192,7 @@ mod tests {
         app.world.inbox.clear();
         let agent_row = foot(&app, 200);
         assert!(
-            agent_row.contains("   enter  open   @  write to this agent   ?  help"),
+            agent_row.contains("   enter  open   s  hide   @  write to this agent   ?  help"),
             "{agent_row}"
         );
     }
@@ -11940,7 +11954,13 @@ mod tests {
         app.collapsed = vec![true, true];
         key(&mut app, KeyCode::Char('z'));
         key(&mut app, KeyCode::Char('R'));
-        assert_eq!(app.collapsed, [true, true], "zR on Home");
+        assert_eq!(app.collapsed, [false, false], "zR on Home unfolds too");
+        app.zoom = Zoom::Focus(1);
+        app.collapsed = vec![true, true];
+        key(&mut app, KeyCode::Char('z'));
+        key(&mut app, KeyCode::Char('R'));
+        assert_eq!(app.collapsed, [true, true], "zR in a focus over Home");
+        app.zoom = Zoom::None;
         app.view = View::Salon;
         app.pane = Pane::Salon;
         key(&mut app, KeyCode::Char('z'));
