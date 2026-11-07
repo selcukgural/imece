@@ -50,7 +50,7 @@ put right. Lonca's own rules come by its `SessionStart` hook.
 **The scope is the whole tree** (`--paths=**`), for 8 h, Lonca's most (9 h is
 `session_ttl`). A session's paths could be a card's owned paths (record 114),
 but one session outlives many cards and `--continue` refuses a wider scope;
-that belongs with the last step of record 115's plan. An agent's name goes as
+the person left it the whole tree (record 123). An agent's name goes as
 Lonca takes it: `[A-Za-z0-9_.-]`, 64 at most, anything else `-`.
 
 **Refused.** `hire`'s `from` (`ON_LONCA_FROM`): a workspace is made of trunk.

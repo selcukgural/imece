@@ -34,5 +34,14 @@ the screen is cut, the legend still counting. **Concurrency.** The daemon's list
 the look, up to 5 s old: a line to read, never a decision. **Failure.** A look that
 fails leaves the last list; a daemon down clears it. **Migration.** Nothing saved.
 
-Not done: `file::name` completion from these (record 67), and the owned paths as a
-session's paths, the second half of the step.
+**The owned paths stay soft** (the person's decision, 2026-11-07). This was the second
+half of the step, and it is not built: a session's scope stays the whole tree
+(`--paths=**`, record 119), a card's paths stay record 114's. Lonca's `--paths` is a
+hard scope fixed at a session's start; record 114's paths come per card, and one
+session outlives many cards, so a second card outside the first's scope would be denied
+until `--continue --widen`, a signature, a finger on a Secure Enclave key, per card. The
+globs differ too (`src` against `src/**`). Two workers on one symbol are kept apart by
+the lease; a file written outside a card's paths still comes to the person as a strayed
+line and a Δ's `outside` line, never a refusal, which is what record 114 chose.
+
+Not done: `file::name` completion from these (record 67).
