@@ -24,7 +24,9 @@ fn story_icon(k: StoryKind) -> (&'static str, usize, Color) {
     }
 }
 
-pub fn draw(f: &mut Frame, area: Rect, app: &App, id: AgentId) {
+/// Agent `id`'s focus; `framed` under the detail's head (record 125),
+/// which says what the first line here would.
+pub fn draw(f: &mut Frame, area: Rect, app: &App, id: AgentId, framed: bool) {
     let w = &app.world;
     let t = app.lang.text();
     let a = &w.agents[id];
@@ -68,7 +70,9 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, id: AgentId) {
         fg(pal().agent),
     ));
     title.push(Span::styled(format!(" · {}", dollars(a.cost)), dim()));
-    head.push(Line::from(title));
+    if !framed {
+        head.push(Line::from(title));
+    }
 
     let mut status = vec![Span::styled(t.status, dim())];
     status.extend(status_spans(app.lang, w, a));
@@ -682,7 +686,7 @@ mod tests {
         app.motion = Motion::Calm;
         // Drawn on the focus, between the status lines and the story.
         let mut t = Terminal::new(TestBackend::new(100, 20)).unwrap();
-        t.draw(|f| draw(f, f.area(), &app, id)).unwrap();
+        t.draw(|f| draw(f, f.area(), &app, id, false)).unwrap();
         let rows: Vec<String> = (0..20)
             .map(|y| {
                 (0..100)
@@ -1018,7 +1022,7 @@ mod tests {
     fn focus_rows(app: &App, id: AgentId, height: u16) -> Vec<String> {
         use ratatui::{Terminal, backend::TestBackend};
         let mut t = Terminal::new(TestBackend::new(80, height)).unwrap();
-        t.draw(|f| draw(f, f.area(), app, id)).unwrap();
+        t.draw(|f| draw(f, f.area(), app, id, false)).unwrap();
         (0..height)
             .map(|y| {
                 (0..80)

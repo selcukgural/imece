@@ -5,7 +5,7 @@ description: The conversation window - everything said between two parties, read
 
 # Conversations
 
-A conversation is everything said between two parties, you and an agent or two agents, oldest first, each message whole. You open one with `enter` on a journal line or with `v` (`:talk`) on the agent at hand; it opens as a window over the team, dimming what is around it, and `esc` closes it.
+A conversation is everything said between two parties, you and an agent or two agents, oldest first, each message whole. You open one with `enter` on a journal line or with `v` (`:talk`) on the agent at hand; it opens as a window under the detail's head and tab bar ([the detail](changes.md#the-detail): it is the talk tab of the agent it is with), dimming what is around it, and `esc` closes it.
 
 ```text
 ┌ CONVERSATION · lead ⇄ claude-1 · 4/5 ──────────────────────────────────────┐

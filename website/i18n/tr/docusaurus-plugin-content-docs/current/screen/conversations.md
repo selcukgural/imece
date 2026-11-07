@@ -5,7 +5,7 @@ description: Konuşma penceresi - iki taraf arasında söylenen her şey bütün
 
 # Konuşmalar
 
-Bir konuşma, iki taraf arasında söylenen her şeydir: siz ve bir agent, ya da iki agent; eskiden yeniye, her mesaj bütünüyle. Günlükte bir satırda `enter` ile ya da eldeki agent'ta `v` (`:talk`) ile açarsınız; ekibin üstünde bir pencere olarak açılır, çevresini soluklaştırır, `esc` kapatır.
+Bir konuşma, iki taraf arasında söylenen her şeydir: siz ve bir agent, ya da iki agent; eskiden yeniye, her mesaj bütünüyle. Günlükte bir satırda `enter` ile ya da eldeki agent'ta `v` (`:talk`) ile açarsınız; detayın baş satırı ve sekme çubuğunun altında bir pencere olarak açılır ([detay](changes.md#detay): konuştuğu ajanın konuşma sekmesidir), çevresini soluklaştırır, `esc` kapatır.
 
 ```text
 ┌ KONUŞMA · lead ⇄ claude-1 · 4/5 ──────────────────────────────────────────┐

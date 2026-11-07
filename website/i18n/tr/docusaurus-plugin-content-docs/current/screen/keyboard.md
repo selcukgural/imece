@@ -52,6 +52,7 @@ Bir akorun ilk tuşu ikincisini beklerken satır ikinci tuşun ne olabileceğini
 | `⇧enter` `⌥enter` | yazarken: yeni satır; `↑` `↓` satırlar arası (terminal kitty klavye protokolünü konuştuğunda) |
 | `\enter` `⌥enter` | yazarken: yeni satır (burada `⇧enter` = `enter`); `\` sonra `enter` her terminalde çalışır |
 | `enter` | gönder; `esc` vazgeçer |
+| `tab`  `⇧tab` | bir işte (bir değişiklik, bir konuşma, bir odak): sekmelerinin sonrakisi / öncekisi, `diff · konuşma · log`; gösterecek bir şeyi olmayan sekme atlanır ([detay](changes.md#detay)) |
 
 ## Hareket
 

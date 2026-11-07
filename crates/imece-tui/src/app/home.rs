@@ -261,13 +261,19 @@ impl App {
     /// the row in its place, by what it is, so the next key decides it
     /// (a yes moves down, record 125). A row that went by itself before
     /// the key is still told, by `home_key`.
-    /// The open question at hand on Home, as its inbox index.
+    /// The open question at hand, as its inbox index: the row at hand on
+    /// Home, or the question of the agent whose detail is open.
     pub(super) fn question_at_hand(&self) -> Option<usize> {
+        let w = &self.world;
+        if let Some((id, _)) = self.detail() {
+            return (w.open_inbox().into_iter())
+                .find(|&i| w.inbox[i].kind == InboxKind::Question && w.inbox[i].agent == id);
+        }
         if self.view != View::Home {
             return None;
         }
         match self.home_at()? {
-            HomeRow::Item(i) if self.world.inbox[i].kind == InboxKind::Question => Some(i),
+            HomeRow::Item(i) if w.inbox[i].kind == InboxKind::Question => Some(i),
             _ => None,
         }
     }

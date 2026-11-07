@@ -390,6 +390,26 @@ impl App {
             }
             return;
         }
+        // On a piece of work: `tab` moves between its tabs, a digit picks
+        // one of the answers its question offers, `/` writes to it.
+        if self.detail().is_some() {
+            match k.code {
+                KeyCode::Tab | KeyCode::BackTab => {
+                    self.next_tab(k.code == KeyCode::BackTab);
+                    return;
+                }
+                KeyCode::Char(d @ '1'..='9') if self.option_at_hand(d).is_some() => {
+                    self.answer_option(d);
+                    return;
+                }
+                KeyCode::Char('/') if self.question_at_hand().is_some() => {
+                    let i = self.question_at_hand().unwrap_or_default();
+                    self.answer_item(i, true);
+                    return;
+                }
+                _ => {}
+            }
+        }
         if self.thread.is_some() && self.thread_key(k) {
             return;
         }
