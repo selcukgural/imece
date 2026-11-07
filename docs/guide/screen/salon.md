@@ -8,7 +8,7 @@ description: The default screen of imece - the header, the guild tree grouped by
 The salon is the team's screen, `1` or `:salon`; imece opens on [Home](home.md). It shows the whole team at a glance: a header with the pot and the fleet, the guild tree on the left (every project, its leader, its workers and their helpers), and on the right the two side panels, WAITING FOR YOU and the [story](journal.md#the-story) (what happened, by card; `J` shows the journal line by line). The board and the code map are one key away (`2`, `3`); everything else opens over the salon and `esc` brings it back.
 
 ```text
- imece   ! 2 waiting for you  │ ● 2 working  ✓ 1 done │ 10 min: 1 cards done · 1 Δ · 6 messages │ 3/9 cards │ spent $3.10 of $20.00 ($1.80/h, ~9 h left) │ claude 5h: 48% left, resets in 1 h 59 min  14:02
+ imece   ! 2 waiting for you  │ ● 2 working  ✓ 1 done │ spent $3.10 of $20.00  14:02
 ┌ SALON ──────────────────────────────────────────┐┌ WAITING FOR YOU (2) ───────────────────┐
 │▾ ▴ shop-api  ▓▓▓░░░░░ 3/8  ! 2 waiting  2 working││Δ 13:58 claude-1 finished: parser (3 files, +41 −6) · ✓ ran clean on this tree: cargo test
 │  ◆ ▎lead      coordinating                       ││⚑ 14:01 claude-5 waits for your yes: Bash: npm install left-pad
@@ -26,18 +26,17 @@ The salon is the team's screen, `1` or `:salon`; imece opens on [Home](home.md).
 
 ## The header
 
-One line, parts separated by `│`, the most wanted first. When the screen is narrower than the line, the least wanted part goes first, so its edge never cuts off what waits for you: the researchers and the usage windows (one nearly full stays), then the pot's rate, the clock, the cards, the last ten minutes, the pot and the fleet. What waits for you, the pause and a pot running low always stay.
+One line, four things, parts separated by `│`, the most wanted first: what waits for you, the fleet, the pot, the clock; a usage window joins them only when it is nearly full. When the screen is narrower than the line, the least wanted part goes first, so its edge never cuts off what waits for you: the clock, then the pot, then the fleet. What waits for you, the pause, a pot running low and a window nearly full always stay.
 
 | Part | What it says |
 | --- | --- |
 | `! 2 waiting for you` | open items in WAITING FOR YOU, in the attention colour. The terminal's title carries the same count, `! imece · 2 waiting`, so a tab in the background shows it, after the top of the ladder of the open projects: `✕` something is stuck, `!` something waits for you, `●` something works or starts, imece's mark `⁙` when all is calm (a turn done, not seen, is calm). Windows Terminal, kitty 0.39+, Ghostty 1.2+ and iTerm2 3.6.6+ also show it as the tab's progress bar (OSC 9;4): red full when stuck, yellow full when waiting, moving while working, none when calm. imece asks the terminal its name at start (XTVERSION) and goes by its answer, not by `TERM_PROGRAM`, which a terminal started from another inherits; other terminals are not sent it, since some take that sequence for a notice. Inside tmux it is sent: tmux 3.8 passes it on to Ghostty and iTerm2, an older tmux drops it. `IMECE_PROGRESS=on` or `off` decides it yourself. Your shell's title comes back, and the bar goes, when imece ends or hands the terminal to a `!` command. |
 | `● 2 working  ✓ 1 done  ✕ 1 stuck` | the fleet: agents mid-turn (spending tokens), agents that finished a turn you have not opened since, agents blocked or whose session stopped. A count of zero is left out; with none at all it says `all idle`. What waits for you is not in the fleet: it has its own count. |
-| `10 min: 3 cards done · 2 Δ · 14 messages` | what happened in the last ten minutes: cards done, changes that came for your review, messages the agents sent each other on the bus; a count of none is left out, and nothing shows when nothing happened. Read from the journal's newest lines back to ten minutes ago only. |
-| `3/9 cards` | cards done out of all cards; left out while there are no cards (a live start has none until the leader posts). |
-| `spent $3.10 of $20.00 ($1.80/h, ~9 h left)` | the pot: what all agents together have spent of the budget, what the last ten minutes cost per hour, and how long the pot lasts at that rate. With under half an hour left the whole part turns the attention colour and the journal says so once. |
-| `claude 5h: 48% left, resets in 1 h 59 min` | your plan's usage window nearest to full, as sessions report it; loud from 90% used. A subscription's limit can stop the team before the pot does. Not kept between runs: a session says them again on its first turn. |
-| `researchers 1/4` | researchers running out of the cap, only when there is a cap (`--demo --researchers N`; researchers are not built live). |
-| `14:02` | the clock. |
+| `spent $3.10 of $20.00` | the pot: what all agents together have spent of the budget. With under half an hour left at the current rate the part turns the attention colour and says how long is left, `spent $19.60 of $20.00, ~25 min left`, and the journal says so once. The rate and the time left at any other time are in the `:budget` menu's note. |
+| `claude 5h: 10% left, resets in 1 h 59 min` | your plan's usage window nearest to full, only from 90% used, in the attention colour: a subscription's limit can stop the team before the pot does. Below that it is in the `:budget` note. Not kept between runs: a session says it again on its first turn. |
+| `14:02` | the clock; the demo's `‖ PAUSED` or `×4` glued to it. |
+
+What happened in the last ten minutes, the count of cards and the researchers' cap left the header with record 125: the board has the cards, the journal has what happened.
 
 See [budget and limits](../concepts/budget-and-limits.md) for how the pot and the windows are counted.
 

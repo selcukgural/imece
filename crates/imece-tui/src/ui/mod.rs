@@ -1598,9 +1598,11 @@ fn header(f: &mut Frame, area: Rect, app: &App) {
     f.render_widget(Paragraph::new(line), area);
 }
 
-/// The header's parts, most wanted first: what waits for the person, the
-/// fleet, what happened in the last ten minutes, the cards, the pot, each
-/// Claude Code's tightest window, the researchers, the clock.
+/// The header's parts, most wanted first (record 125): what waits for
+/// the person, the fleet, the pot, a usage window nearly full, the clock
+/// with the pause or the demo's speed glued to it. The pot's rate, how
+/// long it lasts while that is not pressing, and a window not yet loud
+/// are the `:budget` note's (`App::command_note`).
 pub(crate) fn header_parts(app: &App) -> Vec<HeadPart> {
     let w = &app.world;
     let t = app.lang.text();
@@ -1631,52 +1633,24 @@ pub(crate) fn header_parts(app: &App) -> Vec<HeadPart> {
     }
     fleet_spans.extend(fleet(app));
     parts.push(part(fleet_spans, 8));
-    let pulse = pulse_spans(app.lang, w.pulse());
-    if !pulse.is_empty() {
-        parts.push(part(pulse, 6));
-    }
-    // Live work starts without cards and without researchers: no "0/0".
-    let cards = w.shown_cards().count();
-    if cards > 0 {
-        parts.push(part(
-            vec![Span::raw(fill(
-                t.cards,
-                &[&w.cards_done().to_string(), &cards.to_string()],
-            ))],
-            5,
-        ));
-    }
-    let mut rate = fill(t.per_hour, &[&dollars(w.rate_per_hour())]);
-    if let Some(minutes) = w.pot_lasts() {
-        rate += ", ";
-        rate += &fill(t.pot_lasts, &[&words::ago(app.lang, minutes * 60)]);
-    }
     let spent = fill(t.budget, &[&dollars(w.spent()), &dollars(w.budget)]);
-    if w.pot_low() {
-        parts.push(part(
-            vec![Span::styled(format!("{spent} ({rate})"), attention())],
+    match w.pot_lasts().filter(|_| w.pot_low()) {
+        Some(minutes) => parts.push(part(
+            vec![Span::styled(
+                format!(
+                    "{spent}, {}",
+                    fill(t.pot_lasts, &[&words::ago(app.lang, minutes * 60)])
+                ),
+                attention(),
+            )],
             KEEP,
-        ));
-    } else {
-        parts.push(part(vec![Span::raw(spent)], 7));
-        parts.push(glued(vec![Span::styled(format!(" ({rate})"), dim())], 2));
+        )),
+        None => parts.push(part(vec![Span::raw(spent)], 7)),
     }
-    // The window nearest to full, kept when little is left.
-    if let Some(l) = w.tightest() {
-        let keep = if l.used >= LIMIT_LOUD { KEEP } else { 1 };
-        parts.push(part(vec![limit_span(app.lang, &l, w.now())], keep));
-    }
-    if w.max_researchers > 0 {
-        parts.push(part(
-            vec![Span::raw(fill(
-                t.researchers,
-                &[
-                    &w.active_researchers().to_string(),
-                    &w.max_researchers.to_string(),
-                ],
-            ))],
-            1,
-        ));
+    // A window only when little is left: then it stops the team before
+    // the pot does.
+    if let Some(l) = w.tightest().filter(|l| l.used >= LIMIT_LOUD) {
+        parts.push(part(vec![limit_span(app.lang, &l, w.now())], KEEP));
     }
     parts.push(glued(
         vec![Span::styled(format!("  {}", clock(w.tick)), dim())],
@@ -1728,28 +1702,6 @@ pub(crate) fn fit_header(mut parts: Vec<HeadPart>, width: usize) -> Line<'static
         spans.extend(p.spans);
     }
     Line::from(spans)
-}
-
-/// What happened in the last ten minutes, `10 min: 3 cards done · 2 Δ ·
-/// 14 messages`, a count of none left out; nothing when nothing did.
-pub(crate) fn pulse_spans(lang: Lang, p: Pulse) -> Vec<Span<'static>> {
-    let t = lang.text();
-    let said: Vec<String> = [
-        (t.pulse_done, p.done),
-        (t.pulse_changes, p.changes),
-        (t.pulse_messages, p.messages),
-    ]
-    .iter()
-    .filter(|(_, n)| *n > 0)
-    .map(|(words, n)| fill(words, &[&n.to_string()]))
-    .collect();
-    if said.is_empty() {
-        return Vec::new();
-    }
-    vec![
-        Span::styled(format!("{} ", t.pulse), dim()),
-        Span::raw(said.join(" · ")),
-    ]
 }
 
 /// The completion menu's row: the items with their notes, the highlighted
@@ -5355,20 +5307,12 @@ mod tests {
                 .find(|(_, p)| spans_text(&p.spans).contains(words))
                 .map(|(i, p)| (i, p.keep))
         };
-        // Nothing waits, nothing happened, no cards, no researchers, the
-        // demo's clock at its own speed: none of them is a part.
+        // Nothing waits, the demo's clock at its own speed; the last ten
+        // minutes, the cards, the researchers and the rate are no parts at
+        // all (record 125: the header has four things).
         app.world.inbox.clear();
-        app.world.journal.clear();
-        app.world.cards.clear();
-        app.world.max_researchers = 0;
-        app.speed = 1;
-        for words in ["waiting for you", "10 min:", "cards", "researchers", "×"] {
-            assert_eq!(keeps(&app, words), None, "{words}");
-        }
         app.world.max_researchers = 2;
-        assert_eq!(keeps(&app, "researchers").map(|k| k.1), Some(1));
-        app.speed = 2;
-        assert_eq!(keeps(&app, "×2").map(|k| k.1), Some(3));
+        app.speed = 1;
         let to = app.world.agents[0].id;
         app.world.journal.push(Entry {
             tick: app.world.tick,
@@ -5381,22 +5325,33 @@ mod tests {
                 re: None,
             },
         });
-        assert_eq!(keeps(&app, "10 min: 1 messages").map(|k| k.1), Some(6));
+        for words in [
+            "waiting for you",
+            "10 min:",
+            "cards",
+            "researchers",
+            "×",
+            "/h",
+        ] {
+            assert_eq!(keeps(&app, words), None, "{words}");
+        }
+        app.speed = 2;
+        assert_eq!(keeps(&app, "×2").map(|k| k.1), Some(3));
         waiting(&mut app, 1);
         assert_eq!(keeps(&app, "waiting for you"), Some((0, KEEP)));
         assert_eq!(header_parts(&app)[1].keep, 8, "the fleet");
         assert_eq!(keeps(&app, "spent").map(|k| k.1), Some(7));
-        assert_eq!(keeps(&app, "/h").map(|k| k.1), Some(2));
         let window = |used| Limit {
             minutes: 300,
             used,
             resets_at: None,
         };
+        // A window short of loud is the `:budget` note's, not the header's.
         app.world.limits = vec![window(LIMIT_LOUD - 1)];
-        assert_eq!(keeps(&app, "claude").map(|k| k.1), Some(1));
+        assert_eq!(keeps(&app, "claude"), None);
         app.world.limits = vec![window(LIMIT_LOUD)];
         assert_eq!(keeps(&app, "claude").map(|k| k.1), Some(KEEP));
-        // A pot running low stays, its rate with it.
+        // A pot running low stays, with how long it lasts.
         for a in &mut app.world.agents {
             a.cost = 0;
         }
@@ -5406,16 +5361,8 @@ mod tests {
         app.world.budget = 100 + 299;
         assert!(app.world.pot_low());
         assert_eq!(keeps(&app, "spent").map(|k| k.1), Some(KEEP));
-        assert!(
-            spans_text(
-                &header_parts(&app)
-                    .iter()
-                    .find(|p| p.keep == KEEP && spans_text(&p.spans).contains("spent"))
-                    .unwrap()
-                    .spans
-            )
-            .contains("/h")
-        );
+        assert_eq!(keeps(&app, "left").map(|k| k.1), Some(KEEP));
+        assert_eq!(keeps(&app, "/h"), None);
         // On a narrow screen what waits and the fleet are still there.
         let s = render(&app, 70, 20);
         let top = s.lines().next().unwrap();
@@ -5424,105 +5371,29 @@ mod tests {
     }
 
     #[test]
-    fn the_pulse_counts_the_last_ten_minutes_of_cards_changes_and_messages() {
-        let mut app = app_after(2, 2, 0, Lang::En);
-        let w = &mut app.world;
-        let a0 = (w.agents.iter())
-            .find(|a| a.project == 0 && a.role == Role::Worker)
-            .unwrap()
-            .id;
-        let a1 = (w.agents.iter())
-            .find(|a| a.project == 1 && a.role == Role::Worker)
-            .unwrap()
-            .id;
-        let now = 1000;
-        w.tick = now;
-        let change = |agent| Event::ChangeReady {
-            agent,
-            files: 1,
-            added: 1,
-            removed: 0,
-            spend: None,
-        };
-        let sent = |from, to| Event::Sent {
-            from,
-            to,
-            kind: MsgKind::Ask,
-            text: "q".into(),
-            id: 1,
-            re: None,
-        };
-        let at = |tick, event| Entry { tick, event };
-        w.journal = vec![
-            at(now - RATE_WINDOW, change(a0)),
-            at(now - RATE_WINDOW, sent(a0, a1)),
-            at(now - RATE_WINDOW + 1, change(a0)),
-            at(now - RATE_WINDOW + 1, change(a1)),
-            at(now, sent(a0, a1)),
-            at(now, sent(a1, a0)),
-            at(now, Event::Failed { agent: a0 }),
-        ];
-        let card = |project, column, finished| Card {
-            id: 0,
-            project,
-            title: "c".into(),
-            owner: None,
-            column,
-            story: Vec::new(),
-            symbols: Vec::new(),
-            paths: Vec::new(),
-            started: 0,
-            finished,
-        };
-        w.cards = vec![
-            card(0, Column::Done, now - RATE_WINDOW + 1),
-            card(0, Column::Done, now - RATE_WINDOW),
-            card(0, Column::Working, now),
-            card(1, Column::Done, now),
-        ];
+    fn a_line_belongs_to_the_card_its_agent_was_on_then() {
+        let (mut app, w) = story_team();
+        let mut a = a_card(0, 0, Some(w[0]), Column::Done);
+        a.finished = 10;
+        let mut b = a_card(1, 0, Some(w[0]), Column::Done);
+        b.finished = 20;
+        let c = a_card(2, 0, Some(w[0]), Column::Working);
+        let waiting = a_card(3, 0, Some(w[0]), Column::Waiting);
+        let other = a_card(4, 0, Some(w[1]), Column::Working);
+        app.world.cards = vec![a, b, c, waiting, other];
+        let held = story::Held::of(&app.world);
+        let at = |tick| held.at(&app.world, w[0], tick);
         assert_eq!(
-            w.pulse(),
-            Pulse {
-                done: 2,
-                changes: 2,
-                messages: 2
-            }
+            [at(5), at(10), at(11), at(20), at(21)],
+            [Some(0), Some(0), Some(1), Some(1), Some(2)]
         );
-        // A project put away counts for nothing.
-        w.projects[1].archived = Some(Archived {
-            at: now,
-            title: "old".into(),
-        });
-        assert_eq!(
-            w.pulse(),
-            Pulse {
-                done: 1,
-                changes: 1,
-                messages: 1
-            }
-        );
-    }
-
-    #[test]
-    fn the_pulse_says_only_what_happened() {
-        let p = |done, changes, messages| Pulse {
-            done,
-            changes,
-            messages,
-        };
-        assert!(pulse_spans(Lang::En, p(0, 0, 0)).is_empty());
-        assert_eq!(
-            spans_text(&pulse_spans(Lang::En, p(3, 0, 14))),
-            "10 min: 3 cards done · 14 messages"
-        );
-        assert_eq!(
-            spans_text(&pulse_spans(Lang::En, p(0, 2, 0))),
-            "10 min: 2 Δ"
-        );
-        assert_eq!(
-            spans_text(&pulse_spans(Lang::Tr, p(1, 2, 3))),
-            "10 dk: 1 kart bitti · 2 Δ · 3 mesaj"
-        );
+        assert_eq!(held.at(&app.world, w[1], 5), Some(4));
+        assert_eq!(held.at(&app.world, w[2], 5), None);
+        // A helper's is its worker's.
+        let (worker, [h, _]) = with_helpers(&mut app);
+        let held = story::Held::of(&app.world);
+        assert!(held.at(&app.world, worker, 5).is_some());
+        assert_eq!(held.at(&app.world, h, 5), held.at(&app.world, worker, 5));
     }
 
     fn a_card(id: CardId, project: ProjectId, owner: Option<AgentId>, column: Column) -> Card {
@@ -5563,32 +5434,6 @@ mod tests {
             app.world.agents[a].plan.clear();
         }
         (app, w)
-    }
-
-    #[test]
-    fn a_line_belongs_to_the_card_its_agent_was_on_then() {
-        let (mut app, w) = story_team();
-        let mut a = a_card(0, 0, Some(w[0]), Column::Done);
-        a.finished = 10;
-        let mut b = a_card(1, 0, Some(w[0]), Column::Done);
-        b.finished = 20;
-        let c = a_card(2, 0, Some(w[0]), Column::Working);
-        let waiting = a_card(3, 0, Some(w[0]), Column::Waiting);
-        let other = a_card(4, 0, Some(w[1]), Column::Working);
-        app.world.cards = vec![a, b, c, waiting, other];
-        let held = story::Held::of(&app.world);
-        let at = |tick| held.at(&app.world, w[0], tick);
-        assert_eq!(
-            [at(5), at(10), at(11), at(20), at(21)],
-            [Some(0), Some(0), Some(1), Some(1), Some(2)]
-        );
-        assert_eq!(held.at(&app.world, w[1], 5), Some(4));
-        assert_eq!(held.at(&app.world, w[2], 5), None);
-        // A helper's is its worker's.
-        let (worker, [h, _]) = with_helpers(&mut app);
-        let held = story::Held::of(&app.world);
-        assert!(held.at(&app.world, worker, 5).is_some());
-        assert_eq!(held.at(&app.world, h, 5), held.at(&app.world, worker, 5));
     }
 
     #[test]
@@ -10556,7 +10401,6 @@ mod tests {
             .nth(1)
             .unwrap();
         assert!(!row.contains(&name), "{row}");
-        assert!(board.contains(" 0/1 cards"), "{board}");
         assert!(
             board.contains("IN PROGRESS (1)") && board.contains("DONE (0)"),
             "{board}"
@@ -11229,7 +11073,7 @@ mod tests {
     }
 
     #[test]
-    fn the_header_says_how_long_the_pot_lasts_and_warns_when_it_runs_low() {
+    fn the_header_says_the_pot_and_how_long_it_lasts_only_once_it_runs_low() {
         let mut app = app_after(1, 2, 0, Lang::En);
         for a in &mut app.world.agents {
             a.cost = 0;
@@ -11245,34 +11089,28 @@ mod tests {
         };
         let looks = |s: Style| (s.fg.unwrap_or(Color::Reset), s.add_modifier);
         assert_ne!(looks(attention()), looks(Style::default()));
-        assert_ne!(looks(dim()), looks(Style::default()));
-        assert!(
-            head(&app).contains("spent $0.00 of $1.00 ($0.00/h)"),
-            "{}",
-            head(&app)
-        );
+        let row = head(&app);
+        assert!(row.contains("spent $0.00 of $1.00  "), "{row}");
+        assert!(!row.contains("/h") && !row.contains("left"), "{row}");
         app.world.tick = 1;
         app.world.agents[0].cost = 100;
         app.world.watch_spending();
         let row = head(&app);
+        assert!(row.contains("spent $0.01 of $1.00  "), "{row}");
         assert!(
-            row.contains("spent $0.01 of $1.00 ($0.06/h, ~16 h 30 min left)"),
-            "{row}"
+            !row.contains("left"),
+            "the rate and the time left are :budget's: {row}"
         );
         assert_eq!(at(&app, "spent"), looks(Style::default()));
-        assert_eq!(at(&app, "$0.06/h"), looks(dim()));
         app.world.budget = 100 + 299;
         let row = head(&app);
-        assert!(
-            row.contains("spent $0.01 of $0.03 ($0.06/h, ~29 min left)"),
-            "{row}"
-        );
+        assert!(row.contains("spent $0.01 of $0.03, ~29 min left"), "{row}");
         assert_eq!(at(&app, "spent"), looks(attention()));
-        assert_eq!(at(&app, "$0.06/h"), looks(attention()));
+        assert_eq!(at(&app, "left"), looks(attention()));
         app.lang = Lang::Tr;
         let row = head(&app);
         assert!(
-            row.contains("$0.01 / $0.03 harcandı ($0.06/sa, ~29 dk kaldı)"),
+            row.contains("$0.01 / $0.03 harcandı, ~29 dk kaldı"),
             "{row}"
         );
     }
@@ -12776,6 +12614,10 @@ mod tests {
         let top = screen.lines().next().unwrap();
         assert!(top.contains(" │ claude 7d: 10% left"), "{top}");
         assert!(!top.contains("claude 5h"), "{top}");
+        // Short of loud, no window is in the header at all.
+        app.world.limits = vec![at(300, 52), at(10_080, 89)];
+        let top = render(&app, 200, 20).lines().next().unwrap().to_string();
+        assert!(!top.contains("claude"), "{top}");
         let span = |used| limit_span(Lang::En, &at(300, used), 0);
         assert_eq!(span(89).style, Style::new());
         assert_eq!(span(90).style, attention());

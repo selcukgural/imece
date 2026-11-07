@@ -139,7 +139,7 @@ imece kapalı düşer (fail closed): bir dosya, bir oturum ya da bir değişikli
 
 ### Ajanlar tur almıyor; günlük `$4.20/sa hızla bütçe yaklaşık 25 dk daha yeter; :budget USD ile artır` diyor
 
-**Neden.** Kese bütün takımın tek bütçesidir, çalıştırmalar arasında saklanır; bitince kimse tur almaz. Başlıktaki hız son on dakikanın maliyetidir. Yarım saatten az kaldığında bütçe dikkat rengine döner ve günlük bir kez söyler.
+**Neden.** Kese bütün takımın tek bütçesidir, çalıştırmalar arasında saklanır; bitince kimse tur almaz. `:budget` notundaki hız son on dakikanın maliyetidir. Yarım saatten az kaldığında başlıktaki kese dikkat rengine döner, ne kadar kaldığını söyler ve günlük bir kez söyler.
 
 **Ne yapmalı.** `:budget 80` ajanlar çalışırken artırır; süren bir tur eski tavanında biter, sonraki yeni kalanla başlar. Kendi tavanına çarpan bir oturum aynı istemlerle bir kez yeniden başlatılır.
 

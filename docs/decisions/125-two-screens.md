@@ -123,4 +123,14 @@ a chord's second keys (`Text::chord_g`/`chord_z`/`chord_q`, then the key
 file's pairs that start with the key held, `Keys::keys`) while `pending`
 or `keys_held` waits. A window with a title of its own and copy mode keep
 their keys and show no place. Words the footer no longer says left
-`i18n.rs`. The header is the next step.
+`i18n.rs`.
+
+Step 1's header as built: `ui::header_parts` has what waits (`KEEP`), the
+fleet (8), the pot (7; `KEEP` in the attention colour with `~N left` once
+`pot_low`), a usage window only from `LIMIT_LOUD` (`KEEP`), the clock
+glued with the pause or the demo's speed. The last ten minutes
+(`World::pulse`, `Pulse`, `pulse_spans`), the cards count
+(`World::cards_done`) and the researchers' cap left; the rate, how long
+the pot lasts and a window short of loud are the `:budget` note's
+(`App::command_note`). The projects are not in the header yet: Home's
+project bar has them, and step 2 folds the two.

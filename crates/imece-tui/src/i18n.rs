@@ -196,7 +196,6 @@ pub fn fill(template: &str, args: &[&str]) -> String {
 
 pub struct Text {
     // Header
-    pub cards: &'static str,
     /// The header's fleet: agents mid-turn, done and not seen, stuck
     /// (blocked or stopped); `fleet_idle` when there are none.
     pub fleet_working: &'static str,
@@ -208,7 +207,6 @@ pub struct Text {
     pub per_hour: &'static str,
     pub pot_lasts: &'static str,
     pub budget: &'static str,
-    pub researchers: &'static str,
     /// The plan's tightest usage window in the header: `claude`, the
     /// window, the percent left, and when it starts again if said;
     /// the window as hours or days.
@@ -856,10 +854,6 @@ pub struct Text {
     pub helpers: &'static str,
     /// The header's last ten minutes: its label, then cards done, changes
     /// that came for review, messages on the bus.
-    pub pulse: &'static str,
-    pub pulse_done: &'static str,
-    pub pulse_changes: &'static str,
-    pub pulse_messages: &'static str,
     pub group_working: &'static str,
     pub group_waiting: &'static str,
     /// Headers over an open project's workers when some need the person:
@@ -1244,7 +1238,6 @@ pub struct Text {
 }
 
 pub const EN: Text = Text {
-    cards: "{}/{} cards",
     fleet_working: "● {} working",
     fleet_done: "✓ {} done",
     fleet_stuck: "✕ {} stuck",
@@ -1253,7 +1246,6 @@ pub const EN: Text = Text {
     per_hour: "{}/h",
     pot_lasts: "~{} left",
     budget: "spent {} of {}",
-    researchers: "researchers {}/{}",
     limit: "{} {}: {}% left",
     limit_resets: "{} {}: {}% left, resets in {}",
     window_hours: "{}h",
@@ -1919,10 +1911,6 @@ pub const EN: Text = Text {
     theme_is: "theme: {}",
     folded: "… {} agents folded, loudest",
     helpers: "{} helpers",
-    pulse: "10 min:",
-    pulse_done: "{} cards done",
-    pulse_changes: "{} Δ",
-    pulse_messages: "{} messages",
     group_working: "{} working",
     group_waiting: " ! {} waiting ",
     need_stuck: "✕ stuck · {}",
@@ -2423,7 +2411,6 @@ pub const EN: Text = Text {
 };
 
 pub const TR: Text = Text {
-    cards: "{}/{} kart",
     fleet_working: "● {} çalışıyor",
     fleet_done: "✓ {} bitti",
     fleet_stuck: "✕ {} takıldı",
@@ -2432,7 +2419,6 @@ pub const TR: Text = Text {
     per_hour: "{}/sa",
     pot_lasts: "~{} kaldı",
     budget: "{} / {} harcandı",
-    researchers: "araştırmacı {}/{}",
     limit: "{} {}: %{} kaldı",
     limit_resets: "{} {}: %{} kaldı, {} sonra yenilenir",
     window_hours: "{} sa",
@@ -3118,10 +3104,6 @@ pub const TR: Text = Text {
     theme_is: "tema: {}",
     folded: "… {} agent katlı, en yükseği",
     helpers: "{} yardımcı",
-    pulse: "10 dk:",
-    pulse_done: "{} kart bitti",
-    pulse_changes: "{} Δ",
-    pulse_messages: "{} mesaj",
     group_working: "{} çalışıyor",
     group_waiting: " ! {} bekliyor ",
     need_stuck: "✕ takıldı · {}",
@@ -3765,7 +3747,6 @@ mod tests {
         // stack for every field read, and there are many.
         let (e, t) = (&EN, &TR);
         let pairs = [
-            (e.cards, t.cards),
             (e.ev_blocked_joined, t.ev_blocked_joined),
             (e.ev_merged, t.ev_merged),
             (e.st_verified, t.st_verified),
