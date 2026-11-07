@@ -451,6 +451,7 @@ fn main() -> std::io::Result<()> {
     app.away = saved.away.unwrap_or_default();
     app.story = saved.story.unwrap_or(true);
     app.review = saved.review.unwrap_or(false);
+    app.open_home();
     app.ssh = motion::over_ssh(var);
     app.awake.on = args.awake;
     let result = run(&mut terminal, &mut app, &state, progress, style);

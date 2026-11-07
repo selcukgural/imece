@@ -83,24 +83,21 @@ En son başlayan sürüm depoda tutulur (`seen`); en ilk başlangıç bunun yeri
 
 Keseyi, açık proje başına bir satırı, hâlâ sizi bekleyen en eski öğeleri (en çok altı), imece kapanırken yarım kalan turları ve günlüğün son satırlarını listeler. Herhangi bir tuş kapatır ve başka bir şey yapmaz.
 
-## Salon
+## Ana ekran {#the-salon}
 
-Açılan salondur: solda lonca, sağda SENİ BEKLEYEN ve DEFTER (günlük), üstte kese ve filo ile başlık, altta burada işe yarayan tuşlarla alt satır.
+Açılan [ana ekrandır](../screen/home.md): üstte sıranın sizde olduğu işler, altında çalışanlar, eldeki satır hemen yanında okunur. Henüz bir şey yoksa bunu söyler.
 
 ```text
- $0.00 / $50.00 harcandı · hepsi boşta                               imece
- SALON ──────────────────────────  SENİ BEKLEYEN (0) ───────────────────
- ▾ imece                           Şu an senden bir şey gerekmiyor.
-   ◆ lead   boşta
-                                   DEFTER ────────────────────────────────
-                                   10:02 confine standard: işçiler Claude Code'un
-                                         kabuğunu ve web'ini alır; yalıtım bir
-                                         konteynerin işi, imece'nin değil
+ imece   hepsi boşta │ $0.00 / $50.00 harcandı  10:02
+ hepsi   imece                                 / lead için yazar
+ Sizi bekleyen yok, çalışan da yok. / lidere yazar.
 
- / lidere yaz · @ad agent'a · tab panel · ? yardım · q çık
+ enter  aç   @  bu ajana yaz   j k  gez   [ ]  proje   /  lidere yaz   ?  yardım
 ```
 
-Takım yalnız liderdir (`◆ lead`). Günlüğün ilk satırı, `--confine strict` olmayan her başlangıçta bir kez, yalıtımın imece'nin işi olmadığını söyler.
+Salon bir tuş uzakta, `1`: solda lonca, sağda SENİ BEKLEYEN ve DEFTER.
+
+Takım yalnız liderdir (`◆ lead`). Salondaki günlüğün ilk satırı, `--confine strict` olmayan her başlangıçta bir kez, yalıtımın imece'nin işi olmadığını söyler.
 
 ## Lidere yazmak
 

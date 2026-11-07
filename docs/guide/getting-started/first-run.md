@@ -83,24 +83,21 @@ The first time there is nothing to show. On a later start that remembers an earl
 
 It lists the pot, one line per open project, the oldest items still waiting for you (six at most), any turns that were cut short when imece closed, and the last journal lines. Any key closes it and does nothing else.
 
-## The salon
+## Home
 
-What opens is the salon: the guild on the left, WAITING FOR YOU and the JOURNAL on the right, the header above with the pot and the fleet, the footer below with the keys that matter here.
+What opens is [Home](../screen/home.md): what is your turn on top, what is at work under it, whatever row is at hand read beside it. With nothing yet it says so.
 
 ```text
- spent $0.00 of $50.00 · all idle                                    imece
- SALON ──────────────────────────  WAITING FOR YOU (0) ─────────────────
- ▾ imece                           Nothing needs you right now.
-   ◆ lead   idle
-                                   JOURNAL ───────────────────────────────
-                                   10:02 confine standard: workers get Claude
-                                         Code's shell and web; isolation is
-                                         a container's job, not imece's
+ imece   all idle │ spent $0.00 of $50.00  10:02
+ all   imece                                   / writes to lead
+ Nothing needs you and nobody is at work. / writes to the lead.
 
- / write to the lead · @name to an agent · tab panel · ? help · q quit
+ enter  open   @  write to this agent   j k  move   [ ]  project   /  write to the lead   ?  help
 ```
 
-The team is the leader alone (`◆ lead`). The journal's first line says, once per start that is not `--confine strict`, that isolation is not imece's.
+The salon is one key away, `1`: the guild on the left, WAITING FOR YOU and the JOURNAL on the right.
+
+The team is the leader alone (`◆ lead`). The journal's first line, on the salon, says, once per start that is not `--confine strict`, that isolation is not imece's.
 
 ## Write to the leader
 
