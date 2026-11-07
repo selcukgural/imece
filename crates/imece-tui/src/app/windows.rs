@@ -455,6 +455,14 @@ impl App {
         self.help = true;
         self.help_find.clear();
         self.help_scroll = 0;
+        self.help_all = false;
+    }
+
+    /// Whether the help lists this screen's keys alone: not after `?`
+    /// again, and not while a filter is typed or kept (a search is over
+    /// every key).
+    pub fn help_scoped(&self) -> bool {
+        !self.help_all && !self.help_typing && self.help_find.is_empty()
     }
 
     /// A key while the help is open: `/` starts (or goes back to) a
@@ -473,6 +481,10 @@ impl App {
                 KeyCode::Char('/') => {
                     self.help_typing = true;
                     return;
+                }
+                KeyCode::Char('?') => {
+                    self.help_all = !self.help_all;
+                    0
                 }
                 KeyCode::Char('d') if ctrl => at + half,
                 KeyCode::Char('u') if ctrl => at.saturating_sub(half),

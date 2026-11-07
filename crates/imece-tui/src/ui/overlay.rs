@@ -492,7 +492,9 @@ pub fn help(f: &mut Frame, app: &App) -> Option<Position> {
     // Two columns where the screen is wide enough, so the help fits a
     // short screen too.
     let wide = f.area().width >= 120;
-    let all = help_rows(app.lang, app.shift_enter, &app.keys, app.scope_below());
+    let place = app.scope_below();
+    let scoped = app.help_scoped() && place.is_some();
+    let all = help_rows(app.lang, app.shift_enter, &app.keys, place, scoped);
     let keys = found(&all, &app.help_find, |k| format!("{} {}", k.0, k.1));
     let widths = help_widths(f.area().width, wide);
     let mut lines = help_columns(&keys, wide, widths);
@@ -551,9 +553,14 @@ pub fn help(f: &mut Frame, app: &App) -> Option<Position> {
     let row = lines.len() - 1;
     let columns = if wide { 2 } else { 1 };
     let width = columns * (2 + widths.0 + widths.1) + 2;
+    let title = match place {
+        None => t.help_title,
+        Some(_) if scoped => t.help_here,
+        Some(_) => t.help_every,
+    };
     let area = window(
         f,
-        t.help_title.into(),
+        title.into(),
         lines,
         u16::try_from(width).unwrap_or(u16::MAX),
     );
@@ -718,28 +725,114 @@ const WRITING_KEYS: usize = 18;
 /// them, so they are shown as they are.
 pub(crate) const TYPED: [usize; 5] = [4, 15, 16, 17, WRITING_KEYS];
 
+/// Where each row of `help_keys` (without the new-line line) belongs: the
+/// places whose help lists it, `&[]` for every place. `?` opens the help
+/// filtered to the screen it was pressed on (record 125, step 5): the
+/// rows of that place and of every place; `?` again lists them all.
+const HELP_PLACES: [&[Scope]; 56] = {
+    use Scope::{Change, Choose, Journal, Peek, Salon, Talk, Timeline};
+    const ALL: &[Scope] = &[];
+    [
+        ALL,                        // 0  /  i
+        ALL,                        // 1  @name text
+        ALL,                        // 2  /cmd
+        ALL,                        // 3  :
+        ALL,                        // 4  $
+        ALL,                        // 5  :budget
+        ALL,                        // 6  :open :solo
+        ALL,                        // 7  :close
+        ALL,                        // 8  :rename
+        ALL,                        // 9  :forget
+        &[Salon, Talk],             // 10 :export
+        ALL,                        // 11 :commit
+        ALL,                        // 12 :copy
+        &[Salon],                   // 13 :pin
+        ALL,                        // 14 !cmd O ^x^e
+        ALL,                        // 15 tab ↑ ↓ ^r
+        ALL,                        // 16 ^a ^e ⌥b ⌥f
+        ALL,                        // 17 ^w ^u ^k ^y
+        &[Salon],                   // 18 #N #word n p
+        ALL,                        // 19 & :goto
+        ALL,                        // 20 ↑ ↓ j k
+        ALL,                        // 21 gg G gd gw
+        ALL,                        // 22 ^d ^u ^f ^b
+        ALL,                        // 23 ^o
+        &[Salon, Talk, Change],     // 24 ← → h l
+        &[Salon, Talk, Change],     // 25 za zM zR
+        &[Salon],                   // 26 s :settle
+        &[Salon, Peek],             // 27 enter K
+        &[Salon, Talk, Change],     // 28 tab
+        &[Salon, Peek, Talk],       // 29 t :trace
+        &[Salon, Peek],             // 30 v :talk
+        ALL,                        // 31 esc u U
+        ALL,                        // 32 A H :recall
+        &[Salon, Change, Timeline], // 33 [ ]
+        ALL,                        // 34 :waiting
+        ALL,                        // 35 W S
+        &[Talk, Journal],           // 36 enter %
+        &[Talk, Journal],           // 37 c y C Y
+        &[Talk, Change, Choose],    // 38 v w b s
+        &[Salon, Talk, Journal],    // 39 m ' :mark
+        &[Salon, Journal],          // 40 J :journal
+        &[Salon, Change],           // 41 a A e r :allow
+        &[Change, Talk],            // 42 [ ] file / turn
+        &[Change],                  // 43 >
+        &[Change, Choose],          // 44 c n
+        &[Change],                  // 45 x b
+        &[Change],                  // 46 w R
+        ALL,                        // 47 space
+        ALL,                        // 48 + -
+        ALL,                        // 49 L :lang
+        ALL,                        // 50 T :theme
+        ALL,                        // 51 :awake :notify
+        ALL,                        // 52 :motion :away
+        ALL,                        // 53 q q :quit
+        ALL,                        // 54 q s :pending
+        ALL,                        // 55 ? :help
+    ]
+};
+
+/// Whether row `i` of the help's list (with the new-line line in it) is
+/// shown with the help filtered to `place`: the new-line line and the
+/// rows of every place are, the rest where `HELP_PLACES` names the place.
+pub(crate) fn help_shown(i: usize, place: Scope) -> bool {
+    let j = match i.cmp(&WRITING_KEYS) {
+        std::cmp::Ordering::Less => i,
+        std::cmp::Ordering::Equal => return true,
+        std::cmp::Ordering::Greater => i - 1,
+    };
+    let places = HELP_PLACES[j];
+    places.is_empty() || places.contains(&place)
+}
+
 /// The help's rows with the person's own keys: one for each key the key
 /// file gives first (those of a place say where), then `help_keys` with
 /// every key the file moved written as the keys that do it now at
-/// `place`, where the help was opened (`Keymap::shown`).
+/// `place`, where the help was opened (`Keymap::shown`). `scoped`, only
+/// the rows of that place (`help_shown`) and the key file's lines of it.
 pub(crate) fn help_rows(
     lang: Lang,
     shift_enter: bool,
     keys: &Keymap,
     place: Option<Scope>,
+    scoped: bool,
 ) -> Vec<(String, String)> {
     let t = lang.text();
+    let only = place.filter(|_| scoped);
     let everywhere =
         (keys.given().iter()).map(|(from, to)| (from.name(), fill(t.keys_as, &[&to.name()])));
-    let placed = (keys.placed().iter()).map(|(p, from, to)| {
-        let said = fill(t.keys_as_in, &[p.words(lang), &to.name()]);
-        (from.name(), said)
-    });
+    let placed = (keys.placed().iter())
+        .filter(|(p, ..)| only.is_none_or(|o| *p == o))
+        .map(|(p, from, to)| {
+            let said = fill(t.keys_as_in, &[p.words(lang), &to.name()]);
+            (from.name(), said)
+        });
     let keys = keys.at(place);
     let mine = everywhere.chain(placed);
     let rows = help_keys(lang, shift_enter)
         .into_iter()
         .enumerate()
+        .filter(|(i, _)| only.is_none_or(|o| help_shown(*i, o)))
         .map(|(i, (k, what))| {
             let k = if TYPED.contains(&i) {
                 k.to_string()
@@ -1784,7 +1877,7 @@ mod tests {
         let keys = crate::keys::Keymap::default();
         for lang in [Lang::En, Lang::Tr] {
             for shift_enter in [false, true] {
-                let rows = help_rows(lang, shift_enter, &keys, None);
+                let rows = help_rows(lang, shift_enter, &keys, None, false);
                 for (width, wide) in [(80, false), (120, true), (140, true), (188, true)] {
                     let widths = help_widths(width, wide);
                     for r in &rows {

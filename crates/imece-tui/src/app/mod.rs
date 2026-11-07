@@ -1029,6 +1029,8 @@ pub struct App {
     /// only after `enter` or `esc` ends that).
     pub help_find: String,
     pub help_typing: bool,
+    /// `?` again in the help: every key, not only this screen's.
+    pub help_all: bool,
     /// The first of the help's lines in sight when they do not all fit
     /// (`j k ^d ^u pgup pgdn gg G` in it), and what the last drawing of
     /// it left room for: lines in sight and the first line at most.
@@ -1282,6 +1284,7 @@ impl App {
             help: false,
             help_find: String::new(),
             help_typing: false,
+            help_all: false,
             help_scroll: 0,
             help_room: Cell::new((1, 0)),
             keys: Keymap::default(),

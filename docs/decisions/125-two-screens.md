@@ -372,3 +372,18 @@ WORK), the `salon` place of the key file is Home's. Home shows what the
 salon alone showed: what `:clear` hid (`· N hidden (:unclear)` on the TO
 DECIDE heading, record 90), imece's mark in the free rows (record 101),
 the breath on a working row (record 84).
+
+Step 5's help (rule 3's last clause): `?` opens the help filtered to the
+screen it was pressed on, this place's rows and every place's
+(`overlay::HELP_PLACES`, one entry per row of `help_keys`; `help_shown`;
+`help_rows(.., scoped)` drops the key file's lines of other places too);
+`?` in it lists every key and again this screen's (`App.help_all`,
+`App::help_scoped`); the title says which (`help_here` / `help_every`;
+over the welcome or the news, no place, `help_title` and every key). `/`
+searches every key as before, since a question about a key is not about
+the screen; `esc` from the filter is this screen's keys again. The scoped
+window is as tall as its rows; a filtered one keeps the whole list's
+height. Place of a row: a key that acts on Home, its focus, its trace or
+a card is the salon's; a change's keys the change's; a conversation's
+and the journal window's theirs; `[ ]` the three it serves. Record 40
+carries the mechanics.
