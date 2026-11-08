@@ -2398,6 +2398,7 @@ mod tests {
             symbol: symbol.into(),
             holder,
             name: who.into(),
+            shared: false,
         };
         app.world.store_leases(
             1,

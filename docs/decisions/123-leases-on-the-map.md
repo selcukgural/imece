@@ -22,6 +22,9 @@ a helper works under its worker's session and shows as its worker.
 can have 20,000 files and the map has no scroll, and what the person asks of it is
 where work is. An agent's cell as ever, glyph and colour; anyone else's `· name`, dim:
 a second imece, the person's own `lonca` session. `⇆ N` counts holders of either kind.
+A lease held `shared` (Lonca's `[leases] shared`, lonca `010ba7e`: others may hold it
+too) ends its cell with ` (shared)` (`Lease.shared` from the item's `kind`,
+`StoreLease.shared`).
 Nothing held says `nobody holds a lease in NAME now`. A project off Lonca says what it
 said, and the demo keeps its map of cards, on Lonca or not: its table has no leases,
 and `Project.repo` is what the check looks at. What cannot be faked: a real daemon's

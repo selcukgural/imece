@@ -91,7 +91,12 @@ the call returns on a repository with no verification, so `Queued` is seen only
 with a queue that takes time. The worker hears it as a note: on trunk at its next
 prompt, sent back at once (`lost`, which now also means this, within `MAX_WOKEN`
 and the pot): `conflicted` and a `rejected` it was not told by the person say
-sync and propose again. Reasons are cut to `REASON_TOLD` 400. A rejection worded by
+sync and propose again; one refused for a verification quota or a frozen repository
+(`held_back`: `verification_quota:*`, `frozen:*`, lonca `010ba7e`) is told not to
+propose again and to say it is blocked, since a new proposal does not get past
+either. The journal words the queue's reasons (`words::refused_why`: a failed or
+unrun check, the session's or the day's quota, a merge conflict, a stale base, a
+freeze; one it does not know as Lonca said it). Reasons are cut to `REASON_TOLD` 400. A rejection worded by
 the person is not told twice (`Watch.worded`). The cost is carried (record 113)
 until a proposal is on trunk.
 

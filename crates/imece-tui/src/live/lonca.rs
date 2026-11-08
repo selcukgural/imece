@@ -246,6 +246,17 @@ fn told(how: &Landed, title: &str, checks: &[Attested]) -> Option<(String, bool)
             ),
             true,
         )),
+        // Proposing again does not help until a person acts, or the day
+        // turns: the worker says it is blocked instead.
+        Landed::Rejected(reasons) if reasons.iter().any(|r| held_back(r)) => Some((
+            format!(
+                "Your proposal{named} was refused: {}. Lonca takes no proposal of yours for \
+                 now, so do not propose again: it stays in your workspace. Tell your leader \
+                 you are blocked, with this reason.",
+                some(reasons),
+            ),
+            true,
+        )),
         Landed::Rejected(reasons) => Some((
             format!(
                 "Your proposal{named} was refused: {}.{} It stays in your workspace. Put it \
@@ -256,6 +267,12 @@ fn told(how: &Landed, title: &str, checks: &[Attested]) -> Option<(String, bool)
             true,
         )),
     }
+}
+
+/// Whether Lonca refused for a reason a new proposal does not get past: a
+/// verification quota used up, or the repository frozen.
+fn held_back(reason: &str) -> bool {
+    reason.starts_with("verification_quota:") || reason.starts_with("frozen:")
 }
 
 /// What the checks that failed printed, for the worker who has to put it
@@ -584,6 +601,7 @@ fn lease_of(w: &World, p: ProjectId, lease: lonca::Lease) -> StoreLease {
         symbol: lease.symbol,
         holder: Live::owner(w, p, &name),
         name,
+        shared: lease.shared,
     }
 }
 
@@ -2299,12 +2317,14 @@ mod tests {
                     symbol: "g".into(),
                     holder: None,
                     name: "someone".into(),
+                    shared: false,
                 },
                 StoreLease {
                     file: "src/a.rs".into(),
                     symbol: "T.f".into(),
                     holder: Some(1),
                     name: word.clone(),
+                    shared: false,
                 },
             ]
         );
@@ -2317,9 +2337,11 @@ mod tests {
             file: "a".into(),
             symbol: "f".into(),
             agent: None,
+            shared: true,
         };
         let shown = lease_of(&w, 0, lease);
         assert_eq!((shown.holder, shown.name.as_str()), (None, "?"));
+        assert!(shown.shared, "kept");
     }
 
     #[test]
@@ -2461,6 +2483,29 @@ mod tests {
         assert!(no.contains("(T) was refused: rejected: no."), "{no}");
         assert!(no.contains("sync") && no.contains("propose again"));
         assert!(act);
+    }
+
+    #[test]
+    fn a_worker_refused_for_a_quota_or_a_freeze_is_told_to_say_it_is_blocked() {
+        for why in [
+            "verification_quota:day",
+            "verification_quota:session",
+            "frozen:audit",
+        ] {
+            let refused = Landed::Rejected(vec!["x".into(), why.into()]);
+            let (said, act) = told(&refused, "T", &[]).unwrap();
+            assert!(said.contains(&format!("refused: x; {why}.")), "{said}");
+            assert!(said.contains("do not propose again"), "{said}");
+            assert!(said.contains("blocked") && !said.contains("sync"), "{said}");
+            assert!(act);
+        }
+        for why in ["verification_failed:build", "quota:day", "unfrozen:x"] {
+            let (said, _) = told(&Landed::Rejected(vec![why.into()]), "T", &[]).unwrap();
+            assert!(
+                said.contains("propose again.") && said.contains("sync"),
+                "{said}"
+            );
+        }
     }
 
     #[test]

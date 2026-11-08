@@ -55,7 +55,7 @@ What a card is, how the leader posts and assigns and how a worker claims, is in 
 
 ### What the map shows today
 
-On a project on [Lonca](../concepts/projects.md#on-lonca) the map is what its daemon says is held, read every few seconds: only the files someone holds, each lease in the same cells, with a pending change's leases among them. Someone who is no agent of this project shows dim as `· name`. With nothing held it says `nobody holds a lease in NAME now`, and a daemon that does not answer clears it. On a project in worktrees agents keep to their own files, so the map says there is nothing to show; `--demo` draws it from its cards.
+On a project on [Lonca](../concepts/projects.md#on-lonca) the map is what its daemon says is held, read every few seconds: only the files someone holds, each lease in the same cells, with a pending change's leases among them. Someone who is no agent of this project shows dim as `· name`. A lease held shared, which others may hold too where the repository allows it, ends with `(shared)`. With nothing held it says `nobody holds a lease in NAME now`, and a daemon that does not answer clears it. On a project in worktrees agents keep to their own files, so the map says there is nothing to show; `--demo` draws it from its cards.
 
 The map with rows and cells above is what `--demo` shows: its projects carry a file list and its cards lease symbols, so the demo is where the view can be seen at work. See [the demo](../getting-started/demo.md).
 
