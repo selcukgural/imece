@@ -2837,7 +2837,7 @@ echo '{{"type":"result","subtype":"success","result":"hi","total_cost_usd":0.5}}
         agent.terminate();
         let e = rx.recv_timeout(Duration::from_secs(10)).expect("in time");
         assert!(
-            matches!(&e, Event::Stopped(w) if w.contains("signal 15")),
+            matches!(&e, Event::Stopped(w) if w.contains("signal 2")),
             "{e:?}"
         );
         let _ = std::fs::remove_dir_all(&dir);

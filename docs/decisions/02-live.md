@@ -15,6 +15,13 @@ the pot has room is ended and started again with the same prompts and
 the new remainder, once per session until a turn finishes (`renewed`).
 Sessions start off the UI
 thread; events carry a session generation so late ones are dropped.
+A session ends (`child::Child::terminate`, then its drop) with its stdin
+closed and SIGINT to its process group, once; after `INT_GRACE` (1.2 s)
+SIGTERM, after `TERM_GRACE` (0.3 s) SIGKILL: as long before the kill as
+the one SIGTERM was. Claude Code ends a turn cleanly on SIGINT and writes
+its `result` (probed 2026-11-08 on 2.1.319: a turn cut mid-answer exits 0
+in 0.9 s with `error_during_execution`); on SIGTERM it leaves the turn with
+no result. That late result belongs to an ended generation and is dropped.
 imece's own paid calls (a suggested commit message, record 56) are paid
 from the same pot (`World::paid`, in `World::spent`).
 
