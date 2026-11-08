@@ -60,6 +60,14 @@ stand-in, and being an integration test makes cargo build the binary
 before the unit tests run. A test that runs without it built says so and
 fails.
 
+What the run found on Linux: `mcp-relay` copied with `io::copy`, which
+there moves bytes between a pipe and a socket with `splice`, and the
+server's reply to the first `initialize` never reached the session: the
+run waited for good every time (macOS has no `splice` and passed). The
+relay now copies with a read and a flushed write of its own
+(`mcp::pump`); the same relay is what Claude Code starts, so this was a
+bus that could hang a real session on Linux.
+
 Growth: nothing kept; a session's context and counters are in its
 process's memory. Concurrency: one stand-in per session, as Claude Code;
 its MCP servers are its children, killed when it ends (their stdin

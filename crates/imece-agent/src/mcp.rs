@@ -221,11 +221,29 @@ pub fn relay(path: &Path) -> io::Result<()> {
     let sock = UnixStream::connect(path)?;
     let mut up = sock.try_clone()?;
     thread::spawn(move || {
-        let _ = io::copy(&mut io::stdin().lock(), &mut up);
+        let _ = pump(&mut io::stdin().lock(), &mut up);
         let _ = up.shutdown(Shutdown::Write);
     });
-    io::copy(&mut &sock, &mut io::stdout().lock())?;
-    Ok(())
+    pump(&mut &sock, &mut io::stdout().lock())
+}
+
+/// Copies `r` to `w` until `r` ends, each read written and flushed at
+/// once. Not `io::copy`: on Linux it moves bytes between a pipe and a
+/// socket with `splice`, and there a reply the server sent never reached
+/// the session (the stand-in's end-to-end run waited on its first
+/// `initialize` for good, every time; record 130).
+fn pump(r: &mut impl Read, w: &mut impl Write) -> io::Result<()> {
+    let mut buf = [0u8; 8192];
+    loop {
+        let n = match r.read(&mut buf) {
+            Ok(0) => return Ok(()),
+            Ok(n) => n,
+            Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+            Err(e) => return Err(e),
+        };
+        w.write_all(&buf[..n])?;
+        w.flush()?;
+    }
 }
 
 #[cfg(test)]
@@ -366,5 +384,107 @@ mod tests {
         assert_eq!(got.len(), 1);
         assert_eq!(got[0]["id"], 5);
         assert_eq!(got[0]["result"], serde_json::json!({}));
+    }
+
+    /// Reads what it is given, one item per read: bytes, or an error.
+    struct Reads(Vec<Result<Vec<u8>, io::ErrorKind>>);
+
+    impl Read for Reads {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            if self.0.is_empty() {
+                return Ok(0);
+            }
+            match self.0.remove(0) {
+                Ok(b) => {
+                    buf[..b.len()].copy_from_slice(&b);
+                    Ok(b.len())
+                }
+                Err(k) => Err(io::Error::from(k)),
+            }
+        }
+    }
+
+    /// Keeps only what was flushed: what a line-buffered stdout lets out.
+    #[derive(Default)]
+    struct Flushed {
+        held: Vec<u8>,
+        out: Vec<u8>,
+    }
+
+    impl Write for Flushed {
+        fn write(&mut self, b: &[u8]) -> io::Result<usize> {
+            self.held.extend_from_slice(b);
+            Ok(b.len())
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            self.out.append(&mut self.held);
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn the_relay_pumps_every_read_out_at_once_through_an_interruption_to_the_end() {
+        let mut r = Reads(vec![
+            Ok(b"{\"id\":1".to_vec()),
+            Err(io::ErrorKind::Interrupted),
+            Ok(b"}\n".to_vec()),
+        ]);
+        let mut w = Flushed::default();
+        pump(&mut r, &mut w).unwrap();
+        assert_eq!(w.out, b"{\"id\":1}\n");
+        assert!(w.held.is_empty());
+    }
+
+    #[test]
+    fn the_relay_stops_at_a_read_error_with_what_came_before_it_out() {
+        let mut r = Reads(vec![
+            Ok(b"ab".to_vec()),
+            Err(io::ErrorKind::BrokenPipe),
+            Ok(b"cd".to_vec()),
+        ]);
+        let mut w = Flushed::default();
+        let e = pump(&mut r, &mut w).unwrap_err();
+        assert_eq!(e.kind(), io::ErrorKind::BrokenPipe);
+        assert_eq!(w.out, b"ab");
+    }
+
+    #[test]
+    fn a_relay_between_a_pipe_and_a_socket_carries_a_reply_back() {
+        // What a session does: a line in on stdin, the reply out on
+        // stdout, through the socket. A pipe stands for each.
+        let dir = std::env::temp_dir().join(format!("imece-pump-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("s.sock");
+        let _server = Server::bind(&path, tools(), |_, _, _| Ok(String::new())).unwrap();
+        let sock = UnixStream::connect(&path).unwrap();
+        let (mut stdin_r, mut stdin_w) = io::pipe().unwrap();
+        let (mut stdout_r, mut stdout_w) = io::pipe().unwrap();
+        let mut up = sock.try_clone().unwrap();
+        let ins = thread::spawn(move || {
+            let pumped = pump(&mut stdin_r, &mut up);
+            // As the relay does: the server sees the end and closes.
+            let _ = up.shutdown(Shutdown::Write);
+            pumped
+        });
+        let outs = thread::spawn(move || pump(&mut &sock, &mut stdout_w));
+        for piece in [
+            &b"{\"jsonrpc\":\"2.0\","[..],
+            b"\"id\":7,\"method\":\"ping\"}",
+            b"\n",
+        ] {
+            stdin_w.write_all(piece).unwrap();
+            thread::sleep(std::time::Duration::from_millis(5));
+        }
+        let mut line = String::new();
+        io::BufReader::new(&mut stdout_r)
+            .read_line(&mut line)
+            .unwrap();
+        let v: Value = serde_json::from_str(&line).unwrap();
+        assert_eq!(v["id"], 7);
+        drop(stdin_w);
+        ins.join().unwrap().unwrap();
+        outs.join().unwrap().unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

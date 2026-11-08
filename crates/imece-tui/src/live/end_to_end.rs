@@ -44,8 +44,12 @@ fn a_leader_hires_a_worker_whose_change_waits_for_the_person() {
     {
         assert!(
             start.elapsed().as_secs() < 30,
-            "timed out: {:#?}",
-            w.journal
+            "timed out: {:#?}\n{:#?}",
+            w.journal,
+            w.agents
+                .iter()
+                .map(|a| (&a.name, &a.status, &a.trace))
+                .collect::<Vec<_>>()
         );
         live.step(&mut w);
         thread::sleep(Duration::from_millis(20));
