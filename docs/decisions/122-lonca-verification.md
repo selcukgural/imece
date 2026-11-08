@@ -66,6 +66,9 @@ A change decided from another imece is watched only by the one showing it; the o
 sees it land and says what its own look read. **Migration.** `Event::Verified` is a new
 journal line, as ever an older build can not read a store that has one.
 
+A card may ask for more of the policy's named checks, which the person's yes asks
+Lonca for (`--also`): record 127.
+
 **The demo** (record 31): a proposal says `build, test`, its landing says the checks,
 and each fifth merges and fails its tests, the worker told. What can not be faked: a
 sandbox, a real log.

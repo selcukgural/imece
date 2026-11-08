@@ -242,7 +242,8 @@ pub fn plan(f: &mut Frame, app: &App, item: usize, at: usize) -> Rect {
 }
 
 /// The cards of plan `p`, as the window lists them: a line with number,
-/// title and tier, one with the paths it owns when it has any, its body
+/// title and tier, one with the paths it owns when it has any, one with
+/// the checks it asks for (record 127), its body
 /// line by line, and a blank line after each card. What `j k` scroll.
 pub fn plan_lines(app: &App, p: &Proposal) -> Vec<Line<'static>> {
     let t = app.lang.text();
@@ -258,6 +259,12 @@ pub fn plan_lines(app: &App, p: &Proposal) -> Vec<Line<'static>> {
         if !c.paths.is_empty() {
             lines.push(Line::from(Span::styled(
                 fill(t.plan_owns, &[&clean(&crate::paths::listed(&c.paths))]),
+                dim(),
+            )));
+        }
+        if !c.checks.is_empty() {
+            lines.push(Line::from(Span::styled(
+                fill(t.plan_checks, &[&clean(&crate::checks::listed(&c.checks))]),
                 dim(),
             )));
         }

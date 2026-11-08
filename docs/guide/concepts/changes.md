@@ -137,6 +137,8 @@ env_passthrough = ["HOME", "CARGO_HOME", "RUSTUP_HOME", "TMPDIR"]
 
 The commands see an empty environment but for `PATH`, a scratch `HOME` and `LANG`, so a toolchain under your home needs its directories in `env_passthrough`. With a check that fails the change does not land: Lonca refuses it, your yes stays in the log, and the worker takes it up.
 
+A card may ask for more of the policy's named checks ([the checks a card asks for](messages-and-board.md#the-checks-a-card-asks-for)): its change's verdict line adds them (`after your yes Lonca runs: build, tests, api · the card also asks for api`), and your yes asks Lonca for them (`--also`).
+
 ## See also
 
 - [The changes screen](../screen/changes.md): every key in the diff view.

@@ -9,11 +9,12 @@ pub(super) fn writes(name: &str) -> bool {
     matches!(name, "Edit" | "Write" | "MultiEdit")
 }
 
-/// What opens a worker's card with a prompt: the card's title, and the
-/// paths it owns (record 114).
+/// What opens a worker's card with a prompt: the card's title, the paths
+/// it owns (record 114) and the checks it asks for (record 127).
 pub(super) struct Opening<'a> {
     pub title: &'a str,
     pub paths: &'a [Owned],
+    pub checks: &'a [String],
     /// The card an assign hands again (record 126): taken instead of a
     /// new one.
     pub card: Option<CardId>,
@@ -491,6 +492,7 @@ impl Live {
         let opening = Opening {
             title: &title,
             paths: &[],
+            checks: &[],
             card: None,
         };
         if let Err(why) = self.prompt(w, id, prompt, Some(opening)) {
@@ -640,6 +642,7 @@ impl Live {
                 story: Vec::new(),
                 symbols: Vec::new(),
                 paths: o.paths.to_vec(),
+                checks: o.checks.to_vec(),
                 started: t,
                 finished: 0,
                 attempt: 1,
@@ -2943,6 +2946,7 @@ mod tests {
         let opening = Opening {
             title: "next",
             paths: &[],
+            checks: &[],
             card: None,
         };
         live.prompt(&mut w, 1, "go on".into(), Some(opening))
@@ -2960,6 +2964,7 @@ mod tests {
         let open = |card| Opening {
             title: "next",
             paths: &[],
+            checks: &[],
             card,
         };
         // An assign naming a card: the worker takes it at its try now,

@@ -629,6 +629,7 @@ mod tests {
             story: Vec::new(),
             symbols: Vec::new(),
             paths: Vec::new(),
+            checks: Vec::new(),
             started: 0,
             finished: 0,
             attempt: 1,
@@ -681,6 +682,7 @@ mod tests {
                     id: 0,
                     re: None,
                     paths: Vec::new(),
+                    checks: Vec::new(),
                     card: None,
                     outcome: Outcome::Ok,
                 }],
@@ -869,6 +871,7 @@ mod tests {
                 id: 0,
                 re: None,
                 paths: Vec::new(),
+                checks: Vec::new(),
                 card: None,
                 outcome: Outcome::Ok,
             });
@@ -989,6 +992,7 @@ mod tests {
             id: 0,
             re: None,
             paths: Vec::new(),
+            checks: Vec::new(),
             card: None,
             outcome: Outcome::Ok,
         });
@@ -1185,6 +1189,7 @@ mod tests {
             id: 0,
             re: None,
             paths: Vec::new(),
+            checks: Vec::new(),
             card: None,
             outcome: Outcome::Ok,
         });
@@ -1502,6 +1507,7 @@ mod tests {
             id: 0,
             re: None,
             paths: Vec::new(),
+            checks: Vec::new(),
             card: None,
             outcome: Outcome::Ok,
         });
@@ -2031,6 +2037,7 @@ mod tests {
             id: 0,
             re: None,
             paths: Vec::new(),
+            checks: Vec::new(),
             card: None,
             outcome: Outcome::Ok,
         });

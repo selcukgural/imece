@@ -49,6 +49,7 @@ Varsayılan ret: uymayan bir mesaj nedeniyle reddedilir ve iz bırakmaz.
 | `you`'ya `assign`, `handoff` ya da `cancel` | `assign is not for the person; ask them, or tell them (inform, done, blocked)` |
 | bozuk bir `re` | aşağıda |
 | `assign` dışında bir türde `paths` | `paths go with an assign: the card it opens owns them` |
+| `assign` dışında bir türde `checks`, `card` ile, ya da Lonca'da olmayan bir projede | `checks go with an assign: the card it opens asks for them` / `a card handed again keeps its own checks; leave checks out` / `checks run in Lonca's merge queue, and this project is not on Lonca: leave checks out, and say in the body what to run` |
 | `done` dışında bir türde `outcome`, ya da `done`/`failed` olmayan | `outcome goes with a done` / `outcome is done or failed` |
 | `assign` dışında bir türde `card`, ya da `paths` ile | `card goes with an assign: the card it hands again` / `a card handed again keeps its own paths; leave paths out` |
 | projenin olmayan, işçi olmayana giden, incelemede, kuyrukta ya da bitmiş bir `card` | `there is no card #8 in this project`, `a card goes to a worker`, `#3's change waits for the person; it comes back if they send it back`, `#3 is in Lonca's merge queue`, `#3 is done; assign a new task for more` |
@@ -58,6 +59,7 @@ Varsayılan ret: uymayan bir mesaj nedeniyle reddedilir ve iz bırakmaz.
 | `you`'ya bir `ask` dışında `options` | `options go with an ask to the person (to: you)` |
 | bozuk `options` | `options must be an array of strings`, `an ask offers at most 4 options`, `an option is empty`, `an option is longer than 60 characters`, `"a\tb" has a control character` |
 | bozuk `paths` | `paths must be an array of strings`, `a card owns at most 20 paths`, `a path is empty`, `a path is longer than 200 characters`, `"a\tb" has a control character`, `paths are relative to the repository; "/etc" starts with /`, `"src/../x" goes outside the repository (..)`, `paths lists "src" twice` |
+| bozuk `checks` | `checks must be an array of strings`, `a card asks for at most 32 checks`, `"Api" is not a check's name: a-z, 0-9, _ and -, at most 32, and not one of Lonca's own (build, test, tests, extended, syntax, scope, claim_diff, merge, test_integrity), which run anyway`, `checks lists "api" twice` |
 | projenin açık bir kartının sahip olduğu bir yol | `#3 Fix the parser owns "src/parser.rs", which "src" names too; give this card other paths, or end one with the word shared (src shared)` |
 
 12 tur ve 10 kart sayaçları siz herhangi bir ajana her yazdığınızda yeniden başlar: ajanlar sizsiz birbirlerini sonsuza dek meşgul edemez.
@@ -126,12 +128,13 @@ imece'nin MCP sunucusunun adı `imece`'dir; araçları bir oturuma `mcp__imece__
 | `body` | dize, en çok 4000 | evet | `assign` için: ilk satır kartın başlığı olur (ekran ilk 20 karakterini işçinin yanında gösterir, bu yüzden her görevin paylaştığı bir fiille değil, onu öteki kartlardan ayıranla başlamalı); sonra görev, dokunduğu dosyalar ve ne zaman bittiği |
 | `re` | tam sayı ≥ 1 | hayır | yanıtladığı mesajın numarası |
 | `paths` | en çok 20 dizelik dizi, her biri en çok 200 | hayır | `assign` için: kartın sahip olduğu yollar, depoya göre, git pathspec'i olarak (bir dosya, bir dizin ya da `*`'lı bir desen); `shared` sözcüğüyle biten adlandırılır, sahiplenilmez. Başka her türde reddedilir |
+| `checks` | en çok 32 addan dizi, her biri `[a-z0-9_-]`, en çok 32 | hayır | `assign` için, Lonca'daki bir projede: kartın istediği, deponun Lonca politikasındaki denetimler (`verification.checks`); evetiniz bunları Lonca'nın birleştirme kuyruğundan ister ([kartın istediği denetimler](../concepts/messages-and-board.md#kartın-istediği-denetimler)). Başka türde reddedilir |
 | `options` | en çok 4 dizelik dizi, her biri en çok 60 | hayır | `you`'ya bir `ask` için: kişinin tek tuşla seçebileceği yanıtlar, kısa, ajanın kendi seçeceği önce; kişi yine sözcüklerle yanıtlayabilir. Başka her mesajda reddedilir |
 | `card` | tam sayı ≥ 1 | hayır | liderin `assign`'ı için: yeniden verilecek kart (`#N`), bir sonraki denemesi; üçüncüsünden sonra siz bir tane daha verene kadar reddedilir ([kartın denemeleri](../concepts/messages-and-board.md#kartın-denemeleri)) |
 | `outcome` | `done` ya da `failed` | hayır | bir `done` için: `failed` kartı başarısız sayar ve değişiklik göstermez; `done`, hiç yazılmamış gibi, değişikliği teslim eder |
 | `after` | en çok 8 tam sayılık dizi, her biri ≥ 1 | hayır | bir `assign` için: açtığı kartın beklediği kartlar (`#N`, `#` olmadan); biri bitmemişken görev kartında tutulur: `held as message 14 on #6: it waits on #2, #5, and claude-1 gets it once they are done` ([başka kartları bekleyen kartlar](../concepts/messages-and-board.md#başka-kartları-bekleyen-kartlar)) |
 
-Yollu bir `assign` onlarla teslim edilir: posta `This card owns src/parser.rs, docs (shared): stay in them; what else needs changing goes in your done, or ask for the card to be widened.` ile biter.
+Yollu bir `assign` onlarla teslim edilir: posta `This card owns src/parser.rs, docs (shared): stay in them; what else needs changing goes in your done, or ask for the card to be widened.` ile biter. Denetimli olanı `This card asks for Lonca's checks api, e2e: once the person says yes, Lonca's merge queue runs them on your change too, and a failure comes back to you.` ile biter.
 
 ### `post`
 
@@ -142,6 +145,7 @@ Yollu bir `assign` onlarla teslim edilir: posta `This card owns src/parser.rs, d
 | `title` | dize, tek satır, en çok 120 | evet | ekran ilk 20 karakterini gösterir |
 | `body` | dize, en çok 4000 | evet | görev: ne yapılacak, hangi dosyalar, ne zaman bitti |
 | `paths` | en çok 20 dizelik dizi, her biri en çok 200 | hayır | kartın sahip olduğu yollar, `send`'dekiyle aynı |
+| `checks` | en çok 32 addan dizi | hayır | kartın istediği denetimler, `send`'dekiyle aynı |
 | `after` | en çok 8 tam sayılık dizi, her biri ≥ 1 | hayır | beklediği kartlar, `send`'dekiyle aynı: her biri bitene dek önerilmez ve alınamaz |
 
 `posted as #4; an idle worker will be offered it` diye yanıtlar (`after` ile: `posted as #6; it waits on #2, and an idle worker will be offered it once they are done`); yollar projenin açık kartlarına karşı bir `assign`'ınki gibi, `after` `send`'deki gibi denetlenir.
@@ -164,7 +168,7 @@ Projenin asılmış ya da görev olarak verilmiş her kartının `Open:` ve `Tak
 | --- | --- | --- | --- |
 | `card` | tam sayı ≥ 1 | evet | kartın numarası, `#` olmadan |
 
-Yalnızca işçiler (`only workers take cards; assign or post instead`). Redler: `there is no such card on the board; call board to see it`, `#4 was taken by claude-2; pick another`, `#6 is assigned to claude-1; pick another`, `#6 waits on #4; pick a card that is ready (board with ready: true)`. Kartın yolları varsa yanıt onlarla biter (`This card owns tests, lib (shared): stay in them; …`).
+Yalnızca işçiler (`only workers take cards; assign or post instead`). Redler: `there is no such card on the board; call board to see it`, `#4 was taken by claude-2; pick another`, `#6 is assigned to claude-1; pick another`, `#6 waits on #4; pick a card that is ready (board with ready: true)`. Kartın yolları varsa yanıt onlarla biter (`This card owns tests, lib (shared): stay in them; …`), ardından istediği denetimlerle (`This card asks for Lonca's checks api: …`).
 
 ### `withdraw`
 
@@ -183,10 +187,10 @@ Yalnız liderin. `#3 is withdrawn` ya da `#3 is withdrawn; #6, #7 wait on it and
 
 | Alan | Tür | Zorunlu | Anlamı |
 | --- | --- | --- | --- |
-| `cards` | 1 ile 20 kartlık dizi | evet | her biri `{title, body, tier, paths, after}`: tek satırlık başlık (en çok 120), gövde (en çok 4000), kademe (`cheap`, `standard` ya da `strong`; verilmezse standard), `send`'deki gibi `paths`, `after` bu planın beklediği önceki kartları, yerleriyle (ilki 1) |
+| `cards` | 1 ile 20 kartlık dizi | evet | her biri `{title, body, tier, paths, checks, after}`: tek satırlık başlık (en çok 120), gövde (en çok 4000), kademe (`cheap`, `standard` ya da `strong`; verilmezse standard), `send`'deki gibi `paths` ve `checks`, `after` bu planın beklediği önceki kartları, yerleriyle (ilki 1) |
 | `cost` | sayı ≥ 0 | evet | kartların hep birlikte beklenen maliyeti, dolar olarak |
 
-Yalnız liderin. `the person reads your plan (3 cards, $1.20) in WAITING FOR YOU; end your turn, their yes starts your next` diye, kapı kapalıysa `the person turned the plan gate off for this project: hire as you see fit; your plan was not kept` diye yanıtlar. Redler: `only the leader plans; it hires for the team`, `cards must be an array of cards`, `a plan has 1 to 20 cards`, `card 2 needs a title and a body`, `card 1's title must be one line of at most 120 characters`, `card 1's body is longer than 4000 characters`, `card 1: tier must be cheap, standard or strong`, `card 2: paths are relative to the repository; "/x" starts with /` (ve öteki `paths` redleri), `cards 1 and 3 both own a path: "src" and "src/a.rs"; give one other paths, or end one with the word shared`, `card 3: after names earlier cards of this plan by their place (1 to 2)`, `cost must be a number of dollars, 0 or more`. Kapı tutarken `hire`: `make a plan first (the plan tool): the person reads it before a second worker is hired`, `the person is reading your plan; end your turn, their yes starts your next`, `the person answered your plan in words, not with a yes: make a new plan from what they said (the plan tool)`; `whoami`'nin `may hire`'ı aynısını söyler. Bkz. [plan](../concepts/messages-and-board.md#plan).
+Yalnız liderin. `the person reads your plan (3 cards, $1.20) in WAITING FOR YOU; end your turn, their yes starts your next` diye, kapı kapalıysa `the person turned the plan gate off for this project: hire as you see fit; your plan was not kept` diye yanıtlar. Redler: `only the leader plans; it hires for the team`, `cards must be an array of cards`, `a plan has 1 to 20 cards`, `card 2 needs a title and a body`, `card 1's title must be one line of at most 120 characters`, `card 1's body is longer than 4000 characters`, `card 1: tier must be cheap, standard or strong`, `card 2: paths are relative to the repository; "/x" starts with /` (ve öteki `paths` redleri), `card 2: checks run in Lonca's merge queue, and this project is not on Lonca: leave checks out, and say in the body what to run` (ve öteki `checks` redleri), `cards 1 and 3 both own a path: "src" and "src/a.rs"; give one other paths, or end one with the word shared`, `card 3: after names earlier cards of this plan by their place (1 to 2)`, `cost must be a number of dollars, 0 or more`. Kapı tutarken `hire`: `make a plan first (the plan tool): the person reads it before a second worker is hired`, `the person is reading your plan; end your turn, their yes starts your next`, `the person answered your plan in words, not with a yes: make a new plan from what they said (the plan tool)`; `whoami`'nin `may hire`'ı aynısını söyler. Bkz. [plan](../concepts/messages-and-board.md#plan).
 
 ### `hire`
 

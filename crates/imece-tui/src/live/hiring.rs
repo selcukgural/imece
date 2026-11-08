@@ -391,6 +391,9 @@ impl Live {
             };
             let paths =
                 paths::parse(&c["paths"]).map_err(|why| format!("card {}: {why}", n + 1))?;
+            let checks = checks::parse(&c["checks"])
+                .and_then(|checks| checks_run(w, project, &checks).map(|_| checks))
+                .map_err(|why| format!("card {}: {why}", n + 1))?;
             let after = planned_after(&c["after"], n)?;
             for (m, other) in cards.iter().enumerate() {
                 if let Some((theirs, mine)) = paths::overlap(&other.paths, &paths) {
@@ -406,6 +409,7 @@ impl Live {
                 title: title.to_string(),
                 tier: tier.wire().to_string(),
                 paths,
+                checks,
                 body: body.to_string(),
                 after,
             });
@@ -1156,6 +1160,7 @@ mod tests {
             id: 0,
             re: None,
             paths: Vec::new(),
+            checks: Vec::new(),
             card: None,
             outcome: Outcome::Ok,
         });
@@ -1184,6 +1189,7 @@ mod tests {
             id: 0,
             re: None,
             paths: Vec::new(),
+            checks: Vec::new(),
             card: None,
             outcome: Outcome::Ok,
         });
@@ -1642,6 +1648,7 @@ mod tests {
                     title: "Parser".into(),
                     tier: "cheap".into(),
                     paths: vec![Owned::new("src/p.rs")],
+                    checks: Vec::new(),
                     body: "Fix it.".into(),
                     after: Vec::new(),
                 },
@@ -1649,6 +1656,7 @@ mod tests {
                     title: "Docs".into(),
                     tier: "standard".into(),
                     paths: Vec::new(),
+                    checks: Vec::new(),
                     body: "Write them.\nTwo lines.".into(),
                     after: Vec::new(),
                 },
@@ -1815,6 +1823,37 @@ mod tests {
             live.plan(&mut w, 0, &plan_args(cards, json!(1)))
                 .unwrap_err(),
             "card 1: after names earlier cards of this plan by their place (1 to 0)"
+        );
+    }
+
+    #[test]
+    fn a_plan_s_cards_ask_for_checks_on_lonca_only() {
+        let mut w = team(1);
+        w.projects[0].plan.on = true;
+        let mut live = idle_live(2);
+        let cards = json!([
+            { "title": "Parser", "body": "Fix it." },
+            { "title": "Api", "body": "Serve it.", "checks": ["e2e", "api"] },
+        ]);
+        assert_eq!(
+            live.plan(&mut w, 0, &plan_args(cards.clone(), json!(1)))
+                .unwrap_err(),
+            "card 2: checks run in Lonca's merge queue, and this project is not on Lonca: \
+             leave checks out, and say in the body what to run"
+        );
+        assert_eq!(w.projects[0].plan.proposal, None, "nothing kept");
+        w.on_lonca(0, Some("demo".into()));
+        live.plan(&mut w, 0, &plan_args(cards, json!(1))).unwrap();
+        let p = w.projects[0].plan.proposal.as_ref().expect("a plan");
+        let checks: Vec<&[String]> = p.cards.iter().map(|c| &c.checks[..]).collect();
+        assert_eq!(
+            checks,
+            [&[][..], &["api".to_string(), "e2e".to_string()][..]]
+        );
+        let bad = json!([{ "title": "t", "body": "b", "checks": ["api", "api"] }]);
+        assert_eq!(
+            live.plan(&mut w, 0, &plan_args(bad, json!(1))).unwrap_err(),
+            "card 1: checks lists \"api\" twice"
         );
     }
 

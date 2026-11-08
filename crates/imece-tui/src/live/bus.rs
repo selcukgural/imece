@@ -63,6 +63,10 @@ impl Live {
         if !paths.is_empty() && kind != MsgKind::Assign {
             return Err("paths go with an assign: the card it opens owns them".into());
         }
+        let checks = checks::parse(&args["checks"])?;
+        if !checks.is_empty() && kind != MsgKind::Assign {
+            return Err("checks go with an assign: the card it opens asks for them".into());
+        }
         let options = options_of(&args["options"])?;
         if !options.is_empty() && (arg("to") != YOU || kind != MsgKind::Ask) {
             return Err("options go with an ask to the person (to: you)".into());
@@ -77,6 +81,9 @@ impl Live {
         }
         if handed.is_some() && !paths.is_empty() {
             return Err("a card handed again keeps its own paths; leave paths out".into());
+        }
+        if handed.is_some() && !checks.is_empty() {
+            return Err("a card handed again keeps its own checks; leave checks out".into());
         }
         let after = after_of(&args["after"])?;
         if !after.is_empty() && kind != MsgKind::Assign {
@@ -129,6 +136,7 @@ impl Live {
         }
         depends(w, project, &after)?;
         self.owned_elsewhere(w, project, Some(to), &paths)?;
+        checks_run(w, project, &checks)?;
         if w.agents[to].status == Status::Stopped {
             return Err(format!(
                 "{name} has stopped; it runs again when the person talks to it"
@@ -157,7 +165,7 @@ impl Live {
         // 126, F10): the card holds it until they are done.
         let card = match after.is_empty() {
             true => handed,
-            false => Some(self.opens(w, to, body, &paths, after)),
+            false => Some(self.opens(w, to, body, (&paths, &checks), after)),
         };
         let waits = card.filter(|&c| !w.ready(c));
         self.mail[to].push(Mail {
@@ -167,6 +175,7 @@ impl Live {
             id,
             re,
             paths,
+            checks,
             card,
             outcome,
         });
@@ -400,14 +409,14 @@ impl Live {
 
     /// The card an assign to `to` opens when it waits on the cards `after`
     /// (record 126, F10): titled by the assign's first line, owning
-    /// `paths`, `to`'s and untried until it begins. Held now when what it
-    /// waits on is not done.
+    /// `paths` and asking for `checks` (record 127), `to`'s and untried
+    /// until it begins. Held now when what it waits on is not done.
     fn opens(
         &mut self,
         w: &mut World,
         to: AgentId,
         body: &str,
-        paths: &[Owned],
+        (paths, checks): (&[Owned], &[String]),
         after: Vec<CardId>,
     ) -> CardId {
         let (t, c) = (w.tick, w.cards.len());
@@ -420,6 +429,7 @@ impl Live {
             story: Vec::new(),
             symbols: Vec::new(),
             paths: paths.to_vec(),
+            checks: checks.to_vec(),
             started: t,
             finished: 0,
             attempt: 0,
@@ -475,10 +485,12 @@ impl Live {
             return Err(format!("the body is longer than {MAX_BODY} characters"));
         }
         let paths = paths::parse(&args["paths"])?;
+        let checks = checks::parse(&args["checks"])?;
         let after = after_of(&args["after"])?;
         let project = w.agents[from].project;
         depends(w, project, &after)?;
         self.owned_elsewhere(w, project, None, &paths)?;
+        checks_run(w, project, &checks)?;
         if self.open(w, project).count() >= MAX_OPEN {
             return Err(format!(
                 "the board has {MAX_OPEN} open cards; wait until workers take some"
@@ -501,6 +513,7 @@ impl Live {
             story: Vec::new(),
             symbols: Vec::new(),
             paths,
+            checks,
             started: t,
             finished: 0,
             attempt: 0,
@@ -712,7 +725,7 @@ impl Live {
             card + 1,
             w.cards[card].title,
             post.body,
-            owns(&w.cards[card].paths)
+            owns(&w.cards[card].paths) + &asks(&w.cards[card].checks)
         ))
     }
 
@@ -936,12 +949,40 @@ impl Live {
         let opening = Opening {
             title: &title,
             paths: &first.paths,
+            checks: &first.checks,
             card: first.card,
         };
         if let Err(why) = self.prompt(w, id, mail_prompt(w, &mail), Some(opening)) {
             apply(w, id, AgentEvent::Stopped(why), self.spent_before[id]);
         }
     }
+}
+
+/// Refuses `checks` for a project not on Lonca (record 127): they run
+/// in Lonca's merge queue after the person's yes, and nothing runs them
+/// elsewhere.
+pub(super) fn checks_run(w: &World, project: ProjectId, checks: &[String]) -> Result<(), String> {
+    if !checks.is_empty() && w.projects[project].lonca.is_none() {
+        return Err(
+            "checks run in Lonca's merge queue, and this project is not on Lonca: leave \
+             checks out, and say in the body what to run"
+                .into(),
+        );
+    }
+    Ok(())
+}
+
+/// What a card's checks add to the task a worker is handed (record
+/// 127): nothing when it asks for none.
+pub(super) fn asks(checks: &[String]) -> String {
+    if checks.is_empty() {
+        return String::new();
+    }
+    format!(
+        "\n\nThis card asks for Lonca's checks {}: once the person says yes, Lonca's merge \
+         queue runs them on your change too, and a failure comes back to you.",
+        checks::listed(checks)
+    )
 }
 
 /// What a card's paths add to the task a worker is handed: nothing when
@@ -1633,6 +1674,7 @@ mod tests {
             id: 2,
             re: None,
             paths: Vec::new(),
+            checks: Vec::new(),
             card: None,
             outcome: Outcome::Ok,
         };
@@ -1700,6 +1742,7 @@ mod tests {
             story: Vec::new(),
             symbols: Vec::new(),
             paths: Vec::new(),
+            checks: Vec::new(),
             started: 0,
             finished: 0,
             attempt: 1,
@@ -1740,6 +1783,7 @@ mod tests {
                 id: 8,
                 re: Some(7),
                 paths: Vec::new(),
+                checks: Vec::new(),
                 card: None,
                 outcome: Outcome::Ok,
             }]
@@ -2739,6 +2783,7 @@ Taken:
             id: 1,
             re: None,
             paths: Vec::new(),
+            checks: Vec::new(),
             card: None,
             outcome: Outcome::Ok,
         });
@@ -3077,6 +3122,161 @@ in p.rs",
             .post(&mut w, 0, &with_paths(card("Bad", "x"), json!(["a", "a"])))
             .unwrap_err();
         assert_eq!(err, "paths lists \"a\" twice");
+    }
+
+    // Record 127: the checks a card asks for.
+
+    fn with_checks(mut args: Value, checks: Value) -> Value {
+        args["checks"] = checks;
+        args
+    }
+
+    #[test]
+    fn an_assign_with_checks_opens_a_card_that_asks_for_them_and_the_prompt_says_so() {
+        let mut w = team(2);
+        w.on_lonca(0, Some("demo".into()));
+        w.agents[1].status = Status::Idle;
+        let mut live = idle_live(3);
+        let args = with_checks(
+            msg("claude-1", "assign", "Fix the parser"),
+            json!(["e2e", "api"]),
+        );
+        sent(&mut live, &mut w, 0, &args).unwrap();
+        live.step(&mut w);
+        let q = queued(&live, 1);
+        assert!(
+            q[0].ends_with(
+                "Fix the parser\n\nThis card asks for Lonca's checks api, e2e: once the person \
+                 says yes, Lonca's merge queue runs them on your change too, and a failure \
+                 comes back to you."
+            ),
+            "{q:?}"
+        );
+        let card = w.agents[1].card.expect("a card");
+        assert_eq!(w.cards[card].checks, ["api", "e2e"], "sorted");
+        // One without checks asks for none, and the prompt says nothing of it.
+        w.agents[2].status = Status::Idle;
+        sent(&mut live, &mut w, 0, &msg("claude-2", "assign", "Docs")).unwrap();
+        live.step(&mut w);
+        assert!(queued(&live, 2)[0].ends_with("from lead:\nDocs"));
+        assert!(w.cards[w.agents[2].card.unwrap()].checks.is_empty());
+        assert_eq!(asks(&[]), "");
+    }
+
+    #[test]
+    fn checks_go_with_an_assign_on_lonca_only_and_are_checked_before_anything_is_sent() {
+        let mut w = team(1);
+        w.agents[1].status = Status::Idle;
+        let mut live = idle_live(2);
+        let refused = |live: &mut Live, w: &mut World, args: Value| {
+            sent(live, w, 0, &args).expect_err("refused")
+        };
+        let api = json!(["api"]);
+        let off = "checks run in Lonca's merge queue, and this project is not on Lonca: \
+                   leave checks out, and say in the body what to run";
+        let assign = with_checks(msg("claude-1", "assign", "Fix"), api.clone());
+        assert_eq!(refused(&mut live, &mut w, assign.clone()), off);
+        w.on_lonca(0, Some("demo".into()));
+        let err = refused(
+            &mut live,
+            &mut w,
+            with_checks(msg("claude-1", "ask", "Which?"), api.clone()),
+        );
+        assert_eq!(
+            err,
+            "checks go with an assign: the card it opens asks for them"
+        );
+        let mut handed = assign.clone();
+        handed["card"] = json!(1);
+        assert_eq!(
+            refused(&mut live, &mut w, handed),
+            "a card handed again keeps its own checks; leave checks out"
+        );
+        let err = refused(
+            &mut live,
+            &mut w,
+            with_checks(msg("claude-1", "assign", "Fix"), json!(["build"])),
+        );
+        assert!(err.starts_with("\"build\" is not a check's name"), "{err}");
+        assert!(
+            live.mail[1].is_empty() && w.cards.is_empty(),
+            "nothing sent"
+        );
+        // An empty list is none, on any message.
+        let inform = with_checks(msg("claude-1", "inform", "Hi"), json!([]));
+        sent(&mut live, &mut w, 0, &inform).unwrap();
+        assert!(live.mail[1][0].checks.is_empty());
+        // On Lonca it goes, and its mail carries them until delivered.
+        sent(&mut live, &mut w, 0, &assign).unwrap();
+        assert_eq!(live.mail[1].last().unwrap().checks, ["api"]);
+    }
+
+    #[test]
+    fn a_card_that_waits_and_a_posted_card_ask_for_their_checks_and_a_claim_says_so() {
+        let mut w = team(1);
+        w.on_lonca(0, Some("demo".into()));
+        let mut live = idle_live(2);
+        let post = with_checks(card("Add a test", "Cover sub()."), json!(["unit", "api"]));
+        live.post(&mut w, 0, &post).unwrap();
+        assert_eq!(w.cards[0].checks, ["api", "unit"]);
+        // An assign that waits on it opens its card now, asking for its
+        // own checks.
+        let mut args = with_checks(msg("claude-1", "assign", "After it"), json!(["e2e"]));
+        args["after"] = json!([1]);
+        sent(&mut live, &mut w, 0, &args).unwrap();
+        assert_eq!(w.cards[1].checks, ["e2e"]);
+        assert!(w.cards[1].paths.is_empty());
+        let got = live.claim(&mut w, 1, &json!({ "card": 1 })).unwrap();
+        assert!(
+            got.ends_with(
+                "send lead a done message.\n\nThis card asks for Lonca's checks api, unit: \
+                 once the person says yes, Lonca's merge queue runs them on your change too, \
+                 and a failure comes back to you."
+            ),
+            "{got}"
+        );
+        // Off Lonca a post asks for none.
+        w.projects[0].lonca = None;
+        let err = live
+            .post(&mut w, 0, &with_checks(card("More", "x"), json!(["api"])))
+            .unwrap_err();
+        assert!(
+            err.starts_with("checks run in Lonca's merge queue"),
+            "{err}"
+        );
+        assert_eq!(w.cards.len(), 2, "nothing posted");
+        let err = live
+            .post(&mut w, 0, &with_checks(card("More", "x"), json!("api")))
+            .unwrap_err();
+        assert_eq!(err, "checks must be an array of strings");
+    }
+
+    #[test]
+    fn a_card_handed_again_keeps_its_checks_in_the_prompt() {
+        let mut w = team(1);
+        w.on_lonca(0, Some("demo".into()));
+        let c = with_card(&mut w, 1);
+        w.cards[c].checks = vec!["api".into()];
+        let mail = Mail {
+            from: 0,
+            kind: MsgKind::Assign,
+            body: "Again".into(),
+            id: 4,
+            re: None,
+            paths: Vec::new(),
+            checks: Vec::new(),
+            card: Some(c),
+            outcome: Outcome::Ok,
+        };
+        let prompt = mail_prompt(&w, &[mail]);
+        assert!(
+            prompt.ends_with(
+                "This card asks for Lonca's checks api: once the person says yes, \
+                 Lonca's merge queue runs them on your change too, and a failure comes back \
+                 to you."
+            ),
+            "{prompt}"
+        );
     }
 
     // Record 126: attempts, a done that failed, a late done, a card handed

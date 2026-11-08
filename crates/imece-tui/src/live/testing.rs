@@ -185,6 +185,7 @@ pub(crate) fn with_card(w: &mut World, id: AgentId) -> CardId {
         story: Vec::new(),
         symbols: Vec::new(),
         paths: Vec::new(),
+        checks: Vec::new(),
         started: 0,
         finished: 0,
         attempt: 1,

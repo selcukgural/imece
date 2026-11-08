@@ -137,6 +137,8 @@ env_passthrough = ["HOME", "CARGO_HOME", "RUSTUP_HOME", "TMPDIR"]
 
 Komutlar `PATH`, geçici bir `HOME` ve `LANG` dışında boş bir ortam görür, bu yüzden ev dizinindeki bir araç zincirinin dizinleri `env_passthrough`'ta olmalıdır. Başarısız bir denetimde değişiklik inmez: Lonca reddeder, onayın günlükte kalır, işçi işi yeniden alır.
 
+Bir kart politikanın adlandırılmış denetimlerinden fazlasını isteyebilir ([kartın istediği denetimler](messages-and-board.md#kartın-istediği-denetimler)): değişikliğinin karar satırı onları ekler (`evetinden sonra Lonca şunları çalıştırır: build, tests, api · kart ayrıca şunları da istiyor: api`) ve evetin onları Lonca'dan ister (`--also`).
+
 ## Ayrıca bakınız
 
 - [Değişiklikler ekranı](../screen/changes.md): diff görünümündeki her tuş.

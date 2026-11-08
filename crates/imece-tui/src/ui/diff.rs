@@ -794,14 +794,16 @@ pub(crate) fn verdict_spans(
         parts.push(Span::styled(t.verdict_stale.to_string(), dim()));
     }
     match &v.verifies {
-        Some(Runs::These(names)) if names.is_empty() => {
+        Some(Runs::These(names)) if names.is_empty() && v.asks.is_empty() => {
             parts.push(Span::styled(
                 t.verdict_verifies_none.to_string(),
                 fg(pal().warn),
             ));
         }
         Some(Runs::These(names)) => {
-            let said = fill(t.verdict_verifies, &[&clean(&names.join(", "))]);
+            // The card's checks run too: the yes asks for them (record 127).
+            let all: Vec<&str> = (names.iter().chain(&v.asks)).map(String::as_str).collect();
+            let said = fill(t.verdict_verifies, &[&clean(&all.join(", "))]);
             parts.push(Span::styled(said, dim()));
         }
         Some(Runs::Unsaid) => {
@@ -811,6 +813,10 @@ pub(crate) fn verdict_spans(
             ));
         }
         None => {}
+    }
+    if !v.asks.is_empty() {
+        let said = fill(t.verdict_asks, &[&clean(&crate::checks::listed(&v.asks))]);
+        parts.push(Span::styled(said, dim()));
     }
     let mut spans = Vec::with_capacity(parts.len() * 2);
     for (n, part) in parts.into_iter().enumerate() {
@@ -1787,6 +1793,7 @@ diff --git a/c.rs b/c.rs
             partial: false,
             stale: false,
             verifies: None,
+            asks: Vec::new(),
         }
     }
 
@@ -2100,6 +2107,45 @@ diff --git a/c.rs b/c.rs
         assert!(
             worded(Lang::Tr, &unsaid, true, None)
                 .ends_with("Lonca evetinden sonra neyin çalışacağını söylemedi")
+        );
+        // The card's checks (record 127): what the yes asks for runs too.
+        let asks = Verdict {
+            verifies: Some(Runs::These(vec!["build".into()])),
+            asks: vec!["api".into(), "e2e".into()],
+            ..a_verdict()
+        };
+        assert_eq!(
+            said(&asks),
+            "✓ ready to approve · ✓ cargo test · 2 files, both inside #6 · \
+             after your yes Lonca runs: build, api, e2e · the card also asks for api, e2e"
+        );
+        let spans = verdict_spans(Lang::En, &asks, true, None);
+        assert_eq!((spans.len(), spans[8].style), (9, dim()));
+        assert_eq!(
+            worded(Lang::Tr, &asks, true, None),
+            "✓ onaya hazır · ✓ cargo test · 2 dosya, ikisi de #6 içinde · \
+             evetinden sonra Lonca şunları çalıştırır: build, api, e2e · \
+             kart ayrıca şunları da istiyor: api, e2e"
+        );
+        let only = Verdict {
+            verifies: Some(Runs::These(Vec::new())),
+            asks: vec!["api".into()],
+            ..a_verdict()
+        };
+        assert!(
+            said(&only).ends_with("after your yes Lonca runs: api · the card also asks for api"),
+            "{}",
+            said(&only)
+        );
+        let unsaid = Verdict {
+            verifies: Some(Runs::Unsaid),
+            asks: vec!["api".into()],
+            ..a_verdict()
+        };
+        assert!(
+            said(&unsaid).ends_with(
+                "Lonca did not say what runs after your yes · the card also asks for api"
+            )
         );
     }
 

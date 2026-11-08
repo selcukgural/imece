@@ -44,6 +44,12 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, c: CardId) {
             Span::raw(clean(&crate::paths::listed(&card.paths))),
         ]));
     }
+    if !card.checks.is_empty() {
+        head.push(Line::from(vec![
+            Span::styled(t.card_checks, dim()),
+            Span::raw(clean(&crate::checks::listed(&card.checks))),
+        ]));
+    }
     if !card.after.is_empty() {
         head.push(Line::from(after_spans(t, w, card)));
     }
@@ -221,6 +227,7 @@ mod tests {
             story: Vec::new(),
             symbols: Vec::new(),
             paths: Vec::new(),
+            checks: Vec::new(),
             started: 12,
             finished: 24,
             attempt: 1,
