@@ -254,8 +254,9 @@ const SESSION_PIDS: u32 = 41_000;
 /// And the commands they run here, a thousand an agent.
 const COMMAND_PIDS: u32 = 60_000;
 
-/// The demo's processes left from an earlier run start here (`:ps`).
-const LEFT_PIDS: u32 = 39_000;
+/// The demo's processes left from an earlier run are numbered from here
+/// (`:ps`), none at it: a parent is never `LEFT_PIDS` plus nothing.
+const LEFT_PIDS: u32 = 38_990;
 
 /// A working agent of the demo runs a new command this often.
 const PROC_TICKS: u64 = 60;
@@ -1773,14 +1774,14 @@ impl Sim {
             Left {
                 place: "demo-notes/claude-9".into(),
                 procs: vec![
-                    proc(0, None, 4, 310, "claude"),
-                    proc(1, Some(0), 0, 9, "imece"),
-                    proc(2, Some(0), 990, 520, "cargo"),
+                    proc(10, None, 4, 310, "claude"),
+                    proc(11, Some(10), 0, 9, "imece"),
+                    proc(12, Some(10), 990, 520, "cargo"),
                 ],
             },
             Left {
                 place: "demo/claude-8".into(),
-                procs: vec![proc(100, None, 31, 180, "node")],
+                procs: vec![proc(110, None, 31, 180, "node")],
             },
         ];
         let ended = &self.extras.ended;

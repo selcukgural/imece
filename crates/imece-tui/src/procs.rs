@@ -466,17 +466,19 @@ pub fn end_left(asked: &[(u32, u32)], worktrees: &Path, own: &str, me: u32) -> u
     for &(pid, _) in &ended {
         signal(pid, libc::SIGTERM);
     }
-    let n = ended.len();
-    if n > 0 {
-        let (worktrees, own) = (worktrees.to_path_buf(), own.to_string());
-        std::thread::spawn(move || {
-            std::thread::sleep(KILL_GRACE);
-            let roots = still_left(&roots, &worktrees, &own, me);
-            for (pid, _) in in_trees(&ended, &roots) {
-                signal(pid, libc::SIGKILL);
-            }
-        });
+    // Nothing sent, nothing to follow up.
+    if ended.is_empty() {
+        return 0;
     }
+    let n = ended.len();
+    let (worktrees, own) = (worktrees.to_path_buf(), own.to_string());
+    std::thread::spawn(move || {
+        std::thread::sleep(KILL_GRACE);
+        let roots = still_left(&roots, &worktrees, &own, me);
+        for (pid, _) in in_trees(&ended, &roots) {
+            signal(pid, libc::SIGKILL);
+        }
+    });
     n
 }
 
