@@ -660,6 +660,9 @@ pub enum StoreDown {
     /// The daemon asked to be asked again, look after look (`busy`,
     /// `rate_limited`, `closed`, …): one such answer closes nothing.
     Busy,
+    /// The repository is frozen (`status.frozen`): it takes no proposal and
+    /// no decision until a human unfreezes it.
+    Frozen,
 }
 
 impl StoreDown {
@@ -679,6 +682,9 @@ impl StoreDown {
                  (unobserved_is_tainted): set it true"
             }
             StoreDown::Busy => "Lonca's daemon is busy: it asks to be asked again",
+            StoreDown::Frozen => {
+                "Lonca froze this repository: a person unfreezes it (lonca status says why)"
+            }
         }
     }
 }
@@ -7519,6 +7525,7 @@ mod tests {
             StoreDown::NoRepo,
             StoreDown::Refused,
             StoreDown::Busy,
+            StoreDown::Frozen,
         ];
         let said: std::collections::HashSet<&str> = all.iter().map(|d| d.why()).collect();
         assert_eq!(said.len(), all.len());

@@ -74,6 +74,16 @@ only `AGAIN_MOST` (3) looks in a row close the project, as `StoreDown::Busy`
 count again. A line under id 0 with any other code is still outside the
 protocol, and every code imece does not know still closes (`Refused`).
 
+**Frozen** (lonca `010ba7e`). `status.frozen` is why a human froze the repository
+(`lonca freeze REASON`), or the auditor did on an integrity alarm; `null` when it is
+not (probed). A frozen repository takes no proposal and no decision, so a look that
+reads one says `StoreDown::Frozen` (`Lonca froze the repository (lonca status says
+why); a person unfreezes it`) and the project closes as for any other reason: no
+hire, no Δ decision. Anything but `null` is a freeze (fail closed); an older daemon
+without the field is not frozen. Lonca's `security.events` are not read: a freeze
+and an integrity alarm are already told on the desktop by Lonca at once
+(`--notify-command`), and what they do to imece's work is this freeze.
+
 A project not on Lonca changes in nothing: no socket
 is touched, record 115's "the git path stays until the Lonca path carries a
 team" holds.
@@ -91,7 +101,7 @@ same. Also found, for Lonca: `docs/protocol.md` writes `lease_held:<symbol>:
 **The demo** (record 31). `Extras.store` is the table: a row per demo project
 with how many changes it integrated, the trunk a function of that, what is
 pending the project's waiting Δs. The second project is on it. Its daemon stops
-6 ticks in every 60 (`store_stopped`), every second stop a busy daemon's
+6 ticks in every 60 (`store_stopped`), in turn gone, busy and frozen
 (`store_stop`), so `⌀ no lonca`, the journal's two
 lines and a refused decision can be seen; `hire` and helpers wait those ticks
 out. `:lonca NAME` takes any name; one not in the table answers as a real

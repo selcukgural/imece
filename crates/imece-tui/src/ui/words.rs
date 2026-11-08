@@ -1079,6 +1079,7 @@ pub fn store_down(t: &Text, why: StoreDown) -> &'static str {
         StoreDown::Refused => t.store_refused,
         StoreDown::Unguarded => t.store_unguarded,
         StoreDown::Busy => t.store_busy,
+        StoreDown::Frozen => t.store_frozen,
     }
 }
 
