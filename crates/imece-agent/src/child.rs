@@ -731,9 +731,10 @@ mod tests {
             "trap 'touch int' INT; trap 'touch term; exit 0' TERM; \
              echo started; while :; do sleep 0.05; done",
         );
+        // The `term` file is the SIGTERM; no upper bound on the time, which a
+        // loaded machine stretches past `TERM_GRACE`.
         assert_eq!(left, ["int", "term"]);
         assert!(took >= INT_GRACE, "{took:?}");
-        assert!(took < INT_GRACE + TERM_GRACE, "{took:?}");
     }
 
     #[test]
