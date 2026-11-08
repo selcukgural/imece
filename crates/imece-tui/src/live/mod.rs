@@ -56,6 +56,8 @@ mod health;
 mod hiring;
 mod lonca;
 mod paid;
+mod procs;
+pub(crate) use self::procs::proc_name;
 mod projects;
 mod prompts;
 mod remember;
@@ -723,6 +725,8 @@ pub struct Live {
     reviewed_rx: Receiver<review::Reviewed>,
     /// Looks for worktrees no agent owns and their removals (`:tidy`).
     tidy: tidy::Tidy,
+    /// Looks at the sessions' processes (`:ps`).
+    looks: procs::Looks,
 }
 
 /// Whether `program` runs from the checkout `repo` is in; if not, how to
@@ -808,6 +812,7 @@ pub fn world(o: Options) -> Result<(World, Live), String> {
                 reviews: Default::default(),
                 orphans: crate::model::Orphans::default(),
                 health: Default::default(),
+                procs: Default::default(),
                 messages: 0,
             },
             None,
@@ -1052,6 +1057,7 @@ impl Live {
             reviewed_tx,
             reviewed_rx,
             tidy: tidy::Tidy::default(),
+            looks: procs::Looks::default(),
         }
     }
 
@@ -1150,7 +1156,7 @@ impl Live {
         let said = self.take_said(w);
         let reviewed = self.take_reviews(w);
         self.review_next(w);
-        let tidied = self.take_tidy(w);
+        let tidied = self.take_tidy(w) | self.take_procs(w);
         let set_up = self.take_setups(w) | self.take_checks(w);
         self.stand_busy(w, Instant::now());
         self.files_due(w, Instant::now());

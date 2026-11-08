@@ -358,6 +358,10 @@ impl App {
             self.tidy_key(win, k);
             return;
         }
+        if let Some(win) = self.ps {
+            self.ps_key(win, k);
+            return;
+        }
         if let Some(win) = self.lonca_win {
             self.lonca_key(win, k);
             return;

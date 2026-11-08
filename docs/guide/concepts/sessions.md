@@ -92,6 +92,10 @@ A start that remembers an earlier run opens one window before anything moves, WH
 
 It shows the pot, one line per open project, the oldest open items (6 at most, then `… and N more`), the turns the earlier run cut short and the earlier run's last 6 journal lines. Any key closes it and does nothing else. Nothing to tell, no window; the demo never has one. The same ground is covered in [next morning](../scenarios/next-morning.md).
 
+## Processes
+
+`:ps` shows what each agent's session runs right now: its `claude`, imece's bus relay under it and every command the agent started, with CPU and memory as `ps` reports them, read again every three seconds while the window is open. A command that hangs or eats the machine (a test that never ends, a build gone wild) can be ended there with `d` and `y`: only that process, after checking again that it is still under that agent's session; the session goes on and the agent sees its command fail. imece never ends a process by itself here, and never one it did not start. See [`:ps`](../reference/commands.md#ps).
+
 ## See also
 
 - [How imece works](../concepts/how-imece-works.md): the store and the git thread.

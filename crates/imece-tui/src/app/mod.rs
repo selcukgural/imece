@@ -43,6 +43,7 @@ mod line;
 mod lonca;
 mod notices;
 mod projects;
+mod ps;
 mod salon;
 mod talk;
 mod views;
@@ -65,6 +66,9 @@ pub enum Engine {
 
 /// The `:tidy` window: the row at hand, and whether a `y` is asked for
 /// removing it with what it holds.
+pub use self::ps::PsWin;
+pub(crate) use self::ps::ps_rows;
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct TidyWin {
     pub at: usize,
@@ -906,6 +910,10 @@ pub struct App {
     /// The worktrees no agent owns, in a window over the screen (`:tidy`,
     /// record 96).
     pub tidy: Option<TidyWin>,
+    /// Each agent's session's processes, in a window over the screen
+    /// (`:ps`, record 129), and when they were last asked for.
+    pub ps: Option<PsWin>,
+    pub ps_looked: Option<Instant>,
     /// The project at hand's Lonca repository in a window over the screen
     /// (bare `:lonca`, record 125): what waits for a human, what is held.
     pub lonca_win: Option<LoncaWin>,
@@ -1231,6 +1239,8 @@ impl App {
             script: None,
             plan_window: None,
             tidy: None,
+            ps: None,
+            ps_looked: None,
             lonca_win: None,
             window: None,
             board_ready: false,
@@ -1372,6 +1382,7 @@ impl App {
         self.show_suggestion();
         self.watch_reviews();
         self.watch_tidy();
+        self.watch_ps(Instant::now());
         self.world.watch_spending();
         self.watch_turns();
         self.watch_lanes();

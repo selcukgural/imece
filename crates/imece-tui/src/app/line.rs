@@ -745,6 +745,7 @@ impl App {
                 }
             }
             "tidy" => self.open_tidy(),
+            "ps" => self.open_ps(),
             "welcome" => self.open_welcome(),
             "news" => self.open_news(),
             "settle" => {

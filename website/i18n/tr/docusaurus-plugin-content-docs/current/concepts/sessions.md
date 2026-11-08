@@ -92,6 +92,10 @@ Bir arşivden hiçbir şey uyanmaz, hiçbir şey harcanmaz: işçilerine kart su
 
 Bütçeyi, açık proje başına bir satırı, en eski açık öğeleri (en çok 6, sonra `… ve N daha`), önceki çalıştırmanın kestiği turları ve önceki çalıştırmanın son 6 günlük satırını gösterir. Herhangi bir tuş kapatır ve başka bir şey yapmaz. Anlatacak bir şey yoksa pencere yok; demoda hiç yok. Aynı konu [ertesi sabah](../scenarios/next-morning.md) sayfasında.
 
+## Süreçler
+
+`:ps` her ajanın oturumunun şu an çalıştırdıklarını gösterir: `claude`'u, altındaki imece bus aktarıcısını ve ajanın başlattığı her komutu, `ps`'in söylediği CPU ve bellekle; pencere açıkken üç saniyede bir yeniden okunur. Takılan ya da makineyi yiyen bir komut (hiç bitmeyen bir test, kontrolden çıkmış bir derleme) orada `d` ve `y` ile sonlandırılabilir: yalnızca o süreç, hâlâ o ajanın oturumunun altında olduğu yeniden denetlendikten sonra; oturum sürer ve ajan komutunun hata verdiğini görür. imece burada hiçbir süreci kendiliğinden sonlandırmaz ve başlatmadığı birine asla dokunmaz. Bkz. [`:ps`](../reference/commands.md#ps).
+
 ## Ayrıca bakınız
 
 - [imece nasıl çalışır](../concepts/how-imece-works.md): depo ve git iş parçacığı.

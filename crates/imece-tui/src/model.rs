@@ -1839,6 +1839,13 @@ pub enum Event {
         agent: AgentId,
         sign: crate::health::Sign,
     },
+    /// The person ended process `pid`, named `name`, under agent
+    /// `agent`'s session (`:ps`, record 129).
+    Killed {
+        agent: AgentId,
+        pid: u32,
+        name: String,
+    },
     /// Leader `agent` withdrew card `card`, and why (record 126).
     Withdrawn {
         agent: AgentId,
@@ -2375,6 +2382,7 @@ impl Event {
             | Event::Restored { .. }
             | Event::Renamed { .. }
             | Event::Forgotten { .. }
+            | Event::Killed { .. }
             | Event::Chose { .. } => EntryKind::Person,
         }
     }
@@ -2466,6 +2474,7 @@ impl Event {
             | Event::ChecksSet { agent, .. }
             | Event::Withdrawn { agent, .. }
             | Event::Health { agent, .. }
+            | Event::Killed { agent, .. }
             | Event::CardFailed { agent, .. }
             | Event::LateDone { agent, .. }
             | Event::Capped { agent, .. }
@@ -3084,6 +3093,8 @@ pub struct World {
     /// When imece tells a leader of a stall, an idle worker or a loop
     /// (`:health`, record 128); prefs keep it, the world does not.
     pub health: crate::health::Health,
+    /// The sessions' processes, as the engine last read them (`:ps`).
+    pub procs: crate::procs::Procs,
     /// The number the last message on the bus was given ([`MsgId`]).
     pub messages: MsgId,
     /// The lines the person sent, oldest first, for `↑` `↓` and `^r` on
@@ -3683,6 +3694,7 @@ impl World {
             proposals: Default::default(),
             orphans: crate::model::Orphans::default(),
             health: Default::default(),
+            procs: Default::default(),
             messages: self.messages,
             sent: self.sent.clone(),
         }
@@ -5600,6 +5612,7 @@ mod tests {
             proposals: Default::default(),
             orphans: crate::model::Orphans::default(),
             health: Default::default(),
+            procs: Default::default(),
             messages: 0,
             plans: Vec::new(),
         }

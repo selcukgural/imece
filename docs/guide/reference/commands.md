@@ -63,6 +63,7 @@ A line that starts with `:` is a command to imece, not a message to an agent. Yo
 | `:pending` | `q s` | | | | |
 | `:pin [NAME]` | — | | | | the project at hand, `▴` when pinned |
 | `:plan [on\|off]` | — | | | | on / off |
+| `:ps` | — | | | | |
 | `:quit` | `q` | `:q` | | | |
 | `:recall [WORDS]` | `H` | | | | |
 | `:rename NAME` | — | | | | the project at hand |
@@ -300,6 +301,10 @@ Pins the project `NAME`, or the one at hand, to the top of the team; again unpin
 ### `:plan [on|off]`
 
 The plan gate of the project at hand ([the plan](../concepts/messages-and-board.md#the-plan)): `on` (the default) has the leader put its plan before you, as a `▤` item in TO DECIDE, before it hires a second worker; `off` lets it hire as it sees fit, and a plan it still sends is answered `the person turned the plan gate off for this project` and not kept. Bare, it says where the gate stands: `plan gate on for kule: a plan with your yes before the second worker` / `plan gate off for kule: the leader hires as it sees fit`. Kept in the store per project. The menu note shows on / off.
+
+### `:ps`
+
+Each agent's session and every process under it in a window over the screen, as `ps` reports them (CPU in percent of one core, memory in use): a line per agent with what all its processes take together, then its session's process (`claude`), imece's bus relay (`imece`) and what the agent runs (`cargo`, `node`), indented. It is read again every three seconds while it is open. `j` `k` (the arrows) and `g` `G` move, `d` asks `end cargo (60321) under claude-1? y ends it, any other key keeps it`, `esc` or `q` close it. A process ends with `SIGTERM`, and `SIGKILL` two seconds later if it is still there; just before each signal imece checks again that it is still under that session, so a number reused meanwhile is not touched. The agent's session goes on and sees its command fail. Its session itself (`:forget` or a stop ends that) and imece's relay are refused. The journal says `you ended cargo (60321) under claude-1`. The demo lists made-up processes the same way. See [sessions](../concepts/sessions.md#processes).
 
 ### `:quit`
 
