@@ -3745,17 +3745,24 @@ in p.rs",
             &after("claude-1", "Tests", json!([1])),
         )
         .unwrap();
+        // An assign of another task waits beside it, busy as claude-1 is.
+        sent(&mut live, &mut w, 0, &msg("claude-1", "assign", "Lint")).unwrap();
         let mut args = msg("claude-2", "assign", "Tests, yours now");
         args["card"] = json!(2);
         let got = sent(&mut live, &mut w, 0, &args).unwrap();
-        assert!(got.starts_with("held as message 3 on #2"), "{got}");
+        assert!(got.starts_with("held as message 4 on #2"), "{got}");
         let c = &w.cards[1];
         assert_eq!(
             (c.owner, c.column, c.attempt),
             (Some(2), Column::Waiting, 0)
         );
-        assert_eq!(live.mail[1].len(), 1, "its inform stays");
-        assert_eq!(live.mail[1][0].kind, MsgKind::Inform);
+        let kinds: Vec<MsgKind> = live.mail[1].iter().map(|m| m.kind).collect();
+        assert_eq!(
+            kinds,
+            [MsgKind::Inform, MsgKind::Assign],
+            "its inform and its other assign stay"
+        );
+        assert_eq!(live.mail[1][1].card, None);
         assert_eq!(
             live.notes[1],
             [

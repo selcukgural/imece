@@ -9047,6 +9047,23 @@ diff --git a/b.rs b/b.rs
     }
 
     #[test]
+    fn a_demo_card_waits_only_on_cards_of_its_own_project() {
+        let (mut w, mut s) = world(2, 3, 0, 4, Lang::En);
+        let mut seen = 0;
+        for _ in 0..1500 {
+            s.step(&mut w);
+            answer_all(&mut w, &mut s);
+        }
+        for c in &w.cards {
+            for &d in &c.after {
+                assert_eq!(w.cards[d].project, c.project, "#{}", c.id + 1);
+                seen += 1;
+            }
+        }
+        assert!(seen > 0, "no card waited on another");
+    }
+
+    #[test]
     fn the_demo_s_tests_and_docs_wait_on_the_work_and_its_plan_says_so() {
         let (mut w, mut s) = world(1, 2, 0, 1, Lang::En);
         let first = w.cards.len();
