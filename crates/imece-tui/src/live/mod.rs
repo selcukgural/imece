@@ -68,6 +68,7 @@ mod tidy;
 mod tools;
 
 pub(crate) use self::bus::numbers;
+pub(crate) use self::lonca::unheard_why;
 pub use self::projects::Open;
 pub(crate) use self::prompts::INSTRUCTIONS;
 pub(crate) use self::review::{REVIEW_CAP, REVIEW_DAY_CALLS, REVIEW_DAY_COST};
@@ -1214,6 +1215,7 @@ impl Live {
                 // The session Claude Code runs is the one to go on with
                 // next time; a wake that asked for the old one has it.
                 AgentEvent::Started { session, .. } => {
+                    self.lonca.started.insert(id, Instant::now());
                     self.sessions[id] = Some(Resumable {
                         session: session.clone(),
                         spent: self.floor[id],

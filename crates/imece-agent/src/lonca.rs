@@ -1094,6 +1094,24 @@ pub struct SessionEnd {
     /// nothing (lonca#189); none when nobody reported since the session
     /// began or last proposed.
     pub unproposed: Option<usize>,
+    /// What the daemon saw of the session's hooks (lonca#190).
+    pub hooks: Hooks,
+}
+
+/// What the daemon saw of a session's hooks (lonca#190): whether its hook
+/// ever bound it, and whether a call to Lonca's own tools came that its
+/// hook never reported.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Hooks {
+    /// Bound, nothing missed; or a daemon that says neither (one older
+    /// than lonca#195 has no such fields).
+    Heard,
+    /// `bound_ms` is `null`: no hook of the session ever reached the
+    /// daemon.
+    Unbound,
+    /// `unhooked`: the harness ran this tool of Lonca's without its
+    /// before-tool hook. The session is tainted for good.
+    Missed(String),
 }
 
 /// An operation waiting for a human.
@@ -1152,6 +1170,24 @@ impl Status {
         })
     }
 
+    /// Each agent whose newest session is alive and its hooks were not
+    /// heard ([`Hooks`]): the session imece's harness of it runs under.
+    /// An ended one is no harness's any more.
+    pub fn hooks(&self) -> Vec<(String, Hooks)> {
+        let mut newest: Vec<&SessionEnd> = Vec::new();
+        for s in &self.sessions {
+            match newest.iter_mut().find(|n| n.agent == s.agent) {
+                Some(n) if s.expires_ms > n.expires_ms => *n = s,
+                Some(_) => {}
+                None => newest.push(s),
+            }
+        }
+        (newest.into_iter())
+            .filter(|s| s.active && s.hooks != Hooks::Heard)
+            .map(|s| (s.agent.clone(), s.hooks.clone()))
+            .collect()
+    }
+
     /// Each agent and how long its newest session has left, in
     /// milliseconds; below zero for one over.
     pub fn time_left(&self) -> Vec<(String, i64)> {
@@ -1175,7 +1211,27 @@ impl SessionEnd {
             expires_ms: v["expires_ms"].as_i64()?,
             active: v["active"].as_bool() != Some(false),
             unproposed: (v["unproposed"]["total"].as_u64()).and_then(|n| usize::try_from(n).ok()),
+            hooks: Hooks::of(v),
         })
+    }
+}
+
+impl Hooks {
+    /// Fails closed: an `unhooked` that is not `null` is a miss whatever
+    /// its shape, a `bound_ms` there and not a time is no bind. A field
+    /// not there says nothing: an older daemon checks nothing.
+    fn of(v: &Value) -> Hooks {
+        match v.get("unhooked") {
+            None | Some(Value::Null) => {}
+            Some(miss) => {
+                let tool = miss["tool"].as_str().map(str::to_string);
+                return Hooks::Missed(tool.unwrap_or_else(|| miss.to_string()));
+            }
+        }
+        match v.get("bound_ms") {
+            Some(bound) if bound.as_i64().is_none() => Hooks::Unbound,
+            _ => Hooks::Heard,
+        }
     }
 }
 
@@ -2359,6 +2415,65 @@ mod tests {
         assert_eq!(Status::of(&v), None);
         v["sessions"] = json!([{"expires_ms": 1}]);
         assert_eq!(Status::of(&v), None);
+    }
+
+    #[test]
+    fn what_the_daemon_saw_of_a_sessions_hooks_is_read_failing_closed() {
+        let hooks = |fields: Value| {
+            let mut one = json!({"agent": "a", "expires_ms": 1});
+            for (k, v) in fields.as_object().unwrap() {
+                one[k] = v.clone();
+            }
+            let mut v = status(&[]);
+            v["sessions"] = json!([one]);
+            Status::of(&v).unwrap().sessions[0].hooks.clone()
+        };
+        assert_eq!(hooks(json!({})), Hooks::Heard, "an older daemon");
+        assert_eq!(
+            hooks(json!({"bound_ms": 5, "unhooked": null})),
+            Hooks::Heard
+        );
+        assert_eq!(hooks(json!({"bound_ms": null})), Hooks::Unbound);
+        assert_eq!(hooks(json!({"bound_ms": "5"})), Hooks::Unbound);
+        let missed = json!({"tool": "propose", "seen_ms": 9});
+        assert_eq!(
+            hooks(json!({"bound_ms": 5, "unhooked": missed})),
+            Hooks::Missed("propose".into())
+        );
+        // A miss is a miss whatever its shape, bound or not.
+        assert_eq!(
+            hooks(json!({"bound_ms": null, "unhooked": true})),
+            Hooks::Missed("true".into())
+        );
+    }
+
+    #[test]
+    fn hooks_are_read_of_each_agents_newest_session_while_it_lives() {
+        let mut v = status(&[]);
+        v["sessions"] = json!([
+            // a: its older session missed, its newest is heard.
+            {"agent": "a", "expires_ms": 10, "unhooked": {"tool": "lease"}},
+            {"agent": "a", "expires_ms": 20, "bound_ms": 1},
+            // b: its newest missed; an older heard one says nothing.
+            {"agent": "b", "expires_ms": 20, "bound_ms": 1},
+            {"agent": "b", "expires_ms": 30, "bound_ms": 1, "unhooked": {"tool": "status"}},
+            {"agent": "b", "expires_ms": 25, "bound_ms": 1},
+            // c: never bound, and alive.
+            {"agent": "c", "expires_ms": 20, "bound_ms": null},
+            // d: never bound, but over: no harness runs under it.
+            {"agent": "d", "expires_ms": 20, "bound_ms": null, "active": false},
+            // e: two sessions ending at once: the first listed stands.
+            {"agent": "e", "expires_ms": 20, "bound_ms": null},
+            {"agent": "e", "expires_ms": 20, "bound_ms": 1},
+        ]);
+        assert_eq!(
+            Status::of(&v).unwrap().hooks(),
+            [
+                ("b".to_string(), Hooks::Missed("status".into())),
+                ("c".to_string(), Hooks::Unbound),
+                ("e".to_string(), Hooks::Unbound),
+            ]
+        );
     }
 
     #[test]

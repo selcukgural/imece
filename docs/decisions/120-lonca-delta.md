@@ -73,9 +73,22 @@ on a real run (Claude Code 2.1.319, haiku, an isolated daemon): imece's hooks
 (`claude::hook_settings`, matcher `*` through `--settings`) fire for
 `mcp__lonca__*` too, so a worker is bound (`bound_ms`), its `last_hook_ms` moves
 and `unhooked` stays null; its proposal waited for `unobserved_session` alone.
-The Δ words both reasons and the queue's `verification_missing:<check>`. Reading
-`status.sessions[]` to stop and renew a worker Lonca marked is the next step,
-not done here.
+The Δ words both reasons and the queue's `verification_missing:<check>`.
+
+A look also reads each agent's newest live session's `bound_ms` and `unhooked`
+(`lonca::Hooks`: `Heard`, `Unbound`, `Missed(tool)`; an `unhooked` of any shape is
+a miss, a `bound_ms` there and no time no bind, fields not there an older daemon
+that checks nothing), kept per repository in `Watch.unheard`. A worker or solo in
+a workspace whose harness was running when the look was asked (`Watch.started`,
+from Claude Code's `init`) and whose session is marked is stopped
+(`Live::stop_unheard`): its row says why (`unheard_why`), its helpers leave as
+for any stop, and it does not start again by itself: a harness that skips its
+hooks skips them again, and each restart would be paid for. The person's word
+starts it under `--continue` (`start` renews when `unheard`), resumed, told
+`SEAT_UNHOOKED`. An unbound session is judged only `BIND_GRACE` (10 s) after its
+harness started, since its first hook binds it. Lonca keeps a continuation
+tainted, so a critical path stays refused for it; a fresh session would need a
+new workspace. The demo stops every second worker on Lonca it stops this way.
 
 **`a`.** `StoreJob::Decide` runs `lonca approve SEQ --repo=R --json` as a child,
 `DECIDE_WAIT` 120 s, one job at a time, in the project's checkout. `Live.applying`

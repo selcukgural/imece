@@ -740,6 +740,12 @@ struct Extras {
     proposed: u64,
     /// How many dones its workers on Lonca said.
     dones: u64,
+    /// How many times its workers on Lonca stopped: each second, Lonca
+    /// did not hear their hooks (lonca#190).
+    store_stops: u64,
+    /// Workers stopped for hooks Lonca did not hear: the next word to one
+    /// goes on under a new session.
+    unheard: HashSet<AgentId>,
     /// Proposals decided on the demo's table: each fifth fails its tests.
     landings: u64,
     /// How many integrations each project's checkout has of its
@@ -1192,6 +1198,12 @@ impl Sim {
             m.refused = true;
         }
         self.start(w, id);
+        if self.extras.unheard.remove(&id) {
+            w.agents[id].trace(
+                t,
+                "on Lonca: a new session goes on, its hooks unheard in the last",
+            );
+        }
         if stopped && had && !refused {
             w.agents[id].trace(t, "session resumed");
             w.note(Event::Resumed { agent: id });
@@ -3757,8 +3769,19 @@ impl Sim {
     }
 
     /// Worker `id`'s session ends under it; the person's next message
-    /// resumes it.
+    /// resumes it. Each second stop of a worker on Lonca is live's for a
+    /// session whose hooks Lonca did not hear (lonca#190).
     fn stop(&mut self, w: &mut World, id: AgentId) {
+        let on_lonca = w.agents[id].role == Role::Worker && w.agents[id].workspace.is_some();
+        if on_lonca {
+            self.extras.store_stops += 1;
+        }
+        let why = if on_lonca && self.extras.store_stops.is_multiple_of(2) {
+            self.extras.unheard.insert(id);
+            crate::live::unheard_why(&imece_agent::lonca::Hooks::Missed("lease".into()))
+        } else {
+            STOPPED.to_string()
+        };
         let t = w.tick;
         let card = w.agents[id].card;
         let a = &mut w.agents[id];
@@ -3771,14 +3794,11 @@ impl Sim {
         a.plan.clear();
         a.context = None;
         self.mind(id).filled = 0;
-        a.topic = STOPPED.into();
+        a.topic.clone_from(&why);
         a.set_status(Status::Stopped, t);
-        a.trace(t, format!("stopped {STOPPED:?}"));
-        w.story(card, StoryEvent::Stopped(STOPPED.into()));
-        w.note(Event::Stopped {
-            agent: id,
-            why: STOPPED.into(),
-        });
+        a.trace(t, format!("stopped {why:?}"));
+        w.story(card, StoryEvent::Stopped(why.clone()));
+        w.note(Event::Stopped { agent: id, why });
         Self::helper_lost(w, id);
     }
 
@@ -4501,6 +4521,7 @@ mod tests {
     #[test]
     fn a_long_run_shows_what_live_shows_and_nothing_live_does_not() {
         let (mut w, mut s) = world(2, 6, 2, 7, Lang::En);
+        let mut unheard_seen = false;
         for tick in 0..4000 {
             s.step(&mut w);
             answer_all(&mut w, &mut s);
@@ -4518,12 +4539,20 @@ mod tests {
                 .filter(|a| a.status == Status::Stopped)
                 .map(|a| a.id)
                 .collect();
+            let unheard =
+                crate::live::unheard_why(&imece_agent::lonca::Hooks::Missed("lease".into()));
             for id in stopped {
-                assert_eq!(w.agents[id].topic, STOPPED, "a stopped row says why");
+                let why = &w.agents[id].topic;
+                assert!(*why == STOPPED || *why == unheard, "a stopped row says why");
+                unheard_seen |= *why == unheard;
                 s.told(&mut w, id, "go on").unwrap();
                 w.said(id, "go on");
             }
         }
+        assert!(
+            unheard_seen,
+            "a worker on Lonca stops for hooks Lonca did not hear"
+        );
         let seen: std::collections::BTreeSet<String> =
             w.journal.iter().map(|e| name(&w, &e.event)).collect();
         for want in [
@@ -8658,6 +8687,36 @@ diff --git a/b.rs b/b.rs
         let told = s.extras.tidy_due.clone().flatten().unwrap();
         let why = told.kept[0].1.as_deref();
         assert_eq!(why, Some(WORKSPACE_MAY_HOLD));
+    }
+
+    #[test]
+    fn each_second_stop_on_lonca_is_for_hooks_lonca_did_not_hear() {
+        let (mut w, mut s, worker, _) = one_at_work();
+        on_store(&mut w, up());
+        // Off a workspace a stop is the plain one, and counts nothing.
+        s.stop(&mut w, worker);
+        assert_eq!(w.agents[worker].topic, STOPPED);
+        w.agents[worker].workspace = Some("r".into());
+        let stopped = |s: &mut Sim, w: &mut World| {
+            s.stop(w, worker);
+            assert_eq!(w.agents[worker].status, Status::Stopped);
+            w.agents[worker].topic.clone()
+        };
+        assert_eq!(stopped(&mut s, &mut w), STOPPED, "the first on Lonca");
+        let unheard = crate::live::unheard_why(&imece_agent::lonca::Hooks::Missed("lease".into()));
+        assert_eq!(stopped(&mut s, &mut w), unheard);
+        assert!(matches!(w.journal.last().unwrap().event,
+            Event::Stopped { agent, ref why } if agent == worker && *why == unheard));
+        let renewed = |w: &World| {
+            (w.agents[worker].trace.iter())
+                .filter(|l| l.contains("a new session goes on"))
+                .count()
+        };
+        s.told(&mut w, worker, "go on").unwrap();
+        assert_eq!(renewed(&w), 1, "the next word goes on under a new session");
+        assert_eq!(stopped(&mut s, &mut w), STOPPED, "the third");
+        s.told(&mut w, worker, "go on").unwrap();
+        assert_eq!(renewed(&w), 1, "a plain stop resumes as ever");
     }
 
     #[test]

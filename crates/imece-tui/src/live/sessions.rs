@@ -819,7 +819,9 @@ impl Live {
         // A helper's session is its worker's: a session goes by the owner.
         let owner = &w.agents[a.parent.unwrap_or(id)].name;
         let (place_on, agent) = (self.lonca.place().clone(), owner.clone());
-        let renew = self.seat_short(w, id, Instant::now());
+        // A session whose hooks Lonca did not hear is never sat in again
+        // (lonca#190).
+        let renew = self.seat_short(w, id, Instant::now()) || self.unheard(w, id).is_some();
         let notes = self.notes_of(w, id);
         let (own, instructions) = (self.own_notes.clone(), self.instructions.clone());
         let checkout = place.repo.clone();
@@ -2609,6 +2611,38 @@ mod tests {
         let told = imece_agent::lonca_fake::seen(&fake);
         assert!(told.contains("--continue"), "{told}");
         assert!(told.contains("--agent=claude-1"), "{told}");
+        let _ = std::fs::remove_dir_all(&repo);
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&fake);
+    }
+
+    #[test]
+    fn a_worker_whose_hooks_lonca_did_not_hear_goes_on_under_a_new_session() {
+        let repo = checkout("unheard-repo");
+        let root = trees("unheard");
+        let dir = std::env::temp_dir().join(format!("imece-unheard-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        // A live heartbeat and time to spare: only the hooks ask for a new
+        // session.
+        let (place, fake) = imece_agent::lonca_fake::program("echo '{}'");
+        let tree = root.join("claude-1");
+        std::fs::create_dir_all(tree.join(".lonca")).unwrap();
+        std::fs::write(tree.join(".lonca/workspace.json"), r#"{"repo":"demo"}"#).unwrap();
+        let mut w = team(1);
+        w.on_lonca(0, Some("demo".into()));
+        w.agents[1].workspace = Some("demo".into());
+        let mut live = Live::new(2, claude_at(&whole_args(&dir)), repo.clone(), root.clone());
+        live.lonca = lonca::Watch::start(place);
+        let name = w.agents[1].name.clone();
+        live.lonca
+            .unheard
+            .insert(("demo".into(), name), imece_agent::lonca::Hooks::Unbound);
+        live.prompt(&mut w, 1, "go on".into(), None).unwrap();
+        wait_for(&mut live, &mut w, |w| !w.agents[1].starting);
+        let told = imece_agent::lonca_fake::seen(&fake);
+        assert!(told.contains("--continue"), "{told}");
         let _ = std::fs::remove_dir_all(&repo);
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&dir);
