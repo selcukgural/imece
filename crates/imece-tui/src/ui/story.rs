@@ -315,6 +315,7 @@ fn card_head(app: &App, c: CardId) -> Line<'static> {
     match card.column {
         Column::Done => spans.push(Span::styled(format!("  {}", t.story_done), fg(pal().ok))),
         Column::Failed => spans.push(Span::styled(format!("  {}", t.story_failed), fg(pal().bad))),
+        Column::Withdrawn => spans.push(Span::styled(format!("  {}", t.story_withdrawn), dim())),
         _ => {}
     }
     if change {

@@ -188,8 +188,22 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
             ],
         ),
         Event::LateDone { agent, card } => {
-            fill(t.ev_late_done, &[name(w, *agent), &card_ref(*card)])
+            // A card withdrawn went to no other try (record 126).
+            let text = match w.cards[*card].column {
+                Column::Withdrawn => t.ev_late_withdrawn,
+                _ => t.ev_late_done,
+            };
+            fill(text, &[name(w, *agent), &card_ref(*card)])
         }
+        Event::Withdrawn { agent, card, why } => fill(
+            t.ev_withdrawn,
+            &[
+                name(w, *agent),
+                &card_ref(*card),
+                &w.cards[*card].title,
+                why,
+            ],
+        ),
         Event::Capped {
             card, cap, count, ..
         } => {
@@ -654,6 +668,7 @@ pub fn story(lang: Lang, w: &World, card: &Card, e: &StoryEvent) -> String {
         },
         StoryEvent::Held { to, on } => fill(t.st_held, &[name(w, *to), &card_refs(on)]),
         StoryEvent::Failed(why) => fill(t.st_failed, &[why]),
+        StoryEvent::Withdrawn(why) => fill(t.st_withdrawn, &[why]),
         StoryEvent::LateDone { from } => fill(t.st_late_done, &[name(w, *from)]),
         StoryEvent::Capped { cap, count } => {
             let text = match cap {
@@ -2225,6 +2240,39 @@ mod tests {
         assert_eq!(
             say(Lang::Tr, released),
             "claude-2 başladı: #2 fix it, beklediği bitti"
+        );
+        let withdrawn = Event::Withdrawn {
+            agent: 0,
+            card: d,
+            why: "covered".into(),
+        };
+        assert_eq!(
+            say(Lang::En, withdrawn.clone()),
+            "lead withdrew #2 fix it: covered"
+        );
+        assert_eq!(
+            say(Lang::Tr, withdrawn),
+            "lead geri çekti: #2 fix it: covered"
+        );
+        let st = StoryEvent::Withdrawn("covered".into());
+        assert_eq!(story(Lang::En, &w, &w.cards[d], &st), "withdrawn: covered");
+        assert_eq!(
+            story(Lang::Tr, &w, &w.cards[d], &st),
+            "geri çekildi: covered"
+        );
+        let late = Event::LateDone { agent: 2, card: d };
+        assert_eq!(
+            say(Lang::En, late.clone()),
+            "claude-2: a late done for #2, which went to another try; it closes nothing"
+        );
+        w.cards[d].column = Column::Withdrawn;
+        assert_eq!(
+            event(Lang::En, &w, &late),
+            "claude-2: a late done for #2, which was withdrawn; it closes nothing"
+        );
+        assert_eq!(
+            event(Lang::Tr, &w, &late),
+            "claude-2: #2 için geç bir done, kart geri çekilmişti; hiçbir şeyi kapatmaz"
         );
         let st = StoryEvent::Held { to: 2, on: vec![c] };
         assert_eq!(

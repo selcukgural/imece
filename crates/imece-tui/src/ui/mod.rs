@@ -4972,6 +4972,14 @@ mod tests {
             "{head}"
         );
         assert!(!head.contains('≡') && !s.contains("now ▸"), "{s}");
+        // A withdrawn one says so, dim (record 126).
+        app.world.cards[0].column = Column::Withdrawn;
+        let s = render_story(&mut app);
+        let head = s.lines().rev().find(|l| l.contains("#1 card 1")).unwrap();
+        assert!(
+            head.contains("– withdrawn") && !head.contains("✕"),
+            "{head}"
+        );
         app.world.cards[0].column = Column::Working;
         // A change waiting on a card not done: that, not its list; the
         // owner off the card has no line of now.
@@ -13229,6 +13237,39 @@ after | not a table";
         let spans = board_waiting_spans(t, &app.world, 1);
         assert_eq!(spans[0].style, dim());
         assert!(board_waiting_spans(t, &app.world, 5).is_empty());
+        // A withdrawn card stands with the done ones, marked dim; one that
+        // waits on it, through another, is held back for good.
+        app.board_ready = false;
+        app.world.cards[3].column = Column::Withdrawn;
+        app.world.cards[5].after = vec![4];
+        let s = render(&app, 200, 40);
+        assert!(s.contains("#4  – card 3"), "{s}");
+        assert!(s.contains("✕ #4 withdrawn"), "{s}");
+        let spans = board_waiting_spans(t, &app.world, 5);
+        assert_eq!(spans[0].content, "✕ #4 withdrawn");
+        assert_eq!(spans[0].style, fg(pal().bad));
+        let line = |s: &str| {
+            s.lines()
+                .find(|l| l.contains("– card 3"))
+                .unwrap()
+                .to_string()
+        };
+        assert!(!line(&s).contains("✕"), "{}", line(&s));
+        // The mark is drawn in the withdrawn style, not the failed one.
+        let (buf, _) = whole(&app, 200);
+        let at = (buf.content.iter())
+            .position(|c| c.symbol() == "–")
+            .expect("the mark");
+        let style = Style::default().patch(dim());
+        assert_eq!(Some(buf.content[at].fg), style.fg.or(Some(Color::Reset)));
+        assert_ne!(Some(buf.content[at].fg), fg(pal().bad).fg);
+        assert_eq!(
+            crate::ui::card::state(t, &app.world, &app.world.cards[3]),
+            "WITHDRAWN"
+        );
+        let spans = card::after_spans(t, &app.world, &app.world.cards[4]);
+        assert_eq!(spans.last().unwrap().style, fg(pal().bad));
+        assert_eq!(spans.last().unwrap().content, "✕");
     }
 
     fn board_waiting_spans(t: &crate::i18n::Text, w: &World, c: CardId) -> Vec<Span<'static>> {

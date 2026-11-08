@@ -440,9 +440,8 @@ impl TraceKind {
         match word {
             "text" => TraceKind::Words,
             "tool_use" | "tool_result" | "run:" => TraceKind::Tool,
-            "send" | "mail" | "woken" | "hire" | "hired" | "post" | "claim" | "told:" => {
-                TraceKind::Bus
-            }
+            "send" | "mail" | "woken" | "hire" | "hired" | "post" | "claim" | "withdraw"
+            | "told:" => TraceKind::Bus,
             "note" => TraceKind::Note,
             "stopped" => TraceKind::Wrong,
             "run" if arg.starts_with("refused") => TraceKind::Wrong,
@@ -817,6 +816,7 @@ mod tests {
             ("hired", "", TraceKind::Bus),
             ("post", "", TraceKind::Bus),
             ("claim", "", TraceKind::Bus),
+            ("withdraw", "", TraceKind::Bus),
             ("told:", "", TraceKind::Bus),
             ("note", "", TraceKind::Note),
             ("stopped", "", TraceKind::Wrong),
@@ -882,7 +882,7 @@ mod tests {
         let l = one("12:00:04 run refused: rm");
         assert_eq!(colour_of(&l, "run refused: rm"), Some(p.bad));
         for word in [
-            "send", "mail", "woken", "hire", "hired", "post", "claim", "told:",
+            "send", "mail", "woken", "hire", "hired", "post", "claim", "withdraw", "told:",
         ] {
             let l = one(&format!("12:00:05 {word} to=lead"));
             assert_eq!(text(&l), format!("12:00:05 ⇄ {word} to=lead"));

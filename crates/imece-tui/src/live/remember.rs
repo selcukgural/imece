@@ -339,6 +339,9 @@ impl Live {
                 (Column::Review, _) => "done, its change waits for the person".to_string(),
                 (Column::Verifying, _) => "in Lonca's merge queue".to_string(),
                 (Column::Failed, _) => "failed".to_string(),
+                (Column::Withdrawn, _) => {
+                    "withdrawn by the leader; a done for it closes nothing".to_string()
+                }
                 _ => "not finished".to_string(),
             };
             line(format!(
@@ -392,6 +395,38 @@ impl Live {
                 "{} messages wait for you; they come with a turn of their own.",
                 self.mail[id].len()
             ));
+        }
+        // What waits on other cards (record 126, F10): an assign held for
+        // this agent, and, for a leader, its project's cards.
+        let held_for = (self.mail[id].iter())
+            .filter(|m| Self::waits(w, m))
+            .filter_map(|m| m.card);
+        for c in held_for {
+            line(format!(
+                "#{} {} is yours once what it waits on is done ({}); its assign comes then.{}",
+                c + 1,
+                w.cards[c].title,
+                words::card_refs(&w.waits_on(c)),
+                blocked_words(w, c)
+            ));
+        }
+        if a.role == Role::Leader {
+            let waiting: Vec<CardId> = (w.cards.iter())
+                .filter(|c| c.project == a.project && !c.over() && !w.ready(c.id))
+                .map(|c| c.id)
+                .collect();
+            if !waiting.is_empty() {
+                line(format!("{} cards wait on others:", waiting.len()));
+            }
+            for &c in waiting.iter().take(10) {
+                line(format!(
+                    "  #{} {} waits on {}.{}",
+                    c + 1,
+                    w.cards[c].title,
+                    words::card_refs(&w.waits_on(c)),
+                    blocked_words(w, c)
+                ));
+            }
         }
         drop(line);
         let held = (a.role != Role::Leader).then(|| lines.join("\n").len());
@@ -540,6 +575,22 @@ pub(super) fn holds(c: &worktree::Change) -> String {
             .collect::<Vec<_>>()
             .join(", ")
     ))
+}
+
+/// What holds card `c` back for good or until handed again, as a
+/// briefing says it after what the card waits on: nothing when nothing
+/// does.
+fn blocked_words(w: &World, c: CardId) -> String {
+    match w.blocked_on(c) {
+        None => String::new(),
+        Some(f) if w.cards[f].column == Column::Withdrawn => {
+            format!(" #{} was withdrawn: it never begins.", f + 1)
+        }
+        Some(f) => format!(
+            " #{} failed: it begins only once that is handed again and done.",
+            f + 1
+        ),
+    }
 }
 
 #[cfg(test)]
@@ -1015,6 +1066,56 @@ mod tests {
             )),
         );
         assert!(matches!(live.slots[1], Slot::Running(_)));
+    }
+
+    #[test]
+    fn a_briefing_says_what_waits_on_other_cards_and_what_holds_it_back() {
+        let mut w = team(2);
+        let mut live = idle_live(3);
+        let base = with_card(&mut w, 2);
+        let mut args = json!({ "to": "claude-1", "type": "assign", "body": "Tests" });
+        args["after"] = json!([base + 1]);
+        let (tx, _rx) = std::sync::mpsc::channel();
+        live.send(&mut w, 0, &args, tx);
+        let held = w.cards.len() - 1;
+        let (text, _) = live.brief(&w, 1, false);
+        assert!(
+            text.contains(
+                "#2 Tests is yours once what it waits on is done (#1); its assign comes then."
+            ),
+            "{text}"
+        );
+        let (text, _) = live.brief(&w, 0, false);
+        assert!(
+            text.contains("1 cards wait on others:\n-   #2 Tests waits on #1."),
+            "{text}"
+        );
+        // What holds it back: a failed card, then a withdrawn one.
+        w.cards[base].column = Column::Failed;
+        let (text, _) = live.brief(&w, 1, false);
+        assert!(
+            text.contains("its assign comes then. #1 failed: it begins only once that is handed again and done."),
+            "{text}"
+        );
+        w.cards[base].column = Column::Withdrawn;
+        let (text, _) = live.brief(&w, 0, false);
+        assert!(
+            text.contains("waits on #1. #1 was withdrawn: it never begins."),
+            "{text}"
+        );
+        // Ready, or through: nothing said; a worker hears no list.
+        w.cards[base].column = Column::Done;
+        let (text, _) = live.brief(&w, 0, false);
+        assert!(!text.contains("wait on others"), "{text}");
+        let (text, _) = live.brief(&w, 1, false);
+        assert!(!text.contains("is yours once"), "{text}");
+        w.cards[base].column = Column::Working;
+        w.cards[held].column = Column::Withdrawn;
+        let (text, _) = live.brief(&w, 0, false);
+        assert!(!text.contains("wait on others"), "{text}");
+        let (text, _) = live.brief(&w, 2, false);
+        assert!(!text.contains("wait on others"), "a worker: {text}");
+        assert_eq!(blocked_words(&w, base), "");
     }
 
     #[test]

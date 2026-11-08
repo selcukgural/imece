@@ -90,7 +90,9 @@ use crate::recall::{Hit, Line};
 /// events.
 /// 30 (2026-11-08): the cards a card waits on (`cards.waits_on`, record 126,
 /// F10) and the `Held`/`Released` events.
-pub const SCHEMA_VERSION: i64 = 30;
+/// 31 (2026-11-08): a withdrawn card (the `Withdrawn` column, story and
+/// event, record 126).
+pub const SCHEMA_VERSION: i64 = 31;
 /// Trace lines kept per agent, as the world keeps them.
 const TRACE_KEEP: usize = 200;
 /// The file's name under the state directory.
@@ -4222,13 +4224,14 @@ mod tests {
                 )
                 .unwrap();
             assert_eq!(
-                version, "30",
+                version, "31",
                 "the sent table, the Fault kind, archives, restores, start points, standing yes, the \
                  recall index, forks, paid kinds, reviews, no vendor, the check on a change, what \
                  it cost, the paths a card owns, the plan gate, a project's Lonca repository, \
-                 a card's attempts, its breaker and what it waits on: an older imece knows none"
+                 a card's attempts, its breaker, what it waits on and a card withdrawn: an \
+                 older imece knows none"
             );
-            assert_eq!(SCHEMA_VERSION, 30);
+            assert_eq!(SCHEMA_VERSION, 31);
         }
         let back = Store::open(&path)
             .unwrap()
@@ -5212,6 +5215,19 @@ mod tests {
         let m = back.found.mail[1].last().unwrap();
         assert_eq!((m.card, m.outcome), (Some(0), Outcome::Failed(Some(0))));
         assert!(!store.save(&w, &k.kept()).unwrap(), "nothing moved");
+        // A card withdrawn comes back so, its story and journal line too.
+        w.withdraw(0, 0, "not needed");
+        assert!(store.save(&w, &k.kept()).unwrap());
+        let back = store.load(100).unwrap().expect("a world");
+        assert_eq!(back.world.cards[0].column, Column::Withdrawn);
+        assert!(matches!(
+            back.world.cards[0].story.last().map(|s| &s.event),
+            Some(StoryEvent::Withdrawn(why)) if why == "not needed"
+        ));
+        assert!(back.world.journal.iter().any(|e| matches!(
+            &e.event,
+            Event::Withdrawn { agent: 0, card: 0, why } if why == "not needed"
+        )));
         // An outcome that is no JSON is a file imece did not write.
         store
             .raw()

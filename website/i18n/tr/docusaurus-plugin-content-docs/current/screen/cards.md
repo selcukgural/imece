@@ -37,7 +37,7 @@ Bir kart tek bir iş birimidir: lider asar (ya da boşta bir işçiye mesajını
 
 Solda, ekibin yerinde:
 
-- Başlık satırı: `#3` ve kartın başlığı; sonra projesi, panonun sözcükleriyle sütunu (YAPILACAK, ÜZERİNDE, İNCELENECEK, DOĞRULANIYOR, BİTTİ, ya da başarısız olan için BAŞARISIZ), ikinci denemesinden itibaren ` · 2. deneme`, ve dakikaları, bitmiş ya da başarısızsa bitişine kadar.
+- Başlık satırı: `#3` ve kartın başlığı; sonra projesi, panonun sözcükleriyle sütunu (YAPILACAK, ÜZERİNDE, İNCELENECEK, DOĞRULANIYOR, BİTTİ, ya da başarısız olan için BAŞARISIZ, liderin geri çektiği için GERİ ÇEKİLDİ), ikinci denemesinden itibaren ` · 2. deneme`, ve dakikaları, bitmiş ya da başarısızsa bitişine kadar.
 - Varsa neyi düzenlediği (lease'leri; yalnız demoda; sembol lease'leri canlıda yapılmadı).
 - `assign` ya da `post`'u verdiyse sahip olduğu yollar (`sahibi src/parser.rs, docs (shared)`; [kartın sahip olduğu yollar](../concepts/messages-and-board.md#kartın-sahip-olduğu-yollar)); dışına bir yazma hikâyesinin bir `değişiklik` satırıdır: `değiştirdi: src/other.rs; kartın yollarının dışında`.
 - **KİM**: kim astı, sahibi, hâlâ sahibinin kartıyken sahibinin yardımcıları, sonra hikâyesinin hakkında konuştuğunu söylediği herkes; her biri bir kez, ilk aldığı rolle. Ekibin agent satırları gibi çizilirler, böylece durumları canlıdır; `j` `k` aralarında seçer ve `enter` seçilenin odağını ekipteki gibi açar.

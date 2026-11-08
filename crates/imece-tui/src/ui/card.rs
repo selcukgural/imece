@@ -87,7 +87,7 @@ pub(crate) fn after_spans(t: &crate::i18n::Text, w: &World, card: &Card) -> Vec<
         }
         let (mark, style) = match w.cards[d].column {
             Column::Done => ("✓", fg(pal().ok)),
-            Column::Failed => ("✕", fg(pal().bad)),
+            Column::Failed | Column::Withdrawn => ("✕", fg(pal().bad)),
             _ => ("⧗", dim()),
         };
         spans.push(Span::raw(format!("#{} ", d + 1)));
@@ -107,8 +107,9 @@ pub(crate) fn column_index(column: Column) -> usize {
         Column::Working => 1,
         Column::Review => TO_REVIEW,
         Column::Verifying => 3,
-        // A failed card is through: it stands with the done ones, marked.
-        Column::Done | Column::Failed => 4,
+        // A failed or withdrawn card is through: it stands with the done
+        // ones, marked.
+        Column::Done | Column::Failed | Column::Withdrawn => 4,
     }
 }
 
@@ -129,6 +130,7 @@ pub(crate) fn board_column(w: &World, card: &Card) -> usize {
 pub(crate) fn state(t: &crate::i18n::Text, w: &World, card: &Card) -> &'static str {
     match card.column {
         Column::Failed => t.card_failed,
+        Column::Withdrawn => t.card_withdrawn,
         _ => t.columns[board_column(w, card)],
     }
 }

@@ -1356,6 +1356,7 @@ impl Live {
                 "post" => self.post(w, from, &args),
                 "board" => self.board(w, from, &args),
                 "claim" => self.claim(w, from, &args),
+                "withdraw" => self.withdraw(w, from, &args),
                 "hire" => self.hire(w, from, &args),
                 "plan" => self.plan(w, from, &args),
                 "whoami" => Ok(self.whoami(w, from)),

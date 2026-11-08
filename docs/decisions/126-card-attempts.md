@@ -292,7 +292,62 @@ the demo's plan names the places of what its cards wait on.
   its owner) and the mail (with its card), both saved; at the start the
   post office leaves it until the card is ready, as before.
 
-Gaps. A `cancel` does not withdraw a held assign: the leader withdraws
-it only by handing the card to another. What a card waits on is direct:
-a card waiting on one that waits on a failed card shows `⧗`, not `✕`.
-The wake briefing does not say what a card waits on.
+What holds a card back is found through the cards it waits on
+(`World::blocked_on`: breadth first, the nearest first, a done card not
+looked through), and `dependents` are the cards that wait on one through
+others too (one pass in number order, since a card waits only on older
+ones): the board says `✕ #2 failed` on a card two steps away, and the
+leader hears every card the failure holds back. The wake briefing says
+what waits (`blocked_words`): an assign held for the agent and what it
+waits on, and for a leader its project's cards that wait on others.
+
+Gaps. What a card waits on is fixed when it opens: a card cannot be
+made to wait on another later, nor freed of one.
+
+## Withdrawing a card
+
+The person's choice (2026-11-08): a card nobody is to do any more is
+withdrawn, a state of its own, through like a done or failed one. It is
+the leader's tool, `withdraw(card, why)`, a board tool beside `post` and
+`claim`, not a `cancel` naming a card: a `cancel` goes to someone, and a
+posted card nobody took has nobody to go to. No new message type.
+
+- `Column::Withdrawn` (`Card::over`), `World::withdraw` (`finished`
+  now, `StoryEvent::Withdrawn(why)`, `Event::Withdrawn`); `why` one line
+  of at most 120 characters, the person reads it on the card.
+- What may be withdrawn: a card waiting (posted, or held for a worker),
+  at work, or failed. Not one whose change waits for the person (they
+  reject it themselves), is in the merge queue or is done.
+- Whoever held it at work or waiting is told in its next prompt and
+  loses an assign that waited for it; a failed card's last owner is not
+  told, it is through already. `World::done_for` makes a `done` for a
+  withdrawn card late: it closes nothing and shows no change, its
+  heading `[done 12 · late: #3 was withdrawn, it closes nothing]`, its
+  sender told `#3 was withdrawn since your turn took it`.
+- What waits on it never begins: the answer names it (`#3 is withdrawn;
+  #6, #7 wait on it and never begin: withdraw them too, or tell the
+  person`), the board says `✕ #3 withdrawn`, and no `assign`, `claim` or
+  `after` takes it any more. A card the person failed for good tells
+  the leader to withdraw what waits on it.
+- On screen: with the done ones, marked `–` dim; WITHDRAWN on its
+  screen, `– withdrawn` in the story pane, `✕` in a card's list of what
+  it waits on; the journal `lead withdrew #3 Legacy parser: covered by
+  #5`, and a late `done` for it `which was withdrawn`.
+
+The demo mirrors it: every `WITHDRAW_EVERY` (300) ticks, by the clock so
+the dice and the scenarios stay, its leader withdraws the newest card
+nobody took, and it withdraws every card waiting on one never to be done
+(withdrawn, or failed for good).
+
+- **Growth**: one story line and one journal line a card withdrawn.
+- **Concurrency**: on the main loop, as every tool.
+- **Read cost**: `blocked_on` and `dependents` are linear in the cards;
+  the board window asks `blocked_on` per waiting card drawn.
+- **Migration**: schema 31: the `Withdrawn` column, story and event are
+  new serde variants; no new column.
+- **Failure**: a crash after a withdrawal keeps the card withdrawn and
+  the held assign gone, both saved.
+
+Gaps. A Lonca proposal of a card withdrawn while it was at work still
+shows as its worker's Δ, as one handed away does (F8's gap): the person
+rejects it.

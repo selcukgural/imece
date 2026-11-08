@@ -112,6 +112,7 @@ imece's MCP server is called `imece`; its tools reach a session as `mcp__imece__
 | `run` | yes (reading commands) | yes | yes |
 | `claim` | — | yes | — |
 | `hire` | workers | helpers | — |
+| `withdraw` | yes | — | — |
 | `approve` | Claude sessions only, called by Claude Code itself, hidden from the model | | |
 
 ### `send`
@@ -164,6 +165,17 @@ Answers `Open:` and `Taken:` lists of every card of the project, posted or assig
 | `card` | integer ≥ 1 | yes | the card's number, without `#` |
 
 Workers only (`only workers take cards; assign or post instead`). Refusals: `there is no such card on the board; call board to see it`, `#4 was taken by claude-2; pick another`, `#6 is assigned to claude-1; pick another`, `#6 waits on #4; pick a card that is ready (board with ready: true)`. The answer ends with the card's paths when it owns any (`This card owns tests, lib (shared): stay in them; …`).
+
+### `withdraw`
+
+> Withdraws a card nobody is to do any more: one on the board, one you assigned (at work, or waiting on other cards), or one that failed. Whoever has it stops and a done from it closes nothing; the cards that wait on it never begin. Not for a card whose change waits for the person, is in the merge queue or is done.
+
+| Field | Type | Required | Meaning |
+| --- | --- | --- | --- |
+| `card` | integer ≥ 1 | yes | the card's number, without `#` |
+| `why` | string, one line, at most 120 | yes | what the person reads on the card |
+
+The leader's only. Answers `#3 is withdrawn`, or `#3 is withdrawn; #6, #7 wait on it and never begin: withdraw them too, or tell the person`. Refusals: `only the leader withdraws a card`, `card must be a card's number, as #N on the board`, `say why in why: the person reads it on the card`, `why must be one line of at most 120 characters`, `there is no card #9 in this project`, `#3's change waits for the person; they reject it there`, `#3 is in Lonca's merge queue`, `#3 is done`, `#3 was withdrawn already`. A withdrawn card is refused to `claim` (`#3 was withdrawn; pick another`), to an `assign` with `card` (`#3 was withdrawn; assign a new task for more`) and to `after` (`#3 was withdrawn: a card waiting on it would never begin`); the `board` tool lists it as `#3 Legacy parser (withdrawn)`. See [a card's tries](../concepts/messages-and-board.md#a-cards-tries).
 
 ### `plan`
 

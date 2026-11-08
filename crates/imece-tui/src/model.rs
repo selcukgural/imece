@@ -1185,6 +1185,9 @@ pub enum Column {
     Done,
     Review,
     Failed,
+    /// The leader withdrew it (record 126): through, nothing comes of it,
+    /// and what waits on it never begins.
+    Withdrawn,
 }
 
 /// The tries a card has before the person decides on another (record
@@ -1355,6 +1358,8 @@ pub enum StoryEvent {
     },
     /// The owner's `done` said the card failed, and why: no change.
     Failed(String),
+    /// The leader withdrew it, and why (record 126).
+    Withdrawn(String),
     /// A `done` came from `from` after the card was handed again: it
     /// closed nothing.
     LateDone {
@@ -1394,7 +1399,7 @@ impl StoryEvent {
             | StoryEvent::Posted { .. }
             | StoryEvent::Handed { .. }
             | StoryEvent::Held { .. } => StoryKind::Intent,
-            StoryEvent::Decision(_) => StoryKind::Decision,
+            StoryEvent::Decision(_) | StoryEvent::Withdrawn(_) => StoryKind::Decision,
             StoryEvent::Asked { .. }
             | StoryEvent::Answered { .. }
             | StoryEvent::Replied(_)
@@ -1599,7 +1604,10 @@ impl Card {
     /// Whether the card is through, well or not: nothing more comes of
     /// it unless it is handed again.
     pub fn over(&self) -> bool {
-        matches!(self.column, Column::Done | Column::Failed)
+        matches!(
+            self.column,
+            Column::Done | Column::Failed | Column::Withdrawn
+        )
     }
 
     /// Whether its tries are out (record 126, F9): another needs the
@@ -1792,6 +1800,12 @@ pub enum Event {
     Released {
         agent: AgentId,
         card: CardId,
+    },
+    /// Leader `agent` withdrew card `card`, and why (record 126).
+    Withdrawn {
+        agent: AgentId,
+        card: CardId,
+        why: String,
     },
     /// Worker `agent`'s `done` said card `card` failed; `why` is its first
     /// line. No change comes of it.
@@ -2222,6 +2236,7 @@ impl Event {
         match self {
             Event::Plan { .. }
             | Event::Posted { .. }
+            | Event::Withdrawn { .. }
             | Event::Hired { .. }
             | Event::Forked { .. }
             | Event::Planned { .. }
@@ -2332,6 +2347,7 @@ impl Event {
             | Event::Handed { card, .. }
             | Event::Held { card, .. }
             | Event::Released { card, .. }
+            | Event::Withdrawn { card, .. }
             | Event::CardFailed { card, .. }
             | Event::LateDone { card, .. }
             | Event::Capped { card, .. }
@@ -2404,6 +2420,7 @@ impl Event {
             | Event::Handed { agent, .. }
             | Event::Held { agent, .. }
             | Event::Released { agent, .. }
+            | Event::Withdrawn { agent, .. }
             | Event::CardFailed { agent, .. }
             | Event::LateDone { agent, .. }
             | Event::Capped { agent, .. }
@@ -4358,7 +4375,10 @@ impl World {
             None => DoneFor::Nothing,
             Some(c) => {
                 let card = &self.cards[c];
-                if card.owner == Some(from) && card.attempt == a.attempt {
+                if card.owner == Some(from)
+                    && card.attempt == a.attempt
+                    && card.column != Column::Withdrawn
+                {
                     DoneFor::Card(c)
                 } else {
                     DoneFor::Late(c)
@@ -4406,18 +4426,56 @@ impl World {
             .collect()
     }
 
-    /// The first card `c` waits on that failed: until it is handed again
-    /// and done, `c` does not begin.
+    /// The card that holds `c` back (record 126, F10): one it waits on,
+    /// or one those wait on, that failed (until it is handed again and
+    /// done) or was withdrawn (for good). The nearest first, then by
+    /// number; nothing when all it waits on may still be done.
     pub fn blocked_on(&self, c: CardId) -> Option<CardId> {
-        (self.cards[c].after.iter().copied()).find(|&d| self.cards[d].column == Column::Failed)
+        let mut seen = vec![false; self.cards.len()];
+        let mut next: std::collections::VecDeque<CardId> =
+            self.cards[c].after.iter().copied().collect();
+        while let Some(d) = next.pop_front() {
+            if std::mem::replace(&mut seen[d], true) {
+                continue;
+            }
+            match self.cards[d].column {
+                Column::Failed | Column::Withdrawn => return Some(d),
+                Column::Done => {}
+                _ => next.extend(self.cards[d].after.iter().copied()),
+            }
+        }
+        None
     }
 
-    /// The cards not through that wait on card `c`.
+    /// The cards not through that wait on card `c`, through others too,
+    /// by number.
     pub fn dependents(&self, c: CardId) -> Vec<CardId> {
-        (self.cards.iter())
-            .filter(|d| !d.over() && d.after.contains(&c))
-            .map(|d| d.id)
-            .collect()
+        let mut hit = vec![false; self.cards.len()];
+        hit[c] = true;
+        let mut out = Vec::new();
+        // A card waits only on older ones: one pass in number order.
+        for d in &self.cards {
+            if !d.over() && d.after.iter().any(|&e| hit[e]) {
+                hit[d.id] = true;
+                out.push(d.id);
+            }
+        }
+        out
+    }
+
+    /// Leader `by` withdraws card `c`, saying `why` (record 126): through,
+    /// nothing comes of it; a `done` for it closes nothing.
+    pub fn withdraw(&mut self, c: CardId, by: AgentId, why: &str) {
+        let tick = self.tick;
+        let card = &mut self.cards[c];
+        card.column = Column::Withdrawn;
+        card.finished = tick;
+        self.story(Some(c), StoryEvent::Withdrawn(why.to_string()));
+        self.note(Event::Withdrawn {
+            agent: by,
+            card: c,
+            why: why.to_string(),
+        });
     }
 
     /// An assign gives card `c` to `to` before what it waits on is done
@@ -9257,5 +9315,100 @@ mod change_proof_tests {
         assert!(!change(vec![ran(1)], Check::None).easy(Some(&inside)));
         assert!(change(Vec::new(), checked(true)).easy(Some(&inside)));
         assert!(!change(Vec::new(), checked(false)).easy(None));
+    }
+
+    #[test]
+    fn a_card_is_held_back_through_what_it_waits_on_and_its_dependents_are_found_through_others() {
+        let mut w = crate::live::testing::team(2);
+        let card = |id, column, after: Vec<CardId>| Card {
+            id,
+            project: 0,
+            title: format!("c{id}"),
+            owner: None,
+            column,
+            story: Vec::new(),
+            symbols: Vec::new(),
+            paths: Vec::new(),
+            started: 0,
+            finished: 0,
+            attempt: 0,
+            breaker: Default::default(),
+            after,
+        };
+        w.cards = vec![
+            card(0, Column::Working, vec![]),
+            card(1, Column::Waiting, vec![0]),
+            card(2, Column::Done, vec![]),
+            card(3, Column::Waiting, vec![1, 2]),
+            card(4, Column::Waiting, vec![1, 3]),
+            card(5, Column::Done, vec![2]),
+            card(6, Column::Waiting, vec![2]),
+        ];
+        assert_eq!(
+            (0..7).map(|c| w.blocked_on(c)).collect::<Vec<_>>(),
+            [None; 7]
+        );
+        w.cards[0].column = Column::Failed;
+        let blocked: Vec<Option<CardId>> = (0..7).map(|c| w.blocked_on(c)).collect();
+        assert_eq!(blocked, [None, Some(0), None, Some(0), Some(0), None, None]);
+        // The nearest first: one it waits on itself before one further.
+        w.cards[3].column = Column::Withdrawn;
+        assert_eq!(w.blocked_on(4), Some(3));
+        // A done card is not looked through.
+        w.cards[2].after = vec![0];
+        assert_eq!(w.blocked_on(6), None);
+        w.cards[3].column = Column::Waiting;
+        // What waits on #1, through others; a card through is left out.
+        assert_eq!(w.dependents(0), [1, 3, 4]);
+        assert_eq!(w.dependents(1), [3, 4]);
+        assert_eq!(w.dependents(4), Vec::<CardId>::new());
+        w.cards[4].column = Column::Withdrawn;
+        assert_eq!(w.dependents(0), [1, 3]);
+    }
+
+    #[test]
+    fn a_withdrawn_card_is_through_and_a_done_for_it_comes_late() {
+        let mut w = crate::live::testing::team(2);
+        let id = 1;
+        let c = w.cards.len();
+        w.cards.push(Card {
+            id: c,
+            project: 0,
+            title: "t".into(),
+            owner: Some(id),
+            column: Column::Working,
+            story: Vec::new(),
+            symbols: Vec::new(),
+            paths: Vec::new(),
+            started: 0,
+            finished: 0,
+            attempt: 1,
+            breaker: Default::default(),
+            after: Vec::new(),
+        });
+        w.takes(id, c);
+        assert_eq!(w.done_for(id), DoneFor::Card(c));
+        w.tick = 42;
+        w.withdraw(c, 0, "why");
+        let card = &w.cards[c];
+        assert_eq!((card.column, card.finished), (Column::Withdrawn, 42));
+        assert!(card.over());
+        assert!(
+            matches!(card.story.last().map(|s| &s.event), Some(StoryEvent::Withdrawn(y)) if y == "why")
+        );
+        assert_eq!(w.done_for(id), DoneFor::Late(c));
+        let e = Event::Withdrawn {
+            agent: 0,
+            card: c,
+            why: "why".into(),
+        };
+        assert_eq!(
+            (e.card(), e.agent(), e.kind()),
+            (Some(c), 0, EntryKind::Plan)
+        );
+        assert_eq!(
+            StoryEvent::Withdrawn("x".into()).kind(),
+            StoryKind::Decision
+        );
     }
 }

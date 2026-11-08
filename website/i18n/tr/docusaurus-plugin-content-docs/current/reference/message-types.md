@@ -112,6 +112,7 @@ imece'nin MCP sunucusunun adı `imece`'dir; araçları bir oturuma `mcp__imece__
 | `run` | evet (okuma komutları) | evet | evet |
 | `claim` | — | evet | — |
 | `hire` | işçiler | yardımcılar | — |
+| `withdraw` | evet | — | — |
 | `approve` | yalnızca Claude oturumları; Claude Code'un kendisi çağırır, modelden gizli | | |
 
 ### `send`
@@ -164,6 +165,17 @@ Projenin asılmış ya da görev olarak verilmiş her kartının `Open:` ve `Tak
 | `card` | tam sayı ≥ 1 | evet | kartın numarası, `#` olmadan |
 
 Yalnızca işçiler (`only workers take cards; assign or post instead`). Redler: `there is no such card on the board; call board to see it`, `#4 was taken by claude-2; pick another`, `#6 is assigned to claude-1; pick another`, `#6 waits on #4; pick a card that is ready (board with ready: true)`. Kartın yolları varsa yanıt onlarla biter (`This card owns tests, lib (shared): stay in them; …`).
+
+### `withdraw`
+
+> Withdraws a card nobody is to do any more: one on the board, one you assigned (at work, or waiting on other cards), or one that failed. Whoever has it stops and a done from it closes nothing; the cards that wait on it never begin. Not for a card whose change waits for the person, is in the merge queue or is done.
+
+| Alan | Tür | Zorunlu | Anlamı |
+| --- | --- | --- | --- |
+| `card` | tam sayı ≥ 1 | evet | kartın numarası, `#` olmadan |
+| `why` | dize, tek satır, en çok 120 | evet | kişinin kartta okuyacağı neden |
+
+Yalnız liderin. `#3 is withdrawn` ya da `#3 is withdrawn; #6, #7 wait on it and never begin: withdraw them too, or tell the person` diye yanıtlar. Redler: `only the leader withdraws a card`, `card must be a card's number, as #N on the board`, `say why in why: the person reads it on the card`, `why must be one line of at most 120 characters`, `there is no card #9 in this project`, `#3's change waits for the person; they reject it there`, `#3 is in Lonca's merge queue`, `#3 is done`, `#3 was withdrawn already`. Geri çekilmiş bir kart `claim`'e (`#3 was withdrawn; pick another`), `card`'lı bir `assign`'a (`#3 was withdrawn; assign a new task for more`) ve `after`'a (`#3 was withdrawn: a card waiting on it would never begin`) reddedilir; `board` aracı onu `#3 Legacy parser (withdrawn)` diye listeler. Bkz. [kartın denemeleri](../concepts/messages-and-board.md#kartın-denemeleri).
 
 ### `plan`
 
