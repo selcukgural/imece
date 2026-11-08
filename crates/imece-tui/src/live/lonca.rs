@@ -27,6 +27,10 @@ use crate::model::{
 /// millisecond call per repository; a person sees a daemon gone or a
 /// proposal come within this.
 pub(super) const LOOK_EVERY: Duration = Duration::from_secs(5);
+/// How many looks in a row a repository's daemon may ask to be asked again
+/// (`busy`, `rate_limited`, …) before its project closes as
+/// [`StoreDown::Busy`]: one such answer keeps what the last look saw.
+const AGAIN_MOST: u8 = 3;
 
 /// The repositories to look at, each with its project and, where git is,
 /// its checkout.
@@ -95,6 +99,9 @@ struct Kept {
     held: HashMap<String, (String, bool)>,
     /// Each repository's policy and the commands it verifies with.
     verifies: HashMap<String, (String, Vec<String>)>,
+    /// How many looks in a row each repository's daemon asked to be asked
+    /// again.
+    again: HashMap<String, u8>,
 }
 
 impl Kept {
@@ -500,7 +507,10 @@ impl Watch {
 /// How `repos` stand: one connection, a status for each. A daemon that can
 /// not be opened leaves them all down for the same reason. A repository
 /// whose policy does not hold a change for a person is closed: the Δ gate
-/// would not be there (record 120).
+/// would not be there (record 120). A daemon that asks to be asked again
+/// says nothing of the repository until it has asked [`AGAIN_MOST`] looks
+/// in a row, and the next repository is asked on a new connection: the
+/// daemon may have closed this one.
 fn look(place: &Place, repos: &Repos, watched: &[String], kept: &mut Kept) -> Looked {
     let mut client = place.open();
     let mut looked = Looked::default();
@@ -545,8 +555,20 @@ fn look(place: &Place, repos: &Repos, watched: &[String], kept: &mut Kept) -> Lo
                     StoreSeen::Down(StoreDown::Unguarded)
                 }
             }
+            Err(Down::Again) => {
+                client = place.open();
+                let asked = kept.again.entry(repo.clone()).or_default();
+                *asked = asked.saturating_add(1);
+                if *asked < AGAIN_MOST {
+                    continue;
+                }
+                StoreSeen::Down(StoreDown::Busy)
+            }
             Err(down) => StoreSeen::Down(down_of(down)),
         };
+        if seen != StoreSeen::Down(StoreDown::Busy) {
+            kept.again.remove(repo);
+        }
         looked.found.push((*p, repo.clone(), seen));
     }
     kept.diffs.retain(|change, _| waiting.contains(change));
@@ -654,6 +676,7 @@ fn down_of(down: Down) -> StoreDown {
         Down::Forbidden => StoreDown::Forbidden,
         Down::NoRepo => StoreDown::NoRepo,
         Down::Refused => StoreDown::Refused,
+        Down::Again => StoreDown::Busy,
     }
 }
 
@@ -1117,6 +1140,47 @@ mod tests {
         assert_eq!(found[0], (0, "demo".to_string(), up));
         let none = StoreSeen::Down(StoreDown::NoRepo);
         assert_eq!(found[1], (3, "other".to_string(), none));
+    }
+
+    #[test]
+    fn a_daemon_that_asks_again_closes_nothing_until_it_has_asked_three_looks_in_a_row() {
+        let busy = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let now = busy.clone();
+        let d = Daemon::start(PROTOCOL, move |asked| match asked["repo"].as_str() {
+            Some("demo") if now.load(std::sync::atomic::Ordering::Relaxed) => Err("closed"),
+            Some("demo" | "other") => Ok(status(&[7, 8])),
+            _ => Err("not_found"),
+        });
+        d.sign_in();
+        let repos = vec![
+            (0, "demo".to_string(), None),
+            (3, "other".to_string(), None),
+        ];
+        let up = StoreSeen::Up {
+            trunk: TRUNK.into(),
+            pending: 2,
+            behind: Behind::Unknown,
+        };
+        let mut kept = Kept::default();
+        for _ in 0..AGAIN_MOST - 1 {
+            let looked = look(&d.place, &repos, &[], &mut kept);
+            // The daemon closed the connection: the next repository is
+            // asked on a new one.
+            assert_eq!(looked.found, [(3, "other".to_string(), up.clone())]);
+            assert_eq!(looked.leases.len(), 1, "nothing of demo moves");
+        }
+        let busy_now = StoreSeen::Down(StoreDown::Busy);
+        for _ in 0..2 {
+            let found = look(&d.place, &repos, &[], &mut kept).found;
+            assert_eq!(found[0], (0, "demo".to_string(), busy_now.clone()));
+        }
+        // An answer starts the count again.
+        busy.store(false, std::sync::atomic::Ordering::Relaxed);
+        let found = look(&d.place, &repos, &[], &mut kept).found;
+        assert_eq!(found[0], (0, "demo".to_string(), up));
+        busy.store(true, std::sync::atomic::Ordering::Relaxed);
+        let found = look(&d.place, &repos, &[], &mut kept).found;
+        assert_eq!(found.len(), 1, "one ask again closes nothing: {found:?}");
     }
 
     #[test]
@@ -1767,6 +1831,7 @@ mod tests {
             (Down::Forbidden, StoreDown::Forbidden),
             (Down::NoRepo, StoreDown::NoRepo),
             (Down::Refused, StoreDown::Refused),
+            (Down::Again, StoreDown::Busy),
         ] {
             assert_eq!(down_of(down), word);
         }

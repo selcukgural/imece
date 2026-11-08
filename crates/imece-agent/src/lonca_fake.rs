@@ -101,6 +101,13 @@ impl Daemon {
                         if conn.write_all(bytes.as_bytes()).is_err() {
                             return;
                         }
+                        // As the daemon does: after these it reads nothing
+                        // more on the connection.
+                        if ["closed", "timeout"]
+                            .contains(&reply["error"]["code"].as_str().unwrap_or(""))
+                        {
+                            return;
+                        }
                     }
                 });
             }

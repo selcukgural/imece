@@ -62,7 +62,19 @@ worktree, its `done`, the Δ being read; an answer to an `ask`, which is not a
 decision on a change; the bus. The project's line says `⌀ no lonca` in the
 warning colour, `lonca NAME 693d629 · 2 pending` when up, `lonca NAME …` while
 asking. `Event::StoreDown { why }` and `StoreBack` say it once a change of
-reason, not once a look. A project not on Lonca changes in nothing: no socket
+reason, not once a look.
+
+**Asked to ask again** (lonca `010ba7e`). `busy`, `rate_limited`,
+`verifying`, `closed` and `timeout` say nothing ran and the request may be
+sent again (`closed` and `timeout` under id 0, then the connection closes):
+`Down::Again`. A look that gets one keeps what the last look saw of that
+repository, asks the next one on a new connection, and counts (`Kept.again`);
+only `AGAIN_MOST` (3) looks in a row close the project, as `StoreDown::Busy`
+(`the daemon is busy and asks to be asked again`), and an answer starts the
+count again. A line under id 0 with any other code is still outside the
+protocol, and every code imece does not know still closes (`Refused`).
+
+A project not on Lonca changes in nothing: no socket
 is touched, record 115's "the git path stays until the Lonca path carries a
 team" holds.
 
@@ -79,7 +91,8 @@ same. Also found, for Lonca: `docs/protocol.md` writes `lease_held:<symbol>:
 **The demo** (record 31). `Extras.store` is the table: a row per demo project
 with how many changes it integrated, the trunk a function of that, what is
 pending the project's waiting Δs. The second project is on it. Its daemon stops
-6 ticks in every 60 (`store_stopped`), so `⌀ no lonca`, the journal's two
+6 ticks in every 60 (`store_stopped`), every second stop a busy daemon's
+(`store_stop`), so `⌀ no lonca`, the journal's two
 lines and a refused decision can be seen; `hire` and helpers wait those ticks
 out. `:lonca NAME` takes any name; one not in the table answers as a real
 daemon does. What can not be faked: a socket, a session file, a protocol
