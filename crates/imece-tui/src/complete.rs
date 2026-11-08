@@ -8,19 +8,20 @@
 
 use std::path::Path;
 
+use crate::health::Knob;
 use crate::model::{Agent, CLAUDE, CardId, ProjectId, Sent, World, date, day};
 use crate::ui::fold;
 
 /// The commands imece itself takes after `:`: its own, and a name for
 /// every key that acts (not the ones that move).
-pub const COMMANDS: [&str; 68] = [
+pub const COMMANDS: [&str; 69] = [
     "allow", "archive", "archives", "awake", "away", "board", "budget", "checks", "clear", "close",
     "code", "commit", "copy", "defer", "digest", "edit", "effort", "export", "faster", "fold",
-    "forget", "fork", "goto", "help", "history", "home", "journal", "keys", "lang", "lonca",
-    "mark", "model", "motion", "news", "next", "notify", "now", "open", "output", "pause", "peek",
-    "pending", "pin", "plan", "quit", "recall", "rename", "restore", "review", "salon", "settle",
-    "slower", "solo", "story", "sync", "talk", "theme", "tidy", "timeline", "trace", "unclear",
-    "undo", "unfold", "unsettle", "waiting", "welcome", "why", "yes",
+    "forget", "fork", "goto", "health", "help", "history", "home", "journal", "keys", "lang",
+    "lonca", "mark", "model", "motion", "news", "next", "notify", "now", "open", "output", "pause",
+    "peek", "pending", "pin", "plan", "quit", "recall", "rename", "restore", "review", "salon",
+    "settle", "slower", "solo", "story", "sync", "talk", "theme", "tidy", "timeline", "trace",
+    "unclear", "undo", "unfold", "unsettle", "waiting", "welcome", "why", "yes",
 ];
 
 /// The word for Claude Code's own model or effort after `:model`, `:effort`
@@ -426,6 +427,26 @@ pub fn suggest(input: &str, w: &World, project: ProjectId, home: Option<&Path>) 
                     "",
                 )
             }
+            Some(("health", arg)) => {
+                let start = input.len() - arg.len();
+                match arg.split_once(' ') {
+                    None => menu(
+                        start,
+                        arg,
+                        matching(arg, Knob::ALL.into_iter().map(Knob::word)),
+                        "",
+                    ),
+                    Some((knob, value)) => match Knob::of(knob) {
+                        Some(k) => menu(
+                            input.len() - value.len(),
+                            value,
+                            matching(value, k.values().iter().copied()),
+                            "",
+                        ),
+                        None => None,
+                    },
+                }
+            }
             Some(("away", arg)) => {
                 let start = input.len() - arg.len();
                 menu(
@@ -784,6 +805,22 @@ mod tests {
             (vec!["15m".to_string(), "1h".to_string()], 6)
         );
         assert_eq!(suggest(":away off", &w, 0, None), None);
+        // `:health`: a knob, then its values (record 128).
+        let m = suggest(":health ", &w, 0, None).unwrap();
+        let knobs = ["stall", "idle", "loop"].map(String::from).to_vec();
+        assert_eq!((m.items, m.start, m.tail), (knobs, 8, ""));
+        let m = suggest(":health l", &w, 0, None).unwrap();
+        assert_eq!((m.items, m.start), (vec!["loop".to_string()], 8));
+        let m = suggest(":health stall ", &w, 0, None).unwrap();
+        let minutes = crate::health::MINUTE_NAMES.map(String::from).to_vec();
+        assert_eq!((m.items, m.start), (minutes.clone(), 14));
+        let m = suggest(":health idle 1", &w, 0, None).unwrap();
+        assert_eq!((m.items, m.start), (vec!["10m".to_string()], 13));
+        let m = suggest(":health loop ", &w, 0, None).unwrap();
+        let fails = crate::health::FAIL_NAMES.map(String::from).to_vec();
+        assert_eq!((m.items, m.start), (fails, 13));
+        assert_eq!(suggest(":health sleep ", &w, 0, None), None);
+        assert_eq!(suggest(":health loop off", &w, 0, None), None);
         let m = suggest(":review ", &w, 0, None).unwrap();
         assert_eq!(
             (m.items, m.start, m.tail),

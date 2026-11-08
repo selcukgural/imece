@@ -74,6 +74,18 @@ Ajanlar bus'ta birbirlerine bu adlarla seslenir; aynı projenin ekibinde olmayan
 
 Sizi bekleyen işçiler önce gelir (takılan, sonra sizi bekleyen, sonra bitip bakılmamış: [durum merdiveni](../screen/salon.md#durum-merdiveni)); yardımcılar işçilerinin altında durur ve `h` `l` ile katlanır. Başlık filoyu sayar: `● 2 çalışıyor ✓ 1 bitti ■ 1 takıldı`.
 
+## Sağlık bildirimleri
+
+imece birkaç saniyede bir ekibe bakar ve liderin bilmek isteyeceğini liderin bir sonraki isteminde söyler:
+
+- **takılan bir kart**: işçisi on dakikadır `done` demeden boşta, bir yanıt bekliyor ya da turunda hiçbir şey demiyor;
+- **boştaki bir işçi**: kartı olmayan bir işçi on dakikadır boşta;
+- **bir döngü**: bir çağrı (bir hedefte bir araç, `Bash cargo test`) bir turda üç kez hata verdi.
+
+Takılan kart ve döngü boştaki lideri bunun için uyandırır (mesajlarla alabileceği turlardan sayılır); boştaki işçi hiçbir şeye mal olmadığından liderin sonraki turunu bekler. Her biri ajan yeniden kıpırdayana kadar bir kez söylenir. imece hiçbir şeyi durdurmaz: ne yapılacağı (bir soru, kartın yeniden verilmesi ya da geri çekilmesi, bir `cancel`) liderin ya da sizindir. Sizi bekleyen bir şey (bir soru, bir izin, bir değişiklik) asla takılma sayılmaz. Günlük her birini ve kimin duyduğunu söyler: `claude-1 10 dk'dır #3 parser üzerinde boşta, done demedi · lead uyarıldı`; liderin kendi döngüsü yalnızca size söylenir. Dakikalar ve sayı sizindir: [`:health`](../reference/commands.md#health-stallidleloop-value).
+
+Bir yardımcı hiç okumadığı mesajlarla ayrılırsa, ekipte kalan her gönderene hangi mesajının okunmadığı söylenir; gönderilen hiçbir şey sessizce kaybolmaz.
+
 ## Ayrıca bakınız
 
 - [imece nasıl çalışır](../concepts/how-imece-works.md)

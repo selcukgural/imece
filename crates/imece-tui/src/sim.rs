@@ -242,6 +242,10 @@ const STOPPED: &str = "the session ended: the process exited with code 1";
 /// Every this many first tries done in a run, one fails (record 126): its
 /// done says so, and no change comes of it.
 const FAIL_EVERY: u32 = 7;
+
+/// Every this many failed test runs, the worker goes round on it: the
+/// same run fails again until imece tells its leader (record 128).
+const LOOP_EVERY: u32 = 4;
 /// A first try at work this many ticks may go to a free worker, the
 /// leader tired of waiting; the first worker's turn ends with a done that
 /// comes late.
@@ -778,6 +782,9 @@ struct Extras {
     told: u32,
     /// First tries at a card finished this run, failed ones included.
     firsts: u32,
+    /// How many test runs of its workers failed: every
+    /// [`LOOP_EVERY`]th goes round (record 128).
+    test_fails: u32,
     /// Cards whose change failed its tests in the queue: it fails them
     /// again each round until the person allows one more (record 126,
     /// F9).
@@ -967,6 +974,7 @@ pub fn world(
         suggested: None,
         reviews: Default::default(),
         orphans: crate::model::Orphans::default(),
+        health: Default::default(),
         messages: 0,
         plans: Vec::new(),
     };
@@ -2106,6 +2114,14 @@ impl Sim {
                 Role::Helper => self.helper(w, id),
                 Role::Researcher => self.researcher(w, id),
                 Role::Leader | Role::Solo => {}
+            }
+        }
+        // Its leader hears of a stall, an idle worker or a loop, as
+        // live's does (record 128).
+        for (id, _) in w.look_health() {
+            if let Some(leader) = w.told_of(id) {
+                let name = w.agents[id].name.clone();
+                w.agents[leader].trace(t, format!("told: health of {name}"));
             }
         }
         // A yes for a turn ends when the agent's work stops, as live's
@@ -3924,6 +3940,17 @@ impl Sim {
         self.ran(id, test, code);
         w.agents[id].trace(t, format!("run: {test}: exit {code}"));
         if code != 0 {
+            // Its run failed, as live's call of `run` would.
+            self.extras.test_fails += 1;
+            let times = match self.extras.test_fails.is_multiple_of(LOOP_EVERY) {
+                true => w.health.fails.unwrap_or(1),
+                false => 1,
+            };
+            w.tool_called(id, "run", test);
+            for _ in 0..times {
+                w.agents[id].trace(t, "tool_result run ✕");
+                w.tool_failed(id, "run");
+            }
             let a = &mut w.agents[id];
             a.progress = 85;
             a.activity = Some(String::new());
@@ -3948,6 +3975,9 @@ impl Sim {
     /// the runs on it, waits for the person, and the worker is free.
     fn done(&mut self, w: &mut World, id: AgentId) {
         let t = w.tick;
+        // What it was on is through: a later failure counts afresh, as
+        // live's next turn does.
+        w.agents[id].watch.turn_over();
         let Some(card) = w.agents[id].card else {
             return;
         };
@@ -4289,6 +4319,7 @@ fn free_name(w: &World, stem: &str, from: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::health::Sign;
 
     /// The person answers everything that waits for them: changes are
     /// applied, asks allowed, questions answered, answers read, reports
@@ -9343,6 +9374,57 @@ diff --git a/b.rs b/b.rs
         assert_eq!(w.cards[taken].column, Column::Waiting);
         assert_eq!(w.cards[done].column, Column::Done);
         assert_eq!(w.cards[theirs].column, Column::Waiting);
+    }
+
+    #[test]
+    fn a_failed_test_run_counts_and_every_fourth_goes_round_until_the_leader_hears() {
+        let (mut w, mut s) = world(1, 1, 0, 1, Lang::En);
+        let id = (w.agents.iter())
+            .find(|a| a.role == Role::Worker)
+            .unwrap()
+            .id;
+        let test = kit(w.agents[id].project).test;
+        let looped = |w: &World| {
+            (w.journal.iter())
+                .filter(|e| {
+                    matches!(&e.event, Event::Health { agent, sign: Sign::Looping { call, .. } }
+                        if *agent == id && *call == format!("run {test}"))
+                })
+                .count()
+        };
+        s.tested(&mut w, id, 1);
+        s.tested(&mut w, id, 1);
+        w.look_health();
+        assert_eq!(looped(&w), 0);
+        // The third failure of the same run is a loop: the journal has
+        // it, and the leader hears at the step.
+        s.tested(&mut w, id, 1);
+        s.step(&mut w);
+        assert_eq!(looped(&w), 1);
+        let leader = w.projects[0].leader;
+        let told = format!("told: health of {}", w.agents[id].name);
+        assert!(w.agents[leader].trace.iter().any(|l| l.ends_with(&told)));
+        // Its done starts the count again; the fourth failure in the run
+        // fails as many times as it takes at once.
+        w.agents[id].watch.turn_over();
+        s.extras.test_fails = LOOP_EVERY - 1;
+        s.tested(&mut w, id, 1);
+        w.look_health();
+        assert_eq!(looped(&w), 2);
+        let runs = (w.agents[id].trace.iter())
+            .filter(|l| l.ends_with("tool_result run ✕"))
+            .count();
+        assert_eq!(runs, 3 + 3);
+        // A run that passes is no failure.
+        let (mut w, mut s) = world(1, 1, 0, 1, Lang::En);
+        s.extras.test_fails = LOOP_EVERY - 1;
+        for _ in 0..3 {
+            s.tested(&mut w, id, 0);
+            s.mind(id).testing = None;
+        }
+        w.look_health();
+        assert_eq!(looped(&w), 0);
+        assert_eq!(s.extras.test_fails, LOOP_EVERY - 1);
     }
 
     #[test]

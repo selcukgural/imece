@@ -64,6 +64,7 @@ pub fn apply(w: &mut World, id: AgentId, e: AgentEvent, before: u64) {
             let mcp = imece_agent::mcp_tool("");
             let name = name.strip_prefix(&mcp).map_or(name.clone(), str::to_string);
             let changes = writes(&name);
+            w.tool_called(id, &name, &target);
             let a = &mut w.agents[id];
             a.trace(t, format!("tool_use {name} {target}"));
             a.activity = Some(format!("{name} {target}").trim_end().to_string());
@@ -77,7 +78,12 @@ pub fn apply(w: &mut World, id: AgentId, e: AgentEvent, before: u64) {
                 w.story(card, StoryEvent::Touched(target));
             }
         }
-        AgentEvent::ToolFailed { name } => w.agents[id].trace(t, format!("tool_result {name} ✕")),
+        AgentEvent::ToolFailed { name } => {
+            w.agents[id].trace(t, format!("tool_result {name} ✕"));
+            // Named as its call was (`Tool` above).
+            let mcp = imece_agent::mcp_tool("");
+            w.tool_failed(id, name.strip_prefix(&mcp).unwrap_or(&name));
+        }
         // Its own to-do list, whole; the trace says how far it is and
         // what it has in hand.
         AgentEvent::Plan(steps) => {
@@ -131,6 +137,7 @@ pub fn apply(w: &mut World, id: AgentId, e: AgentEvent, before: u64) {
             w.settle_change(id);
             let a = &mut w.agents[id];
             a.activity = None;
+            a.watch.turn_over();
             let fault = a.fault.take();
             a.wrote(&text);
             a.trace(
@@ -196,6 +203,7 @@ impl Live {
         // What it served, its to-do list and its context went with its
         // session.
         w.agents[id].local = None;
+        w.agents[id].watch.turn_over();
         w.agents[id].plan.clear();
         w.agents[id].context = None;
         w.agents[id].starting = false;
@@ -347,9 +355,11 @@ impl Live {
         }
     }
 
-    /// Helper `id` leaves: its session ends, its mail is dropped, and it is
-    /// gone from the screen; its name may be taken again.
+    /// Helper `id` leaves: its session ends, its senders hear of the mail
+    /// it never read (record 128), and it is gone from the screen; its
+    /// name may be taken again.
     pub(super) fn release(&mut self, w: &mut World, id: AgentId) {
+        self.unread(w, id);
         self.dismiss(w, id);
         w.leave(id);
         w.note(Event::Left { agent: id });

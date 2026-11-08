@@ -52,6 +52,7 @@ use crate::welcome::{Answers, Seen};
 
 mod bus;
 mod changes;
+mod health;
 mod hiring;
 mod lonca;
 mod paid;
@@ -806,6 +807,7 @@ pub fn world(o: Options) -> Result<(World, Live), String> {
                 suggested: None,
                 reviews: Default::default(),
                 orphans: crate::model::Orphans::default(),
+                health: Default::default(),
                 messages: 0,
             },
             None,
@@ -1368,6 +1370,7 @@ impl Live {
             let _ = reply.send(answer);
         }
         self.post_office(w);
+        self.look_health(w);
         for id in 0..self.lost.len() {
             let a = &w.agents[id];
             if self.lost[id]

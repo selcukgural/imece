@@ -74,6 +74,18 @@ Agents address each other by these names on the bus; a `send` to a name that is 
 
 Workers that need you come first (stuck, then waiting for you, then done and not seen: the [state ladder](../screen/salon.md#the-state-ladder)); helpers sit under their worker and fold with `h` `l`. The header counts the fleet: `● 2 working ✓ 1 done ■ 1 stuck`.
 
+## Health notices
+
+imece looks at the team every few seconds and tells the leader what it would want to know, in the leader's next prompt:
+
+- **a stalled card**: its worker has sat idle without a `done`, waited on an answer, or said nothing in its turn for ten minutes;
+- **an idle worker**: a worker with no card has sat idle for ten minutes;
+- **a loop**: one call (a tool on one target, `Bash cargo test`) failed three times in one turn.
+
+A stall and a loop wake an idle leader for it (each counted among the turns it may take on messages); an idle worker waits for the leader's next turn, since it costs nothing. Each is told once, until the agent moves again. imece stops nothing: what is done about it (a question, the card handed again or withdrawn, a `cancel`) is the leader's, or yours. What waits on you (a question, a permission, a change) is never a stall. The journal says each one and who heard it: `claude-1 has been idle 10 min on #3 parser without a done · lead told`; a leader's own loop is told to you alone. The minutes and the count are yours: [`:health`](../reference/commands.md#health-stallidleloop-value).
+
+When a helper leaves with messages it never read, each sender still on the team is told which of its messages went unread, so nothing sent is lost quietly.
+
 ## See also
 
 - [How imece works](../concepts/how-imece-works.md)
