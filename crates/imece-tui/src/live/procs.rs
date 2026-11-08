@@ -166,6 +166,44 @@ mod tests {
     }
 
     #[test]
+    fn a_running_session_s_process_is_listed_and_one_under_it_ends() {
+        use std::io::{BufRead, BufReader};
+        let mut w = team(3);
+        let mut live = idle_live(4);
+        let mut root = std::process::Command::new("sh")
+            .args(["-c", "sleep 60 & echo $!; wait"])
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut line = String::new();
+        BufReader::new(root.stdout.as_mut().unwrap())
+            .read_line(&mut line)
+            .unwrap();
+        let sleep: u32 = line.trim().parse().unwrap();
+        live.slots[1] = Slot::Running(Box::new(Runs(root.id())));
+        live.slots[2] = Slot::Running(Box::new(Runs(0)));
+        assert_eq!(live.session_pids(), vec![(1, root.id())], "not a number 0");
+        assert_eq!(live.end_proc(&mut w, 2, sleep), Err(Refusal::NotUnder));
+        assert_eq!(live.end_proc(&mut w, 1, root.id()), Err(Refusal::Session));
+        w.procs.looking = true;
+        assert_eq!(live.end_proc(&mut w, 1, sleep), Ok(()));
+        assert!((w.journal.iter()).any(|e| e.event
+            == Event::Killed {
+                agent: 1,
+                pid: sleep,
+                name: String::new()
+            }));
+        let traced = w.agents[1].trace.back().unwrap();
+        assert!(
+            traced.ends_with(&format!("ended by the person:  ({sleep})")),
+            "{traced}"
+        );
+        unsafe { libc::kill(sleep as i32, libc::SIGKILL) };
+        let _ = root.kill();
+        let _ = root.wait();
+    }
+
+    #[test]
     fn imece_is_known_by_its_own_program_s_name() {
         assert_eq!(own(), procs::own_name().unwrap());
     }
