@@ -340,7 +340,14 @@ fn main() -> std::io::Result<()> {
     // A live agent's CLI starts imece this way as its MCP server: it only
     // carries bytes between the CLI and imece's socket for that agent.
     let mut argv = std::env::args_os().skip(1);
-    if argv.next().is_some_and(|a| a == "mcp-relay") {
+    let first = argv.next();
+    // imece's stand-in for Claude Code (record 130): the demo's agents,
+    // and the tests that run the real `Live` end to end.
+    if first.as_ref().is_some_and(|a| a == "stand-in") {
+        let rest: Vec<String> = argv.map(|a| a.to_string_lossy().into_owned()).collect();
+        std::process::exit(imece_agent::stand_in::main(&rest));
+    }
+    if first.is_some_and(|a| a == "mcp-relay") {
         let path = argv.next().map(PathBuf::from).unwrap_or_default();
         if let Err(e) = imece_agent::mcp::relay(&path) {
             eprintln!("imece mcp-relay: {e}");

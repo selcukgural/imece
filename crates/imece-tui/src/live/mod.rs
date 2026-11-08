@@ -52,6 +52,8 @@ use crate::welcome::{Answers, Seen};
 
 mod bus;
 mod changes;
+#[cfg(test)]
+mod end_to_end;
 mod health;
 mod hiring;
 mod lonca;
