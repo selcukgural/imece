@@ -160,13 +160,16 @@ pub(super) fn orphans_under(
 
 /// Takes away the workspace `path`, as [`worktree::remove`] does a worktree:
 /// one that holds work or can not say goes only when `force`. Its session
-/// ends first; one over says so, and the removal decides alone. A proposal
-/// of its stays in the store.
+/// ends first, unless the daemon says it is over: a dead token would only
+/// be refused, and noted by the daemon. One that fails says so, and the
+/// removal decides alone. A proposal of its stays in the store.
 fn clear_workspace(place: &Daemon, path: &Path, force: bool) -> Result<(), String> {
     if !force && place.left_in(path) != Some(0) {
         return Err(WORKSPACE_MAY_HOLD.to_string());
     }
-    let _ = place.stand_up(path);
+    if !place.ended(path) {
+        let _ = place.stand_up(path);
+    }
     std::fs::remove_dir_all(path).map_err(|e| e.to_string())
 }
 
@@ -576,6 +579,49 @@ mod tests {
         assert!(!at.exists());
         // A directory that can not go says so.
         assert!(clear_workspace(&place, &at, true).is_err());
+        let _ = std::fs::remove_dir_all(&fake);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_workspace_whose_session_is_over_is_counted_by_lonca_and_not_ended_again() {
+        let (dir, repo, live, _w) = state("over", 0);
+        let d = imece_agent::lonca_fake::Daemon::start(store::PROTOCOL, |_| {
+            let mut v = imece_agent::lonca_fake::status(&[]);
+            v["sessions"] = serde_json::json!([{"id": "ses_9", "agent": "claude-9",
+                "expires_ms": 9, "active": false,
+                "unproposed": {"paths": ["a", "b"], "total": 2, "rounds": 1, "seen_ms": 5}}]);
+            Ok(v)
+        });
+        d.sign_in();
+        let (mut place, fake) = says(None);
+        place.socket = d.place.socket.clone();
+        place.humans = d.place.humans.clone();
+        place.human = d.place.human.clone();
+        let at = workspace(&live, "claude-9");
+        std::fs::write(
+            at.join(".lonca/workspace.json"),
+            r#"{"repo":"demo","session":"ses_9"}"#,
+        )
+        .unwrap();
+        let roots = HashMap::from([(root(&live), repo.clone())]);
+        let found = orphans_under(
+            &dir.join("state/worktrees"),
+            &HashSet::new(),
+            &place,
+            &roots,
+        );
+        assert_eq!(found.len(), 1);
+        assert_eq!((found[0].changes, found[0].unread), (2, false));
+        assert_eq!(
+            clear_workspace(&place, &at, false),
+            Err(WORKSPACE_MAY_HOLD.to_string())
+        );
+        assert_eq!(clear_workspace(&place, &at, true), Ok(()));
+        assert!(!at.exists());
+        // Nothing ran under the dead token: no diff, no session end.
+        let ran = std::fs::read_to_string(fake.join("all")).unwrap_or_default();
+        assert!(ran.is_empty(), "{ran}");
         let _ = std::fs::remove_dir_all(&fake);
         let _ = std::fs::remove_dir_all(&dir);
     }
