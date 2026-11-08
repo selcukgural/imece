@@ -585,45 +585,69 @@ mod tests {
 
     #[test]
     fn a_workspace_whose_session_is_over_is_counted_by_lonca_and_not_ended_again() {
-        let (dir, repo, live, _w) = state("over", 0);
-        let d = imece_agent::lonca_fake::Daemon::start(store::PROTOCOL, |_| {
-            let mut v = imece_agent::lonca_fake::status(&[]);
-            v["sessions"] = serde_json::json!([{"id": "ses_9", "agent": "claude-9",
-                "expires_ms": 9, "active": false,
-                "unproposed": {"paths": ["a", "b"], "total": 2, "rounds": 1, "seen_ms": 5}}]);
-            Ok(v)
-        });
-        d.sign_in();
-        let (mut place, fake) = says(None);
-        place.socket = d.place.socket.clone();
-        place.humans = d.place.humans.clone();
-        place.human = d.place.human.clone();
-        let at = workspace(&live, "claude-9");
-        std::fs::write(
-            at.join(".lonca/workspace.json"),
-            r#"{"repo":"demo","session":"ses_9"}"#,
-        )
-        .unwrap();
-        let roots = HashMap::from([(root(&live), repo.clone())]);
-        let found = orphans_under(
-            &dir.join("state/worktrees"),
-            &HashSet::new(),
-            &place,
-            &roots,
-        );
-        assert_eq!(found.len(), 1);
-        assert_eq!((found[0].changes, found[0].unread), (2, false));
-        assert_eq!(
-            clear_workspace(&place, &at, false),
-            Err(WORKSPACE_MAY_HOLD.to_string())
-        );
-        assert_eq!(clear_workspace(&place, &at, true), Ok(()));
-        assert!(!at.exists());
-        // Nothing ran under the dead token: no diff, no session end.
-        let ran = std::fs::read_to_string(fake.join("all")).unwrap_or_default();
-        assert!(ran.is_empty(), "{ran}");
-        let _ = std::fs::remove_dir_all(&fake);
-        let _ = std::fs::remove_dir_all(&dir);
+        // Work left (held), a clean end (clean), nobody said (unread).
+        let records = [
+            (
+                serde_json::json!({"paths": ["a", "b"], "total": 2, "rounds": 1, "seen_ms": 5}),
+                2,
+                false,
+            ),
+            (
+                serde_json::json!({"paths": [], "total": 0, "rounds": 0, "seen_ms": 5}),
+                0,
+                false,
+            ),
+            (serde_json::Value::Null, 0, true),
+        ];
+        for (n, (record, changes, unread)) in records.into_iter().enumerate() {
+            let (dir, repo, live, _w) = state(&format!("over-{n}"), 0);
+            let d = imece_agent::lonca_fake::Daemon::start(store::PROTOCOL, move |_| {
+                let mut v = imece_agent::lonca_fake::status(&[]);
+                v["sessions"] = serde_json::json!([{"id": "ses_9", "agent": "claude-9",
+                    "expires_ms": 9, "active": false, "unproposed": record}]);
+                Ok(v)
+            });
+            d.sign_in();
+            let (mut place, fake) = says(Some(NOTHING));
+            place.socket = d.place.socket.clone();
+            place.humans = d.place.humans.clone();
+            place.human = d.place.human.clone();
+            let at = workspace(&live, "claude-9");
+            std::fs::write(
+                at.join(".lonca/workspace.json"),
+                r#"{"repo":"demo","session":"ses_9"}"#,
+            )
+            .unwrap();
+            let roots = HashMap::from([(root(&live), repo.clone())]);
+            let found = orphans_under(
+                &dir.join("state/worktrees"),
+                &HashSet::new(),
+                &place,
+                &roots,
+            );
+            assert_eq!(found.len(), 1);
+            assert_eq!(
+                (found[0].changes, found[0].unread),
+                (changes, unread),
+                "{n}"
+            );
+            if changes == 0 && !unread {
+                assert_eq!(clear_workspace(&place, &at, false), Ok(()), "clean goes");
+            } else {
+                assert_eq!(
+                    clear_workspace(&place, &at, false),
+                    Err(WORKSPACE_MAY_HOLD.to_string()),
+                    "{n}"
+                );
+                assert_eq!(clear_workspace(&place, &at, true), Ok(()));
+            }
+            assert!(!at.exists());
+            // Nothing ran under the dead token: no diff, no session end.
+            let ran = std::fs::read_to_string(fake.join("all")).unwrap_or_default();
+            assert!(ran.is_empty(), "{n}: {ran}");
+            let _ = std::fs::remove_dir_all(&fake);
+            let _ = std::fs::remove_dir_all(&dir);
+        }
     }
 
     #[test]

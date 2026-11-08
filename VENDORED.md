@@ -18,8 +18,8 @@ the recorded sha, so a fix upstream is not missed.
 | `website/package.json`, `package-lock.json` | kule `website/package.json`, `package-lock.json` | `c09ec13` | 2026-11-01 | name and description |
 
 Built against, not copied: `crates/imece-agent/src/lonca.rs` speaks Lonca's
-daemon protocol **number 1** as `docs/protocol.md` of lonca `010ba7e`
-(2026-11-08, with `session start --continue` and `--harness`, `change.diff`, `reject` and `git` in a workspace) writes it; a daemon of another
+daemon protocol **number 1** as `docs/protocol.md` of lonca `dfec4ff`
+(2026-11-08, with `session start --continue` and `--harness`, `change.diff`, `reject`, `git` in a workspace and a clean end kept in `status.sessions[].unproposed`) writes it; a daemon of another
 number is refused. The protocol
 says a client copies nothing from its crates, so none of them is here.
 

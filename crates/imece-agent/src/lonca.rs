@@ -337,16 +337,16 @@ impl Place {
     }
 
     /// How many files `workspace` has that differ from its base. A
-    /// session that ended with work no proposal carries left its count with
-    /// the daemon, which says it without the session's token. Else as
-    /// `lonca diff` counts them: no change is told without the daemon; what
-    /// changed is counted by it under the session's token, so a workspace
-    /// with changes and its session over says none (and the daemon notes a
-    /// dead token): it holds something, and nobody can say what.
+    /// session the daemon says is over left its count there, said without
+    /// the session's token: what no proposal carries, `0` for a clean end;
+    /// none when nobody reported it (it expired, or ended without its
+    /// files), and then nothing runs under the dead token, which the daemon
+    /// would note as an attack. Else as `lonca diff` counts them: no change
+    /// is told without the daemon; what changed is counted by it under the
+    /// session's token. None: it may hold something, and nobody can say.
     pub fn left_in(&self, workspace: &Path) -> Option<usize> {
-        let ended = self.session_at(workspace).filter(|s| !s.active);
-        if let Some(total) = ended.and_then(|s| s.unproposed) {
-            return Some(total);
+        if let Some(ended) = self.session_at(workspace).filter(|s| !s.active) {
+            return ended.unproposed;
         }
         let said = self.run(workspace, &[OsStr::new("diff")], BEAT_WAIT).ok()?;
         if said.trim() == NO_CHANGES {
@@ -1090,8 +1090,9 @@ pub struct SessionEnd {
     /// then tried, as before Lonca said it.
     pub active: bool,
     /// How many files the workspace held, when the session last stopped
-    /// or ended, that no proposal carries; none when nothing was recorded
-    /// (nothing left, or nobody reported it).
+    /// or ended, that no proposal carries: `0` for a stop or end that found
+    /// nothing (lonca#189); none when nobody reported since the session
+    /// began or last proposed.
     pub unproposed: Option<usize>,
 }
 
@@ -1651,8 +1652,10 @@ mod tests {
     }
 
     fn session_json(id: &str, active: bool, unproposed: Option<u64>) -> Value {
-        let unproposed = unproposed
-            .map(|total| json!({"paths": ["a"], "total": total, "rounds": 1, "seen_ms": 5}));
+        let unproposed = unproposed.map(|total| {
+            let paths: Vec<String> = (0..total).map(|n| format!("f{n}")).collect();
+            json!({"paths": paths, "total": total, "rounds": total.min(1), "seen_ms": 5})
+        });
         json!({"id": id, "agent": "w", "expires_ms": 9, "active": active,
             "unproposed": unproposed})
     }
@@ -1660,18 +1663,22 @@ mod tests {
     #[test]
     fn an_ended_session_s_record_is_its_workspace_s_count_and_runs_nothing() {
         let says = r#"echo '{"added_files":["a"],"modified_files":[],"deleted_files":[]}'"#;
-        let (place, dir, _d) = ended_at(json!([session_json("ses_1", false, Some(3))]), says);
-        assert_eq!(place.left_in(&dir), Some(3));
-        assert!(
-            !dir.join("seen").exists(),
-            "no lonca diff under a dead token"
-        );
-        assert!(place.ended(&dir));
-        let _ = std::fs::remove_dir_all(&dir);
-        // No record, another session's record, or one alive: lonca diff counts.
+        // Work left, a clean end, nobody said: the daemon's word alone.
+        for (record, count) in [(Some(3), Some(3)), (Some(0), Some(0)), (None, None)] {
+            let (place, dir, _d) = ended_at(json!([session_json("ses_1", false, record)]), says);
+            assert_eq!(place.left_in(&dir), count, "{record:?}");
+            assert!(
+                !dir.join("seen").exists(),
+                "no lonca diff under a dead token: {record:?}"
+            );
+            assert!(place.ended(&dir));
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+        // Another session's record, or one alive: lonca diff counts.
         for sessions in [
-            json!([session_json("ses_1", false, None)]),
             json!([session_json("ses_2", false, Some(3))]),
+            json!([session_json("ses_2", false, None)]),
+            json!([session_json("ses_1", true, None)]),
             json!([session_json("ses_1", true, Some(3))]),
             json!([{"agent": "w", "expires_ms": 9}]),
         ] {
