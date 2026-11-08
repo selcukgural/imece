@@ -1365,6 +1365,12 @@ pub enum StoryEvent {
     Failed(String),
     /// The leader withdrew it, and why (record 126).
     Withdrawn(String),
+    /// What the card asks Lonca to run at the yes became `checks` (record
+    /// 127): the leader's, handing it again (`by`), else the person's.
+    ChecksSet {
+        by: Option<AgentId>,
+        checks: Vec<String>,
+    },
     /// A `done` came from `from` after the card was handed again: it
     /// closed nothing.
     LateDone {
@@ -1404,7 +1410,9 @@ impl StoryEvent {
             | StoryEvent::Posted { .. }
             | StoryEvent::Handed { .. }
             | StoryEvent::Held { .. } => StoryKind::Intent,
-            StoryEvent::Decision(_) | StoryEvent::Withdrawn(_) => StoryKind::Decision,
+            StoryEvent::Decision(_) | StoryEvent::Withdrawn(_) | StoryEvent::ChecksSet { .. } => {
+                StoryKind::Decision
+            }
             StoryEvent::Asked { .. }
             | StoryEvent::Answered { .. }
             | StoryEvent::Replied(_)
@@ -1809,6 +1817,16 @@ pub enum Event {
     Released {
         agent: AgentId,
         card: CardId,
+    },
+    /// Card `card`'s checks became `checks` (record 127): set by `agent`,
+    /// the leader handing it again, or by the person (`you`) on the
+    /// change of `agent`, its worker.
+    ChecksSet {
+        agent: AgentId,
+        card: CardId,
+        checks: Vec<String>,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        you: bool,
     },
     /// Leader `agent` withdrew card `card`, and why (record 126).
     Withdrawn {
@@ -2254,6 +2272,7 @@ impl Event {
             | Event::Claimed { .. }
             | Event::Handed { .. }
             | Event::Held { .. }
+            | Event::ChecksSet { .. }
             | Event::Released { .. } => EntryKind::Assign,
             Event::Talk { .. }
             | Event::Replied { .. }
@@ -2356,6 +2375,7 @@ impl Event {
             | Event::Handed { card, .. }
             | Event::Held { card, .. }
             | Event::Released { card, .. }
+            | Event::ChecksSet { card, .. }
             | Event::Withdrawn { card, .. }
             | Event::CardFailed { card, .. }
             | Event::LateDone { card, .. }
@@ -2429,6 +2449,7 @@ impl Event {
             | Event::Handed { agent, .. }
             | Event::Held { agent, .. }
             | Event::Released { agent, .. }
+            | Event::ChecksSet { agent, .. }
             | Event::Withdrawn { agent, .. }
             | Event::CardFailed { agent, .. }
             | Event::LateDone { agent, .. }
@@ -4462,6 +4483,32 @@ impl World {
             card: c,
             from,
             attempt,
+        });
+    }
+
+    /// Card `c` asks Lonca for `checks` at the yes from now on (record
+    /// 127), set by the leader `by` handing it again, else by the person
+    /// on its worker's change. Nothing is noted when the list stays as it
+    /// was. Whoever calls has checked the names.
+    pub fn set_checks(&mut self, c: CardId, checks: Vec<String>, by: Option<AgentId>) {
+        if self.cards[c].checks == checks {
+            return;
+        }
+        self.cards[c].checks = checks.clone();
+        let you = by.is_none();
+        let Some(agent) = by.or(self.cards[c].owner) else {
+            return;
+        };
+        let story = StoryEvent::ChecksSet {
+            by,
+            checks: checks.clone(),
+        };
+        self.story(Some(c), story);
+        self.note(Event::ChecksSet {
+            agent,
+            card: c,
+            checks,
+            you,
         });
     }
 

@@ -195,6 +195,18 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
             };
             fill(text, &[name(w, *agent), &card_ref(*card)])
         }
+        Event::ChecksSet {
+            agent,
+            card,
+            checks,
+            you,
+        } => {
+            let list = checks_list(t, checks);
+            match you {
+                true => fill(t.ev_checks_you, &[&card_ref(*card), &list]),
+                false => fill(t.ev_checks_set, &[name(w, *agent), &card_ref(*card), &list]),
+            }
+        }
         Event::Withdrawn { agent, card, why } => fill(
             t.ev_withdrawn,
             &[
@@ -670,6 +682,13 @@ pub fn story(lang: Lang, w: &World, card: &Card, e: &StoryEvent) -> String {
         StoryEvent::Held { to, on } => fill(t.st_held, &[name(w, *to), &card_refs(on)]),
         StoryEvent::Failed(why) => fill(t.st_failed, &[why]),
         StoryEvent::Withdrawn(why) => fill(t.st_withdrawn, &[why]),
+        StoryEvent::ChecksSet { by, checks } => {
+            let list = checks_list(t, checks);
+            match by {
+                Some(by) => fill(t.st_checks_set, &[name(w, *by), &list]),
+                None => fill(t.st_checks_you, &[&list]),
+            }
+        }
         StoryEvent::LateDone { from } => fill(t.st_late_done, &[name(w, *from)]),
         StoryEvent::Capped { cap, count } => {
             let text = match cap {
@@ -1225,14 +1244,36 @@ fn refused_why(t: &Text, why: &str) -> String {
 
 /// What the `lonca` program said when the daemon refused (`denied:
 /// unknown_check:api, invalid_checks`): each reason as a person says it;
-/// anything else as it came.
+/// anything else as it came. A refusal of the card's checks ends with
+/// how to change them (`:checks`), so a yes refused for a name the policy
+/// lacks need not become a reject.
 fn denied_why(t: &Text, said: &str) -> String {
     match said.strip_prefix("denied: ") {
-        Some(reasons) => (reasons.split(", "))
-            .map(|r| refused_why(t, r))
-            .collect::<Vec<_>>()
-            .join(", "),
+        Some(reasons) => {
+            let mut said = (reasons.split(", "))
+                .map(|r| refused_why(t, r))
+                .collect::<Vec<_>>()
+                .join(", ");
+            if reasons.split(", ").any(of_the_checks) {
+                said += t.denied_checks;
+            }
+            said
+        }
         None => said.to_string(),
+    }
+}
+
+/// Whether Lonca refused the yes for the checks the card asks for, which
+/// `:checks` changes (record 127): not for one given with no change.
+fn of_the_checks(reason: &str) -> bool {
+    reason == "invalid_checks" || reason.starts_with("unknown_check:")
+}
+
+/// A card's checks as a list is read, `none` when it asks for none.
+pub fn checks_list(t: &Text, checks: &[String]) -> String {
+    match checks.is_empty() {
+        true => t.checks_none.to_string(),
+        false => crate::checks::listed(checks),
     }
 }
 
@@ -2287,6 +2328,52 @@ mod tests {
             say(Lang::Tr, withdrawn),
             "lead geri çekti: #2 fix it: covered"
         );
+        // A card's checks set (record 127): by the leader or by you,
+        // `none` when it asks for none.
+        let set = |checks: &[&str], you| Event::ChecksSet {
+            agent: if you { 2 } else { 0 },
+            card: d,
+            checks: checks.iter().map(|c| c.to_string()).collect(),
+            you,
+        };
+        assert_eq!(
+            say(Lang::En, set(&["api", "e2e"], false)),
+            "lead set #2's checks: api, e2e"
+        );
+        assert_eq!(
+            say(Lang::Tr, set(&["api"], false)),
+            "lead, #2 kartının denetimlerini değiştirdi: api"
+        );
+        assert_eq!(say(Lang::En, set(&[], true)), "you set #2's checks: none");
+        assert_eq!(
+            say(Lang::Tr, set(&["api"], true)),
+            "#2 kartının denetimlerini değiştirdin: api"
+        );
+        let st = |by, checks: &[&str]| StoryEvent::ChecksSet {
+            by,
+            checks: checks.iter().map(|c| c.to_string()).collect(),
+        };
+        let card = &w.cards[d];
+        assert_eq!(
+            story(Lang::En, &w, card, &st(Some(0), &["api"])),
+            "lead set the checks: api"
+        );
+        assert_eq!(
+            story(Lang::Tr, &w, card, &st(Some(0), &[])),
+            "lead denetimleri değiştirdi: hiçbiri"
+        );
+        assert_eq!(
+            story(Lang::En, &w, card, &st(None, &[])),
+            "you set the checks: none"
+        );
+        assert_eq!(
+            story(Lang::Tr, &w, card, &st(None, &["api", "e2e"])),
+            "denetimleri değiştirdin: api, e2e"
+        );
+        assert_eq!(st(None, &[]).kind(), StoryKind::Decision);
+        assert_eq!(set(&[], true).kind(), EntryKind::Assign);
+        assert_eq!(set(&[], true).card(), Some(d));
+        assert_eq!(set(&[], true).agent(), 2);
         let st = StoryEvent::Withdrawn("covered".into());
         assert_eq!(story(Lang::En, &w, &w.cards[d], &st), "withdrawn: covered");
         assert_eq!(

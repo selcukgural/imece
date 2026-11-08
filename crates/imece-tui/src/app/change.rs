@@ -2,6 +2,29 @@
 
 use super::*;
 
+/// The checks the person names after `:checks` (record 127): `none`, or
+/// names between commas or spaces, each one Lonca takes, at most
+/// [`CHECKS_MOST`](imece_agent::lonca::CHECKS_MOST); sorted, each once.
+fn checks_named(t: &crate::i18n::Text, arg: &str) -> Result<Vec<String>, String> {
+    if arg == "none" {
+        return Ok(Vec::new());
+    }
+    let mut names: Vec<String> = (arg.split(|c: char| c == ',' || c.is_whitespace()))
+        .filter(|n| !n.is_empty())
+        .map(str::to_string)
+        .collect();
+    if let Some(bad) = names.iter().find(|n| !imece_agent::lonca::is_check_name(n)) {
+        return Err(fill(t.checks_bad_name, &[bad]));
+    }
+    names.sort();
+    names.dedup();
+    let most = imece_agent::lonca::CHECKS_MOST;
+    if names.len() > most {
+        return Err(fill(t.checks_too_many, &[&most.to_string()]));
+    }
+    Ok(names)
+}
+
 impl App {
     /// A key for the open change of worker `id`; `false` leaves it to the
     /// rest of the screen (typing, switching views, quitting).
@@ -226,16 +249,7 @@ impl App {
             "" => {}
             _ => return self.flash(fill(t.review_refused, &["on | off"])),
         }
-        // The change open, else the one `W` opened, else Home's row.
-        let at_hand = self.diff_zoom().or_else(|| {
-            let i = self.waiting_at_hand().or_else(|| match self.home_at()? {
-                HomeRow::Item(i) => Some(i),
-                HomeRow::Agent(_) | HomeRow::Project(_) => None,
-            })?;
-            let it = &self.world.inbox[i];
-            (it.open && it.kind == InboxKind::Change).then_some(it.agent)
-        });
-        let Some(agent) = at_hand else {
+        let Some(agent) = self.change_at_hand() else {
             return self.flash(if self.review {
                 t.review_on
             } else {
@@ -249,6 +263,54 @@ impl App {
             }
             Err(why) => self.flash(fill(t.review_refused, &[&why])),
         }
+    }
+
+    /// The worker whose change is at hand: the change open, else the one
+    /// `W` opened, else Home's row.
+    pub(super) fn change_at_hand(&self) -> Option<AgentId> {
+        self.diff_zoom().or_else(|| {
+            let i = self.waiting_at_hand().or_else(|| match self.home_at()? {
+                HomeRow::Item(i) => Some(i),
+                HomeRow::Agent(_) | HomeRow::Project(_) => None,
+            })?;
+            let it = &self.world.inbox[i];
+            (it.open && it.kind == InboxKind::Change).then_some(it.agent)
+        })
+    }
+
+    /// `:checks [NAMES | none]` (record 127): the checks of Lonca's policy
+    /// the yes to the change at hand asks for, the card's, which `NAMES`
+    /// (commas or spaces between) or `none` set first. The person signs
+    /// the yes, so the person may change them at it: a name the policy
+    /// lacks need not make the change a reject. Refused off Lonca (nothing
+    /// would run them) and for a change made for no card.
+    pub(super) fn checks_command(&mut self, arg: &str) {
+        let t = self.lang.text();
+        let refused = |app: &mut App, why: &str| app.flash(fill(t.checks_refused, &[why]));
+        let Some(agent) = self.change_at_hand() else {
+            return refused(self, t.checks_no_change);
+        };
+        let name = self.world.agents[agent].name.clone();
+        let project = self.world.agents[agent].project;
+        if self.world.projects[project].lonca.is_none() {
+            let p = self.world.projects[project].name.clone();
+            return refused(self, &fill(t.checks_not_lonca, &[&p]));
+        }
+        let card = self.world.change_card(agent);
+        let Some(card) = card.filter(|&c| self.world.cards.get(c).is_some()) else {
+            return refused(self, &fill(t.checks_no_card, &[&name]));
+        };
+        if !arg.is_empty() {
+            match checks_named(t, arg) {
+                Ok(checks) => self.world.set_checks(card, checks, None),
+                Err(why) => return refused(self, &why),
+            }
+        }
+        let checks = &self.world.cards[card].checks;
+        self.flash(match checks.is_empty() {
+            true => fill(t.checks_are_none, &[&name]),
+            false => fill(t.checks_are, &[&name, &crate::checks::listed(checks)]),
+        });
     }
 
     /// A suggested commit message, once the command line is free: it
@@ -922,6 +984,121 @@ mod tests {
         );
         let _ = std::fs::remove_dir_all(&one);
         let _ = std::fs::remove_dir_all(&two);
+    }
+
+    #[test]
+    fn colon_checks_says_and_sets_what_the_yes_asks_lonca_for_on_lonca_and_for_a_card() {
+        let (mut app, worker) = with_change("+x\n");
+        let flash = |app: &App| {
+            app.flash
+                .as_ref()
+                .map(|(m, _)| m.clone())
+                .unwrap_or_default()
+        };
+        let name = app.world.agents[worker].name.clone();
+        let project = app.world.projects[app.world.agents[worker].project]
+            .name
+            .clone();
+        // Off Lonca: refused, nothing would run them.
+        app.command("checks api");
+        assert_eq!(
+            flash(&app),
+            format!(
+                "the checks stay as they were: {project} is not on Lonca, and only Lonca's \
+                 merge queue runs a card's checks"
+            )
+        );
+        app.world.on_lonca(0, Some("demo".into()));
+        // A change made for no card: refused.
+        app.world.agents[worker].card = None;
+        app.command("checks api");
+        assert_eq!(
+            flash(&app),
+            format!("the checks stay as they were: {name}'s change was made for no card")
+        );
+        assert_eq!(app.command_note("checks"), "");
+        // Its card: bare says them, names set them sorted, each once.
+        let c = app.world.cards.len();
+        app.world.cards.push(Card {
+            id: c,
+            project: app.world.agents[worker].project,
+            title: "t".into(),
+            owner: Some(worker),
+            column: Column::Review,
+            story: Vec::new(),
+            symbols: Vec::new(),
+            paths: Vec::new(),
+            checks: Vec::new(),
+            started: 0,
+            finished: 0,
+            attempt: 1,
+            breaker: Default::default(),
+            after: Vec::new(),
+        });
+        app.world.agents[worker].card = Some(c);
+        app.command("checks");
+        assert_eq!(
+            flash(&app),
+            format!("the yes to {name}'s change asks Lonca for none of the card's own checks")
+        );
+        assert_eq!(app.command_note("checks"), "(none)");
+        app.command("checks unit, api api");
+        assert_eq!(app.world.cards[c].checks, ["api", "unit"]);
+        assert_eq!(
+            flash(&app),
+            format!("the yes to {name}'s change also asks Lonca for api, unit")
+        );
+        assert_eq!(app.command_note("checks"), "(api, unit)");
+        assert_eq!(app.world.asked_checks(worker), ["api", "unit"]);
+        let you = Event::ChecksSet {
+            agent: worker,
+            card: c,
+            checks: vec!["api".into(), "unit".into()],
+            you: true,
+        };
+        assert!(app.world.journal.iter().any(|l| l.event == you));
+        assert!(matches!(
+            app.world.cards[c].story.last().map(|s| &s.event),
+            Some(StoryEvent::ChecksSet { by: None, .. })
+        ));
+        // A name Lonca would not take: refused whole, the list kept.
+        for bad in ["api Build", "api build", "a/b"] {
+            app.command(&format!("checks {bad}"));
+            assert!(
+                flash(&app).starts_with("the checks stay as they were: "),
+                "{bad}"
+            );
+            assert_eq!(app.world.cards[c].checks, ["api", "unit"], "{bad}");
+        }
+        assert!(flash(&app).ends_with(
+            "a/b is not a check's name: a-z, 0-9, _ and -, at most 32, and not one of Lonca's own"
+        ));
+        let most = imece_agent::lonca::CHECKS_MOST;
+        let many = |n: usize| {
+            (0..n)
+                .map(|i| format!("c{i:02}"))
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
+        app.command(&format!("checks {}", many(most + 1)));
+        assert_eq!(
+            flash(&app),
+            format!("the checks stay as they were: a card asks for at most {most} checks")
+        );
+        app.command(&format!("checks {}", many(most)));
+        assert_eq!(app.world.cards[c].checks.len(), most);
+        // `none` takes them all away.
+        app.command("checks none");
+        assert!(app.world.cards[c].checks.is_empty());
+        // No change at hand: refused.
+        app.zoom = Zoom::None;
+        app.world.inbox.clear();
+        app.command("checks api");
+        assert_eq!(
+            flash(&app),
+            "the checks stay as they were: no change at hand: open one, or select it on Home"
+        );
+        assert!(app.world.cards[c].checks.is_empty());
     }
 
     #[test]

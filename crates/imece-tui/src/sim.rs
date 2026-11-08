@@ -3212,6 +3212,12 @@ impl Sim {
                 .collect();
             w.hand(card, agent);
             w.cards[card].symbols.retain(|s| !others.contains(s));
+            // On Lonca, one that asked for no check asks for one now, as a
+            // live leader may name checks handing a card (record 127).
+            if w.projects[project].lonca.is_some() && w.cards[card].checks.is_empty() {
+                let leader = w.projects[project].leader;
+                w.set_checks(card, vec![ASKED_CHECK.into()], Some(leader));
+            }
         } else {
             let held = held_symbols(w, project);
             let mut free: Vec<Symbol> = w.projects[project]
@@ -8066,6 +8072,7 @@ diff --git a/b.rs b/b.rs
         );
         assert_eq!(c.paths, paths);
         assert_eq!(c.symbols, symbols, "its own leases are not another's");
+        assert!(c.checks.is_empty(), "off Lonca nothing would run one");
         assert_eq!(
             (w.agents[other].card, w.agents[other].attempt),
             (Some(card), 2)
@@ -8922,6 +8929,25 @@ diff --git a/b.rs b/b.rs
         let names: Vec<&str> = checks.iter().map(|c| c.check.as_str()).collect();
         assert_eq!(names, ["build", "tests", ASKED_CHECK]);
         assert!(checks.iter().all(|c| c.ok));
+        // Handed again, a card that asked for none asks for it now, the
+        // leader's doing; one that asks keeps its own.
+        let leader = w.projects[0].leader;
+        let again = s.new_card(&mut w, 0, "x".into());
+        w.cards[again].checks = Vec::new();
+        w.cards[again].column = Column::Failed;
+        s.take(&mut w, id, again, Taken::Handed);
+        assert_eq!(w.cards[again].checks, [ASKED_CHECK]);
+        let set = Event::ChecksSet {
+            agent: leader,
+            card: again,
+            checks: vec![ASKED_CHECK.into()],
+            you: false,
+        };
+        assert!(w.journal.iter().any(|l| l.event == set));
+        w.cards[again].checks = vec!["e2e".into()];
+        w.cards[again].column = Column::Failed;
+        s.take(&mut w, id, again, Taken::Handed);
+        assert_eq!(w.cards[again].checks, ["e2e"]);
         w.projects[0].lonca = None;
         while !w.cards.len().is_multiple_of(ASKS_EVERY) {
             s.new_card(&mut w, 0, "x".into());

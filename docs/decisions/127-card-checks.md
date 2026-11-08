@@ -20,11 +20,10 @@ A denied approval exits 1 and its last line is `denied: <reasons, joined by ", "
 **Who names them.** The leader, as it names paths (record 114): `checks` on `assign`,
 `post` and a card of `plan` (`checks::parse`: an array of names, ≤ 32, each
 `imece_agent::lonca::is_check_name`, none twice, sorted). Refused on another type
-(`checks go with an assign: …`), on a card handed again (`a card handed again keeps
-its own checks; …`), and on a project not on Lonca (`bus::checks_run`: nothing would
+(`checks go with an assign: …`) and on a project not on Lonca (`bus::checks_run`: nothing would
 run them; deny by default). Whether the policy defines a name is Lonca's to say at the
 yes: imece does not read `[verification]` (record 122 stopped that). `Card.checks`
-(given when the card is made, never changed) and `Mail.checks` (an assign's until it
+(given when the card is made; changed only as **Changing them** says) and `Mail.checks` (an assign's until it
 is delivered) are schema 32 (`cards.checks`, `mail.checks`, `'[]'` by default; a load
 refuses a column that is not names Lonca takes, since they reach a command line). The
 worker's task ends with `This card asks for Lonca's checks api, e2e: once the person
@@ -45,6 +44,31 @@ reason to look first. A denial is said in words (`words::denied_why` →
 Lonca takes`, `checks go only with a proposed change`); the proposal still waits.
 What ran is the journal's `Verified` line, a named check by its name (record 122).
 
+**Changing them** (user, 2026-11-08: "close the gaps with smart behaviour", without
+Lonca, whose release was under way). Two hands, through one `World::set_checks(card,
+checks, by)`: nothing noted when the list stays as it was, else `StoryEvent::ChecksSet
+{ by, checks }` and `Event::ChecksSet { agent, card, checks, you }` (`lead set #3's
+checks: api, e2e`, `you set #3's checks: none`); the save sum of a card already holds
+its checks, so no schema change.
+- The leader, handing a card again (`assign` with `card`): `checks` given there take
+  the card's place, `[]` for none (the key there and not null); left
+  out, the card keeps its own. The same refusals as a new card's; the assign's mail
+  carries none (the card's are the card's), and the prompt names the new ones.
+- The person, at the yes: `:checks [NAMES|none]` (`App::checks_command`, the change at
+  hand as `:review` finds it: `App::change_at_hand`) sets the card's list (`checks_named`:
+  commas or spaces, `is_check_name`, sorted, each once, at most `CHECKS_MOST`), `none`
+  clears it, bare says it; refused off Lonca, for a change made for no card, a name
+  Lonca would not take, with the list kept. The menu note is the list.
+- A yes Lonca refused for the card's checks (`unknown_check:`, `invalid_checks`; not
+  `checks_not_a_change`) ends with ` · :checks NAMES changes what the card asks for`
+  (`words::denied_why`), so a typo is fixed and the yes said again instead of a
+  reject.
+imece never adds or drops a check by itself: either the leader names them or the person
+does, both journaled, and the verdict line says what the yes will ask before it is
+said. Demo: a card of the project on Lonca handed again that asked for nothing asks for
+`api` (the leader's `ChecksSet`), one that asks keeps its own; `:checks` runs the same
+path.
+
 **Points.** Growth: at most 32 names of 32 bytes a card, gone with the card's row.
 Read cost: the verdict reads one card's list per frame. Concurrency: the yes is one
 store job at a time, as before. Migration: an older file gets the columns empty; an
@@ -53,9 +77,14 @@ yes; the person adds it with `lonca policy set` or rejects the change. Security:
 names are checked at the bus, at load and before `lonca approve`; the boundary list
 gets `checks.rs`.
 
-**Gaps.** A card's checks cannot be changed (withdraw it and post another). imece does
-not check a name against the policy before the yes, so a leader's typo is found only
-then. The git path has no named checks (`.imece/check` is per repository). The worker
+**Gaps.** imece does not check a name against the policy before the yes, so a leader's
+typo is found then (and fixed with `:checks`): Lonca's `status` does not say which named
+checks its policy defines, and reading `lonca.toml` by hand is what record 122 stopped
+(lonca#203, then #390: refuse an unknown name at the bus with the names there are and
+the nearest, say on the verdict line a check a newer policy dropped, complete
+`:checks` from the policy). The leader changes a card's checks only by handing it
+again, not while its change waits for the person (the person's `:checks` is there
+then). The git path has no named checks (`.imece/check` is per repository). The worker
 hears that the checks run, not their commands. `status.changes[].checks` (asked at
 earlier approvals) is not read; `runs` already holds them.
 

@@ -82,9 +82,6 @@ impl Live {
         if handed.is_some() && !paths.is_empty() {
             return Err("a card handed again keeps its own paths; leave paths out".into());
         }
-        if handed.is_some() && !checks.is_empty() {
-            return Err("a card handed again keeps its own checks; leave checks out".into());
-        }
         let after = after_of(&args["after"])?;
         if !after.is_empty() && kind != MsgKind::Assign {
             return Err("after goes with an assign: the card it opens waits on those".into());
@@ -160,7 +157,15 @@ impl Live {
         let (outcome, read_it) = self.done_comes(w, from, kind, failed, body);
         if let Some(c) = handed {
             self.hand(w, c, to);
+            // A card handed again keeps its checks unless the assign names
+            // them, `[]` for none: they take the card's place (record 127).
+            if !args["checks"].is_null() {
+                w.set_checks(c, checks.clone(), Some(from));
+            }
         }
+        // The card's checks are the card's: an assign that hands one
+        // again carries none of its own.
+        let checks = if handed.is_some() { Vec::new() } else { checks };
         // An assign that waits on other cards opens its card now (record
         // 126, F10): the card holds it until they are done.
         let card = match after.is_empty() {
@@ -3186,12 +3191,6 @@ in p.rs",
             err,
             "checks go with an assign: the card it opens asks for them"
         );
-        let mut handed = assign.clone();
-        handed["card"] = json!(1);
-        assert_eq!(
-            refused(&mut live, &mut w, handed),
-            "a card handed again keeps its own checks; leave checks out"
-        );
         let err = refused(
             &mut live,
             &mut w,
@@ -3277,6 +3276,78 @@ in p.rs",
             ),
             "{prompt}"
         );
+    }
+
+    #[test]
+    fn a_card_handed_again_takes_the_checks_its_assign_names_and_keeps_its_own_without() {
+        let mut w = team(2);
+        let mut live = idle_live(3);
+        let c = with_card(&mut w, 1);
+        w.cards[c].checks = vec!["api".into()];
+        w.cards[c].column = Column::Failed;
+        let again = |checks: Option<Value>| {
+            let mut args = msg("claude-2", "assign", "Once more");
+            args["card"] = json!(c + 1);
+            if let Some(checks) = checks {
+                args["checks"] = checks;
+            }
+            args
+        };
+        let set = |w: &World| {
+            (w.journal.iter())
+                .filter(|e| matches!(e.event, Event::ChecksSet { .. }))
+                .count()
+        };
+        // Off Lonca: named checks are refused, nothing handed.
+        let off = "checks run in Lonca's merge queue, and this project is not on Lonca: \
+                   leave checks out, and say in the body what to run";
+        assert_eq!(
+            sent(&mut live, &mut w, 0, &again(Some(json!(["e2e"])))).unwrap_err(),
+            off
+        );
+        assert_eq!((w.cards[c].attempt, set(&w)), (1, 0), "nothing done");
+        w.on_lonca(0, Some("demo".into()));
+        // Left out: the card keeps its own.
+        sent(&mut live, &mut w, 0, &again(None)).unwrap();
+        assert_eq!(w.cards[c].checks, ["api"]);
+        assert_eq!(set(&w), 0);
+        // Named: they take the card's place, sorted, and the leader is
+        // journaled as setting them; the assign carries none of its own.
+        w.cards[c].column = Column::Failed;
+        w.cards[c].attempt = 1;
+        sent(&mut live, &mut w, 0, &again(Some(json!(["unit", "e2e"])))).unwrap();
+        assert_eq!(w.cards[c].checks, ["e2e", "unit"]);
+        let want = Event::ChecksSet {
+            agent: 0,
+            card: c,
+            checks: vec!["e2e".into(), "unit".into()],
+            you: false,
+        };
+        assert_eq!(journaled(&w, &want), 1);
+        assert!(matches!(
+            w.cards[c].story.last().map(|s| &s.event),
+            Some(StoryEvent::ChecksSet { by: Some(0), checks }) if checks == &want_names(&["e2e", "unit"])
+        ));
+        assert!(live.mail[2].iter().all(|m| m.checks.is_empty()));
+        assert!(mail_prompt(&w, &live.mail[2]).contains("Lonca's checks e2e, unit:"));
+        // The same list again notes nothing; [] takes them all away.
+        w.cards[c].column = Column::Failed;
+        w.cards[c].attempt = 1;
+        sent(&mut live, &mut w, 0, &again(Some(json!(["e2e", "unit"])))).unwrap();
+        assert_eq!(set(&w), 1);
+        w.cards[c].column = Column::Failed;
+        w.cards[c].attempt = 1;
+        sent(&mut live, &mut w, 0, &again(Some(json!([])))).unwrap();
+        assert!(w.cards[c].checks.is_empty());
+        assert_eq!(set(&w), 2);
+        // Refused for the card: its checks stay.
+        w.cards[c].column = Column::Done;
+        assert!(sent(&mut live, &mut w, 0, &again(Some(json!(["api"])))).is_err());
+        assert!(w.cards[c].checks.is_empty());
+    }
+
+    fn want_names(names: &[&str]) -> Vec<String> {
+        names.iter().map(|n| n.to_string()).collect()
     }
 
     // Record 126: attempts, a done that failed, a late done, a card handed

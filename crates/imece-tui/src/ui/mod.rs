@@ -13573,10 +13573,26 @@ after | not a table";
             yes("denied: unknown_check:api, invalid_checks"),
             format!(
                 "{}: Lonca's policy has no api check, the card's checks are not a list \
-                 Lonca takes",
+                 Lonca takes · :checks NAMES changes what the card asks for",
                 Lang::En.text().store_act_decide
             )
         );
+        // Each refusal of the card's checks says how to change them, once;
+        // one for checks given with no change does not.
+        for why in ["denied: unknown_check:api", "denied: invalid_checks"] {
+            assert!(
+                yes(why).ends_with(" · :checks NAMES changes what the card asks for"),
+                "{why}"
+            );
+        }
+        assert_eq!(
+            yes("denied: checks_not_a_change"),
+            format!(
+                "{}: checks go only with a proposed change",
+                Lang::En.text().store_act_decide
+            )
+        );
+        assert!(!yes("denied: unknown_checker").contains(":checks"));
         assert_eq!(
             yes("denied:unknown_check:api"),
             format!(

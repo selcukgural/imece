@@ -294,6 +294,11 @@ impl App {
             }
             "story" => Some(on_off(self.story)),
             "review" => Some(on_off(self.review)),
+            // What the yes to the change at hand asks Lonca for (record 127).
+            "checks" => (self.change_at_hand())
+                .and_then(|id| self.world.change_card(id))
+                .and_then(|c| self.world.cards.get(c))
+                .map(|c| ui::words::checks_list(t, &c.checks)),
             "plan" => Some(on_off(self.world.projects[self.current_project()].plan.on)),
             "lonca" => (self.world.projects[self.current_project()].lonca.as_ref())
                 .map(|on| on.repo.clone()),
@@ -664,6 +669,7 @@ impl App {
             "export" => self.export(arg),
             "commit" => self.suggest_commit(),
             "review" => self.review_command(arg),
+            "checks" => self.checks_command(arg),
             "plan" => self.plan_command(arg),
             "lonca" => self.lonca_command(arg.trim()),
             "sync" => self.sync_command(),
