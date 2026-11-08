@@ -78,6 +78,13 @@ impl Live {
         if handed.is_some() && !paths.is_empty() {
             return Err("a card handed again keeps its own paths; leave paths out".into());
         }
+        let after = after_of(&args["after"])?;
+        if !after.is_empty() && kind != MsgKind::Assign {
+            return Err("after goes with an assign: the card it opens waits on those".into());
+        }
+        if handed.is_some() && !after.is_empty() {
+            return Err("a card handed again waits on what it did; leave after out".into());
+        }
         if arg("to") == YOU {
             if re.is_some() {
                 return Err("re is for a teammate's message: the person's have no number".into());
@@ -117,6 +124,10 @@ impl Live {
             hands(w, project, c, to)?;
             tries_left(w, from, c)?;
         }
+        if !after.is_empty() && w.agents[to].role != Role::Worker {
+            return Err("a card goes to a worker".into());
+        }
+        depends(w, project, &after)?;
         self.owned_elsewhere(w, project, Some(to), &paths)?;
         if w.agents[to].status == Status::Stopped {
             return Err(format!(
@@ -142,6 +153,13 @@ impl Live {
         if let Some(c) = handed {
             self.hand(w, c, to);
         }
+        // An assign that waits on other cards opens its card now (record
+        // 126, F10): the card holds it until they are done.
+        let card = match after.is_empty() {
+            true => handed,
+            false => Some(self.opens(w, to, body, &paths, after)),
+        };
+        let waits = card.filter(|&c| !w.ready(c));
         self.mail[to].push(Mail {
             from,
             kind,
@@ -149,10 +167,10 @@ impl Live {
             id,
             re,
             paths,
-            card: handed,
+            card,
             outcome,
         });
-        if kind.wakes() && w.agents[to].status == Status::Asleep {
+        if kind.wakes() && waits.is_none() && w.agents[to].status == Status::Asleep {
             // Something new since the start: a sleeper takes it like any
             // idle agent (its older mail rides along).
             let t = w.tick;
@@ -206,6 +224,17 @@ impl Live {
         let held = kind != MsgKind::Cancel && w.waits_on_person(to);
         if held {
             w.agents[to].trace(t, format!("held until the person answers: message {id}"));
+        }
+        if let Some(c) = waits {
+            return Ok((
+                format!(
+                    "held as message {id} on #{}: it waits on {}, and {name} gets it once \
+                     they are done",
+                    c + 1,
+                    words::card_refs(&w.waits_on(c))
+                ),
+                read,
+            ));
         }
         let delivered = match (kind.wakes(), held, self.turns[to] > 0) {
             (true, true, _) => format!(
@@ -327,6 +356,7 @@ impl Live {
             }
             DoneFor::Card(c) if failed => {
                 w.card_failed(from, c, first);
+                self.blocks(w, c);
                 (Outcome::Failed(Some(c)), false)
             }
             _ if failed => (Outcome::Failed(None), false),
@@ -338,6 +368,24 @@ impl Live {
     /// not theirs now, in its next prompt.
     fn hand(&mut self, w: &mut World, c: CardId, to: AgentId) {
         let from = w.cards[c].owner.filter(|&o| o != to);
+        if !w.ready(c) {
+            // What it waits on is not done (record 126, F10): the card is
+            // held for `to`, and whoever it was held for loses the assign
+            // that waited with it.
+            w.hold(c, to);
+            if let Some(o) = from {
+                let mine = |m: &Mail| m.kind == MsgKind::Assign && m.card == Some(c);
+                self.mail[o].retain(|m| !mine(m));
+                self.notes[o].push(format!(
+                    "Card #{} ({}) went to {}: the assign for it that waited for you is \
+                     withdrawn.",
+                    c + 1,
+                    w.cards[c].title,
+                    w.agents[to].name
+                ));
+            }
+            return;
+        }
         w.hand(c, to);
         if let Some(o) = from {
             self.notes[o].push(format!(
@@ -348,6 +396,66 @@ impl Live {
                 w.agents[to].name
             ));
         }
+    }
+
+    /// The card an assign to `to` opens when it waits on the cards `after`
+    /// (record 126, F10): titled by the assign's first line, owning
+    /// `paths`, `to`'s and untried until it begins. Held now when what it
+    /// waits on is not done.
+    fn opens(
+        &mut self,
+        w: &mut World,
+        to: AgentId,
+        body: &str,
+        paths: &[Owned],
+        after: Vec<CardId>,
+    ) -> CardId {
+        let (t, c) = (w.tick, w.cards.len());
+        w.cards.push(Card {
+            id: c,
+            project: w.agents[to].project,
+            title: body.lines().next().unwrap_or_default().to_string(),
+            owner: Some(to),
+            column: Column::Waiting,
+            story: Vec::new(),
+            symbols: Vec::new(),
+            paths: paths.to_vec(),
+            started: t,
+            finished: 0,
+            attempt: 0,
+            breaker: Default::default(),
+            after,
+        });
+        if !w.ready(c) {
+            w.hold(c, to);
+        }
+        c
+    }
+
+    /// Card `c` failed, or the person failed it for good: its leader hears
+    /// which cards wait on it (record 126, F10), with its next prompt.
+    pub(super) fn blocks(&mut self, w: &World, c: CardId) {
+        let waiting = w.dependents(c);
+        if waiting.is_empty() {
+            return;
+        }
+        let leader = w.projects[w.cards[c].project].leader;
+        let what = if w.cards[c].breaker.stopped {
+            "the person failed it for good, so they never begin: tell the person"
+        } else {
+            "they begin once it is done: hand it again, or tell the person"
+        };
+        self.notes[leader].push(format!(
+            "{} wait on #{}, which failed; {what}.",
+            words::card_refs(&waiting),
+            c + 1
+        ));
+    }
+
+    /// Whether mail `m` waits on its card (record 126, F10): an assign
+    /// whose card is not ready, which no turn takes until it is.
+    fn waits(w: &World, m: &Mail) -> bool {
+        m.kind == MsgKind::Assign && m.card.is_some_and(|c| !w.ready(c))
     }
 
     /// Agent `from` puts a card on the board (the `post` tool's arguments).
@@ -366,7 +474,9 @@ impl Live {
             return Err(format!("the body is longer than {MAX_BODY} characters"));
         }
         let paths = paths::parse(&args["paths"])?;
+        let after = after_of(&args["after"])?;
         let project = w.agents[from].project;
+        depends(w, project, &after)?;
         self.owned_elsewhere(w, project, None, &paths)?;
         if self.open(w, project).count() >= MAX_OPEN {
             return Err(format!(
@@ -394,6 +504,7 @@ impl Live {
             finished: 0,
             attempt: 0,
             breaker: Default::default(),
+            after,
         });
         self.posts.insert(
             card,
@@ -411,26 +522,65 @@ impl Live {
         );
         w.note(Event::Posted { agent: from, card });
         w.agents[from].trace(t, format!("post #{} {title:?}", card + 1));
+        let waits = w.waits_on(card);
+        if !waits.is_empty() {
+            return Ok(format!(
+                "posted as #{}; it waits on {}, and an idle worker will be offered it once \
+                 they are done",
+                card + 1,
+                words::card_refs(&waits)
+            ));
+        }
         Ok(format!(
             "posted as #{}; an idle worker will be offered it",
             card + 1
         ))
     }
 
-    /// The board of agent `from`'s project, for the `board` tool.
-    pub(super) fn board(&self, w: &World, from: AgentId) -> String {
+    /// The board of agent `from`'s project, for the `board` tool: every
+    /// card, posted or assigned, the open ones apart, each saying what it
+    /// waits on (record 126, F10). With `ready`, only the open cards a
+    /// worker may take now.
+    pub(super) fn board(&self, w: &World, from: AgentId, args: &Value) -> Answer {
+        let ready = match &args["ready"] {
+            Value::Null => false,
+            Value::Bool(b) => *b,
+            _ => return Err("ready is true or false".into()),
+        };
         let project = w.agents[from].project;
         let mut open = Vec::new();
         let mut taken = Vec::new();
+        let mut later = 0;
         for c in w.cards.iter().filter(|c| c.project == project) {
-            let Some(post) = self.posts.get(&c.id) else {
-                continue;
+            let waits = w.waits_on(c.id);
+            let wait = match w.blocked_on(c.id) {
+                _ if waits.is_empty() => String::new(),
+                Some(f) => format!(
+                    "; waits on {}, and #{} failed",
+                    words::card_refs(&waits),
+                    f + 1
+                ),
+                None => format!("; waits on {}", words::card_refs(&waits)),
             };
-            let by = &w.agents[post.by].name;
             match (c.column, c.owner) {
-                (Column::Waiting, _) => {
-                    open.push(format!("#{} {} (posted by {by})", c.id + 1, c.title))
+                (Column::Waiting, None) => {
+                    if ready && !waits.is_empty() {
+                        later += 1;
+                        continue;
+                    }
+                    let by = (self.posts.get(&c.id)).map_or("", |p| w.agents[p.by].name.as_str());
+                    open.push(format!("#{} {} (posted by {by}{wait})", c.id + 1, c.title))
                 }
+                (Column::Waiting, Some(o)) => taken.push(format!(
+                    "#{} {} (assigned to {}{})",
+                    c.id + 1,
+                    c.title,
+                    w.agents[o].name,
+                    match wait.is_empty() {
+                        true => "; it begins with its next turn",
+                        false => wait.as_str(),
+                    }
+                )),
                 (Column::Done, Some(o)) => taken.push(format!(
                     "#{} {} (done by {})",
                     c.id + 1,
@@ -460,8 +610,20 @@ impl Live {
                 (_, None) => {}
             }
         }
+        if ready {
+            let mut out = match open.is_empty() {
+                true => "no card is ready to take".to_string(),
+                false => format!("Ready:\n{}", open.join("\n")),
+            };
+            if later > 0 {
+                out.push_str(&format!(
+                    "\n\n{later} more wait on cards not done yet; call board for them"
+                ));
+            }
+            return Ok(out);
+        }
         if open.is_empty() && taken.is_empty() {
-            return "the board is empty".into();
+            return Ok("the board is empty".into());
         }
         let mut out = String::new();
         if !open.is_empty() {
@@ -473,7 +635,7 @@ impl Live {
             }
             out.push_str(&format!("Taken:\n{}", taken.join("\n")));
         }
-        out
+        Ok(out)
     }
 
     /// Worker `from` takes an open card (the `claim` tool's arguments). The
@@ -504,6 +666,21 @@ impl Live {
         if c.column != Column::Waiting {
             let who = c.owner.map_or("someone", |o| w.agents[o].name.as_str());
             return Err(format!("#{} was taken by {who}; pick another", card + 1));
+        }
+        if let Some(o) = c.owner {
+            return Err(format!(
+                "#{} is assigned to {}; pick another",
+                card + 1,
+                w.agents[o].name
+            ));
+        }
+        let waits = w.waits_on(card);
+        if !waits.is_empty() {
+            return Err(format!(
+                "#{} waits on {}; pick a card that is ready (board with ready: true)",
+                card + 1,
+                words::card_refs(&waits)
+            ));
         }
         let t = w.tick;
         let c = &mut w.cards[card];
@@ -554,7 +731,8 @@ impl Live {
         Ok(())
     }
 
-    /// The open cards of `project`, oldest first.
+    /// The open cards of `project` a worker may take now, oldest first:
+    /// posted, nobody's, every card they wait on done.
     pub(super) fn open<'a>(
         &'a self,
         w: &'a World,
@@ -565,7 +743,9 @@ impl Live {
             .filter(move |c| {
                 c.project == project
                     && c.column == Column::Waiting
+                    && c.owner.is_none()
                     && self.posts.contains_key(&c.id)
+                    && w.ready(c.id)
             })
             .map(|c| c.id)
     }
@@ -623,6 +803,8 @@ impl Live {
     pub(super) fn post_office(&mut self, w: &mut World) {
         for id in 0..self.mail.len() {
             let waits = !self.mail[id].is_empty() && w.waits_on_person(id);
+            // An assign that waits on its card is left by the delivery
+            // (record 126, F10).
             let wakes = |m: &Mail| {
                 if waits {
                     m.kind == MsgKind::Cancel
@@ -659,12 +841,23 @@ impl Live {
         if self.over_budget(w) {
             return;
         }
-        let mail = std::mem::take(&mut self.mail[id]);
+        // An assign that waits on its card stays (record 126, F10).
+        let (held, mail): (Vec<Mail>, Vec<Mail>) = std::mem::take(&mut self.mail[id])
+            .into_iter()
+            .partition(|m| Self::waits(w, m));
+        self.mail[id] = held;
+        if mail.is_empty() {
+            return;
+        }
         self.woken[id] += 1;
         let first = mail
             .iter()
             .find(|m| m.kind == MsgKind::Assign)
             .unwrap_or(&mail[0]);
+        // A card held for it begins now, so its heading names its try.
+        if let Some(c) = first.card.filter(|&c| w.cards[c].column == Column::Waiting) {
+            w.begin(c, id);
+        }
         let title = first.body.lines().next().unwrap_or_default().to_string();
         let opening = Opening {
             title: &title,
@@ -741,6 +934,9 @@ impl Live {
             }
         };
         self.lost[woken] = true;
+        if !yes {
+            self.blocks(w, c);
+        }
         let said = if yes { "one more" } else { "failed" };
         w.agents[agent].trace(w.tick, format!("{card} {said}"));
         true
@@ -854,6 +1050,51 @@ fn card_of(v: &Value) -> Result<Option<CardId>, String> {
         .and_then(|n| usize::try_from(n).ok()?.checked_sub(1))
         .map(Some)
         .ok_or_else(|| "card must be a card's number, as #N on the board".into())
+}
+
+/// The cards an `assign` or a `post` waits on (record 126, F10): their
+/// numbers on the board, each once, oldest first, at most [`AFTER_MAX`];
+/// none when it is not given.
+fn after_of(v: &Value) -> Result<Vec<CardId>, String> {
+    if v.is_null() {
+        return Ok(Vec::new());
+    }
+    let Some(list) = v.as_array() else {
+        return Err("after must be an array of card numbers".into());
+    };
+    let mut out = Vec::with_capacity(list.len());
+    for item in list {
+        let c = (item.as_u64())
+            .and_then(|n| usize::try_from(n).ok()?.checked_sub(1))
+            .ok_or("after must be an array of card numbers, as #N on the board")?;
+        out.push(c);
+    }
+    out.sort_unstable();
+    out.dedup();
+    if out.len() > AFTER_MAX {
+        return Err(format!("a card waits on at most {AFTER_MAX} cards"));
+    }
+    Ok(out)
+}
+
+/// Whether a card of `project` may wait on the cards `after`: each one of
+/// the project, and not one the person failed for good, on which it would
+/// wait for ever.
+fn depends(w: &World, project: ProjectId, after: &[CardId]) -> Result<(), String> {
+    for &c in after {
+        let card = w
+            .cards
+            .get(c)
+            .filter(|card| card.project == project)
+            .ok_or_else(|| format!("there is no card #{} in this project", c + 1))?;
+        if card.breaker.stopped {
+            return Err(format!(
+                "the person failed #{} for good: a card waiting on it would never begin",
+                c + 1
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Whether card `c` may be handed to `to` (record 126): a card of the
@@ -1374,6 +1615,7 @@ mod tests {
             finished: 0,
             attempt: 1,
             breaker: Default::default(),
+            after: Vec::new(),
         });
         w.agents[1].card = Some(0);
         live.turns[1] = 1;
@@ -1864,7 +2106,8 @@ mod tests {
         let err = live.claim(&mut w, 2, &json!({ "card": 1 })).unwrap_err();
         assert!(err.contains("taken by claude-1"), "{err}");
         assert!(
-            live.board(&w, 2)
+            live.board(&w, 2, &Value::Null)
+                .unwrap()
                 .contains("#1 Add a test (taken by claude-1)")
         );
         // The turn ends: the card goes on until a done (record 126), and
@@ -1894,7 +2137,11 @@ mod tests {
         // Its done with nothing in the worktree closes it.
         w.change_none(1);
         assert_eq!(w.cards[0].column, Column::Done);
-        assert!(live.board(&w, 0).contains("(done by claude-1)"));
+        assert!(
+            live.board(&w, 0, &Value::Null)
+                .unwrap()
+                .contains("(done by claude-1)")
+        );
     }
 
     #[test]
@@ -2072,7 +2319,7 @@ mod tests {
         live.step(&mut w);
         live.claim(&mut w, 1, &json!({ "card": 1 })).unwrap();
         live.post(&mut w, 0, &card("Second", "two")).unwrap();
-        let both = live.board(&w, 2);
+        let both = live.board(&w, 2, &Value::Null).unwrap();
         assert!(
             both.starts_with(
                 "Open:
@@ -3123,7 +3370,7 @@ in p.rs",
         w.cards[0].column = Column::Failed;
         w.cards[0].attempt = 2;
         w.cards[1].column = Column::Review;
-        let board = live.board(&w, 0);
+        let board = live.board(&w, 0, &Value::Null).unwrap();
         assert!(
             board.contains(
                 "#1 Add a test (failed by claude-1, try 2: the leader may hand it again)"
@@ -3136,24 +3383,462 @@ in p.rs",
         );
         w.cards[1].column = Column::Verifying;
         assert!(
-            live.board(&w, 0)
+            live.board(&w, 0, &Value::Null)
+                .unwrap()
                 .contains("#2 Add docs (done by claude-2, its change waits)")
         );
         // Its tries out, or failed by the person (record 126, F9).
         w.cards[0].attempt = 3;
         assert!(
-            live.board(&w, 0).contains(
+            live.board(&w, 0, &Value::Null).unwrap().contains(
                 "#1 Add a test (failed by claude-1, try 3: its tries are out: another waits for \
                  the person's yes)"
             ),
             "{}",
-            live.board(&w, 0)
+            live.board(&w, 0, &Value::Null).unwrap()
         );
         w.cards[0].breaker.stopped = true;
         assert!(
-            live.board(&w, 0).contains(
+            live.board(&w, 0, &Value::Null).unwrap().contains(
                 "#1 Add a test (failed by claude-1, try 3: the person failed it for good)"
             )
         );
+    }
+
+    /// An assign of `body` to `to` that waits on the cards `after`.
+    fn after(to: &str, body: &str, after: Value) -> Value {
+        let mut args = msg(to, "assign", body);
+        args["after"] = after;
+        args
+    }
+
+    #[test]
+    fn after_is_card_numbers_each_once_at_most_eight_with_an_assign_or_a_post() {
+        assert_eq!(after_of(&Value::Null), Ok(Vec::new()));
+        assert_eq!(after_of(&json!([3, 1, 3])), Ok(vec![0, 2]));
+        assert_eq!(after_of(&json!([])), Ok(Vec::new()));
+        for bad in [
+            json!("1"),
+            json!([0]),
+            json!(["1"]),
+            json!([1.5]),
+            json!({}),
+        ] {
+            assert!(after_of(&bad).is_err(), "{bad}");
+        }
+        let eight: Vec<usize> = (1..=AFTER_MAX).collect();
+        assert_eq!(after_of(&json!(eight)).unwrap().len(), AFTER_MAX);
+        let nine: Vec<usize> = (1..=AFTER_MAX + 1).collect();
+        assert_eq!(
+            after_of(&json!(nine)),
+            Err("a card waits on at most 8 cards".to_string())
+        );
+        let mut w = team(2);
+        let mut live = idle_live(3);
+        live.post(&mut w, 0, &card("Base", "x")).unwrap();
+        // Only with an assign, never with a card handed again.
+        let mut inform = msg("claude-1", "inform", "fyi");
+        inform["after"] = json!([1]);
+        assert_eq!(
+            sent(&mut live, &mut w, 0, &inform).unwrap_err(),
+            "after goes with an assign: the card it opens waits on those"
+        );
+        let mut both = after("claude-1", "Tests", json!([1]));
+        both["card"] = json!(1);
+        assert_eq!(
+            sent(&mut live, &mut w, 0, &both).unwrap_err(),
+            "a card handed again waits on what it did; leave after out"
+        );
+        // To a worker, on a card of the project the person did not fail
+        // for good.
+        assert_eq!(
+            sent(&mut live, &mut w, 1, &after("lead", "Tests", json!([1]))).unwrap_err(),
+            "a card goes to a worker"
+        );
+        assert!(sent(&mut live, &mut w, 1, &msg("lead", "assign", "Tests")).is_ok());
+        assert_eq!(
+            sent(
+                &mut live,
+                &mut w,
+                0,
+                &after("claude-1", "Tests", json!([9]))
+            )
+            .unwrap_err(),
+            "there is no card #9 in this project"
+        );
+        w.cards.push(Card {
+            project: 1,
+            id: 1,
+            ..w.cards[0].clone()
+        });
+        assert_eq!(
+            sent(
+                &mut live,
+                &mut w,
+                0,
+                &after("claude-1", "Tests", json!([2]))
+            )
+            .unwrap_err(),
+            "there is no card #2 in this project"
+        );
+        assert_eq!(
+            live.post(&mut w, 0, &with_after(card("Tests", "y"), json!([2])))
+                .unwrap_err(),
+            "there is no card #2 in this project"
+        );
+        w.cards[0].breaker.stopped = true;
+        let why = "the person failed #1 for good: a card waiting on it would never begin";
+        assert_eq!(
+            sent(
+                &mut live,
+                &mut w,
+                0,
+                &after("claude-1", "Tests", json!([1]))
+            )
+            .unwrap_err(),
+            why
+        );
+        assert_eq!(
+            live.post(&mut w, 0, &with_after(card("Tests", "y"), json!([1])))
+                .unwrap_err(),
+            why
+        );
+        assert_eq!(w.cards.len(), 2, "nothing opened");
+    }
+
+    fn with_after(mut args: Value, after: Value) -> Value {
+        args["after"] = after;
+        args
+    }
+
+    #[test]
+    fn an_assign_after_a_card_not_done_waits_on_its_card_and_goes_once_it_is_done() {
+        let mut w = team(2);
+        w.agents[1].status = Status::Idle;
+        let mut live = idle_live(3);
+        // #1 at work with claude-2, so nothing is offered from the board.
+        with_card(&mut w, 2);
+        w.tick = 7;
+        let mut args = after("claude-1", "Tests for it\nall of them", json!([1]));
+        args["paths"] = json!(["tests"]);
+        let got = sent(&mut live, &mut w, 0, &args).unwrap();
+        assert_eq!(
+            got,
+            "held as message 1 on #2: it waits on #1, and claude-1 gets it once they are done"
+        );
+        let c = &w.cards[1];
+        assert_eq!(
+            (c.owner, c.column, c.attempt, c.started, c.project),
+            (Some(1), Column::Waiting, 0, 7, 0)
+        );
+        assert_eq!((c.title.as_str(), &c.after[..]), ("Tests for it", &[0][..]));
+        assert_eq!(c.paths, [Owned::new("tests")]);
+        assert_eq!(
+            journaled(
+                &w,
+                &Event::Held {
+                    agent: 1,
+                    card: 1,
+                    on: vec![0]
+                }
+            ),
+            1
+        );
+        // It starts nothing; other mail goes past it and it stays.
+        live.step(&mut w);
+        assert!(queued(&live, 1).is_empty());
+        assert_eq!(w.agents[1].card, None);
+        sent(&mut live, &mut w, 0, &msg("claude-1", "ask", "Which API?")).unwrap();
+        live.step(&mut w);
+        let q = queued(&live, 1);
+        assert_eq!(q.len(), 1);
+        assert!(
+            q[0].contains("Which API?") && !q[0].contains("Tests for it"),
+            "{q:?}"
+        );
+        assert_eq!(live.mail[1].len(), 1);
+        assert_eq!(live.mail[1][0].card, Some(1));
+        assert_eq!(w.cards[1].column, Column::Waiting);
+        // Its turn over and #1 done, it goes and the card begins.
+        finish(&mut live, &mut w, 1, "ok");
+        assert!(live.mail[1].len() == 1, "still waiting on #1");
+        w.cards[0].column = Column::Done;
+        live.step(&mut w);
+        assert!(live.mail[1].is_empty());
+        let q = queued(&live, 1);
+        assert!(
+            q.iter()
+                .any(|p| p.contains("[assign 1 · #2, try 1] from lead:\nTests for it")),
+            "{q:?}"
+        );
+        let c = &w.cards[1];
+        // Begun now: a step set the tick from the clock (0), not the 7 it
+        // opened at.
+        assert_eq!(
+            (c.owner, c.column, c.attempt, c.started),
+            (Some(1), Column::Working, 1, w.tick)
+        );
+        assert_ne!(w.tick, 7);
+        assert_eq!((w.agents[1].card, w.agents[1].attempt), (Some(1), 1));
+        assert_eq!(journaled(&w, &Event::Released { agent: 1, card: 1 }), 1);
+    }
+
+    #[test]
+    fn a_held_assign_lets_a_sleeper_sleep_and_one_on_done_cards_goes_at_once() {
+        let mut w = team(2);
+        w.agents[1].status = Status::Asleep;
+        w.agents[2].status = Status::Idle;
+        let mut live = idle_live(3);
+        live.post(&mut w, 0, &card("Base", "x")).unwrap();
+        sent(
+            &mut live,
+            &mut w,
+            0,
+            &after("claude-1", "Tests", json!([1])),
+        )
+        .unwrap();
+        assert_eq!(
+            w.agents[1].status,
+            Status::Asleep,
+            "nothing to wake for yet"
+        );
+        // What it waits on is done: no hold, it goes now.
+        w.cards[0].column = Column::Done;
+        let got = sent(&mut live, &mut w, 0, &after("claude-2", "Docs", json!([1]))).unwrap();
+        assert_eq!(got, "delivered as message 2; claude-2 starts on it now");
+        assert_eq!(
+            (w.cards[2].owner, w.cards[2].column),
+            (Some(2), Column::Waiting)
+        );
+        let held = |w: &World| {
+            (w.journal.iter())
+                .filter(|e| matches!(e.event, Event::Held { .. }))
+                .count()
+        };
+        assert_eq!(held(&w), 1, "only the first was held");
+        live.step(&mut w);
+        assert_eq!(w.cards[2].column, Column::Working);
+        assert_eq!(w.agents[2].card, Some(2));
+        // #1 is done now, but a sleeper takes nothing until it wakes.
+        live.step(&mut w);
+        assert_eq!(w.cards[1].column, Column::Waiting, "asleep: nothing taken");
+    }
+
+    #[test]
+    fn a_posted_card_after_another_is_neither_offered_nor_claimed_until_that_is_done() {
+        let mut w = team(2);
+        let mut live = idle_live(3);
+        live.post(&mut w, 0, &card("Base", "x")).unwrap();
+        let got = live
+            .post(&mut w, 0, &with_after(card("Tests", "y"), json!([1])))
+            .unwrap();
+        assert_eq!(
+            got,
+            "posted as #2; it waits on #1, and an idle worker will be offered it once they are done"
+        );
+        assert_eq!(w.cards[1].after, [0]);
+        assert_eq!(live.open(&w, 0).collect::<Vec<_>>(), [0]);
+        assert_eq!(
+            live.claim(&mut w, 1, &json!({ "card": 2 })).unwrap_err(),
+            "#2 waits on #1; pick a card that is ready (board with ready: true)"
+        );
+        w.cards[0].column = Column::Failed;
+        assert!(live.open(&w, 0).next().is_none());
+        w.cards[0].column = Column::Done;
+        assert_eq!(live.open(&w, 0).collect::<Vec<_>>(), [1]);
+        // Held for someone by an assign: nobody else's.
+        w.cards[1].owner = Some(2);
+        assert!(live.open(&w, 0).next().is_none());
+        assert_eq!(
+            live.claim(&mut w, 1, &json!({ "card": 2 })).unwrap_err(),
+            "#2 is assigned to claude-2; pick another"
+        );
+        w.cards[1].owner = None;
+        live.claim(&mut w, 1, &json!({ "card": 2 })).unwrap();
+        assert_eq!(w.cards[1].column, Column::Working);
+    }
+
+    #[test]
+    fn the_board_lists_every_card_with_what_it_waits_on_and_ready_lists_what_may_be_taken() {
+        let mut w = team(2);
+        let mut live = idle_live(3);
+        let board = |live: &Live, w: &World, args: Value| live.board(w, 0, &args);
+        assert_eq!(board(&live, &w, Value::Null).unwrap(), "the board is empty");
+        assert_eq!(
+            board(&live, &w, json!({ "ready": true })).unwrap(),
+            "no card is ready to take"
+        );
+        live.post(&mut w, 0, &card("Base", "x")).unwrap();
+        live.post(&mut w, 0, &with_after(card("Tests", "y"), json!([1])))
+            .unwrap();
+        sent(
+            &mut live,
+            &mut w,
+            0,
+            &after("claude-1", "Docs", json!([1, 2])),
+        )
+        .unwrap();
+        let all = "Open:\n#1 Base (posted by lead)\n#2 Tests (posted by lead; waits on #1)\n\n\
+                   Taken:\n#3 Docs (assigned to claude-1; waits on #1, #2)";
+        assert_eq!(board(&live, &w, Value::Null).unwrap(), all);
+        assert_eq!(board(&live, &w, json!({ "ready": false })).unwrap(), all);
+        assert_eq!(
+            board(&live, &w, json!({ "ready": true })).unwrap(),
+            "Ready:\n#1 Base (posted by lead)\n\n1 more wait on cards not done yet; call \
+             board for them"
+        );
+        assert_eq!(
+            board(&live, &w, json!({ "ready": "yes" })).unwrap_err(),
+            "ready is true or false"
+        );
+        // #1 failed: what waits on it says so.
+        w.cards[0].column = Column::Failed;
+        w.cards[0].owner = Some(2);
+        w.cards[0].attempt = 1;
+        let got = board(&live, &w, Value::Null).unwrap();
+        assert!(
+            got.contains("#2 Tests (posted by lead; waits on #1, and #1 failed)\n"),
+            "{got}"
+        );
+        assert!(
+            got.ends_with("#3 Docs (assigned to claude-1; waits on #1, #2, and #1 failed)"),
+            "{got}"
+        );
+        assert_eq!(
+            board(&live, &w, json!({ "ready": true })).unwrap(),
+            "no card is ready to take\n\n1 more wait on cards not done yet; call board for them"
+        );
+        // Both done: every one may go.
+        w.cards[0].column = Column::Done;
+        w.cards[1].column = Column::Done;
+        w.cards[1].owner = Some(2);
+        assert!(
+            board(&live, &w, Value::Null)
+                .unwrap()
+                .ends_with("#3 Docs (assigned to claude-1; it begins with its next turn)")
+        );
+        assert_eq!(
+            board(&live, &w, json!({ "ready": true })).unwrap(),
+            "no card is ready to take"
+        );
+        // An assigned card is listed as any: one at work.
+        w.agents[2].status = Status::Idle;
+        sent(&mut live, &mut w, 0, &msg("claude-2", "assign", "Lint")).unwrap();
+        live.step(&mut w);
+        assert!(
+            board(&live, &w, Value::Null)
+                .unwrap()
+                .contains("#4 Lint (taken by claude-2)")
+        );
+    }
+
+    #[test]
+    fn a_card_handed_while_it_waits_is_held_for_its_new_worker_and_the_old_loses_its_assign() {
+        let mut w = team(2);
+        let mut live = idle_live(3);
+        live.post(&mut w, 0, &card("Base", "x")).unwrap();
+        sent(&mut live, &mut w, 0, &msg("claude-1", "inform", "fyi")).unwrap();
+        sent(
+            &mut live,
+            &mut w,
+            0,
+            &after("claude-1", "Tests", json!([1])),
+        )
+        .unwrap();
+        let mut args = msg("claude-2", "assign", "Tests, yours now");
+        args["card"] = json!(2);
+        let got = sent(&mut live, &mut w, 0, &args).unwrap();
+        assert!(got.starts_with("held as message 3 on #2"), "{got}");
+        let c = &w.cards[1];
+        assert_eq!(
+            (c.owner, c.column, c.attempt),
+            (Some(2), Column::Waiting, 0)
+        );
+        assert_eq!(live.mail[1].len(), 1, "its inform stays");
+        assert_eq!(live.mail[1][0].kind, MsgKind::Inform);
+        assert_eq!(
+            live.notes[1],
+            [
+                "Card #2 (Tests) went to claude-2: the assign for it that waited for you is \
+              withdrawn."
+            ]
+        );
+        assert_eq!(
+            (live.mail[2][0].card, live.mail[2][0].kind),
+            (Some(1), MsgKind::Assign)
+        );
+        assert_eq!(
+            journaled(
+                &w,
+                &Event::Held {
+                    agent: 2,
+                    card: 1,
+                    on: vec![0]
+                }
+            ),
+            1
+        );
+        // Handed to the one it waits for already: nobody else told.
+        let mut args = msg("claude-2", "assign", "Tests, still yours");
+        args["card"] = json!(2);
+        sent(&mut live, &mut w, 0, &args).unwrap();
+        assert!(live.notes[2].is_empty());
+        assert_eq!(w.cards[1].attempt, 0, "no try until it begins");
+    }
+
+    #[test]
+    fn a_card_failing_tells_the_leader_what_waits_on_it() {
+        let mut w = team(2);
+        let mut live = idle_live(3);
+        let c = with_card(&mut w, 1);
+        w.agents[1].attempt = w.cards[c].attempt;
+        // A card through waits on nothing any more.
+        live.post(&mut w, 0, &with_after(card("Tests", "y"), json!([c + 1])))
+            .unwrap();
+        live.post(&mut w, 0, &with_after(card("Docs", "z"), json!([c + 1])))
+            .unwrap();
+        w.cards[2].column = Column::Done;
+        let mut done = msg("lead", "done", "Could not");
+        done["outcome"] = json!("failed");
+        sent(&mut live, &mut w, 1, &done).unwrap();
+        assert_eq!(
+            live.notes[0],
+            [
+                "#2 wait on #1, which failed; they begin once it is done: hand it again, or tell \
+              the person."
+            ]
+        );
+        // The person fails it for good: they never begin.
+        live.notes[0].clear();
+        w.cards[c].attempt = TRIES;
+        assert!(w.capped(Cap::Tries, 0, c));
+        let item = w.open_inbox()[0];
+        assert!(live.decide_cap(&mut w, item, false));
+        assert!(
+            live.notes[0].iter().any(|n| n
+                == "#2 wait on #1, which failed; the person failed it for good, so they never \
+                    begin: tell the person."),
+            "{:?}",
+            live.notes[0]
+        );
+        // A yes says nothing of them; nor does a card nothing waits on.
+        let d = with_card(&mut w, 2);
+        w.agents[2].attempt = w.cards[d].attempt;
+        w.cards[d].attempt = TRIES;
+        w.cards[d].column = Column::Failed;
+        live.notes[0].clear();
+        assert!(w.capped(Cap::Tries, 0, d));
+        let item = *w.open_inbox().last().unwrap();
+        assert!(live.decide_cap(&mut w, item, true));
+        assert!(
+            !live.notes[0].iter().any(|n| n.contains("wait on")),
+            "{:?}",
+            live.notes[0]
+        );
+        let e = with_card(&mut w, 2);
+        w.agents[2].attempt = w.cards[e].attempt;
+        live.notes[0].clear();
+        sent(&mut live, &mut w, 2, &done).unwrap();
+        assert!(live.notes[0].is_empty(), "{:?}", live.notes[0]);
     }
 }

@@ -19,3 +19,8 @@ Since record 126 (2026-11-08) a claim is a try (`Card.attempt`, a posted
 card starts at 0), the card is done once its change is in rather than at
 its owner's turn end, and the `board` tool says a card failed or waits
 for review.
+
+Since record 126's F10 (2026-11-08) a card may wait on others (`after`):
+it is not offered or claimed until they are done, an assign to it waits
+on the card, and the `board` tool lists every card, posted or assigned,
+with what it waits on; `ready: true` only what may be taken now.

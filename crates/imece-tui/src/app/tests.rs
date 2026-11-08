@@ -679,12 +679,14 @@ pub(crate) fn asking_plan() -> (App, usize, AgentId) {
             tier: "cheap".into(),
             paths: vec![Owned::new("src/p.rs"), Owned::shared("docs")],
             body: "Fix it.\nThen test.".into(),
+            after: Vec::new(),
         },
         Planned {
             title: "Docs".into(),
             tier: "standard".into(),
             paths: Vec::new(),
             body: "Write them.".into(),
+            after: Vec::new(),
         },
     ];
     let item = app.world.propose(

@@ -61,6 +61,7 @@ While the first key of a chord waits for its second, the row lists what the seco
 | `&`  `:goto` | go to an agent or a project: type a name, `1`-`9` the nth on the list, `!` keeps only what needs you; `&#` turns to the cards |
 | `1`-`9` | on Home, or on a question's detail, with a question that offers answers at hand: pick one ([questions](../concepts/approvals-and-questions.md#questions-)); the digits do nothing else. The views they once opened are windows by name: `:board`, `:code`, `:timeline` ([board and code map](board-and-code-map.md), [timeline](timeline.md)); `:salon` and [`:home`](home.md) are the two views |
 | `[`  `]` | in the timeline's window: a column of 5 s · 30 s · 1 min |
+| `r` | in the board's window: only the cards ready to take (no card they wait on undone), again: all ([board](board-and-code-map.md#the-board)) |
 | `↑` `↓`  `j` `k` | select |
 | `gg`  `G`  `gd`  `gw` | first / last line · on Home: the first row to decide · the first at work |
 | `^d` `^u` `^f` `^b` | half a page / a page |

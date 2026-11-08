@@ -644,6 +644,7 @@ impl Live {
                 finished: 0,
                 attempt: 1,
                 breaker: Default::default(),
+                after: Vec::new(),
             });
             w.takes(id, card);
             w.story(Some(card), StoryEvent::Took { agent: id });

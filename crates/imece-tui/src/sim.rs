@@ -248,6 +248,12 @@ const FAIL_EVERY: u32 = 7;
 const SLOW_TICKS: u64 = 100;
 /// How rarely, a tick, the leader takes such a card away.
 const SLOW_ONE_IN: u64 = 10;
+/// One leader tick in this many assigns a card that waits on others
+/// before they are done, held for its worker (record 126, F10).
+const HOLD_ONE_IN: u64 = 4;
+/// One card in this many the leader posts waits on the newest card not
+/// through (record 126, F10).
+const AFTER_ONE_IN: u64 = 3;
 /// What a demo worker whose change failed its tests in the queue is told.
 const FIX_TESTS: &str = "fix the failing test and propose again";
 
@@ -670,6 +676,9 @@ enum Taken {
     Told,
     /// The leader handed it a card that failed or ran long (record 126).
     Handed,
+    /// What the card held for it waited on is done (record 126, F10): the
+    /// leader's assign, sent when it was held, goes now.
+    Released,
 }
 
 pub struct Sim {
@@ -2845,15 +2854,29 @@ impl Sim {
             finished: 0,
             attempt: 0,
             breaker: Default::default(),
+            after: Vec::new(),
         });
         id
     }
 
     /// The leader of `project` puts a card on the board.
     fn post(&mut self, w: &mut World, project: ProjectId, title: String) -> CardId {
+        self.post_after(w, project, title, Vec::new())
+    }
+
+    /// The leader of `project` puts a card on the board that waits on the
+    /// cards `after` (record 126, F10), as a live post with after.
+    fn post_after(
+        &mut self,
+        w: &mut World,
+        project: ProjectId,
+        title: String,
+        after: Vec<CardId>,
+    ) -> CardId {
         let t = w.tick;
         let leader = w.projects[project].leader;
         let card = self.new_card(w, project, title.clone());
+        w.cards[card].after = after;
         w.story(
             Some(card),
             StoryEvent::Posted {
@@ -2879,19 +2902,23 @@ impl Sim {
         let leader = w.projects[project].leader;
         let repo = w.projects[project].repo;
         let test = kit(project).test;
-        let titles: Vec<String> = (w.cards.iter())
+        let waiting: Vec<CardId> = (w.cards.iter())
             .filter(|c| c.project == project && c.column == Column::Waiting)
-            .map(|c| c.title.clone())
+            .map(|c| c.id)
             .collect();
-        let cards: Vec<Planned> = (titles.into_iter().enumerate())
-            .map(|(i, title)| Planned {
-                body: format!("{title}. Done when {test} passes."),
-                title,
+        // A card waits on the plan's places of the cards it waits on
+        // (record 126, F10), as a live leader writes them.
+        let place = |d: &CardId| waiting.iter().position(|c| c == d).map(|at| at + 1);
+        let cards: Vec<Planned> = (waiting.iter().enumerate())
+            .map(|(i, &c)| Planned {
+                body: format!("{}. Done when {test} passes.", w.cards[c].title),
+                title: w.cards[c].title.clone(),
                 tier: self.rng.pick(&Tier::ALL).wire().to_string(),
                 paths: repo
                     .get(i)
                     .map(|(file, _)| vec![Owned::new(file)])
                     .unwrap_or_default(),
+                after: w.cards[c].after.iter().filter_map(place).collect(),
             })
             .collect();
         let n = cards.len();
@@ -2958,10 +2985,14 @@ impl Sim {
                 format!("{}: {}", p.text, self.content.tests),
                 format!("{}: {}", p.text, self.content.docs),
             ];
-            let cards: Vec<String> = titles
-                .into_iter()
-                .map(|title| format!("#{}", self.post(w, project, title) + 1))
-                .collect();
+            // Its tests and its docs wait on the work itself (record 126,
+            // F10).
+            let mut posted: Vec<CardId> = Vec::new();
+            for title in titles {
+                let after = posted.first().map(|&c| vec![c]).unwrap_or_default();
+                posted.push(self.post_after(w, project, title, after));
+            }
+            let cards: Vec<String> = posted.iter().map(|&c| format!("#{}", c + 1)).collect();
             let n = cards.len().to_string();
             let said = crate::i18n::fill(self.content.posted, &[&n, &cards.join(", ")]);
             self.answer(w, leader, &said);
@@ -2982,11 +3013,18 @@ impl Sim {
         let waiting = w
             .cards
             .iter()
-            .filter(|c| c.project == project && c.column == Column::Waiting)
+            .filter(|c| c.project == project && c.column == Column::Waiting && c.owner.is_none())
             .count();
         if waiting < free && self.rng.one_in(3) {
             let title = (*self.rng.pick(self.content.titles)).to_string();
-            self.post(w, project, title);
+            // Now and then it needs the newest card not through first
+            // (record 126, F10).
+            let after = (w.cards.iter().rev())
+                .find(|c| c.project == project && !c.over())
+                .map(|c| vec![c.id])
+                .filter(|_| self.rng.one_in(AFTER_ONE_IN))
+                .unwrap_or_default();
+            self.post_after(w, project, title, after);
         }
         // Work waits and nobody is free: one more worker; a second one
         // only once the person said yes to a plan (record 114), as live.
@@ -3001,8 +3039,36 @@ impl Sim {
         {
             self.take(w, agent, card, Taken::Handed);
         }
+        // A card held for a worker goes once what it waited on is done
+        // and the worker is free, as live's held assign (record 126, F10).
+        let held: Vec<(CardId, AgentId)> = (w.cards.iter())
+            .filter(|c| c.project == project && c.column == Column::Waiting)
+            .filter_map(|c| Some((c.id, c.owner?)))
+            .collect();
+        for (card, agent) in held {
+            if w.ready(card) && Self::free(w, agent) {
+                self.take(w, agent, card, Taken::Released);
+            }
+        }
+        // Now and then the leader assigns a card before what it waits on is
+        // done: it is held for the worker.
+        if let Some(agent) = workers.iter().copied().find(|&a| Self::free(w, a))
+            && let Some(card) = (w.cards.iter())
+                .find(|c| {
+                    c.project == project
+                        && c.column == Column::Waiting
+                        && c.owner.is_none()
+                        && !w.ready(c.id)
+                        && w.blocked_on(c.id).is_none()
+                })
+                .map(|c| c.id)
+            && self.rng.one_in(HOLD_ONE_IN)
+        {
+            self.hold(w, agent, card);
+        }
         // At most two cards a tick, so the screen stays calm: the leader
-        // assigns one, or a worker takes one from the board.
+        // assigns one, or a worker takes one from the board; only one no
+        // other card holds back.
         for _ in 0..2 {
             let Some(agent) = workers.iter().copied().find(|&a| Self::free(w, a)) else {
                 break;
@@ -3010,7 +3076,12 @@ impl Sim {
             let Some(card) = w
                 .cards
                 .iter()
-                .find(|c| c.project == project && c.column == Column::Waiting)
+                .find(|c| {
+                    c.project == project
+                        && c.column == Column::Waiting
+                        && c.owner.is_none()
+                        && w.ready(c.id)
+                })
                 .map(|c| c.id)
             else {
                 break;
@@ -3087,11 +3158,16 @@ impl Sim {
                 let i = self.rng.below(free.len() as u64) as usize;
                 symbols.push(free.swap_remove(i));
             }
+            if how == Taken::Released {
+                w.begin(card, agent);
+            }
             let c = &mut w.cards[card];
-            c.owner = Some(agent);
-            c.column = Column::Working;
-            c.started = t;
-            c.attempt += 1;
+            if how != Taken::Released {
+                c.owner = Some(agent);
+                c.column = Column::Working;
+                c.started = t;
+                c.attempt += 1;
+            }
             // The card owns the files of its leases (record 114), as a live
             // assign names paths.
             c.paths = Vec::new();
@@ -3129,7 +3205,7 @@ impl Sim {
         if !lease.is_empty() {
             a.trace(t, format!("tool_use lonca.lease_acquire [{lease}]"));
         }
-        if how != Taken::Handed {
+        if !matches!(how, Taken::Handed | Taken::Released) {
             w.story(Some(card), StoryEvent::Took { agent });
         }
         match how {
@@ -3156,9 +3232,21 @@ impl Sim {
                 w.note(Event::Claimed { agent, card });
                 w.agents[agent].trace(t, format!("claim #{}", card + 1));
             }
+            // Its done answers no assign it knows the number of now.
+            Taken::Released => self.mind(agent).assigned = None,
             Taken::Told => {}
         }
         self.start(w, agent);
+    }
+
+    /// The leader of `card`'s project assigns it to `agent` before what it
+    /// waits on is done (record 126, F10): held for `agent`, the assign
+    /// sent now, the card begun once they are done (`Taken::Released`).
+    fn hold(&mut self, w: &mut World, agent: AgentId, card: CardId) {
+        let leader = w.projects[w.cards[card].project].leader;
+        w.hold(card, agent);
+        let said = format!("#{} {}", card + 1, w.cards[card].title);
+        self.send(w, leader, agent, MsgKind::Assign, &said, None);
     }
 
     /// Worker `id`'s change was applied: its leader tells its other
@@ -7911,8 +7999,9 @@ diff --git a/b.rs b/b.rs
 
     #[test]
     fn the_demo_fails_hands_again_comes_late_and_meets_the_breaker_as_live_does() {
-        // A run long enough for each (seeded: the same every time).
-        let (mut w, mut s) = world(1, 4, 0, 10, Lang::En);
+        // A run long enough for each (seeded: the same every time; a
+        // late done is rare by nature, one in a few thousand ticks).
+        let (mut w, mut s) = world(1, 4, 0, 20, Lang::En);
         let (mut failed, mut handed, mut late, mut capped) = (0, 0, 0, 0);
         for _ in 0..4000 {
             let n = w.journal.len();
@@ -8906,5 +8995,82 @@ diff --git a/b.rs b/b.rs
         w.agents[worker].card = Some(0);
         s.done(&mut w, worker);
         assert_eq!(s.extras.dones, 1);
+    }
+
+    #[test]
+    fn the_demo_s_cards_wait_on_others_and_a_held_assign_goes_once_they_are_done() {
+        let (mut w, mut s) = world(1, 3, 0, 4, Lang::En);
+        let mut began_early = Vec::new();
+        for _ in 0..1500 {
+            s.step(&mut w);
+            answer_all(&mut w, &mut s);
+            // Nothing waiting on a card not done has begun.
+            for c in &w.cards {
+                if c.column != Column::Waiting && !w.ready(c.id) {
+                    began_early.push(c.id);
+                }
+            }
+        }
+        assert!(began_early.is_empty(), "{began_early:?}");
+        let waits = w.cards.iter().filter(|c| !c.after.is_empty()).count();
+        assert!(waits > 0, "no card waited on another");
+        let count = |f: fn(&Event) -> bool| w.journal.iter().filter(|e| f(&e.event)).count();
+        let held = count(|e| matches!(e, Event::Held { .. }));
+        // Only a card that waits is held, on what it waits on.
+        for e in &w.journal {
+            if let Event::Held { on, .. } = &e.event {
+                assert!(!on.is_empty(), "held on nothing");
+            }
+        }
+        // Every card begun was taken, once a turn took it.
+        for c in w.cards.iter().filter(|c| c.column != Column::Waiting) {
+            assert!(
+                (c.story.iter()).any(|s| matches!(
+                    s.event,
+                    StoryEvent::Took { .. } | StoryEvent::Handed { .. }
+                )),
+                "#{} never taken",
+                c.id + 1
+            );
+        }
+        let released = count(|e| matches!(e, Event::Released { .. }));
+        assert!(held > 0 && released > 0, "held {held}, released {released}");
+        // Each card released was held first, for the agent that began it.
+        for e in &w.journal {
+            if let Event::Released { agent, card } = e.event {
+                assert!(w.journal.iter().any(|h| matches!(
+                    &h.event,
+                    Event::Held { agent: a, card: c, .. } if *a == agent && *c == card
+                )));
+            }
+        }
+    }
+
+    #[test]
+    fn the_demo_s_tests_and_docs_wait_on_the_work_and_its_plan_says_so() {
+        let (mut w, mut s) = world(1, 2, 0, 1, Lang::En);
+        let first = w.cards.len();
+        let t = w.tick;
+        w.plans.push(crate::model::Plan {
+            project: 0,
+            text: "Search".into(),
+            ready: t,
+        });
+        s.leader(&mut w, 0);
+        let after: Vec<&[CardId]> = w.cards[first..].iter().map(|c| &c.after[..]).collect();
+        assert_eq!(after, [&[][..], &[first][..], &[first][..]]);
+        // A plan of the waiting cards names them by place.
+        s.propose(&mut w, 0);
+        let p = w.projects[0].plan.proposal.as_ref().expect("a plan");
+        let at = |c: CardId| {
+            (w.cards.iter())
+                .filter(|c| c.project == 0 && c.column == Column::Waiting)
+                .position(|o| o.id == c)
+                .map(|i| i + 1)
+        };
+        let base = at(first).expect("waiting");
+        for c in first + 1..first + 3 {
+            assert_eq!(p.cards[at(c).unwrap() - 1].after, [base]);
+        }
     }
 }

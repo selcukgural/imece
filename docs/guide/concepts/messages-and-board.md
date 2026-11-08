@@ -90,8 +90,8 @@ The board is for work nobody has yet. For work one teammate should do, the leade
 
 | Tool | Who | What |
 | --- | --- | --- |
-| `post(title, body)` | everyone | puts a card on the project's board |
-| `board()` | everyone | lists the open cards, and who took the others |
+| `post(title, body)` | everyone | puts a card on the project's board; `after` names the cards it waits on |
+| `board()` | everyone | lists every card of the project, posted or assigned, the open ones apart, each with what it waits on; `ready: true` lists only the open cards a worker may take now |
 | `claim(card)` | workers only | takes an open card; the answer is its task |
 
 - An open card is **offered** to one idle worker at a time, as a turn of its own, with the title only (the body comes with the claim). It goes to the next worker only after that one's turn ended without taking it, so a card wakes each worker at most once, never a broadcast. An offer counts as a message-driven turn.
@@ -122,11 +122,23 @@ A card follows its change, not its worker's turns. It is at work until the worke
 
 The demo shows all four: every seventh first try fails, and its leader hands a failed card to another worker; such a card fails each try handed by itself, so its fourth waits for you, and the try you allow goes through. A change whose tests failed in the demo's queue fails them each round until you allow one more. Now and then the leader takes a card that has run long from its worker, whose turn then ends with a late `done`.
 
+## Cards that wait on others
+
+A card that needs another card's work first says so: `after: [2, 5]` on an `assign` or a `post` names the cards it waits on (at most 8, older cards of the same project). Until each of them is done:
+
+- **A posted card is not offered and cannot be claimed.** `claim` answers `#6 waits on #2, #5; pick a card that is ready (board with ready: true)`, and the `board` tool lists it as `#6 Tests (posted by lead; waits on #2, #5)`.
+- **An `assign` waits on its card.** The card opens at once, the worker's, untried; the leader hears `held as message 14 on #6: it waits on #2, #5, and claude-1 gets it once they are done`, and the journal `claude-1 gets #6 Tests after #2, #5`. Its other mail goes past it. Once the last of them is done, the assign goes like any (`[assign 14 · #6, try 1]`) and the journal says `claude-1 begins #6 Tests: what it waited on is done`. So the leader can assign a whole order at once. A card handed again while it waits (`card: 6`) is held for the new worker, and the old one's waiting assign is withdrawn.
+- **A failed card holds back what waits on it** until it is handed again and done: the board window marks the card `✕ #2 failed`, the `board` tool says `waits on #2, #5, and #2 failed`, and the leader hears `#6 wait on #2, which failed; they begin once it is done: hand it again, or tell the person.` A card you failed for good holds them back for ever, and the leader is told to tell you; no new card may wait on it.
+
+The board window marks a waiting card `⧗ after #2` (or `✕ #2 failed`), and one held for a worker `→ claude-1`; `r` there shows only the cards a worker may take now (`ready only: 3 waiting hidden`), `r` again all. A card's screen lists what it waits on, each `✓` done, `✕` failed or `⧗` not yet. In a plan, a card names the cards of the same plan it waits on by their place (`after: [1]`), and the plan's window says `after 1 above`.
+
+The demo shows it: a plan the person gives the leader posts its tests and its docs after the work itself, one card in three the leader posts waits on the newest card not through, and now and then the leader assigns a waiting card early, held for its worker until it may begin.
+
 ## The plan
 
 The first worker is cheap and you asked for work; before the leader hires a second one, you see what it means to do. It calls `plan(cards, cost)`: the cards it means to assign or post, each with a title, a tier, the paths it owns and a body, and what it expects them all to cost in dollars. The plan comes to TO DECIDE as one `▤` item (`lead: plans 3 cards for $1.20; enter reads it`), the journal says `lead planned 3 cards for $1.20; waits for your yes`, and the leader is told to end its turn; while the plan waits, the leader's mail waits with it ([mail waits](#mail-waits-with-an-agent-that-waits-on-you)) and `hire` answers `the person is reading your plan; end your turn, their yes starts your next`.
 
-- `enter` opens the plan whole: each card's number, title and tier, the paths it owns, its body; the expected cost beside what is left in the pot. Every word is the leader's, cleaned, never read as Markdown.
+- `enter` opens the plan whole: each card's number, title and tier, the paths it owns, the cards of the plan it waits on, its body; the expected cost beside what is left in the pot. Every word is the leader's, cleaned, never read as Markdown.
 - `a` says yes: the leader hears `The person said yes to your plan: hire and assign as planned` with its next prompt (at once when its turn is over) and may hire until its next plan; a new plan takes the yes back.
 - `r` says no: the plan is dropped and the leader hears `The person said no to your plan: ask them what they want, or make another plan`.
 - `n` writes to the leader instead: what you send closes the plan unanswered, and `hire` says so until a new plan has your yes (`the person answered your plan in words, not with a yes: make a new plan from what they said`). Any word of yours to the leader does the same.

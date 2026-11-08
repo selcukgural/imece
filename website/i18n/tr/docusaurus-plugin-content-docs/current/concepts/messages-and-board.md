@@ -90,8 +90,8 @@ Pano henüz kimsenin olmayan iş içindir. Belli bir ekip arkadaşının yapaca�
 
 | Araç | Kim | Ne |
 | --- | --- | --- |
-| `post(title, body)` | herkes | projenin panosuna bir kart asar |
-| `board()` | herkes | açık kartları ve diğerlerini kimin aldığını listeler |
+| `post(title, body)` | herkes | projenin panosuna bir kart asar; `after` beklediği kartları adlandırır |
+| `board()` | herkes | projenin asılmış ya da görev olarak verilmiş her kartını listeler, açıkları ayrı, her biri neyi beklediğiyle; `ready: true` yalnız bir işçinin şimdi alabileceği açık kartları listeler |
 | `claim(card)` | yalnız işçiler | açık bir kartı alır; yanıt, kartın görevidir |
 
 - Açık bir kart boşta bir işçiye bir anda birine, kendi turu olarak, yalnız başlığıyla **teklif edilir** (gövde claim ile gelir). O işçinin turu kartı almadan bitince bir sonraki işçiye gider; böylece bir kart her işçiyi en çok bir kez uyandırır, asla yayın değil. Bir teklif mesajla başlayan tur sayılır.
@@ -122,11 +122,23 @@ Bir kart işçisinin turlarını değil, değişikliğini izler. İşçinin `don
 
 Demo dördünü de gösterir: her yedinci ilk deneme başarısız olur ve lideri başarısız kartı başka bir işçiye verir; böyle bir kart kendiliğinden verilen her denemede yine başarısız olur, dördüncüsü sizi bekler, sizin verdiğiniz deneme geçer. Demonun kuyruğunda testleri başarısız olan bir değişiklik, siz bir tur daha verene kadar her turda yine başarısız olur. Arada bir lider uzun süren bir kartı işçisinden alır; o işçinin turu geç bir `done` ile biter.
 
+## Başka kartları bekleyen kartlar
+
+Önce başka bir kartın işine ihtiyacı olan kart bunu söyler: bir `assign` ya da `post` üzerindeki `after: [2, 5]` beklediği kartları adlandırır (en çok 8, aynı projenin daha eski kartları). Her biri bitene dek:
+
+- **Asılmış kart önerilmez ve alınamaz.** `claim` `#6 waits on #2, #5; pick a card that is ready (board with ready: true)` diye yanıtlar, `board` aracı onu `#6 Tests (posted by lead; waits on #2, #5)` diye listeler.
+- **Bir `assign` kartında bekler.** Kart hemen açılır, işçinindir, henüz denenmemiştir; lider `held as message 14 on #6: it waits on #2, #5, and claude-1 gets it once they are done` yanıtını alır, günlük `claude-1 alacak: #6 Tests, #2, #5 bitince` der. İşçinin öteki postası onun yanından geçer. Sonuncusu da bitince görev her görev gibi gider (`[assign 14 · #6, try 1]`) ve günlük `claude-1 başladı: #6 Tests, beklediği bitti` der. Böylece lider bütün bir sırayı tek seferde verebilir. Beklerken yeniden verilen bir kart (`card: 6`) yeni işçi için tutulur, eskisinin bekleyen görevi geri çekilir.
+- **Başarısız bir kart onu bekleyenleri tutar**, yeniden verilip bitene dek: pano penceresi kartı `✕ #2 başarısız` diye işaretler, `board` aracı `waits on #2, #5, and #2 failed` der, lider `#6 wait on #2, which failed; they begin once it is done: hand it again, or tell the person.` notunu alır. Sizin kalıcı olarak başarısız saydığınız bir kart onları sonsuza dek tutar ve lidere size söylemesi söylenir; ona yeni bir kart bekletilemez.
+
+Pano penceresi bekleyen bir kartı `⧗ #2 bitince` (ya da `✕ #2 başarısız`) diye, bir işçi için tutulanı `→ claude-1` diye işaretler; orada `r` yalnız bir işçinin şimdi alabileceği kartları gösterir (`yalnız hazırlar: 3 bekleyen gizli`), yine `r` hepsini. Bir kartın ekranı beklediklerini listeler: her biri `✓` bitti, `✕` başarısız ya da `⧗` henüz değil. Bir planda kart, aynı planın beklediği kartlarını yerleriyle adlandırır (`after: [1]`) ve planın penceresi `yukarıdaki 1 bitince` der.
+
+Demo bunu gösterir: kişinin lidere verdiği bir iş, testlerini ve belgelerini işin kendisinden sonraya asar; liderin astığı her üç karttan biri henüz bitmemiş en yeni kartı bekler; arada bir lider bekleyen bir kartı erkenden verir, kart başlayabilene dek işçisi için tutulur.
+
 ## Plan
 
 İlk işçi ucuzdur ve işi siz istediniz; lider ikincisini almadan önce ne yapmayı düşündüğünü görürsünüz. `plan(cards, cost)` çağırır: görev vermeyi ya da panoya asmayı düşündüğü kartlar, her biri başlık, kademe, sahip olduğu yollar ve gövdeyle, ve hepsinin dolar olarak beklediği maliyeti. Plan KARAR BEKLEYEN'e tek bir `▤` ögesi olarak gelir (`lead: 3 kart planladı, $1.20; enter okur`), defter `lead 3 kart planladı, $1.20; onayınızı bekliyor` der ve lidere turunu bitirmesi söylenir; plan beklerken liderin postası da onunla bekler ([posta bekler](#sizi-bekleyen-ajanın-postası-da-bekler)) ve `hire`, `the person is reading your plan; end your turn, their yes starts your next` yanıtını verir.
 
-- `enter` planı tamamıyla açar: her kartın numarası, başlığı ve kademesi, sahip olduğu yollar, gövdesi; beklenen maliyet, bütçede kalanın yanında. Her sözcük liderindir, temizlenmiş, asla Markdown olarak okunmaz.
+- `enter` planı tamamıyla açar: her kartın numarası, başlığı ve kademesi, sahip olduğu yollar, planın beklediği kartları, gövdesi; beklenen maliyet, bütçede kalanın yanında. Her sözcük liderindir, temizlenmiş, asla Markdown olarak okunmaz.
 - `a` evet der: lider sonraki istemiyle (turu bitmişse hemen) `The person said yes to your plan: hire and assign as planned` duyar ve sonraki planına dek işe alabilir; yeni bir plan evet'i geri alır.
 - `r` hayır der: plan düşer ve lider `The person said no to your plan: ask them what they want, or make another plan` duyar.
 - `n` onun yerine lidere yazar: gönderdiğiniz planı yanıtsız kapatır ve yeni bir plan onayınızı alana dek `hire` bunu söyler (`the person answered your plan in words, not with a yes: make a new plan from what they said`). Lidere söylediğiniz her söz aynı şeyi yapar.

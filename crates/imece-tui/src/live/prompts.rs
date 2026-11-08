@@ -141,7 +141,12 @@ pub(super) fn system_prompt(
                      applied; a file every card must touch ends with the word shared \
                      (CHANGELOG.md shared). Work that any worker could \
                      pick up may go on the board instead (post); idle workers take it \
-                     themselves. A worker's done shows the person its change (its \
+                     themselves. A card that needs another's work first names it (after: \
+                     the card numbers, on an assign or a post, and in a plan by place): \
+                     it is not offered until they are done, and an assign with it waits \
+                     on the card and goes then, so assign the whole order at once; one \
+                     that waits on a failed card waits until that card is handed again \
+                     and done. A worker's done shows the person its change (its \
                      worktree's diff); they apply it to their checkout or reject it, and \
                      only an applied change is in the checkout you read. A card is \
                      done once its change is in; one sent back is at work again. A \

@@ -163,6 +163,14 @@ pub(super) fn plan_tool() -> Tool {
                             "paths": paths_schema(),
                             "body": { "type": "string", "maxLength": MAX_BODY,
                                       "description": "The task: what to do, when it is done." },
+                            "after": {
+                                "type": "array",
+                                "maxItems": AFTER_MAX,
+                                "items": { "type": "integer", "minimum": 1 },
+                                "description": "The cards of this plan it waits on, by \
+                                                their place in it (1 is the first), \
+                                                earlier ones only.",
+                            },
                         },
                         "required": ["title", "body"],
                         "additionalProperties": false,
@@ -418,11 +426,26 @@ pub(super) fn post_tool() -> Tool {
                     "maxLength": MAX_BODY,
                 },
                 "paths": paths_schema(),
+                "after": after_schema(),
             },
             "required": ["title", "body"],
             "additionalProperties": false,
         }),
     }
+}
+
+/// The `after` of an assign or a post (record 126, F10): the cards the
+/// new card waits on.
+fn after_schema() -> Value {
+    json!({
+        "type": "array",
+        "maxItems": AFTER_MAX,
+        "items": { "type": "integer", "minimum": 1 },
+        "description": "The cards this one waits on, by their numbers on the board \
+                        (#N, without #): it is not offered or claimed, and an assign \
+                        with it is held, until each of them is done. One that failed \
+                        holds it until it is handed again and done.",
+    })
 }
 
 /// The `paths` of an assign or a post: the paths the card owns.
@@ -452,8 +475,20 @@ pub(super) fn whoami_tool() -> Tool {
 pub(super) fn board_tool() -> Tool {
     Tool {
         name: "board".into(),
-        description: "Lists the cards on imece's board: open ones, and who took the others.".into(),
-        input: json!({ "type": "object", "properties": {}, "additionalProperties": false }),
+        description: "Lists the cards on imece's board: open ones, and who took or was \
+                      assigned the others, each with what it waits on."
+            .into(),
+        input: json!({
+            "type": "object",
+            "properties": {
+                "ready": {
+                    "type": "boolean",
+                    "description": "true lists only the open cards a worker may take now: \
+                                    those whose every card it waits on is done.",
+                },
+            },
+            "additionalProperties": false,
+        }),
     }
 }
 
@@ -519,6 +554,7 @@ pub(super) fn send_tool() -> Tool {
                                     sender.",
                 },
                 "paths": paths_schema(),
+                "after": after_schema(),
                 "card": {
                     "type": "integer",
                     "minimum": 1,
@@ -1746,5 +1782,40 @@ mod tests {
         assert_eq!(input["properties"]["cost"]["minimum"], 0);
         assert_eq!(input["properties"]["cost"]["type"], "number");
         assert!(tool.description.contains("second worker"));
+        // What a card waits on, by its place in the plan (record 126, F10).
+        let after = &card["properties"]["after"];
+        assert_eq!(
+            (after["type"].as_str(), after["maxItems"].as_u64()),
+            (Some("array"), Some(8))
+        );
+        assert_eq!(after["items"], json!({ "type": "integer", "minimum": 1 }));
+        assert!(after["description"].as_str().unwrap().contains("place"));
+    }
+
+    #[test]
+    fn an_assign_and_a_post_take_what_the_card_waits_on_and_the_board_takes_ready() {
+        for tool in [send_tool(), post_tool()] {
+            let after = &tool.input["properties"]["after"];
+            assert_eq!(*after, after_schema(), "{}", tool.name);
+            assert!(
+                !(tool.input["required"].as_array().unwrap()).contains(&json!("after")),
+                "{}",
+                tool.name
+            );
+        }
+        let after = after_schema();
+        assert_eq!(
+            (after["type"].as_str(), after["maxItems"].as_u64()),
+            (Some("array"), Some(8))
+        );
+        assert_eq!(after["items"], json!({ "type": "integer", "minimum": 1 }));
+        assert!(after["description"].as_str().unwrap().contains("held"));
+        let board = board_tool();
+        let ready = &board.input["properties"]["ready"];
+        assert_eq!(ready["type"], "boolean");
+        assert!(ready["description"].as_str().unwrap().contains("done"));
+        assert!(board.input["required"].is_null());
+        assert_eq!(board.input["additionalProperties"], false);
+        assert!(claim_tool().input["properties"]["after"].is_null());
     }
 }

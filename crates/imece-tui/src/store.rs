@@ -88,7 +88,9 @@ use crate::recall::{Hit, Line};
 /// 29 (2026-11-08): a card's circuit breaker (`cards.breaker`, record 126,
 /// F9), the `Tries` and `Rounds` inbox kinds and the `Capped`/`CapAnswered`
 /// events.
-pub const SCHEMA_VERSION: i64 = 29;
+/// 30 (2026-11-08): the cards a card waits on (`cards.waits_on`, record 126,
+/// F10) and the `Held`/`Released` events.
+pub const SCHEMA_VERSION: i64 = 30;
 /// Trace lines kept per agent, as the world keeps them.
 const TRACE_KEEP: usize = 200;
 /// The file's name under the state directory.
@@ -125,7 +127,7 @@ CREATE TABLE IF NOT EXISTS cards (
     id INTEGER PRIMARY KEY, project INTEGER NOT NULL, title TEXT NOT NULL,
     owner INTEGER, col TEXT NOT NULL, started INTEGER NOT NULL, finished INTEGER NOT NULL,
     paths TEXT NOT NULL DEFAULT '[]', attempt INTEGER NOT NULL DEFAULT 1,
-    breaker TEXT NOT NULL DEFAULT '{}');
+    breaker TEXT NOT NULL DEFAULT '{}', waits_on TEXT NOT NULL DEFAULT '[]');
 -- Read whole, in key order (`load`): no index beyond the key.
 CREATE TABLE IF NOT EXISTS story (
     card INTEGER NOT NULL, seq INTEGER NOT NULL, tick INTEGER NOT NULL,
@@ -645,6 +647,12 @@ impl Store {
                 "ALTER TABLE cards ADD COLUMN breaker TEXT NOT NULL DEFAULT '{}';",
             )?;
         }
+        if !self.has_column("cards", "waits_on")? {
+            // No card waited on another before.
+            self.conn.execute_batch(
+                "ALTER TABLE cards ADD COLUMN waits_on TEXT NOT NULL DEFAULT '[]';",
+            )?;
+        }
         if !self.has_column("journal", "marked")? {
             self.conn.execute_batch(
                 "ALTER TABLE journal ADD COLUMN marked INTEGER NOT NULL DEFAULT 0;",
@@ -1027,7 +1035,8 @@ impl Store {
             let card = &w.cards[c];
             tx.execute(
                 "INSERT OR REPLACE INTO cards (id, project, title, owner, col, started, finished, \
-                 paths, attempt, breaker) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                 paths, attempt, breaker, waits_on) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, \
+                 ?11)",
                 params![
                     n(card.id),
                     n(card.project),
@@ -1038,7 +1047,8 @@ impl Store {
                     big(card.finished),
                     serde_json::to_string(&card.paths).unwrap_or_default(),
                     card.attempt,
-                    serde_json::to_string(&card.breaker).unwrap_or_default()
+                    serde_json::to_string(&card.breaker).unwrap_or_default(),
+                    serde_json::to_string(&card.after).unwrap_or_default()
                 ],
             )?;
         }
@@ -1407,6 +1417,7 @@ impl Store {
                 &card.paths,
                 card.attempt,
                 card.breaker,
+                &card.after,
             ));
             if s.cards.get(c) != Some(&h) {
                 plan.cards.push(c);
@@ -1735,8 +1746,8 @@ impl Store {
             }
         }
         let mut st = conn.prepare(
-            "SELECT id, project, title, owner, col, started, finished, paths, attempt, breaker \
-             FROM cards ORDER BY id",
+            "SELECT id, project, title, owner, col, started, finished, paths, attempt, breaker, \
+             waits_on FROM cards ORDER BY id",
         )?;
         for row in st.query_map([], |r| {
             Ok(Card {
@@ -1753,11 +1764,18 @@ impl Store {
                 attempt: r.get(8)?,
                 breaker: serde_json::from_str(&r.get::<_, String>(9)?)
                     .map_err(|e| bad(format!("breaker: {e}")))?,
+                after: serde_json::from_str(&r.get::<_, String>(10)?)
+                    .map_err(|e| bad(format!("after: {e}")))?,
             })
         })? {
             let c = row?;
             if c.id != w.cards.len() {
                 return Err(bad(format!("card {} is out of order", c.id)));
+            }
+            // Only an older card: none waits on itself, through others or
+            // not, and every one it names is there.
+            if let Some(d) = c.after.iter().find(|&&d| d >= c.id) {
+                return Err(bad(format!("card {} waits on a later card, {d}", c.id)));
             }
             w.cards.push(c);
         }
@@ -2273,6 +2291,7 @@ mod tests {
                     finished: 0,
                     attempt: 3,
                     breaker: Default::default(),
+                    after: Vec::new(),
                 },
                 Card {
                     id: 1,
@@ -2293,6 +2312,7 @@ mod tests {
                     finished: 0,
                     attempt: 0,
                     breaker: Default::default(),
+                    after: Vec::new(),
                 },
                 Card {
                     id: 2,
@@ -2307,6 +2327,7 @@ mod tests {
                     finished: 9,
                     attempt: 1,
                     breaker: Default::default(),
+                    after: Vec::new(),
                 },
             ],
             journal: vec![
@@ -3095,6 +3116,7 @@ mod tests {
                         finished: 0,
                         attempt: 1,
                         breaker: Default::default(),
+                        after: Vec::new(),
                     })
                 }),
             ),
@@ -4200,13 +4222,13 @@ mod tests {
                 )
                 .unwrap();
             assert_eq!(
-                version, "29",
+                version, "30",
                 "the sent table, the Fault kind, archives, restores, start points, standing yes, the \
                  recall index, forks, paid kinds, reviews, no vendor, the check on a change, what \
                  it cost, the paths a card owns, the plan gate, a project's Lonca repository, \
-                 a card's attempts and its breaker: an older imece knows none"
+                 a card's attempts, its breaker and what it waits on: an older imece knows none"
             );
-            assert_eq!(SCHEMA_VERSION, 29);
+            assert_eq!(SCHEMA_VERSION, 30);
         }
         let back = Store::open(&path)
             .unwrap()
@@ -5272,6 +5294,59 @@ mod tests {
     }
 
     #[test]
+    fn a_file_of_schema_29_gets_what_cards_wait_on_and_keeps_it() {
+        let d = dir("schema29");
+        std::fs::create_dir_all(&d).unwrap();
+        let path = d.join(FILE);
+        {
+            // A whole file as schema 29 wrote it: no card waits on another.
+            let mut store = Store::open(&path).unwrap();
+            assert!(store.save(&world(), &kept().kept()).unwrap());
+            store
+                .raw()
+                .execute_batch(
+                    "ALTER TABLE cards DROP COLUMN waits_on;
+                     UPDATE meta SET value = '29' WHERE key = 'schema_version';",
+                )
+                .unwrap();
+        }
+        let mut store = Store::open(&path).unwrap();
+        let back = store.load(100).unwrap().expect("a world");
+        assert!((back.world.cards.iter()).all(|c| c.after.is_empty()));
+        // What a card waits on is saved and comes back, in its order.
+        let k = back.found();
+        let mut w = back.world;
+        let last = w.cards.len() - 1;
+        w.cards[last].after = vec![0, 1];
+        assert!(store.save(&w, &k.kept()).unwrap(), "saved");
+        let back = store.load(100).unwrap().expect("a world");
+        assert_eq!(back.world.cards[last].after, [0, 1]);
+        assert!(!store.save(&w, &k.kept()).unwrap(), "nothing moved");
+        // A card waiting on itself, or on no JSON, is a file imece did not
+        // write.
+        for (bad, says) in [
+            (
+                format!("'[{last}]'"),
+                format!("card {last} waits on a later card, {last}"),
+            ),
+            ("'x'".to_string(), "after".to_string()),
+        ] {
+            store
+                .raw()
+                .execute_batch(&format!(
+                    "UPDATE cards SET waits_on = {bad} WHERE id = {last};"
+                ))
+                .unwrap();
+            let why = match store.load(100) {
+                Err(e) => e.to_string(),
+                Ok(_) => panic!("a file imece did not write loaded"),
+            };
+            assert!(why.contains(&says), "{why}");
+        }
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
     fn an_agent_comes_back_at_its_cards_try() {
         let d = dir("tries");
         std::fs::create_dir_all(&d).unwrap();
@@ -5403,6 +5478,7 @@ mod tests {
                     tier: "cheap".into(),
                     paths: vec![crate::paths::Owned::new("src/p.rs")],
                     body: "Fix it.".into(),
+                    after: Vec::new(),
                 }],
                 cost: 12_500,
                 tick: 7,
