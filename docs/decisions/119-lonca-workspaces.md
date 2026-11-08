@@ -154,9 +154,20 @@ no daemon (a real run found this; `diff` has no JSON for it). **One with changes
 a live session to count them**: after `session end` it says `unauthenticated` (probed).
 So what can not be read is what holds something: `Orphan.unread` is not clean, the
 window says it may hold work, `a` passes it by and `d` asks `y`.
+Each such `lonca diff` under a dead token is an `auth_failure` in the daemon's
+`security.log` (lonca `010ba7e`), so a session the daemon says is over is read
+first (`Place::session_at`: the workspace's `session` id, looked up in
+`status.sessions` as the person): one that left work no proposal carries has its
+count there (`unproposed.total`, recorded at `session end`), and no command runs
+under its token. One that left nothing reads `null`, as one that never reported
+does (probed: a clean end, an end with every change proposed and an expiry all
+read `null`), so those still go through `lonca diff`: a clean one says so locally,
+one with changes is unread and noted once by the daemon. lonca#189 asks for a
+clean report to read as `total: 0`, which would end that too.
 `clear_workspace` reads again when it removes: without the person's yes only `Some(0)`
-goes. Its session ends first, one over saying so; its proposals are in the store and
-do not go with it. Its teardown script runs as a worktree's does.
+goes. Its session ends first unless the daemon says it is over (`Place::ended`),
+where `session end` would only be refused under the dead token; its proposals are
+in the store and do not go with it. Its teardown script runs as a worktree's does.
 
 **The demo** (record 31). A worker hired on a project on Lonca has
 `Agent.workspace`, the trace line and the focus's `· workspace of lonca NAME`;

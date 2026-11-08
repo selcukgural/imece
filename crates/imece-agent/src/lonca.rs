@@ -312,12 +312,18 @@ impl Place {
         self.run(workspace, &args, BEAT_WAIT).map(|_| ())
     }
 
-    /// How many files `workspace` has that differ from its base, as
-    /// `lonca diff` counts them. No change is told without the daemon; what
+    /// How many files `workspace` has that differ from its base. A
+    /// session that ended with work no proposal carries left its count with
+    /// the daemon, which says it without the session's token. Else as
+    /// `lonca diff` counts them: no change is told without the daemon; what
     /// changed is counted by it under the session's token, so a workspace
-    /// with changes and its session over says none: it holds something,
-    /// and nobody can say what.
+    /// with changes and its session over says none (and the daemon notes a
+    /// dead token): it holds something, and nobody can say what.
     pub fn left_in(&self, workspace: &Path) -> Option<usize> {
+        let ended = self.session_at(workspace).filter(|s| !s.active);
+        if let Some(total) = ended.and_then(|s| s.unproposed) {
+            return Some(total);
+        }
         let said = self.run(workspace, &[OsStr::new("diff")], BEAT_WAIT).ok()?;
         if said.trim() == NO_CHANGES {
             return Some(0);
@@ -325,6 +331,23 @@ impl Place {
         let facts: Value = serde_json::from_str(&said).ok()?;
         let lists = ["added_files", "modified_files", "deleted_files"];
         (lists.iter()).try_fold(0, |n, list| Some(n + facts[list].as_array()?.len()))
+    }
+
+    /// Whether the daemon says the session of `workspace` is over: then its
+    /// token is dead, and a command under it only fails. `false` when it can
+    /// not say.
+    pub fn ended(&self, workspace: &Path) -> bool {
+        self.session_at(workspace).is_some_and(|s| !s.active)
+    }
+
+    /// What the daemon says, to the person, of the session the workspace
+    /// at `dir` names; none when it can not say. The file names the
+    /// session and proves nothing: the daemon's word is read.
+    fn session_at(&self, dir: &Path) -> Option<SessionEnd> {
+        let file = workspace_file(dir)?;
+        let (id, repo) = (file["session"].as_str()?, file["repo"].as_str()?);
+        let status = self.open().ok()?.status(repo).ok()?;
+        (status.sessions.into_iter()).find(|s| s.id.as_deref() == Some(id))
     }
 
     /// Who the person is here: a name that can be a file's.
@@ -1020,9 +1043,18 @@ fn leases_of(v: &Value) -> Option<Vec<Lease>> {
 /// When a session of an agent's ends.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SessionEnd {
+    /// Its id, which a workspace names.
+    pub id: Option<String>,
     /// Its name, as Lonca took it: see [`agent_word`].
     pub agent: String,
     pub expires_ms: i64,
+    /// Whether it is alive. One not said is taken as alive: its token is
+    /// then tried, as before Lonca said it.
+    pub active: bool,
+    /// How many files the workspace held, when the session last stopped
+    /// or ended, that no proposal carries; none when nothing was recorded
+    /// (nothing left, or nobody reported it).
+    pub unproposed: Option<usize>,
 }
 
 /// An operation waiting for a human.
@@ -1094,8 +1126,11 @@ impl Status {
 impl SessionEnd {
     fn of(v: &Value) -> Option<SessionEnd> {
         Some(SessionEnd {
+            id: v["id"].as_str().map(str::to_string),
             agent: v["agent"].as_str()?.to_string(),
             expires_ms: v["expires_ms"].as_i64()?,
+            active: v["active"].as_bool() != Some(false),
+            unproposed: (v["unproposed"]["total"].as_u64()).and_then(|n| usize::try_from(n).ok()),
         })
     }
 }
@@ -1532,6 +1567,66 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         let (place, dir) = program("echo 'lonca: unauthenticated: gone' >&2; exit 1");
         assert!(matches!(place.stand_up(&dir), Err(Failed::Said(_))));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A workspace in a folder of its own naming session `ses_1` of `demo`,
+    /// a daemon whose status lists `sessions`, and a `lonca` program that
+    /// says `body`.
+    fn ended_at(sessions: Value, body: &str) -> (Place, PathBuf, crate::lonca_fake::Daemon) {
+        let d = crate::lonca_fake::Daemon::start(PROTOCOL, move |_| {
+            let mut v = crate::lonca_fake::status(&[]);
+            v["sessions"] = sessions.clone();
+            Ok(v)
+        });
+        d.sign_in();
+        let (mut place, dir) = program(body);
+        place.socket = d.place.socket.clone();
+        place.humans = d.place.humans.clone();
+        place.human = d.place.human.clone();
+        std::fs::create_dir_all(dir.join(".lonca")).unwrap();
+        let file = json!({"repo": "demo", "session": "ses_1"});
+        std::fs::write(dir.join(WORKSPACE_FILE), file.to_string()).unwrap();
+        (place, dir, d)
+    }
+
+    fn session_json(id: &str, active: bool, unproposed: Option<u64>) -> Value {
+        let unproposed = unproposed
+            .map(|total| json!({"paths": ["a"], "total": total, "rounds": 1, "seen_ms": 5}));
+        json!({"id": id, "agent": "w", "expires_ms": 9, "active": active,
+            "unproposed": unproposed})
+    }
+
+    #[test]
+    fn an_ended_session_s_record_is_its_workspace_s_count_and_runs_nothing() {
+        let says = r#"echo '{"added_files":["a"],"modified_files":[],"deleted_files":[]}'"#;
+        let (place, dir, _d) = ended_at(json!([session_json("ses_1", false, Some(3))]), says);
+        assert_eq!(place.left_in(&dir), Some(3));
+        assert!(
+            !dir.join("seen").exists(),
+            "no lonca diff under a dead token"
+        );
+        assert!(place.ended(&dir));
+        let _ = std::fs::remove_dir_all(&dir);
+        // No record, another session's record, or one alive: lonca diff counts.
+        for sessions in [
+            json!([session_json("ses_1", false, None)]),
+            json!([session_json("ses_2", false, Some(3))]),
+            json!([session_json("ses_1", true, Some(3))]),
+            json!([{"agent": "w", "expires_ms": 9}]),
+        ] {
+            let (place, dir, _d) = ended_at(sessions.clone(), says);
+            assert_eq!(place.left_in(&dir), Some(1), "{sessions}");
+            assert_eq!(seen(&dir).trim_end(), format!("{}|diff|", dir.display()));
+            let alive = sessions[0]["active"] != json!(false) || sessions[0]["id"] != "ses_1";
+            assert_eq!(place.ended(&dir), !alive, "{sessions}");
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+        // A daemon that can not be asked says nothing of the session.
+        let (mut place, dir, _d) = ended_at(json!([session_json("ses_1", false, Some(3))]), says);
+        place.socket = dir.join("nobody");
+        assert_eq!(place.left_in(&dir), Some(1));
+        assert!(!place.ended(&dir));
         let _ = std::fs::remove_dir_all(&dir);
     }
 
