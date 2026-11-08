@@ -938,6 +938,11 @@ mod tests {
             (Column::Review, 1, "(done, its change waits for the person)"),
             (Column::Verifying, 1, "(in Lonca's merge queue)"),
             (Column::Failed, 1, "(failed)"),
+            (
+                Column::Withdrawn,
+                1,
+                "(withdrawn by the leader; a done for it closes nothing)",
+            ),
             (Column::Working, 1, "(not finished)"),
             (Column::Working, 0, "(handed to lead)"),
             (Column::Done, 0, "(handed to lead)"),
