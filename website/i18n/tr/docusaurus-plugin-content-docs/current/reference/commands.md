@@ -27,6 +27,7 @@ description: imece'nin aldığı her `:` komutu; argümanları, karşılığı o
 | `:away [TIME\|off]` | — | | | | `30m` / `1h` / `off` |
 | `:board` | — | | | | |
 | `:budget USD` | — | `:b` | | | harcanan / bütçe |
+| `:checks [NAMES\|none]` | — | | | | elinizdeki değişikliğe evetin istediği denetimler |
 | `:clear [inbox\|journal]` | — | | | | |
 | `:close [NAME]` | — | `:c` | | | eldeki proje |
 | `:code` | — | | | | |
@@ -121,6 +122,10 @@ Pano, ekranın üstünde bir pencerede; `esc` kapatır. Bkz. [pano ve kod harita
 ### `:budget USD`
 
 Ajanlar çalışırken bütçeyi artırır ya da azaltır (`:b 80`). Değer, noktadan önce en çok dört rakam ve en çok iki ondalıkla dolardır (`80`, `2.50`); başkası: `80$ dolar değil; 80 ya da 2.50 gibi yaz`. Flaş `bütçe artık $80.00` der, günlük `bütçeyi $80.00 yaptın (önce $50.00)`, ve bütçenin azaldığı uyarısı yeniden çalabilir. Süren bir tur eski sınırında biter; sonraki yeni kalanla başlar, eskisi sınırına çarpmışsa yeni bir oturumda. Bütçe bütün projeler için tektir ve çalıştırmalar arasında saklanır. Menü notu: `(spent $3.10 of $20.00)`. Bkz. [bütçe ve sınırlar](../concepts/budget-and-limits.md).
+
+### `:checks [NAMES|none]`
+
+Lonca'daki bir projede, elinizdeki değişikliğe evetinizin Lonca'nın birleştirme kuyruğundan istediği, deponun politikasındaki denetimler: kartınınkiler (açık değişiklik, yoksa `W`'nin açtığı, yoksa Home'un satırı). `:checks api e2e` (aralarında virgül ya da boşluk) onları sıralı ve her birini bir kez belirler; `:checks none` hepsini kaldırır; yalın hâli onları söyler: `claude-1 değişikliğine evet, Lonca'dan ayrıca şunları ister: api, e2e`. Günlük ve kartın hikâyesi `#3 kartının denetimlerini değiştirdin: api, e2e` der, karar satırı da buna uyar. Reddedilince liste olduğu gibi kalır: `denetimler olduğu gibi kaldı: elde değişiklik yok: birini aç ya da Home'da seç`, `… kule Lonca'da değil; bir kartın denetimlerini yalnızca Lonca'nın birleştirme kuyruğu çalıştırır`, `… claude-1 değişikliği bir kart için yapılmadı`, `… Build bir denetim adı değil: a-z, 0-9, _ ve -, en çok 32, Lonca'nın kendi denetimlerinden biri de olmaz`, `… bir kart en çok 32 denetim ister`. Menü notu: kartın denetimleri ya da `hiçbiri`. Bkz. [kartın istediği denetimler](../concepts/messages-and-board.md#kartın-istediği-denetimler).
 
 ### `:clear [inbox|journal]`
 

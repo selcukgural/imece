@@ -27,6 +27,7 @@ A line that starts with `:` is a command to imece, not a message to an agent. Yo
 | `:away [TIME\|off]` | — | | | | `30m` / `1h` / `off` |
 | `:board` | — | | | | |
 | `:budget USD` | — | `:b` | | | spent X of Y |
+| `:checks [NAMES\|none]` | — | | | | the checks the yes to the change at hand asks for |
 | `:clear [inbox\|journal]` | — | | | | |
 | `:close [NAME]` | — | `:c` | | | the project at hand |
 | `:code` | — | | | | |
@@ -121,6 +122,10 @@ The board, in a window over the screen; `esc` closes it. See [board and code map
 ### `:budget USD`
 
 Raises or lowers the pot while agents run (`:b 80`). The value is dollars with at most two decimals, up to four digits before the point (`80`, `2.50`); anything else: `80$ is not dollars like 80 or 2.50`. The flash says `the budget is $80.00 now`, the journal `you set the budget to $80.00 (was $50.00)`, and the warning that the pot runs low may sound again. A turn under way finishes on its old cap; the next starts on the new remainder, in a new session if the old one had hit its cap. The pot is one for all projects and is kept between runs. The menu note: `(spent $3.10 of $20.00)`. See [budget and limits](../concepts/budget-and-limits.md).
+
+### `:checks [NAMES|none]`
+
+On a project on Lonca, the checks of the repository's policy that your yes to the change at hand asks Lonca's merge queue for: its card's (the change open, else the one `W` opened, else Home's row). `:checks api e2e` (commas or spaces between) sets them, sorted and each once; `:checks none` takes them away; bare it says them: `the yes to claude-1's change also asks Lonca for api, e2e`. The journal and the card's story say `you set #3's checks: api, e2e`, and the verdict line follows. Refused, the list kept: `the checks stay as they were: no change at hand: open one, or select it on Home`, `… kule is not on Lonca, and only Lonca's merge queue runs a card's checks`, `… claude-1's change was made for no card`, `… Build is not a check's name: a-z, 0-9, _ and -, at most 32, and not one of Lonca's own`, `… a card asks for at most 32 checks`. The menu note: the card's checks, or `none`. See [the checks a card asks for](../concepts/messages-and-board.md#the-checks-a-card-asks-for).
 
 ### `:clear [inbox|journal]`
 

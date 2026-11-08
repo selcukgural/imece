@@ -465,7 +465,9 @@ fn checks_schema() -> Value {
                         Lonca policy defines (verification.checks, e.g. api, e2e) that \
                         the card's change must pass too; the person's yes asks Lonca's \
                         merge queue to run them. Lonca's own (build, tests) run anyway. \
-                        A name the policy lacks stops the yes, so name only those it has.",
+                        A name the policy lacks stops the yes, so name only those it has. \
+                        With card (handing one again): they take the place of the card's \
+                        checks, [] for none; left out, the card keeps its own.",
     })
 }
 
@@ -608,8 +610,8 @@ pub(super) fn send_tool() -> Tool {
                                     to hand again (#N on the board), one that failed, \
                                     whose worker stopped, or that waits on the board; it \
                                     is its next try, the card keeps its title, paths and \
-                                    checks, and a done from whoever had it closes \
-                                    nothing now. \
+                                    checks (unless checks names new ones), and a done \
+                                    from whoever had it closes nothing now. \
                                     Refused while its change waits for the person, once \
                                     it is done, and past its third try until the person \
                                     allows another.",
