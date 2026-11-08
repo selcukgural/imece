@@ -169,11 +169,15 @@ Each such `lonca diff` under a dead token is an `auth_failure` in the daemon's
 first (`Place::session_at`: the workspace's `session` id, looked up in
 `status.sessions` as the person): one that left work no proposal carries has its
 count there (`unproposed.total`, recorded at `session end`), and no command runs
-under its token. One that left nothing reads `null`, as one that never reported
-does (probed: a clean end, an end with every change proposed and an expiry all
-read `null`), so those still go through `lonca diff`: a clean one says so locally,
-one with changes is unread and noted once by the daemon. lonca#189 asks for a
-clean report to read as `total: 0`, which would end that too.
+under its token. Since lonca#189 (`dfec4ff`) a clean end, or one with every change
+proposed, reads `total: 0`: the workspace is clean. `null` now means nobody
+reported since the session began or last proposed (it expired, or ended without
+its files): the workspace is unread, and still no `lonca diff` runs (#363), so an
+expired session's untouched workspace asks `y` too, the price of no dead token
+noted as an attack. The same holds for `done`'s gate (`proposed`): a worker whose
+session is over and said nothing is told to propose first, which the renewal
+before a prompt (`renew_seat`) leaves to a turn longer than its margin. A daemon older
+than `dfec4ff` reads `null` for a clean end, so its clean workspaces are unread.
 `clear_workspace` reads again when it removes: without the person's yes only `Some(0)`
 goes. Its session ends first unless the daemon says it is over (`Place::ended`),
 where `session end` would only be refused under the dead token; its proposals are
