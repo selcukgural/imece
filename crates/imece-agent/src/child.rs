@@ -15,7 +15,14 @@ use std::time::{Duration, Instant};
 pub const MAX_LINE: usize = 8 << 20;
 /// How much of stderr is kept (its last bytes), to say why a process died.
 pub const STDERR_TAIL: usize = 4096;
-/// How long a process gets to exit after SIGTERM before SIGKILL.
+/// How long a process gets to exit after SIGINT before SIGTERM: Claude
+/// Code ends a turn cleanly on SIGINT, with its result, and leaves it
+/// unfinished on SIGTERM.
+const INT_GRACE: Duration = Duration::from_millis(1200);
+/// How long it gets after SIGTERM before SIGKILL; with [`INT_GRACE`] as
+/// long as one SIGTERM's grace was.
+const TERM_GRACE: Duration = Duration::from_millis(300);
+/// How long a killed process gets to be reaped.
 const GRACE: Duration = Duration::from_millis(1500);
 const POLL: Duration = Duration::from_millis(20);
 /// Starts tried while the program is busy being written, and the wait
@@ -74,6 +81,8 @@ pub enum Out<'a> {
 pub struct Child {
     proc: Arc<Mutex<Proc>>,
     stdin: Option<ChildStdin>,
+    /// Asked to stop: SIGINT was sent, and is not sent twice.
+    stopping: bool,
 }
 
 /// The process and whether it was reaped. Its group's number is its pid,
@@ -158,7 +167,11 @@ impl Child {
             }
             on(Out::End(why));
         });
-        Ok(Child { proc, stdin })
+        Ok(Child {
+            proc,
+            stdin,
+            stopping: false,
+        })
     }
 
     /// Writes one line to the process's stdin.
@@ -178,12 +191,15 @@ impl Child {
         stdin.flush()
     }
 
-    /// Closes stdin and asks the whole group to stop, without waiting. Drop
-    /// waits a moment, then kills what is left. A process already reaped
-    /// is sent nothing.
+    /// Closes stdin and asks the whole group to stop with SIGINT, once,
+    /// without waiting. Drop waits a moment, then sends SIGTERM, then
+    /// kills what is left. A process already reaped is sent nothing.
     pub fn terminate(&mut self) {
         self.stdin = None;
-        signal(&self.proc, libc::SIGTERM);
+        if !self.stopping {
+            self.stopping = true;
+            signal(&self.proc, libc::SIGINT);
+        }
     }
 }
 
@@ -191,8 +207,12 @@ impl Drop for Child {
     fn drop(&mut self) {
         self.terminate();
         // The leader gone in time: what is left of the group, a tool that
-        // ignores SIGTERM for example, goes as it is reaped.
-        if reap(&self.proc, Some(GRACE)).is_none() {
+        // ignores the signals for example, goes as it is reaped.
+        if reap(&self.proc, Some(INT_GRACE)).is_some() {
+            return;
+        }
+        signal(&self.proc, libc::SIGTERM);
+        if reap(&self.proc, Some(TERM_GRACE)).is_none() {
             signal(&self.proc, libc::SIGKILL);
             reap(&self.proc, Some(GRACE));
         }
@@ -664,6 +684,86 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// `script` under `sh` in a folder of its own, dropped once it said
+    /// `started`: how long the drop took and what the script left there.
+    fn dropped(name: &str, script: &str) -> (Duration, Vec<String>) {
+        let dir = std::env::temp_dir().join(format!("imece-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut cmd = command("sh", &dir, &[]);
+        cmd.args(["-c", script]);
+        let (tx, rx) = mpsc::channel();
+        let child = Child::spawn(cmd, move |o| {
+            if let Out::Line(l) = o {
+                let _ = tx.send(l.to_string());
+            }
+            true
+        })
+        .unwrap();
+        assert_eq!(rx.recv_timeout(Duration::from_secs(10)).unwrap(), "started");
+        let start = Instant::now();
+        drop(child);
+        let took = start.elapsed();
+        let mut left: Vec<String> = std::fs::read_dir(&dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        left.sort();
+        let _ = std::fs::remove_dir_all(&dir);
+        (took, left)
+    }
+
+    #[test]
+    fn a_child_is_asked_with_sigint_first_and_gets_no_sigterm_when_it_goes() {
+        let (took, left) = dropped(
+            "int",
+            "trap 'touch int; exit 0' INT; trap 'touch term; exit 0' TERM; \
+             echo started; while :; do sleep 0.05; done",
+        );
+        assert_eq!(left, ["int"]);
+        assert!(took < INT_GRACE, "{took:?}");
+    }
+
+    #[test]
+    fn a_child_that_will_not_stop_on_sigint_gets_sigterm_after_its_grace() {
+        let (took, left) = dropped(
+            "term",
+            "trap 'touch int' INT; trap 'touch term; exit 0' TERM; \
+             echo started; while :; do sleep 0.05; done",
+        );
+        assert_eq!(left, ["int", "term"]);
+        assert!(took >= INT_GRACE, "{took:?}");
+        assert!(took < INT_GRACE + TERM_GRACE, "{took:?}");
+    }
+
+    #[test]
+    fn a_child_asked_to_stop_twice_is_sent_one_sigint() {
+        let dir = std::env::temp_dir().join(format!("imece-twice-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut cmd = command("sh", &dir, &[]);
+        cmd.args([
+            "-c",
+            "trap 'echo x >> ints' INT; echo started; while :; do sleep 0.05; done",
+        ]);
+        let (tx, rx) = mpsc::channel();
+        let mut child = Child::spawn(cmd, move |o| {
+            if let Out::Line(l) = o {
+                let _ = tx.send(l.to_string());
+            }
+            true
+        })
+        .unwrap();
+        assert_eq!(rx.recv_timeout(Duration::from_secs(10)).unwrap(), "started");
+        child.terminate();
+        thread::sleep(Duration::from_millis(300));
+        child.terminate();
+        drop(child);
+        let ints = std::fs::read_to_string(dir.join("ints")).unwrap();
+        assert_eq!(ints.lines().count(), 1, "{ints:?}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn a_reaped_leader_s_group_is_sent_nothing_any_more() {
         let (tx, rx) = mpsc::channel();
@@ -794,7 +894,7 @@ mod tests {
         child.terminate();
         let end = rx.recv_timeout(Duration::from_secs(10)).unwrap();
         assert!(
-            matches!(&end, Err(why) if why.contains("signal 15")),
+            matches!(&end, Err(why) if why.contains("signal 2")),
             "{end:?}"
         );
     }
