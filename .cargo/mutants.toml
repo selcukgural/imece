@@ -45,6 +45,10 @@
 # imece; a mutant in it fails or passes what it stands in for.
 # `lonca::read_session` joins open flags with `|` as `input::seen` does:
 # `^` gives the same number (`&` is caught by a link in the file's place).
+# `stand_in::main` only hands the process's own stdin and stdout to
+# `stand_in::answer`, which is tested; the binary's run of it is
+# `crates/imece-tui/tests/stand_in.rs`, a crate the mutants of this one
+# are not tested with.
 # A pattern matches the mutant's full name, `path:line:col: replace fn ...`.
 exclude_re = [
     "src/model.rs:.*: replace \\+ with \\* in free_project_name",
@@ -53,6 +57,7 @@ exclude_re = [
     "src/child.rs:.*: replace \\| with \\^$",
     "src/child.rs:.*: replace exited -> io::Result<bool> with Ok\\(false\\)$",
     "src/lonca_fake.rs:.*",
+    "src/stand_in.rs:.*: replace main -> i32 with ",
     "src/lonca.rs:.*: replace \\| with \\^ in read_session$",
     "src/child.rs:.*: replace bsd_parent ",
     "src/child.rs:.*: (replace|delete) .* in bsd_parent$",

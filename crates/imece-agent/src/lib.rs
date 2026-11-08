@@ -10,6 +10,7 @@ pub mod lonca;
 pub mod lonca_fake;
 pub mod mcp;
 pub mod run;
+pub mod stand_in;
 pub mod worktree;
 
 use std::io;
