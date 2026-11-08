@@ -2393,7 +2393,7 @@ mod tests {
                 why: Vec::new(),
                 redacted: Vec::new(),
                 cut: false,
-                verifies: Vec::new(),
+                verifies: Runs::default(),
                 on_trunk: true,
             },
         );
@@ -6722,7 +6722,7 @@ mod tests {
             why: vec!["unobserved_session".into()],
             redacted: Vec::new(),
             cut: false,
-            verifies: vec![],
+            verifies: Runs::default(),
             on_trunk: true,
         };
         app.world.change_proposed(a_change(1), proposal);

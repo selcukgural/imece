@@ -701,13 +701,6 @@ impl Client {
             .ok_or(Down::Protocol)
     }
 
-    /// The commands policy `policy` of `repo` runs on a change it has
-    /// approved, by their keys: none, nothing does.
-    pub fn verifies(&mut self, repo: &str, policy: &str) -> Result<Vec<String>, Down> {
-        let text = self.policy_file(repo, policy, POLICY_FILE)?;
-        Ok(text.map_or_else(Vec::new, |t| commands_in(&t)))
-    }
-
     /// The log from `from`, at most `limit` entries. With `wait` (at most
     /// [`LOG_WAIT_MOST`]) the daemon holds the request until an entry
     /// comes; an empty array means the time ran out.
@@ -779,8 +772,6 @@ fn down_of(code: Option<&str>) -> Down {
 const POLICY_FILE: &str = "lonca.toml";
 /// The rules beside it.
 const RULES_FILE: &str = "policy.cedar";
-/// The keys of `[verification]` that name a command.
-const COMMAND_KEYS: &[&str] = &["build", "test", "on_signature_change"];
 /// What a critical path costs a session nobody fully observes.
 const CRITICAL_KEY: &str = "unobserved_critical";
 /// The MCP servers whose tools do not taint a session.
@@ -809,25 +800,6 @@ fn from_base64(text: &str) -> Option<Vec<u8>> {
         }
     }
     Some(out)
-}
-
-/// The keys of `[verification]` in the settings `toml` that name a command:
-/// a line of its own, not a comment.
-fn commands_in(toml: &str) -> Vec<String> {
-    let mut section = "";
-    let mut found = Vec::new();
-    for line in toml.lines() {
-        let line = line.split('#').next().unwrap_or_default().trim();
-        if let Some(name) = line.strip_prefix('[') {
-            section = name.trim_end_matches(']').trim();
-        } else if section == "verification"
-            && let Some((key, _)) = line.split_once('=')
-            && COMMAND_KEYS.contains(&key.trim())
-        {
-            found.push(key.trim().to_string());
-        }
-    }
-    found
 }
 
 /// The settings `toml` with a critical path waiting for a human: for an
@@ -1009,7 +981,8 @@ impl Standing {
 /// it: the merge queue's, which a client never runs (record 122).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Evidence {
-    /// `syntax`, `build`, `tests`, ...: Lonca's word.
+    /// `syntax`, `build`, `tests`, ...: Lonca's word; a named check's
+    /// name.
     pub check: String,
     /// `pass`, `fail`, `error` or `skipped`.
     pub result: String,
@@ -1021,9 +994,13 @@ pub struct Evidence {
 
 impl Evidence {
     /// Fails closed on what the protocol promises; the rest may be null.
+    /// A named check goes by its name (`details.name`), as the Δ said it
+    /// would run.
     fn of(v: &Value) -> Option<Evidence> {
+        let check = v["check"].as_str()?;
+        let named = (check == "named").then(|| v["details"]["name"].as_str());
         Some(Evidence {
-            check: v["check"].as_str()?.to_string(),
+            check: named.flatten().unwrap_or(check).to_string(),
             result: v["result"].as_str()?.to_string(),
             exit: v["exit"].as_i64(),
             duration_ms: v["duration_ms"].as_u64(),
@@ -1132,6 +1109,11 @@ pub struct Pending {
     pub agent: Option<String>,
     pub task: Option<String>,
     pub paths: Vec<String>,
+    /// What the merge queue runs on the change after a yes, in Lonca's
+    /// words (`build`, `tests`, `extended`, then each named check it owes);
+    /// none when Lonca does not say: an operation that is no change, a
+    /// policy it can not read, or a daemon from before named checks.
+    pub runs: Option<Vec<String>>,
 }
 
 impl Status {
@@ -1254,6 +1236,7 @@ impl Pending {
             agent: text("agent"),
             task: text("task"),
             paths: texts("paths")?,
+            runs: texts("runs"),
         })
     }
 }
@@ -1510,32 +1493,6 @@ mod tests {
         for wrong in ["short", "nameless", "gone"] {
             assert_eq!(c.evidence("demo", wrong), Err(Down::Protocol), "{wrong}");
         }
-    }
-
-    #[test]
-    fn the_commands_of_a_policy_are_those_of_its_verification() {
-        let d = Daemon::start(PROTOCOL, |asked| {
-            Ok(match asked["method"].as_str() {
-                // `[verification]\ntest = "t"\n`
-                _ if asked["params"]["commit"] == "P" => json!([{
-                    "path": "lonca.toml", "content_b64": "W3ZlcmlmaWNhdGlvbl0KdGVzdCA9ICJ0Igo="
-                }]),
-                _ => json!([]),
-            })
-        });
-        d.sign_in();
-        let mut c = d.place.open().expect("opens");
-        assert_eq!(c.verifies("demo", "P"), Ok(vec!["test".to_string()]));
-        assert_eq!(c.verifies("demo", "other"), Ok(vec![]), "no settings file");
-    }
-
-    #[test]
-    fn a_command_is_a_key_of_verification_and_no_comment() {
-        let toml = "[a]\nbuild = \"no\"\n[verification]\n# build = \"x\"\n\
-                    test = \"t\" # note\nrequired = true\n  build = \"b\"\n\
-                    on_signature_change = \"o\"\nbare\n[b]\ntest = \"no\"\n";
-        assert_eq!(commands_in(toml), ["test", "build", "on_signature_change"]);
-        assert_eq!(commands_in(""), Vec::<String>::new());
     }
 
     #[test]
@@ -2088,9 +2045,39 @@ mod tests {
             agent: Some("a".into()),
             task: Some("T-1".into()),
             paths: vec!["src/a.rs".into()],
+            runs: Some(vec!["build".into(), "tests".into(), "api".into()]),
         };
         assert_eq!(got.pending, [want]);
         assert_eq!(got.policy, POLICY);
+    }
+
+    #[test]
+    fn a_proposal_says_what_runs_after_a_yes_and_nothing_said_is_none() {
+        let mut v = crate::lonca_fake::status(&[7])["pending"][0].clone();
+        let runs = |v: &Value| Pending::of(v).expect("a pending entry").runs;
+        assert_eq!(
+            runs(&v).as_deref(),
+            Some(&["build".to_string(), "tests".into(), "api".into()][..])
+        );
+        v["runs"] = json!([]);
+        assert_eq!(runs(&v), Some(vec![]), "nothing runs");
+        v["runs"] = Value::Null;
+        assert_eq!(runs(&v), None, "a policy Lonca can not read");
+        v["runs"] = json!(["build", 3]);
+        assert_eq!(runs(&v), None, "not words");
+        v.as_object_mut().unwrap().remove("runs");
+        assert_eq!(runs(&v), None, "a daemon from before named checks");
+    }
+
+    #[test]
+    fn a_named_check_goes_by_its_name() {
+        let of = |v: Value| Evidence::of(&v).expect("evidence").check;
+        let named = json!({"check": "named", "result": "pass", "details": {"name": "api"}});
+        assert_eq!(of(named), "api");
+        let nameless = json!({"check": "named", "result": "pass", "details": {}});
+        assert_eq!(of(nameless), "named", "Lonca's word when it names none");
+        let tests = json!({"check": "tests", "result": "pass", "details": {"name": "api"}});
+        assert_eq!(of(tests), "tests", "only a named check takes a name");
     }
 
     #[test]
@@ -2740,7 +2727,11 @@ mod tests {
         let change = newer.change.as_deref().expect("a proposal");
         let checks = c.evidence(&repo, change).expect("evidence");
         assert!(checks.iter().any(|e| e.check == "syntax"), "{checks:?}");
-        assert_eq!(c.verifies(&repo, &status.policy), Ok(vec![]), "the default");
+        assert_eq!(
+            newer.runs.as_deref(),
+            Some(&[][..]),
+            "the default runs nothing"
+        );
         assert!(matches!(
             place.approve(&repo, &dir, newer.seq),
             Err(Failed::Said(why)) if why.contains("nothing_pending")

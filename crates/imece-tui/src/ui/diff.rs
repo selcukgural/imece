@@ -794,15 +794,21 @@ pub(crate) fn verdict_spans(
         parts.push(Span::styled(t.verdict_stale.to_string(), dim()));
     }
     match &v.verifies {
-        Some(names) if names.is_empty() => {
+        Some(Runs::These(names)) if names.is_empty() => {
             parts.push(Span::styled(
                 t.verdict_verifies_none.to_string(),
                 fg(pal().warn),
             ));
         }
-        Some(names) => {
+        Some(Runs::These(names)) => {
             let said = fill(t.verdict_verifies, &[&clean(&names.join(", "))]);
             parts.push(Span::styled(said, dim()));
+        }
+        Some(Runs::Unsaid) => {
+            parts.push(Span::styled(
+                t.verdict_verifies_unsaid.to_string(),
+                fg(pal().warn),
+            ));
         }
         None => {}
     }
@@ -2048,17 +2054,17 @@ diff --git a/c.rs b/c.rs
              çalışma kopyana uymuyor · yama tam değil"
         );
         let runs = Verdict {
-            verifies: Some(vec!["build".into(), "test".into()]),
+            verifies: Some(Runs::These(vec!["build".into(), "api".into()])),
             ..a_verdict()
         };
         assert_eq!(
             said(&runs),
             "✓ ready to approve · ✓ cargo test · 2 files, both inside #6 · \
-             after your yes Lonca runs: build, test"
+             after your yes Lonca runs: build, api"
         );
         assert_eq!(verdict_spans(Lang::En, &runs, true, None)[6].style, dim());
         let nothing = Verdict {
-            verifies: Some(Vec::new()),
+            verifies: Some(Runs::These(Vec::new())),
             ..a_verdict()
         };
         assert_eq!(
@@ -2073,10 +2079,27 @@ diff --git a/c.rs b/c.rs
         assert_eq!(
             worded(Lang::Tr, &runs, true, None),
             "✓ onaya hazır · ✓ cargo test · 2 dosya, ikisi de #6 içinde · \
-             evetinden sonra Lonca şunları çalıştırır: build, test"
+             evetinden sonra Lonca şunları çalıştırır: build, api"
         );
         assert!(
             worded(Lang::Tr, &nothing, true, None).ends_with("evetinden sonra hiçbir şey çalışmaz")
+        );
+        let unsaid = Verdict {
+            verifies: Some(Runs::Unsaid),
+            ..a_verdict()
+        };
+        assert_eq!(
+            said(&unsaid),
+            "✓ ready to approve · ✓ cargo test · 2 files, both inside #6 · \
+             Lonca did not say what runs after your yes"
+        );
+        assert_eq!(
+            verdict_spans(Lang::En, &unsaid, true, None)[6].style,
+            fg(pal().warn)
+        );
+        assert!(
+            worded(Lang::Tr, &unsaid, true, None)
+                .ends_with("Lonca evetinden sonra neyin çalışacağını söylemedi")
         );
     }
 
@@ -2084,7 +2107,7 @@ diff --git a/c.rs b/c.rs
     fn the_verdict_line_wraps_at_the_width_and_keeps_every_part() {
         let v = Verdict {
             others: 1,
-            verifies: Some(vec!["build".into(), "test".into()]),
+            verifies: Some(Runs::These(vec!["build".into(), "api".into()])),
             ..a_verdict()
         };
         let one = verdict_lines(Lang::En, &v, 200);
@@ -2190,7 +2213,7 @@ diff --git a/c.rs b/c.rs
             why: vec!["unobserved_session".into(), "approvals=1".into()],
             redacted: Vec::new(),
             cut: false,
-            verifies: vec![],
+            verifies: Runs::default(),
             on_trunk: true,
         }
     }
@@ -2202,7 +2225,7 @@ diff --git a/c.rs b/c.rs
     #[test]
     fn what_runs_after_the_persons_yes_is_the_verdict_s_not_the_proposal_line_s() {
         let p = StoreProposal {
-            verifies: vec!["build".into(), "test".into()],
+            verifies: Runs::These(vec!["build".into(), "tests".into()]),
             ..a_proposal()
         };
         assert_eq!(proposal_lines(Lang::En, &p).len(), 1);
@@ -2237,7 +2260,7 @@ diff --git a/c.rs b/c.rs
         let p = StoreProposal {
             redacted: vec!["a.env".into(), "b.env".into()],
             cut: true,
-            verifies: vec![],
+            verifies: Runs::default(),
             ..a_proposal()
         };
         let lines = proposal_lines(Lang::En, &p);

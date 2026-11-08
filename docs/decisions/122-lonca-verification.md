@@ -17,13 +17,20 @@ with the change in `queue`; a second later `integrated`, evidence `syntax`, `bui
 `skipped`, the log `lonca verify: …` then its output.
 
 **Before the yes.** The Δ says what will run: `after your yes Lonca runs: build,
-test`, or `nothing runs after your yes: no build or test in lonca.toml`
-(`proposal_lines`, `StoreProposal.verifies`). A person approving knows whether
-anything stands behind the yes. The look reads the keys of `[verification]`
-(`Client::verifies`, `commands_in`: `build`, `test`, `on_signature_change`, a line of
-their own), kept per policy commit (`Kept.verifies`) and read only when a proposal
-waits. A line, not a gate: what can not be read reads as nothing, and is read again.
-A policy signed while a proposal waits shows on its next proposal.
+tests, api`, `nothing runs after your yes`, or `Lonca did not say what runs after
+your yes` (`verdict_spans`, `StoreProposal.verifies: Runs`). A person approving knows
+whether anything stands behind the yes. Since lonca#196 (`e7463d1`) the store says it
+itself: each `status.pending[]` entry carries `runs`, what the queue will run for the
+change under the policy in force, in its evidence's words (`build`, `tests`,
+`extended` for a change that reaches others, then each named check it owes), and
+`null` when the policy can not be read. `Pending.runs` takes it (a field missing, from
+an older daemon, or not a list of words is none), the offer carries the newest
+proposal's (`Runs::These`, else `Runs::Unsaid`, said in the warning colour, since
+nothing then promises a check). imece no longer reads `[verification]` itself: the
+earlier `Client::verifies` / `commands_in` read the keys of `lonca.toml` and could not
+know what `on_signature_change` or a named check owes one change. A line, not a gate.
+A named check's evidence (`check: "named"`, `details.name`) goes by its name in the
+journal line, as the Δ said it would run.
 
 **After it.** A look carries the changes imece waits on (`Asked`: those shown and those
 queued), and for each that `status` calls `integrated` or `rejected` it reads

@@ -1453,7 +1453,7 @@ mod tests {
             why: Vec::new(),
             redacted: Vec::new(),
             cut: false,
-            verifies: vec![],
+            verifies: Runs::default(),
             on_trunk: true,
         };
         app.world.change_proposed(a_change(1), proposal);
@@ -1597,7 +1597,7 @@ mod tests {
             why: Vec::new(),
             redacted: Vec::new(),
             cut: false,
-            verifies: vec![],
+            verifies: Runs::default(),
             on_trunk: true,
         };
         let mut w = team(1);

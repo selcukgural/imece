@@ -1451,7 +1451,12 @@ impl Sim {
             why: vec!["unobserved_session".to_string()],
             redacted: Vec::new(),
             cut: false,
-            verifies: vec!["build".into(), "test".into()],
+            // Each seventh comes from a policy Lonca could not read.
+            verifies: if n.is_multiple_of(7) {
+                Runs::Unsaid
+            } else {
+                Runs::These(vec!["build".into(), "tests".into()])
+            },
             on_trunk: !n.is_multiple_of(3),
         };
         w.change_proposed(change, proposal);
@@ -8804,11 +8809,35 @@ diff --git a/b.rs b/b.rs
     }
 
     #[test]
+    fn each_seventh_demo_proposal_has_lonca_say_nothing_of_what_runs() {
+        let (mut w, mut s, id) = a_proposal_waits();
+        for (before, runs) in [
+            (5, Runs::These(vec!["build".into(), "tests".into()])),
+            (6, Runs::Unsaid),
+            (13, Runs::Unsaid),
+        ] {
+            s.extras.proposed = before;
+            let (files, patch) = s.patch(&[]);
+            let change = Change {
+                agent: id,
+                title: "T".into(),
+                files,
+                patch,
+                runs: Vec::new(),
+                check: Check::None,
+                spend: None,
+            };
+            s.ready(&mut w, change);
+            assert_eq!(w.proposal_of(id).unwrap().verifies, runs, "after {before}");
+        }
+    }
+
+    #[test]
     fn a_demo_proposal_says_its_checks_and_each_fifth_fails_them() {
         let (mut w, mut s, id) = a_proposal_waits();
         assert_eq!(
             w.proposal_of(id).unwrap().verifies,
-            ["build".to_string(), "test".to_string()]
+            Runs::These(vec!["build".to_string(), "tests".to_string()])
         );
         let verified = |w: &World| {
             (w.journal.iter().rev()).find_map(|l| match &l.event {
@@ -8952,7 +8981,7 @@ diff --git a/b.rs b/b.rs
             why: Vec::new(),
             redacted: Vec::new(),
             cut: false,
-            verifies: Vec::new(),
+            verifies: Runs::default(),
             on_trunk: true,
         }
     }

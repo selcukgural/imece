@@ -2692,7 +2692,25 @@ pub struct Verdict {
     pub stale: bool,
     /// What Lonca runs after the person's yes (record 122); none off
     /// Lonca.
-    pub verifies: Option<Vec<String>>,
+    pub verifies: Option<Runs>,
+}
+
+/// What Lonca's merge queue runs on a proposal after the person's yes, as
+/// the store says it (`runs`, record 122): its words, `build`, `tests`,
+/// `extended`, then each named check the change owes.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub enum Runs {
+    These(Vec<String>),
+    /// Lonca did not say: a policy it can not read, or a daemon from
+    /// before named checks. Nothing promises a check then.
+    #[default]
+    Unsaid,
+}
+
+impl From<Option<Vec<String>>> for Runs {
+    fn from(said: Option<Vec<String>>) -> Runs {
+        said.map_or(Runs::Unsaid, Runs::These)
+    }
 }
 
 /// What became of a proposal, as the store says it (record 120).
@@ -2741,7 +2759,7 @@ pub struct StoreProposal {
     /// The daemon cut its patch.
     pub cut: bool,
     /// What Lonca's queue runs on it after the person's yes (record 122).
-    pub verifies: Vec<String>,
+    pub verifies: Runs,
     /// Its base is trunk as the last look saw it; a stale one is merged
     /// by the queue after the yes (record 125, step 4).
     pub on_trunk: bool,
@@ -8882,7 +8900,7 @@ mod tests {
             why: Vec::new(),
             redacted: Vec::new(),
             cut: false,
-            verifies: vec![],
+            verifies: Runs::default(),
             on_trunk: true,
         }
     }
@@ -9115,12 +9133,12 @@ mod tests {
         assert!(!v.clashes && v.ready);
         // On Lonca: what runs after the yes; a patch redacted or cut.
         let mut p = a_store_proposal(5);
-        p.verifies = vec!["build".into()];
+        p.verifies = Runs::These(vec!["build".into()]);
         let mut c = change(1, "T", &[("a", 1, 0)]);
         c.runs = w.changes[0].runs.clone();
         w.change_proposed(c.clone(), p.clone());
         let v = w.verdict(1).unwrap();
-        assert_eq!(v.verifies.as_deref(), Some(&["build".to_string()][..]));
+        assert_eq!(v.verifies, Some(Runs::These(vec!["build".to_string()])));
         assert!(!v.partial && !v.stale && v.ready);
         // Based before trunk: said, and still ready, for the queue merges it.
         p.on_trunk = false;

@@ -125,7 +125,7 @@ Lonca'nın sonra yaptığı, kim karar vermiş olursa olsun söylenir, kendi kab
 
 ### Lonca'da ne denetlenir {#what-is-checked-on-lonca}
 
-`.imece/check` workspace'te çalışmaz. Lonca'daki bir depo ne çalışacağını `lonca.toml`'daki `[verification]` ile söyler, Lonca'nın birleştirme kuyruğu da bunu onayından sonra birleşmiş ağaçta, korumalı alanda çalıştırır; imece hiçbir şey çalıştırmaz. Δ'nın hüküm satırı hangisi olduğunu söyler: `evetinden sonra Lonca şunları çalıştırır: build, test` ya da `evetinden sonra hiçbir şey çalışmaz`. Ayarlar imzalıdır, bu yüzden değiştirmek senin yapacağın bir `lonca policy set` işidir:
+`.imece/check` workspace'te çalışmaz. Lonca'daki bir depo ne çalışacağını `lonca.toml`'daki `[verification]` ile söyler, Lonca'nın birleştirme kuyruğu da bunu onayından sonra birleşmiş ağaçta, korumalı alanda çalıştırır; imece hiçbir şey çalıştırmaz. Δ'nın hüküm satırı, Lonca'nın o değişiklik için söylediği gibi, hangisi olduğunu söyler: `evetinden sonra Lonca şunları çalıştırır: build, tests`, `evetinden sonra hiçbir şey çalışmaz` ya da `Lonca evetinden sonra neyin çalışacağını söylemedi` (eski bir Lonca ya da okuyamadığı bir politika: o zaman hiçbir şey bir kontrol sözü vermez). `extended`, başka koda ulaşan bir değişiklik için `on_signature_change`'dir; politikanın adlandırılmış bir kontrolü (`verification.checks`) burada da, neyin çalıştığını söyleyen günlük satırında da adıyla görünür. Ayarlar imzalıdır, bu yüzden değiştirmek senin yapacağın bir `lonca policy set` işidir:
 
 ```toml
 [verification]
