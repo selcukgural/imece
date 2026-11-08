@@ -259,7 +259,11 @@ fn hook_settings(store: &Store) -> String {
         "matcher": "*",
         "hooks": [{
             "type": "command",
-            "command": format!("{} hook", shell_word(&store.program)),
+            "command": format!(
+                "{} hook --harness {}",
+                shell_word(&store.program),
+                crate::lonca::HARNESS
+            ),
             "onFailure": "block",
         }],
     }]);
@@ -1350,7 +1354,10 @@ mod tests {
             assert_eq!(hook["matcher"], "*", "{event}");
             let run = &hook["hooks"][0];
             assert_eq!(run["type"], "command", "{event}");
-            assert_eq!(run["command"], r"'/opt/my tools/lon'\''ca' hook", "{event}");
+            assert_eq!(
+                run["command"], r"'/opt/my tools/lon'\''ca' hook --harness claude-code",
+                "{event}"
+            );
             // A hook that can not reach the daemon stops the call.
             assert_eq!(run["onFailure"], "block", "{event}");
         }

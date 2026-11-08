@@ -54,6 +54,11 @@ const SEAT_WAIT: Duration = Duration::from_secs(120);
 /// How long a session lasts: Lonca's own most, `sessions.max_ttl_minutes`;
 /// a repository that allows less refuses it, in its words.
 const SEAT_TTL: &str = "8h";
+/// The harness a seat names in its signed `session.start` and its hook
+/// reads events with: Lonca grants an observation level only to the
+/// harness a session names, so a seat that named none would be
+/// `unobserved` even where the harness's hooks are locked.
+pub const HARNESS: &str = "claude-code";
 /// How long a decision gets: signed by the person, so the same finger.
 const DECIDE_WAIT: Duration = Duration::from_secs(120);
 /// The longest reason `reject` takes, in bytes.
@@ -272,6 +277,11 @@ impl Place {
             "--paths=**",
             "--ttl",
             SEAT_TTL,
+            "--harness",
+            HARNESS,
+            // imece brings the hooks and the MCP entry itself
+            // (`claude::hook_settings`), so Lonca writes none in the workspace.
+            "--no-setup",
             "--json",
         ]
         .map(OsStr::new)
@@ -1433,7 +1443,7 @@ mod tests {
             seen(&dir).trim_end(),
             format!(
                 "{}/trees|session start --repo=-kule --agent=claude-1 --paths=** --ttl 8h \
-                 --json --workspace {} --scratch {}|",
+                 --harness claude-code --no-setup --json --workspace {} --scratch {}|",
                 dir.display(),
                 at.display(),
                 scratch.display()
@@ -1448,6 +1458,11 @@ mod tests {
         let at = dir.join("trees/claude-1");
         place.sit_again(&seat_in(&at)).unwrap();
         let said = seen(&dir);
+        // A session that goes on names its harness as a new one does.
+        assert!(
+            said.contains(" --ttl 8h --harness claude-code --no-setup --json "),
+            "{said}"
+        );
         assert!(
             said.trim_end()
                 .ends_with(&format!("--json --continue {}|", at.display())),
