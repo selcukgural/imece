@@ -12,11 +12,14 @@ use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use imece_agent::lonca::{self, Client, Diff, Down, Failed, Place, Seat, Standing, TRUNK_REF};
+use imece_agent::Event as AgentEvent;
+use imece_agent::lonca::{
+    self, Client, Diff, Down, Failed, Hooks, Place, Seat, Standing, TRUNK_REF,
+};
 use imece_agent::worktree::{self, Forward};
 
 use super::Live;
-use super::Slot;
+use super::{Slot, apply};
 use crate::model::{
     Agent, AgentId, Attested, Behind, Cap, Change, ChangedFile, Check, Decision, ImportAsk, Landed,
     MsgKind, ProjectId, Role, StoreDown, StoreJob, StoreLease, StorePending, StoreProposal,
@@ -48,6 +51,31 @@ type Left = Vec<(String, String, i64)>;
 /// its next prompt: a turn should not run out of session halfway (record 119).
 pub(super) const SEAT_MARGIN: Duration = Duration::from_secs(30 * 60);
 
+/// How long after its harness started a session must have been bound
+/// before a look takes `bound_ms` `null` as hooks that never ran: the bind
+/// comes from its first hook, which may still be on its way.
+pub(super) const BIND_GRACE: Duration = Duration::from_secs(10);
+
+/// What a worker hears when it goes on after imece stopped it for hooks
+/// Lonca did not hear (lonca#190).
+pub(super) const SEAT_UNHOOKED: &str = "Lonca did not hear your hooks in your last session, so imece \
+                                        stopped it; a new Lonca session goes on in this workspace: \
+                                        your files and proposals are as they were, your leases are \
+                                        gone, so lease again before you edit. The new session stays \
+                                        tainted: a critical path is refused";
+
+/// Why a worker stopped whose session's hooks Lonca did not hear, as
+/// its row says it; the demo says the same.
+pub(crate) fn unheard_why(hooks: &Hooks) -> String {
+    let go_on = "write to it to go on under a new Lonca session";
+    match hooks {
+        Hooks::Missed(tool) => {
+            format!("Lonca saw a call to its {tool} tool that its hooks did not report: {go_on}")
+        }
+        _ => format!("Lonca never heard from its hooks: {go_on}"),
+    }
+}
+
 /// What a worker hears after its session was renewed.
 pub(super) const SEAT_RENEWED: &str = "your Lonca session ran out of time and a new one goes on in \
                                        this workspace: your files and proposals are as they were, \
@@ -75,8 +103,13 @@ struct Offer {
 /// What one look found.
 #[derive(Default)]
 struct Looked {
+    /// When it was asked: a harness started later is not what it saw.
+    asked: Option<Instant>,
     found: Found,
     left: Left,
+    /// Each repository looked at, with its agents whose live session's
+    /// hooks the daemon did not hear (lonca#190).
+    hooks: Vec<(String, Vec<(String, Hooks)>)>,
     /// What waits in each repository, by worker.
     offers: Vec<(ProjectId, Offer)>,
     /// Where every change of each repository stands.
@@ -467,6 +500,12 @@ pub(super) struct Watch {
     /// When the newest session of each repository's agents ends, as the
     /// last look read it; an agent not here is not known to be short.
     pub(super) ends: HashMap<(String, String), Instant>,
+    /// The agents of each repository whose live session's hooks the last
+    /// look of it did not hear: a worker's next start goes on under a new
+    /// session.
+    pub(super) unheard: HashMap<(String, String), Hooks>,
+    /// When each agent's harness last started (Claude Code's `init`).
+    pub(super) started: HashMap<AgentId, Instant>,
     /// A look is under way: never a second, a slow daemon gets no queue.
     out: bool,
     /// When the next look is due; none: at once.
@@ -486,6 +525,17 @@ impl Watch {
             let ms = u64::try_from(ms).unwrap_or(0);
             self.ends
                 .insert((repo, agent), now + Duration::from_millis(ms));
+        }
+    }
+
+    /// What a look heard of the hooks of each repository it read: those
+    /// it did not read keep what the last look of them said.
+    fn note_hooks(&mut self, hooks: Vec<(String, Vec<(String, Hooks)>)>) {
+        for (repo, unheard) in hooks {
+            self.unheard.retain(|(r, _), _| *r != repo);
+            for (agent, h) in unheard {
+                self.unheard.insert((repo.clone(), agent), h);
+            }
         }
     }
 
@@ -515,6 +565,8 @@ impl Watch {
             gated,
             gates,
             ends: HashMap::new(),
+            unheard: HashMap::new(),
+            started: HashMap::new(),
             out: false,
             next: None,
         }
@@ -530,7 +582,10 @@ impl Watch {
 /// daemon may have closed this one.
 fn look(place: &Place, repos: &Repos, watched: &[String], kept: &mut Kept) -> Looked {
     let mut client = place.open();
-    let mut looked = Looked::default();
+    let mut looked = Looked {
+        asked: Some(Instant::now()),
+        ..Looked::default()
+    };
     let mut waiting: Vec<String> = Vec::new();
     for (p, repo, checkout) in repos {
         let told = client.as_mut().map_err(|down| *down);
@@ -538,6 +593,7 @@ fn look(place: &Place, repos: &Repos, watched: &[String], kept: &mut Kept) -> Lo
             Ok((status, c)) => {
                 let times = status.time_left().into_iter();
                 (looked.left).extend(times.map(|(agent, ms)| (repo.clone(), agent, ms)));
+                looked.hooks.push((repo.clone(), status.hooks()));
                 looked
                     .leases
                     .push((*p, repo.clone(), status.leases.clone()));
@@ -883,7 +939,10 @@ impl Live {
         };
         self.lonca.out = false;
         self.lonca.note_ends(looked.left, Instant::now());
-        let mut changed = false;
+        self.lonca.note_hooks(looked.hooks);
+        let mut changed = looked
+            .asked
+            .is_some_and(|asked| self.stop_unheard(w, asked));
         for (p, repo, seen) in looked.found {
             changed |= w.store_seen(p, &repo, seen);
         }
@@ -1071,6 +1130,59 @@ impl Live {
             .is_some_and(|end| *end <= now + SEAT_MARGIN)
     }
 
+    /// The hooks Lonca did not hear of agent `id`'s session, as the last
+    /// look said; none for a helper, which works under its worker's.
+    pub(super) fn unheard(&self, w: &World, id: AgentId) -> Option<&Hooks> {
+        let a = &w.agents[id];
+        let on = w.projects[a.project].lonca.as_ref()?;
+        let key = (on.repo.clone(), lonca::agent_word(&a.name));
+        self.lonca
+            .unheard
+            .get(&key)
+            .filter(|_| a.role != Role::Helper)
+    }
+
+    /// Stops every worker in a workspace whose session's hooks Lonca did
+    /// not hear (lonca#190): Lonca no longer sees what it does. Its
+    /// helpers, under the same session, leave. Only a harness that was
+    /// there when the look was `asked` is judged, and an unbound one only
+    /// [`BIND_GRACE`] after it started. Nothing starts it again but the
+    /// person, under a new session: a harness that runs no hooks would
+    /// miss them again on every turn. Whether any stopped.
+    fn stop_unheard(&mut self, w: &mut World, asked: Instant) -> bool {
+        let judged = |live: &Live, w: &World, id: AgentId| {
+            let a = &w.agents[id];
+            let (Some(hooks), Some(&started)) = (live.unheard(w, id), live.lonca.started.get(&id))
+            else {
+                return None;
+            };
+            let due = match hooks {
+                Hooks::Heard => return None,
+                Hooks::Unbound => started + BIND_GRACE,
+                Hooks::Missed(_) => started,
+            };
+            let running = matches!(live.slots[id], Slot::Running(_));
+            (running && a.workspace.is_some() && due <= asked).then(|| hooks.clone())
+        };
+        let marked: Vec<(AgentId, Hooks)> = (0..w.agents.len())
+            .filter_map(|id| Some((id, judged(self, w, id)?)))
+            .collect();
+        for (id, hooks) in &marked {
+            let why = unheard_why(hooks);
+            self.end(w, *id);
+            self.remembered[*id] = true;
+            self.notes[*id].push(SEAT_UNHOOKED.to_string());
+            apply(w, *id, AgentEvent::Stopped(why), self.spent_before[*id]);
+            // Helpers work for their worker alone, as when it stops for
+            // any other reason.
+            let helpers: Vec<AgentId> = w.helpers_of(*id).map(|h| h.id).collect();
+            for h in helpers {
+                self.release(w, h);
+            }
+        }
+        !marked.is_empty()
+    }
+
     /// Before a prompt: a worker in a workspace whose session is running
     /// out, between turns, ends its Claude Code, which goes on with the
     /// same conversation. `lonca mcp` holds the token it started with, so a
@@ -1115,7 +1227,7 @@ mod tests {
 
     use super::*;
     use crate::live::testing::{Stub, idle_live, idle_live_in, team, with_card, with_helper};
-    use crate::model::{Event, StoreAct};
+    use crate::model::{Event, Status, StoreAct};
 
     const WAIT: Duration = Duration::from_secs(10);
 
@@ -1461,6 +1573,189 @@ mod tests {
         assert!(matches!(live.slots[1], Slot::None), "the harness ended");
         let traced = w.agents[1].trace.iter().any(|l| l.contains("running out"));
         assert!(traced);
+    }
+
+    #[test]
+    fn a_look_brings_the_hooks_lonca_did_not_hear_and_when_it_was_asked() {
+        let d = Daemon::start(PROTOCOL, |_| {
+            let mut v = status(&[]);
+            v["sessions"] = serde_json::json!([
+                {"agent": "a", "expires_ms": 3000, "bound_ms": 1, "unhooked": {"tool": "lease"}},
+                {"agent": "b", "expires_ms": 3000, "bound_ms": 1},
+            ]);
+            Ok(v)
+        });
+        d.sign_in();
+        let before = Instant::now();
+        let repos = vec![(0, "demo".to_string(), None)];
+        let looked = look(&d.place, &repos, &[], &mut Kept::default());
+        let missed = vec![("a".to_string(), Hooks::Missed("lease".into()))];
+        assert_eq!(looked.hooks, vec![("demo".to_string(), missed)]);
+        assert!(looked.asked.is_some_and(|at| at >= before));
+    }
+
+    #[test]
+    fn what_a_look_heard_replaces_what_the_last_look_of_that_repository_said() {
+        let (_, mut live, _) = seated_with(Duration::ZERO);
+        let key = |r: &str, a: &str| (r.to_string(), a.to_string());
+        let unheard = |agents: &[(&str, Hooks)]| {
+            (agents.iter())
+                .map(|(a, h)| (a.to_string(), h.clone()))
+                .collect::<Vec<_>>()
+        };
+        live.lonca.note_hooks(vec![
+            (
+                "r".into(),
+                unheard(&[("a", Hooks::Unbound), ("b", Hooks::Unbound)]),
+            ),
+            ("s".into(), unheard(&[("a", Hooks::Unbound)])),
+        ]);
+        assert_eq!(live.lonca.unheard.len(), 3);
+        // `r` heard everyone now; `s` was not read and keeps its word.
+        live.lonca.note_hooks(vec![(
+            "r".into(),
+            unheard(&[("b", Hooks::Missed("x".into()))]),
+        )]);
+        let mut kept: Vec<_> = live.lonca.unheard.keys().cloned().collect();
+        kept.sort();
+        assert_eq!(kept, [key("r", "b"), key("s", "a")]);
+        assert_eq!(
+            live.lonca.unheard[&key("r", "b")],
+            Hooks::Missed("x".into())
+        );
+    }
+
+    /// [`seated_with`]'s worker running, its harness started at the moment
+    /// returned, and Lonca having said `hooks` of its session.
+    fn unheard_with(hooks: Hooks) -> (World, Live, Instant) {
+        let (w, mut live, now) = seated_with(Duration::from_secs(3600));
+        live.slots[1] = Slot::Running(Box::new(Stub));
+        live.lonca.started.insert(1, now);
+        let key = ("demo".to_string(), w.agents[1].name.clone());
+        live.lonca.unheard.insert(key, hooks);
+        (w, live, now)
+    }
+
+    #[test]
+    fn a_worker_whose_hooks_lonca_did_not_hear_stops_with_its_helpers() {
+        let (mut w, mut live, started) = unheard_with(Hooks::Missed("lease".into()));
+        let helper = with_helper(&mut w, 1);
+        live.grow(None, false);
+        live.slots[helper] = Slot::Running(Box::new(Stub));
+        assert!(
+            live.stop_unheard(&mut w, started),
+            "a look asked as it started"
+        );
+        assert!(matches!(live.slots[1], Slot::None), "its harness ended");
+        let a = &w.agents[1];
+        assert_eq!(a.status, Status::Stopped);
+        assert!(
+            a.topic.starts_with("Lonca saw a call to its lease tool"),
+            "{}",
+            a.topic
+        );
+        assert!(live.remembered[1], "it goes on where it left off");
+        assert_eq!(live.notes[1], [SEAT_UNHOOKED]);
+        assert!(matches!(live.slots[helper], Slot::None));
+        assert!(w.agents[helper].gone, "its helper leaves");
+        // Stopped, it is not judged again.
+        assert!(!live.stop_unheard(&mut w, started));
+        let (mut w, mut live, started) = unheard_with(Hooks::Unbound);
+        assert!(live.stop_unheard(&mut w, started + BIND_GRACE));
+        let topic = &w.agents[1].topic;
+        assert!(
+            topic.starts_with("Lonca never heard from its hooks"),
+            "{topic}"
+        );
+    }
+
+    #[test]
+    fn a_look_that_finds_a_workers_hooks_unheard_stops_it() {
+        let d = Daemon::start(PROTOCOL, |_| {
+            let mut v = status(&[]);
+            v["sessions"] = serde_json::json!([{"agent": "claude-1", "expires_ms": 1_000_000,
+                "bound_ms": 1, "unhooked": {"tool": "propose", "seen_ms": 2}}]);
+            Ok(v)
+        });
+        d.sign_in();
+        let (mut w, mut live, _) = unheard_with(Hooks::Heard);
+        live.lonca = Watch::start(d.place.clone());
+        live.lonca.started.insert(1, Instant::now());
+        assert_eq!(w.agents[1].name, "claude-1");
+        live.lonca_due(&w, Instant::now());
+        assert!(settled(&mut live, &mut w), "the screen changed");
+        assert_eq!(w.agents[1].status, Status::Stopped);
+        let key = ("demo".to_string(), "claude-1".to_string());
+        assert_eq!(live.lonca.unheard[&key], Hooks::Missed("propose".into()));
+    }
+
+    #[test]
+    fn a_harness_start_is_kept_for_the_hooks_to_be_judged_by() {
+        let (mut w, mut live, _) = seated_with(Duration::ZERO);
+        live.slots[1] = Slot::Running(Box::new(Stub));
+        let before = Instant::now();
+        let started = AgentEvent::Started {
+            session: "7d1c3f2e-5b6a-4c8d-9e0f-1a2b3c4d5e6f".into(),
+            model: "m".into(),
+        };
+        live.tx.send((1, 0, started)).unwrap();
+        live.step(&mut w);
+        assert!(live.lonca.started.get(&1).is_some_and(|t| *t >= before));
+    }
+
+    #[test]
+    fn only_a_harness_there_when_the_look_was_asked_is_judged() {
+        let stops = |hooks: Hooks, asked: fn(Instant) -> Instant| {
+            let (mut w, mut live, started) = unheard_with(hooks);
+            let stopped = live.stop_unheard(&mut w, asked(started));
+            assert_eq!(stopped, w.agents[1].status == Status::Stopped);
+            stopped
+        };
+        let missed = || Hooks::Missed("status".into());
+        assert!(
+            !stops(missed(), |t| t - Duration::from_millis(1)),
+            "started after"
+        );
+        assert!(stops(missed(), |t| t));
+        // An unbound session may still be binding: ten seconds, in numbers.
+        let early = |t| t + Duration::from_millis(9_999);
+        assert!(!stops(Hooks::Unbound, early), "within the grace");
+        assert!(stops(Hooks::Unbound, |t| t + Duration::from_secs(10)));
+        assert!(
+            !stops(Hooks::Heard, |t| t + Duration::from_secs(60)),
+            "heard"
+        );
+    }
+
+    #[test]
+    fn a_worker_is_judged_only_with_a_running_harness_in_a_workspace() {
+        let (mut w, mut live, started) = unheard_with(Hooks::Unbound);
+        let late = started + Duration::from_secs(60);
+        live.slots[1] = Slot::Starting(Vec::new());
+        assert!(!live.stop_unheard(&mut w, late), "not started");
+        live.slots[1] = Slot::Running(Box::new(Stub));
+        w.agents[1].workspace = None;
+        assert!(!live.stop_unheard(&mut w, late), "in a worktree");
+        w.agents[1].workspace = Some("demo".into());
+        live.lonca.started.clear();
+        assert!(!live.stop_unheard(&mut w, late), "no start seen");
+        live.lonca.started.insert(1, started);
+        w.agents[1].name = "another".into();
+        assert!(!live.stop_unheard(&mut w, late), "not this agent's session");
+    }
+
+    #[test]
+    fn a_helper_answers_to_its_workers_session_never_its_own() {
+        let (mut w, mut live, started) = unheard_with(Hooks::Unbound);
+        let helper = with_helper(&mut w, 1);
+        live.grow(None, false);
+        w.agents[helper].workspace = Some("demo".into());
+        w.agents[helper].name = w.agents[1].name.clone();
+        assert!(live.unheard(&w, 1).is_some());
+        assert_eq!(live.unheard(&w, helper), None, "a helper never");
+        w.projects[0].lonca = None;
+        assert_eq!(live.unheard(&w, 1), None, "off Lonca");
+        let _ = started;
     }
 
     #[test]
