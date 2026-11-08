@@ -54,6 +54,7 @@ pub(crate) fn team(workers: usize) -> World {
         suggested: None,
         reviews: Default::default(),
         orphans: crate::model::Orphans::default(),
+        health: Default::default(),
         messages: 0,
     };
     w.agents.push(Agent::new(

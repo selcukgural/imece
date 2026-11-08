@@ -3,6 +3,7 @@
 
 use crate::app::Rung;
 use crate::editor::{self, Why};
+use crate::health::Sign;
 use crate::i18n::{Lang, Text, fill};
 use crate::model::*;
 use crate::screen::Progress;
@@ -32,6 +33,45 @@ pub(crate) fn card_ref(c: CardId) -> String {
 pub(crate) fn card_refs(cs: &[CardId]) -> String {
     let refs: Vec<String> = cs.iter().map(|&c| card_ref(c)).collect();
     refs.join(", ")
+}
+
+/// imece's health notice on agent `id` (record 128), and who heard it:
+/// its leader, woken or at its next turn; nobody else when it leads.
+fn health(t: &Text, w: &World, id: AgentId, sign: &Sign) -> String {
+    let who = name(w, id);
+    let title = |c: CardId| w.cards[c].title.as_str();
+    let said = match sign {
+        Sign::Stalled { card, minutes } => fill(
+            t.ev_health_stalled,
+            &[who, &minutes.to_string(), &card_ref(*card), title(*card)],
+        ),
+        Sign::Waiting { card, to, minutes } => fill(
+            t.ev_health_waiting,
+            &[
+                who,
+                &minutes.to_string(),
+                name(w, *to),
+                &card_ref(*card),
+                title(*card),
+            ],
+        ),
+        Sign::Silent { minutes, doing, .. } if doing.is_empty() => {
+            fill(t.ev_health_silent, &[who, &minutes.to_string()])
+        }
+        Sign::Silent { minutes, doing, .. } => fill(
+            t.ev_health_silent_doing,
+            &[who, &minutes.to_string(), doing],
+        ),
+        Sign::Free { minutes } => fill(t.ev_health_free, &[who, &minutes.to_string()]),
+        Sign::Looping { call, times } => {
+            fill(t.ev_health_looping, &[who, &times.to_string(), call])
+        }
+    };
+    match (w.told_of(id), sign.wakes()) {
+        (None, _) => said,
+        (Some(l), true) => fill(t.ev_health_told, &[&said, name(w, l)]),
+        (Some(l), false) => fill(t.ev_health_hears, &[&said, name(w, l)]),
+    }
 }
 
 /// A size in bytes in the largest unit that keeps it whole: `512 B`,
@@ -216,6 +256,7 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
                 why,
             ],
         ),
+        Event::Health { agent, sign } => health(t, w, *agent, sign),
         Event::Capped {
             card, cap, count, ..
         } => {
@@ -2284,6 +2325,79 @@ mod tests {
         assert_eq!(
             notice(Lang::Tr, &w, crate::notify::Note::Item(0)),
             "imece · claude-1: bir kart kararınızı bekliyor"
+        );
+    }
+
+    #[test]
+    fn health_is_said_in_both_languages_with_who_heard_it() {
+        let mut w = crate::live::testing::team(2);
+        let c = crate::live::testing::with_card(&mut w, 1);
+        let say = |w: &World, lang, agent, sign| event(lang, w, &Event::Health { agent, sign });
+        let both = |w: &World, agent, sign: Sign, en: &str, tr: &str| {
+            assert_eq!(say(w, Lang::En, agent, sign.clone()), en);
+            assert_eq!(say(w, Lang::Tr, agent, sign), tr);
+        };
+        both(
+            &w,
+            1,
+            Sign::Stalled {
+                card: c,
+                minutes: 10,
+            },
+            "claude-1 has been idle 10 min on #1 fix it without a done · lead told",
+            "claude-1 10 dk'dır #1 fix it üzerinde boşta, done demedi · lead uyarıldı",
+        );
+        both(
+            &w,
+            1,
+            Sign::Waiting {
+                card: c,
+                to: 2,
+                minutes: 11,
+            },
+            "claude-1 has waited 11 min on claude-2's answer for #1 fix it · lead told",
+            "claude-1 11 dk'dır claude-2 yanıtını bekliyor (#1 fix it) · lead uyarıldı",
+        );
+        both(
+            &w,
+            2,
+            Sign::Silent {
+                card: None,
+                minutes: 12,
+                doing: String::new(),
+            },
+            "claude-2 has said nothing for 12 min in its turn · lead told",
+            "claude-2 12 dk'dır turunda hiçbir şey demedi · lead uyarıldı",
+        );
+        both(
+            &w,
+            2,
+            Sign::Silent {
+                card: Some(c),
+                minutes: 13,
+                doing: "Bash cargo test".into(),
+            },
+            "claude-2 has said nothing for 13 min in its turn; last: Bash cargo test · lead told",
+            "claude-2 13 dk'dır turunda hiçbir şey demedi; son: Bash cargo test · lead uyarıldı",
+        );
+        both(
+            &w,
+            2,
+            Sign::Free { minutes: 14 },
+            "claude-2 has been idle 14 min with no card · lead hears at its next turn",
+            "claude-2 14 dk'dır kartsız boşta · lead sonraki turunda duyacak",
+        );
+        // The leader's own is the person's alone; an agent's text is
+        // cleaned.
+        both(
+            &w,
+            0,
+            Sign::Looping {
+                call: "Bash make\u{1b}[2J".into(),
+                times: 3,
+            },
+            "lead failed 3 times this turn on Bash make [2J",
+            "lead bu turda 3 kez başarısız oldu: Bash make [2J",
         );
     }
 

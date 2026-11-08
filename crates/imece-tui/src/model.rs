@@ -805,6 +805,9 @@ pub struct Agent {
     /// card was handed again is told apart. Memory only: a load sets it
     /// from the card.
     pub attempt: u32,
+    /// What imece follows of it for its health notices (record 128).
+    /// Memory only.
+    pub watch: crate::health::Watch,
     /// A researcher that finished; kept so ids stay stable.
     pub gone: bool,
 }
@@ -968,6 +971,7 @@ impl Agent {
             fault: None,
             task: Task::default(),
             attempt: 0,
+            watch: Default::default(),
             gone: false,
         }
     }
@@ -1015,6 +1019,7 @@ impl Agent {
             .push_back(format!("{} {}", clock_seconds(tick), line.into()));
         self.traced += 1;
         self.stirs.add(tick);
+        self.watch.traced_at = tick;
     }
 }
 
@@ -1828,6 +1833,12 @@ pub enum Event {
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         you: bool,
     },
+    /// imece saw `sign` of agent `agent` and told its leader, or only
+    /// the person when it leads (record 128).
+    Health {
+        agent: AgentId,
+        sign: crate::health::Sign,
+    },
     /// Leader `agent` withdrew card `card`, and why (record 126).
     Withdrawn {
         agent: AgentId,
@@ -2304,6 +2315,8 @@ impl Event {
             | Event::LateDone { .. }
             | Event::WorktreeKept { .. } => EntryKind::Assumption,
             Event::Blocked { .. } | Event::Capped { .. } => EntryKind::Blocked,
+            Event::Health { sign, .. } if sign.wakes() => EntryKind::Blocked,
+            Event::Health { .. } => EntryKind::Assumption,
             Event::ResearchOpened { .. }
             | Event::ResearchDelivered { .. }
             | Event::FromCache { .. } => EntryKind::Research,
@@ -2382,6 +2395,7 @@ impl Event {
             | Event::Capped { card, .. }
             | Event::CapAnswered { card, .. }
             | Event::Claimed { card, .. } => Some(card),
+            Event::Health { ref sign, .. } => sign.card(),
             _ => None,
         }
     }
@@ -2451,6 +2465,7 @@ impl Event {
             | Event::Released { agent, .. }
             | Event::ChecksSet { agent, .. }
             | Event::Withdrawn { agent, .. }
+            | Event::Health { agent, .. }
             | Event::CardFailed { agent, .. }
             | Event::LateDone { agent, .. }
             | Event::Capped { agent, .. }
@@ -3066,6 +3081,9 @@ pub struct World {
     pub proposals: HashMap<AgentId, StoreProposal>,
     /// The worktrees no agent owns, as the engine last looked (`:tidy`).
     pub orphans: Orphans,
+    /// When imece tells a leader of a stall, an idle worker or a loop
+    /// (`:health`, record 128); prefs keep it, the world does not.
+    pub health: crate::health::Health,
     /// The number the last message on the bus was given ([`MsgId`]).
     pub messages: MsgId,
     /// The lines the person sent, oldest first, for `↑` `↓` and `^r` on
@@ -3664,6 +3682,7 @@ impl World {
             clashes: Default::default(),
             proposals: Default::default(),
             orphans: crate::model::Orphans::default(),
+            health: Default::default(),
             messages: self.messages,
             sent: self.sent.clone(),
         }
@@ -5580,6 +5599,7 @@ mod tests {
             clashes: Default::default(),
             proposals: Default::default(),
             orphans: crate::model::Orphans::default(),
+            health: Default::default(),
             messages: 0,
             plans: Vec::new(),
         }

@@ -11,6 +11,7 @@ mod clip;
 mod complete;
 mod edit;
 mod editor;
+mod health;
 mod i18n;
 mod input;
 mod keys;
@@ -449,6 +450,7 @@ fn main() -> std::io::Result<()> {
     app.away = saved.away.unwrap_or_default();
     app.story = saved.story.unwrap_or(true);
     app.review = saved.review.unwrap_or(false);
+    app.world.health = saved.health.unwrap_or_default();
     app.ssh = motion::over_ssh(var);
     app.awake.on = args.awake;
     let result = run(&mut terminal, &mut app, &state, progress, style);
@@ -634,13 +636,14 @@ fn run(
         if let Some(Event::Key(k)) = event
             && k.kind == KeyEventKind::Press
         {
-            let (theme, notify, moves, away, story, review) = (
+            let (theme, notify, moves, away, story, review, health) = (
                 app.theme(),
                 app.notify,
                 app.motion,
                 app.away,
                 app.story,
                 app.review,
+                app.world.health,
             );
             app.on_key(k);
             if app.theme() != theme || app.notify != notify {
@@ -658,6 +661,9 @@ fn run(
             }
             if app.review != review {
                 let _ = prefs::keep_review(state, app.review);
+            }
+            if app.world.health != health {
+                let _ = prefs::keep_health(state, app.world.health);
             }
             if let Some(text) = app.copy.take() {
                 app.copied(clip::copy(&text));

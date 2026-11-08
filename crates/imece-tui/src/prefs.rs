@@ -8,6 +8,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::away::Away;
+use crate::health::Health;
 use crate::motion::Motion;
 use crate::notify::Notify;
 use crate::store;
@@ -30,6 +31,7 @@ const MOTION: &str = "motion";
 const AWAY: &str = "away";
 const STORY: &str = "story";
 const REVIEW: &str = "review";
+const HEALTH: &str = "health";
 /// The newest version whose "what's new" a start showed (or that started
 /// first): the next start of a newer one shows what is new since.
 const SEEN: &str = "seen";
@@ -53,6 +55,8 @@ pub struct Prefs {
     pub story: Option<bool>,
     /// Whether every change gets a review as it comes (`:review`).
     pub review: Option<bool>,
+    /// When a leader hears of its team's health (`:health`).
+    pub health: Option<Health>,
 }
 
 impl Prefs {
@@ -66,6 +70,7 @@ impl Prefs {
             away: None,
             story: None,
             review: None,
+            health: None,
         }
     }
 
@@ -112,9 +117,10 @@ pub fn load(dir: &Path) -> Prefs {
     }
     match store::settings(
         &file(dir),
-        &[THEME, NOTIFY, SEEN, MOTION, AWAY, STORY, REVIEW],
+        &[THEME, NOTIFY, SEEN, MOTION, AWAY, STORY, REVIEW, HEALTH],
     ) {
         Ok(mut v) => {
+            let health = v.pop().flatten().and_then(|h| Health::parse(&h));
             let mut on_off = || {
                 v.pop().flatten().and_then(|s| match s.as_str() {
                     "on" => Some(true),
@@ -134,6 +140,7 @@ pub fn load(dir: &Path) -> Prefs {
                 away,
                 story,
                 review,
+                health,
                 ..Prefs::checked(theme, notify, seen)
             }
         }
@@ -184,6 +191,11 @@ pub fn keep_away(dir: &Path, away: Away) -> Result<(), String> {
     store::set_settings(&file(dir), &[(AWAY, &away.name())], &[])
 }
 
+/// Keeps when a leader hears of its team's health in `dir`.
+pub fn keep_health(dir: &Path, health: Health) -> Result<(), String> {
+    store::set_settings(&file(dir), &[(HEALTH, &health.name())], &[])
+}
+
 /// Keeps `version` as the one that started last in `dir`.
 pub fn seen(dir: &Path, version: &str) -> Result<(), String> {
     store::set_settings(&file(dir), &[(SEEN, version)], &[])
@@ -217,6 +229,7 @@ mod tests {
                 away: None,
                 story: None,
                 review: None,
+                health: None,
             }
         );
         let mode = fs::metadata(file(&dir)).unwrap().permissions().mode();
@@ -244,6 +257,7 @@ mod tests {
                 away: None,
                 story: None,
                 review: None,
+                health: None,
             }
         );
         set(&[("side", "70"), ("theme", "/home/me/Dracula.conf")]);
@@ -300,6 +314,13 @@ mod tests {
         assert_eq!(load(&dir).away, Away::parse("1h"), "kept by the others");
         keep_away(&dir, Away::parse("off").unwrap()).unwrap();
         assert_eq!(load(&dir).away, Away::parse("off"));
+        // When a leader hears of its team's health, the same way.
+        let health = Health::parse("stall 20m idle off loop 5").unwrap();
+        keep_health(&dir, health).unwrap();
+        assert_eq!(load(&dir).health, Some(health));
+        assert_eq!(load(&dir).away, Away::parse("off"), "the others kept");
+        set(&[("health", "stall 0m")]);
+        assert_eq!(load(&dir).health, None, "nonsense reads as nothing");
         assert_eq!(
             load(&dir).motion,
             Some(Motion::Calm),
@@ -325,6 +346,7 @@ mod tests {
                 away: None,
                 story: None,
                 review: None,
+                health: None,
             }
         );
         assert!(!legacy(&dir).exists(), "moved, so gone");

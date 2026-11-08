@@ -319,6 +319,7 @@ impl App {
             "notify" => Some(self.notify.name().to_string()),
             "motion" => Some(self.motion.name().to_string()),
             "away" => Some(self.away.name()),
+            "health" => Some(self.world.health.name()),
             "keys" => Some(self.keys.len().to_string()),
             "pause" => Some(on_off(self.paused)),
             "faster" | "slower" => Some(format!("×{}", self.speed)),
@@ -790,6 +791,7 @@ impl App {
                 (_, None) => self.flash(fill(t.bad_away, &[arg])),
             },
             "digest" => self.open_digest(),
+            "health" => self.set_health(arg),
             _ => self.flash(fill(t.no_command, &[name])),
         }
     }

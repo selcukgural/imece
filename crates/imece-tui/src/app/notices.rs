@@ -1,6 +1,7 @@
 //! What reaches a person away from the window: focus, notices, push, the digest, staying awake.
 
 use super::*;
+use crate::health::Knob;
 
 impl App {
     /// The terminal lost the focus (`gained` false) at `now`, or got it
@@ -138,6 +139,28 @@ impl App {
             Some(_) => self.flash(fill(t.away_set, &[&away.name()])),
             None => self.flash(t.away_off),
         }
+    }
+
+    /// `:health [stall|idle|loop VALUE]` (record 128): when a leader
+    /// hears of its team's health; bare, what it is now.
+    pub(super) fn set_health(&mut self, arg: &str) {
+        let t = self.lang.text();
+        if !arg.is_empty() {
+            let set = (arg.split_once(' '))
+                .and_then(|(k, v)| Some((Knob::of(k.trim())?, v)))
+                .and_then(|(k, v)| self.world.health.with(k, v));
+            match set {
+                Some(h) => self.world.health = h,
+                None => return self.flash(fill(t.bad_health, &[arg])),
+            }
+        }
+        let h = self.world.health;
+        let value = |k| h.value(k);
+        let said = fill(
+            t.health_now,
+            &[&value(Knob::Stall), &value(Knob::Idle), &value(Knob::Loop)],
+        );
+        self.flash(said);
     }
 
     /// `:digest`: what happened since the person last left the window, or
@@ -855,6 +878,42 @@ mod tests {
             42,
             "the one open stays"
         );
+    }
+
+    #[test]
+    fn health_says_and_sets_when_the_leader_hears() {
+        let mut app = App::new(1, 1, 0, 1, Lang::En);
+        assert_eq!(app.command_note("health"), "(stall 10m idle 10m loop 3)");
+        app.command("health");
+        assert_eq!(
+            said(&app),
+            "health notices to the leader: stall 10m · idle 10m · loop 3 (stall and idle wait \
+             minutes; loop counts failures of one call in a turn)"
+        );
+        app.command("health stall 15m");
+        app.command("health idle off");
+        app.command("health loop 5");
+        let h = app.world.health;
+        assert_eq!((h.stall, h.idle, h.fails), (Some(15), None, Some(5)));
+        assert!(
+            said(&app).starts_with("health notices to the leader: stall 15m · idle off · loop 5 ("),
+            "{}",
+            said(&app)
+        );
+        for no in ["stall", "stall 0m", "sleep 5m", "loop 1"] {
+            app.command(&format!("health {no}"));
+            assert_eq!(
+                said(&app),
+                format!(
+                    "{no} is not stall, idle or loop and a value: minutes (10m), hours (1h), \
+                     failures (3) or off"
+                )
+            );
+            assert_eq!(app.world.health, h, "kept");
+        }
+        app.lang = Lang::Tr;
+        app.command("health");
+        assert!(said(&app).starts_with("lidere sağlık bildirimleri: stall 15m"));
     }
 
     #[test]

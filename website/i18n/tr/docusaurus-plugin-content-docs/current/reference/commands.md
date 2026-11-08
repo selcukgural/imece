@@ -12,7 +12,7 @@ description: imece'nin aldığı her `:` komutu; argümanları, karşılığı o
 - `:` sonra `tab` komutları listeler. Menü her komutun ardında şu an ne durumda olduğunu ya da neye etki edeceğini ayraç içinde gösterir: `budget (spent $3.10 of $20.00)`, `theme (dark)`, `close (kule)`, `forget (claude-2)`, `next (2 waiting)`, `needs (off)`. Not çizilir, asla satıra eklenmez.
 - Bir komutun ardındaki `$` sonraki faturayı büyütenleri işaretler: `:open` (yeni bir lider oturumu), `:solo` (yeni bir oturum), `:forget` (bütün brifingi önbelleksiz yeniden ödeyen yeni bir oturum), `:commit` ve `:review` (ücretli çağrılar). Hiçbir `:` komutu kendi başına ücretli bir tur başlatmaz; `:budget` işaret yerine değerini gösterir.
 - Kısa adlar: `:b` budget, `:c` close, `:f` forget, `:o` open, `:q` quit, `:t` theme. Bütünüyle yazılan kısa ad zaten bir komuttur; menü bir şey sunmaz ve `enter` çalıştırır (`:q` sonra `enter` hemen sorar).
-- Argümanlar da tamamlanır: `:lang` sonra diller, `:notify` sonra dört kelimesi, `:motion` sonra üç kelimesi, `:review` ve `:plan` sonra `on off`, `:away` sonra `15m 30m 1h off`, `:clear` ve `:unclear` sonra `inbox journal`, `:theme` sonra yerleşik adlar, `:close` ve `:pin` sonra açık projeler, `:restore` sonra arşivlerin başlıkları (en yenisi önce, her biri projesinin adı ve arşivlendiği günle), `:goto` sonra hiçbir şey (`&` satırının kendi menüsü var), `:history` sonra gönderilen satırlar, `:forget`, `:talk`, `:trace` ve `:peek` sonra açık projelerin ajanları (`@` ile ya da onsuz), `:open` ve `:export` sonra dizinler (`~` ev dizininiz, gizli olanlar yalnızca bir `.` sonrası, `tab` seçilenin içine adım atar).
+- Argümanlar da tamamlanır: `:lang` sonra diller, `:notify` sonra dört kelimesi, `:motion` sonra üç kelimesi, `:review` ve `:plan` sonra `on off`, `:away` sonra `15m 30m 1h off`, `:health` sonra `stall idle loop` ve ardından değerleri (`5m 10m 20m off`, `2 3 5 off`), `:clear` ve `:unclear` sonra `inbox journal`, `:theme` sonra yerleşik adlar, `:close` ve `:pin` sonra açık projeler, `:restore` sonra arşivlerin başlıkları (en yenisi önce, her biri projesinin adı ve arşivlendiği günle), `:goto` sonra hiçbir şey (`&` satırının kendi menüsü var), `:history` sonra gönderilen satırlar, `:forget`, `:talk`, `:trace` ve `:peek` sonra açık projelerin ajanları (`@` ile ya da onsuz), `:open` ve `:export` sonra dizinler (`~` ev dizininiz, gizli olanlar yalnızca bir `.` sonrası, `tab` seçilenin içine adım atar).
 - imece'nin bilmediği bir ad: `no command xyz; : and tab list them`. Canlıda yazılan yalnızca demoya ait bir komut: `:pause is for the demo: live agents run in real time`.
 - `!cmd` kendi kabuğunuzda bir komut çalıştırır, `/cmd` ajanın kendi komut satırıdır; ikisi de `:` komutu değildir ([komut satırı](../screen/command-line.md)).
 
@@ -43,6 +43,7 @@ description: imece'nin aldığı her `:` komutu; argümanları, karşılığı o
 | `:forget [@NAME]` | — | `:f` | | `$` | eldeki ajan |
 | `:fork [@NAME]` | — | | | `$` | eldeki ajan |
 | `:goto [NAME]` | `&` | | | | |
+| `:health [stall\|idle\|loop VALUE]` | — | | | | `stall 10m idle 10m loop 3` |
 | `:history [WORDS]` | `^r` | | | | |
 | `:help` | `?` | | | | |
 | `:keys` | — | | | | dosyanızın verdiği tuş sayısı |
@@ -196,6 +197,10 @@ Ajana oturumunu unutturur (`:f`), istendikten on saniye sonra: alt satır geri s
 ### `:goto [NAME]`
 
 `NAME` adlı ajana (önünde `@` olabilir), yoksa o adlı açık projeye gider: ekip, satırı seçili, projesi açılmış, bir yardımcının işçisi açılmış ve satırı gizleyecekse `f` bırakılmış; bir proje adı başlığını seçer. Büyük küçük harf ve Türkçe harfler fark etmez. O adda bir şey yoksa: `"zzz" adında gidilecek bir yer yok: bir agent ya da proje`, ve hiçbir şey kımıldamaz. Tek başına `&` satırını açar: yerler şu anki hâliyle, sizi bekleyenler önde (takılan, sonra bekleyen, sonra bitmiş ve görülmemiş), kalanlar durumuna göre (çalışan boştakinden önce), sonra açık projeler, her ajan glifi ve durum sözcükleriyle. Satır açıkken liste donar, böylece yazarken numaralar değişmez; `&` hemen ardından `1`-`9` bir rakam anında gider, `&` hemen ardından `#` kart satırına döner, `!` yalnız sizi bekleyenleri tutar, rakamlar bir numaranın başıyla eşleşir, geri kalanı adların içinde arar. `enter` imlecin altındakine, ya da yazılan ada gider. Bkz. [ekip](../screen/salon.md).
+
+### `:health [stall|idle|loop VALUE]`
+
+imece'nin lidere ekibinin sağlığını ne zaman söyleyeceği. `stall`, bir kartın işçisinin done demeden boşta durabileceği, bir yanıt bekleyebileceği ya da turunun ortasında hiçbir şey demeden geçebileceği dakikadır; sonra lider kartın takıldığını duyar. `idle`, kartı olmayan bir işçinin lider duymadan boşta durabileceği dakikadır. `loop`, bir çağrının (bir hedefte bir araç) bir turda kaç kez hata verebileceğidir; sonra lider ajanın aynı yerde döndüğünü duyar. Dakika (`15m` ya da `15`) veya saat (`1h`), bir dakikadan bir güne; hata sayısı 2'den 20'ye; `off` hiç. Varsayılan on dakika, on dakika ve üç hata. Yalın `:health` bunları söyler: `lidere sağlık bildirimleri: stall 10m · idle 10m · loop 3 (…)`; başka bir kelime: `stall 0m geçersiz: stall, idle ya da loop ve bir değer: …`. Menü notu bunları gösterir; depoda hatırlanır. Bkz. [sağlık bildirimleri](../concepts/team.md#sağlık-bildirimleri).
 
 ### `:history [WORDS]`
 
