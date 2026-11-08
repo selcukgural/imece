@@ -254,6 +254,9 @@ const HOLD_ONE_IN: u64 = 4;
 /// One card in this many the leader posts waits on the newest card not
 /// through (record 126, F10).
 const AFTER_ONE_IN: u64 = 3;
+/// Every this many ticks the leader withdraws the newest card nobody
+/// took (record 126).
+const WITHDRAW_EVERY: u64 = 300;
 /// What a demo worker whose change failed its tests in the queue is told.
 const FIX_TESTS: &str = "fix the failing test and propose again";
 
@@ -275,6 +278,10 @@ struct Content {
     posted: &'static str,
     /// The leader's question to the person after a no to its plan.
     plan_asked: &'static str,
+    /// Why the leader withdraws a card it no longer needs, and one that
+    /// waits on a card never to be done (record 126).
+    not_needed: &'static str,
+    never_begins: &'static str,
     /// What a worker tells the person it assumes.
     assume: &'static str,
     /// A helper's done to its worker.
@@ -389,6 +396,8 @@ const EN: Content = Content {
     ],
     posted: "Posted {} cards for it: {}. The workers take them from the board.",
     plan_asked: "You said no to the plan: what should change before I hire?",
+    not_needed: "not needed any more: another card covers it",
+    never_begins: "it waits on a card that will never be done",
     assume: "Assuming {}.",
     helper_done: "Tests written; they pass.",
     done_why: "Kept to what the card asked. The tests cover the new path, and the old callers read as they did.",
@@ -494,6 +503,8 @@ const TR: Content = Content {
     ],
     posted: "Bunun için {} kart açtım: {}. İşçiler panodan alıyor.",
     plan_asked: "Plana hayır dediniz: işe almadan önce ne değişmeli?",
+    not_needed: "artık gerekmiyor: başka bir kart karşılıyor",
+    never_begins: "hiç bitmeyecek bir kartı bekliyor",
     assume: "Varsayım: {}.",
     helper_done: "Testler yazıldı, geçiyor.",
     done_why: "Kartın istediğiyle sınırlı kaldım. Testler yeni yolu kapsıyor, eski çağıranlar eskisi gibi.",
@@ -3066,6 +3077,33 @@ impl Sim {
         {
             self.hold(w, agent, card);
         }
+        // A card that waits on one never to be done (withdrawn, or failed
+        // for good) is withdrawn too; now and then one nobody took is no
+        // longer needed (record 126).
+        let never: Vec<CardId> = (w.cards.iter())
+            .filter(|c| c.project == project)
+            .filter(|c| !c.over())
+            .filter(|c| {
+                w.blocked_on(c.id).is_some_and(|f| {
+                    let f = &w.cards[f];
+                    f.column == Column::Withdrawn || f.breaker.stopped
+                })
+            })
+            .map(|c| c.id)
+            .collect();
+        for card in never {
+            self.withdraw(w, card, self.content.never_begins);
+        }
+        if let Some(card) = (w.cards.iter().rev())
+            .find(|c| c.project == project && c.column == Column::Waiting && c.owner.is_none())
+            .map(|c| c.id)
+            // By the clock, not the dice: the demo's scenarios stay as
+            // they were.
+            && w.tick > 0
+            && w.tick.is_multiple_of(WITHDRAW_EVERY)
+        {
+            self.withdraw(w, card, self.content.not_needed);
+        }
         // At most two cards a tick, so the screen stays calm: the leader
         // assigns one, or a worker takes one from the board; only one no
         // other card holds back.
@@ -3247,6 +3285,15 @@ impl Sim {
         w.hold(card, agent);
         let said = format!("#{} {}", card + 1, w.cards[card].title);
         self.send(w, leader, agent, MsgKind::Assign, &said, None);
+    }
+
+    /// The leader of `card`'s project withdraws it, saying `why` (record
+    /// 126), as a live leader's `withdraw`: the demo withdraws only cards
+    /// that are not at work.
+    fn withdraw(&mut self, w: &mut World, card: CardId, why: &str) {
+        let leader = w.projects[w.cards[card].project].leader;
+        w.withdraw(card, leader, why);
+        w.agents[leader].trace(w.tick, format!("withdraw #{}", card + 1));
     }
 
     /// Worker `id`'s change was applied: its leader tells its other
@@ -4383,7 +4430,8 @@ mod tests {
 
     #[test]
     fn the_demo_shows_a_change_that_overlaps_another_waiting_and_one_that_does_not() {
-        let (mut w, mut s) = world(1, 3, 0, 1, Lang::En);
+        // Seeded: the same every time (the seed is one that shows both).
+        let (mut w, mut s) = world(1, 3, 0, 0, Lang::En);
         let (mut alone, mut shared) = (None, None);
         for tick in 0..1500 {
             s.step(&mut w);
@@ -8001,7 +8049,7 @@ diff --git a/b.rs b/b.rs
     fn the_demo_fails_hands_again_comes_late_and_meets_the_breaker_as_live_does() {
         // A run long enough for each (seeded: the same every time; a
         // late done is rare by nature, one in a few thousand ticks).
-        let (mut w, mut s) = world(1, 4, 0, 20, Lang::En);
+        let (mut w, mut s) = world(1, 4, 0, 1, Lang::En);
         let (mut failed, mut handed, mut late, mut capped) = (0, 0, 0, 0);
         for _ in 0..4000 {
             let n = w.journal.len();
@@ -9006,7 +9054,7 @@ diff --git a/b.rs b/b.rs
             answer_all(&mut w, &mut s);
             // Nothing waiting on a card not done has begun.
             for c in &w.cards {
-                if c.column != Column::Waiting && !w.ready(c.id) {
+                if !matches!(c.column, Column::Waiting | Column::Withdrawn) && !w.ready(c.id) {
                     began_early.push(c.id);
                 }
             }
@@ -9023,7 +9071,8 @@ diff --git a/b.rs b/b.rs
             }
         }
         // Every card begun was taken, once a turn took it.
-        for c in w.cards.iter().filter(|c| c.column != Column::Waiting) {
+        let begun = |c: &&Card| !matches!(c.column, Column::Waiting | Column::Withdrawn);
+        for c in w.cards.iter().filter(begun) {
             assert!(
                 (c.story.iter()).any(|s| matches!(
                     s.event,
@@ -9035,6 +9084,30 @@ diff --git a/b.rs b/b.rs
         }
         let released = count(|e| matches!(e, Event::Released { .. }));
         assert!(held > 0 && released > 0, "held {held}, released {released}");
+        // The leader withdraws now and then, and leaves nothing waiting on
+        // a card never to be done (record 126).
+        let withdrawn = count(|e| matches!(e, Event::Withdrawn { .. }));
+        assert!(withdrawn > 0, "nothing withdrawn");
+        for c in w.cards.iter().filter(|c| !c.over()) {
+            let never = w.blocked_on(c.id).is_some_and(|f| {
+                w.cards[f].column == Column::Withdrawn || w.cards[f].breaker.stopped
+            });
+            assert!(!never, "#{} waits for ever", c.id + 1);
+        }
+        for e in &w.journal {
+            if let Event::Withdrawn { agent, card, .. } = e.event {
+                assert_eq!(agent, w.projects[0].leader);
+                assert_eq!(w.cards[card].column, Column::Withdrawn);
+                let leader = &w.agents[agent];
+                assert!(
+                    leader
+                        .trace
+                        .iter()
+                        .any(|l| l.ends_with(&format!("withdraw #{}", card + 1)))
+                        || leader.trace.len() >= 200
+                );
+            }
+        }
         // Each card released was held first, for the agent that began it.
         for e in &w.journal {
             if let Event::Released { agent, card } = e.event {
@@ -9089,5 +9162,52 @@ diff --git a/b.rs b/b.rs
         for c in first + 1..first + 3 {
             assert_eq!(p.cards[at(c).unwrap() - 1].after, [base]);
         }
+    }
+
+    #[test]
+    fn the_demo_s_leader_withdraws_what_waits_on_a_card_never_to_be_done() {
+        let (mut w, mut s) = world(1, 2, 0, 1, Lang::En);
+        let base = s.post(&mut w, 0, "base".into());
+        let next = s.post_after(&mut w, 0, "next".into(), vec![base]);
+        let last = s.post_after(&mut w, 0, "last".into(), vec![next]);
+        let free = s.post(&mut w, 0, "free".into());
+        s.withdraw(&mut w, base, "no");
+        s.leader(&mut w, 0);
+        for c in [next, last] {
+            assert_eq!(w.cards[c].column, Column::Withdrawn, "#{}", c + 1);
+            assert!(matches!(
+                w.cards[c].story.last().map(|s| &s.event),
+                Some(StoryEvent::Withdrawn(why)) if why == s.content.never_begins
+            ));
+        }
+        assert_ne!(w.cards[free].column, Column::Withdrawn);
+        // A card the person failed for good holds back the same way.
+        let failed = s.post(&mut w, 0, "failed".into());
+        let after = s.post_after(&mut w, 0, "after".into(), vec![failed]);
+        w.cards[failed].column = Column::Failed;
+        s.leader(&mut w, 0);
+        assert_ne!(
+            w.cards[after].column,
+            Column::Withdrawn,
+            "it may be handed again"
+        );
+        w.cards[failed].breaker.stopped = true;
+        s.leader(&mut w, 0);
+        assert_eq!(w.cards[after].column, Column::Withdrawn);
+        // By the clock: the newest card nobody took, at every 300th tick.
+        let spare = s.post(&mut w, 0, "spare".into());
+        w.tick = 0;
+        s.leader(&mut w, 0);
+        assert_eq!(w.cards[spare].column, Column::Waiting, "not at the start");
+        w.tick = WITHDRAW_EVERY - 1;
+        s.leader(&mut w, 0);
+        assert_eq!(w.cards[spare].column, Column::Waiting);
+        w.tick = WITHDRAW_EVERY;
+        let newest = (w.cards.iter().rev())
+            .find(|c| c.column == Column::Waiting && c.owner.is_none())
+            .map(|c| c.id)
+            .unwrap();
+        s.leader(&mut w, 0);
+        assert_eq!(w.cards[newest].column, Column::Withdrawn);
     }
 }

@@ -1553,7 +1553,7 @@ mod tests {
         assert_eq!(
             names,
             [
-                "send", "post", "board", "run", "whoami", "plan", "hire", "approve"
+                "send", "post", "board", "run", "whoami", "plan", "hire", "withdraw", "approve"
             ]
         );
         let _ = std::fs::remove_dir_all(&repo);

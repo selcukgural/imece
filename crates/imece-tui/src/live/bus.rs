@@ -441,7 +441,8 @@ impl Live {
         }
         let leader = w.projects[w.cards[c].project].leader;
         let what = if w.cards[c].breaker.stopped {
-            "the person failed it for good, so they never begin: tell the person"
+            "the person failed it for good, so they never begin: withdraw them, or tell \
+             the person"
         } else {
             "they begin once it is done: hand it again, or tell the person"
         };
@@ -454,7 +455,7 @@ impl Live {
 
     /// Whether mail `m` waits on its card (record 126, F10): an assign
     /// whose card is not ready, which no turn takes until it is.
-    fn waits(w: &World, m: &Mail) -> bool {
+    pub(super) fn waits(w: &World, m: &Mail) -> bool {
         m.kind == MsgKind::Assign && m.card.is_some_and(|c| !w.ready(c))
     }
 
@@ -556,9 +557,13 @@ impl Live {
             let wait = match w.blocked_on(c.id) {
                 _ if waits.is_empty() => String::new(),
                 Some(f) => format!(
-                    "; waits on {}, and #{} failed",
+                    "; waits on {}, and #{} {}",
                     words::card_refs(&waits),
-                    f + 1
+                    f + 1,
+                    match w.cards[f].column {
+                        Column::Withdrawn => "was withdrawn",
+                        _ => "failed",
+                    }
                 ),
                 None => format!("; waits on {}", words::card_refs(&waits)),
             };
@@ -587,6 +592,9 @@ impl Live {
                     c.title,
                     w.agents[o].name
                 )),
+                (Column::Withdrawn, _) => {
+                    taken.push(format!("#{} {} (withdrawn)", c.id + 1, c.title))
+                }
                 (Column::Failed, Some(o)) => taken.push(format!(
                     "#{} {} (failed by {}, try {}: {})",
                     c.id + 1,
@@ -663,6 +671,9 @@ impl Live {
             })
             .ok_or("there is no such card on the board; call board to see it")?;
         let c = &w.cards[card];
+        if c.column == Column::Withdrawn {
+            return Err(format!("#{} was withdrawn; pick another", card + 1));
+        }
         if c.column != Column::Waiting {
             let who = c.owner.map_or("someone", |o| w.agents[o].name.as_str());
             return Err(format!("#{} was taken by {who}; pick another", card + 1));
@@ -702,6 +713,69 @@ impl Live {
             w.cards[card].title,
             post.body,
             owns(&w.cards[card].paths)
+        ))
+    }
+
+    /// The leader `from` withdraws a card (the `withdraw` tool's arguments,
+    /// record 126): through, never begun or finished; whoever held it is
+    /// told and loses an assign that waited for it, a `done` from it for
+    /// the card closes nothing, and the cards waiting on it never begin,
+    /// which the answer names.
+    pub(super) fn withdraw(&mut self, w: &mut World, from: AgentId, args: &Value) -> Answer {
+        if w.agents[from].role != Role::Leader {
+            return Err("only the leader withdraws a card".into());
+        }
+        let c =
+            card_of(&args["card"])?.ok_or("card must be a card's number, as #N on the board")?;
+        let why = args["why"].as_str().map(str::trim).unwrap_or_default();
+        if why.is_empty() {
+            return Err("say why in why: the person reads it on the card".into());
+        }
+        if why.contains('\n') || why.chars().count() > MAX_TITLE {
+            return Err(format!(
+                "why must be one line of at most {MAX_TITLE} characters"
+            ));
+        }
+        let project = w.agents[from].project;
+        let card = (w.cards.get(c))
+            .filter(|card| card.project == project)
+            .ok_or_else(|| format!("there is no card #{} in this project", c + 1))?;
+        match card.column {
+            Column::Waiting | Column::Working | Column::Failed => {}
+            Column::Review => {
+                return Err(format!(
+                    "#{}'s change waits for the person; they reject it there",
+                    c + 1
+                ));
+            }
+            Column::Verifying => return Err(format!("#{} is in Lonca's merge queue", c + 1)),
+            Column::Done => return Err(format!("#{} is done", c + 1)),
+            Column::Withdrawn => return Err(format!("#{} was withdrawn already", c + 1)),
+        }
+        // Whoever holds it at work, or is to begin it, stops.
+        if let Some(o) = card.owner.filter(|_| card.column != Column::Failed) {
+            let mine = |m: &Mail| m.kind == MsgKind::Assign && m.card == Some(c);
+            self.mail[o].retain(|m| !mine(m));
+            self.notes[o].push(format!(
+                "Card #{} ({}) was withdrawn by {}: stop work on it; a done from you for it \
+                 closes nothing now.",
+                c + 1,
+                card.title,
+                w.agents[from].name
+            ));
+        }
+        self.offered.remove(&c);
+        w.withdraw(c, from, why);
+        w.agents[from].trace(w.tick, format!("withdraw #{}", c + 1));
+        let waiting = w.dependents(c);
+        if waiting.is_empty() {
+            return Ok(format!("#{} is withdrawn", c + 1));
+        }
+        Ok(format!(
+            "#{} is withdrawn; {} wait on it and never begin: withdraw them too, or tell the \
+             person",
+            c + 1,
+            words::card_refs(&waiting)
         ))
     }
 
@@ -1093,6 +1167,12 @@ fn depends(w: &World, project: ProjectId, after: &[CardId]) -> Result<(), String
                 c + 1
             ));
         }
+        if card.column == Column::Withdrawn {
+            return Err(format!(
+                "#{} was withdrawn: a card waiting on it would never begin",
+                c + 1
+            ));
+        }
     }
     Ok(())
 }
@@ -1122,6 +1202,10 @@ fn hands(w: &World, project: ProjectId, c: CardId, to: AgentId) -> Result<(), St
         )),
         Column::Verifying => Err(format!("#{} is in Lonca's merge queue", c + 1)),
         Column::Done => Err(format!("#{} is done; assign a new task for more", c + 1)),
+        Column::Withdrawn => Err(format!(
+            "#{} was withdrawn; assign a new task for more",
+            c + 1
+        )),
     }
 }
 
@@ -1161,6 +1245,11 @@ fn after_failure(c: &Card) -> &'static str {
 /// What a done that showed no change is said to its sender.
 fn said_of(w: &World, outcome: Outcome) -> String {
     match outcome {
+        Outcome::Late(c) if w.cards[c].column == Column::Withdrawn => format!(
+            "#{} was withdrawn since your turn took it: this done closes nothing and shows \
+             no change. Your worktree keeps what you wrote.",
+            c + 1
+        ),
         Outcome::Late(c) => format!(
             "#{} went to {} (try {}) since your turn took it: this done closes nothing \
              and shows no change. Your worktree keeps what you wrote.",
@@ -2023,7 +2112,7 @@ mod tests {
         assert_eq!(
             list(0),
             [
-                "send", "post", "board", "run", "whoami", "plan", "hire", "approve"
+                "send", "post", "board", "run", "whoami", "plan", "hire", "withdraw", "approve"
             ]
         );
         assert_eq!(
@@ -2209,7 +2298,9 @@ mod tests {
         };
         assert_eq!(
             names(Role::Leader),
-            ["send", "post", "board", "run", "whoami", "plan", "hire"]
+            [
+                "send", "post", "board", "run", "whoami", "plan", "hire", "withdraw"
+            ]
         );
         assert_eq!(
             names(Role::Worker),
@@ -3824,7 +3915,7 @@ in p.rs",
         assert!(
             live.notes[0].iter().any(|n| n
                 == "#2 wait on #1, which failed; the person failed it for good, so they never \
-                    begin: tell the person."),
+                    begin: withdraw them, or tell the person."),
             "{:?}",
             live.notes[0]
         );
@@ -3847,5 +3938,220 @@ in p.rs",
         live.notes[0].clear();
         sent(&mut live, &mut w, 2, &done).unwrap();
         assert!(live.notes[0].is_empty(), "{:?}", live.notes[0]);
+    }
+
+    fn withdraw(card: usize, why: &str) -> Value {
+        json!({ "card": card, "why": why })
+    }
+
+    #[test]
+    fn only_the_leader_withdraws_a_card_not_yet_in_with_a_line_why() {
+        let mut w = team(2);
+        let mut live = idle_live(3);
+        live.post(&mut w, 0, &card("Base", "x")).unwrap();
+        let refused = |live: &mut Live, w: &mut World, from, args: Value| {
+            live.withdraw(w, from, &args).unwrap_err()
+        };
+        assert_eq!(
+            refused(&mut live, &mut w, 1, withdraw(1, "no")),
+            "only the leader withdraws a card"
+        );
+        for (args, why) in [
+            (
+                json!({ "why": "x" }),
+                "card must be a card's number, as #N on the board",
+            ),
+            (
+                json!({ "card": 0, "why": "x" }),
+                "card must be a card's number, as #N on the board",
+            ),
+            (
+                withdraw(1, " "),
+                "say why in why: the person reads it on the card",
+            ),
+            (
+                json!({ "card": 1 }),
+                "say why in why: the person reads it on the card",
+            ),
+            (
+                withdraw(1, "a\nb"),
+                "why must be one line of at most 120 characters",
+            ),
+            (
+                withdraw(1, &"x".repeat(121)),
+                "why must be one line of at most 120 characters",
+            ),
+            (withdraw(9, "x"), "there is no card #9 in this project"),
+        ] {
+            assert_eq!(refused(&mut live, &mut w, 0, args.clone()), why, "{args}");
+        }
+        w.cards[0].project = 1;
+        assert_eq!(
+            refused(&mut live, &mut w, 0, withdraw(1, "x")),
+            "there is no card #1 in this project"
+        );
+        w.cards[0].project = 0;
+        for (column, why) in [
+            (
+                Column::Review,
+                "#1's change waits for the person; they reject it there",
+            ),
+            (Column::Verifying, "#1 is in Lonca's merge queue"),
+            (Column::Done, "#1 is done"),
+            (Column::Withdrawn, "#1 was withdrawn already"),
+        ] {
+            w.cards[0].column = column;
+            assert_eq!(refused(&mut live, &mut w, 0, withdraw(1, "x")), why);
+        }
+        assert!(
+            w.journal
+                .iter()
+                .all(|e| !matches!(e.event, Event::Withdrawn { .. }))
+        );
+        // A line of 120 is one line.
+        w.cards[0].column = Column::Waiting;
+        live.offered.insert(0, vec![1]);
+        let got = live
+            .withdraw(&mut w, 0, &withdraw(1, &"x".repeat(120)))
+            .unwrap();
+        assert_eq!(got, "#1 is withdrawn");
+        assert_eq!(
+            (w.cards[0].column, w.cards[0].finished),
+            (Column::Withdrawn, w.tick)
+        );
+        assert!(!live.offered.contains_key(&0));
+        assert_eq!(
+            journaled(
+                &w,
+                &Event::Withdrawn {
+                    agent: 0,
+                    card: 0,
+                    why: "x".repeat(120)
+                }
+            ),
+            1
+        );
+        assert!(w.agents[0].trace.iter().any(|l| l.ends_with("withdraw #1")));
+        // Not to be taken, handed or waited on any more.
+        assert_eq!(
+            live.claim(&mut w, 1, &json!({ "card": 1 })).unwrap_err(),
+            "#1 was withdrawn; pick another"
+        );
+        let mut args = msg("claude-1", "assign", "Again");
+        args["card"] = json!(1);
+        assert_eq!(
+            sent(&mut live, &mut w, 0, &args).unwrap_err(),
+            "#1 was withdrawn; assign a new task for more"
+        );
+        assert_eq!(
+            sent(
+                &mut live,
+                &mut w,
+                0,
+                &after("claude-1", "Tests", json!([1]))
+            )
+            .unwrap_err(),
+            "#1 was withdrawn: a card waiting on it would never begin"
+        );
+        assert!(
+            live.board(&w, 0, &Value::Null)
+                .unwrap()
+                .ends_with("#1 Base (withdrawn)")
+        );
+    }
+
+    #[test]
+    fn a_withdrawn_card_s_holder_stops_and_its_late_done_closes_nothing() {
+        let mut w = team(2);
+        let mut live = idle_live(3);
+        // Held for claude-1, and at work with claude-2.
+        let base = with_card(&mut w, 2);
+        w.agents[2].attempt = w.cards[base].attempt;
+        w.agents[2].name = "claude-2".into();
+        sent(&mut live, &mut w, 0, &msg("claude-1", "inform", "fyi")).unwrap();
+        sent(
+            &mut live,
+            &mut w,
+            0,
+            &after("claude-1", "Tests", json!([base + 1])),
+        )
+        .unwrap();
+        sent(&mut live, &mut w, 0, &msg("claude-1", "assign", "Lint")).unwrap();
+        live.post(&mut w, 0, &with_after(card("Docs", "y"), json!([2])))
+            .unwrap();
+        // Withdrawing the base: what waits on it, through others too.
+        let got = live
+            .withdraw(&mut w, 0, &withdraw(base + 1, "not needed"))
+            .unwrap();
+        assert_eq!(
+            got,
+            "#1 is withdrawn; #2, #3 wait on it and never begin: withdraw them too, or tell \
+             the person"
+        );
+        assert_eq!(
+            live.notes[2],
+            [
+                "Card #1 (fix it) was withdrawn by lead: stop work on it; a done from you for it \
+              closes nothing now."
+            ]
+        );
+        // claude-2's done is late: no change, said so, headed so.
+        let got = sent(&mut live, &mut w, 2, &msg("lead", "done", "Did it.")).unwrap();
+        assert!(
+            got.ends_with(
+                "; #1 was withdrawn since your turn took it: this done closes nothing and \
+                 shows no change. Your worktree keeps what you wrote."
+            ),
+            "{got}"
+        );
+        assert_eq!(live.reading[2], 0, "no change read");
+        assert_eq!(w.cards[base].column, Column::Withdrawn);
+        assert_eq!(live.mail[0].last().unwrap().outcome, Outcome::Late(base));
+        // The held card goes: claude-1 loses its assign, keeps the inform.
+        let got = live.withdraw(&mut w, 0, &withdraw(2, "covered")).unwrap();
+        assert_eq!(
+            got,
+            "#2 is withdrawn; #3 wait on it and never begin: withdraw them too, or tell the person"
+        );
+        let kinds: Vec<MsgKind> = live.mail[1].iter().map(|m| m.kind).collect();
+        assert_eq!(kinds, [MsgKind::Inform, MsgKind::Assign], "the rest stays");
+        assert_eq!(live.mail[1][1].card, None);
+        assert_eq!(
+            live.notes[1],
+            [
+                "Card #2 (Tests) was withdrawn by lead: stop work on it; a done from you for it \
+              closes nothing now."
+            ]
+        );
+        // A failed card's last owner is through with it already: not told.
+        let f = with_card(&mut w, 1);
+        w.cards[f].column = Column::Failed;
+        live.notes[1].clear();
+        live.withdraw(&mut w, 0, &withdraw(f + 1, "x")).unwrap();
+        assert!(live.notes[1].is_empty());
+    }
+
+    #[test]
+    fn what_holds_a_card_back_is_found_through_the_cards_it_waits_on() {
+        let mut w = team(2);
+        let mut live = idle_live(3);
+        live.post(&mut w, 0, &card("Base", "x")).unwrap();
+        live.post(&mut w, 0, &with_after(card("Lib", "y"), json!([1])))
+            .unwrap();
+        live.post(&mut w, 0, &with_after(card("Docs", "z"), json!([2])))
+            .unwrap();
+        w.cards[0].column = Column::Failed;
+        w.cards[0].owner = Some(1);
+        let got = live.board(&w, 0, &Value::Null).unwrap();
+        assert!(
+            got.contains("#3 Docs (posted by lead; waits on #2, and #1 failed)"),
+            "{got}"
+        );
+        w.cards[0].column = Column::Withdrawn;
+        let got = live.board(&w, 0, &Value::Null).unwrap();
+        assert!(
+            got.contains("#3 Docs (posted by lead; waits on #2, and #1 was withdrawn)"),
+            "{got}"
+        );
     }
 }

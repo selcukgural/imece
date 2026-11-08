@@ -41,16 +41,22 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
         for c in cards {
             // A failed card stands with the done ones, marked; a card on
             // its second try or later says which (record 126).
-            let mark = if c.column == Column::Failed {
-                "✕ "
-            } else {
-                ""
+            let mark = match c.column {
+                Column::Failed => "✕ ",
+                Column::Withdrawn => "– ",
+                _ => "",
             };
             let tries = super::card::tries(t, c);
             let room = width.saturating_sub(4 + mark.chars().count() + tries.chars().count());
             lines.push(Line::from(vec![
                 Span::styled(format!("#{:<3}", c.id + 1), dim()),
-                Span::styled(mark, fg(pal().bad)),
+                Span::styled(
+                    mark,
+                    match c.column {
+                        Column::Withdrawn => dim(),
+                        _ => fg(pal().bad),
+                    },
+                ),
                 Span::raw(fit(&c.title, room)),
                 Span::styled(tries, dim()),
             ]));
@@ -116,8 +122,12 @@ pub fn hidden(w: &World) -> usize {
 pub(crate) fn waiting_spans(t: &crate::i18n::Text, w: &World, c: &Card) -> Vec<Span<'static>> {
     let mut spans = Vec::new();
     if let Some(f) = w.blocked_on(c.id) {
+        let text = match w.cards[f].column {
+            Column::Withdrawn => t.board_withdrawn,
+            _ => t.board_blocked,
+        };
         spans.push(Span::styled(
-            fill(t.board_blocked, &[&format!("#{}", f + 1)]),
+            fill(text, &[&format!("#{}", f + 1)]),
             fg(pal().bad),
         ));
     } else if !w.ready(c.id) {

@@ -128,6 +128,7 @@ pub(super) fn tools_of(role: Role, programs: &[String], timeout: Duration) -> Ve
         Role::Leader => {
             tools.push(plan_tool());
             tools.push(hire_tool(HIRE_WORKER, true));
+            tools.push(withdraw_tool());
         }
         Role::Helper | Role::Researcher => {}
     }
@@ -487,6 +488,30 @@ pub(super) fn board_tool() -> Tool {
                                     those whose every card it waits on is done.",
                 },
             },
+            "additionalProperties": false,
+        }),
+    }
+}
+
+/// imece's `withdraw` tool, the leader's (record 126): a card nobody is
+/// to do any more.
+pub(super) fn withdraw_tool() -> Tool {
+    Tool {
+        name: "withdraw".into(),
+        description: "Withdraws a card nobody is to do any more: one on the board, one \
+                      you assigned (at work, or waiting on other cards), or one that \
+                      failed. Whoever has it stops and a done from it closes nothing; \
+                      the cards that wait on it never begin. Not for a card whose change \
+                      waits for the person, is in the merge queue or is done."
+            .into(),
+        input: json!({
+            "type": "object",
+            "properties": {
+                "card": { "type": "integer", "minimum": 1, "description": "The card's number, without #." },
+                "why": { "type": "string", "maxLength": MAX_TITLE,
+                         "description": "One line the person reads on the card." },
+            },
+            "required": ["card", "why"],
             "additionalProperties": false,
         }),
     }
@@ -1505,7 +1530,9 @@ mod tests {
         );
         assert_eq!(
             names(Role::Leader),
-            ["send", "post", "board", "run", "whoami", "plan", "hire"]
+            [
+                "send", "post", "board", "run", "whoami", "plan", "hire", "withdraw"
+            ]
         );
         assert_eq!(
             names(Role::Helper),
@@ -1817,5 +1844,20 @@ mod tests {
         assert!(board.input["required"].is_null());
         assert_eq!(board.input["additionalProperties"], false);
         assert!(claim_tool().input["properties"]["after"].is_null());
+    }
+
+    #[test]
+    fn the_withdraw_tool_takes_a_card_and_a_line_why() {
+        let tool = withdraw_tool();
+        assert_eq!(tool.name, "withdraw");
+        assert_eq!(tool.input["required"], json!(["card", "why"]));
+        assert_eq!(tool.input["additionalProperties"], false);
+        let card = &tool.input["properties"]["card"];
+        assert_eq!(
+            (card["type"].as_str(), card["minimum"].as_u64()),
+            (Some("integer"), Some(1))
+        );
+        assert_eq!(tool.input["properties"]["why"]["maxLength"], 120);
+        assert!(tool.description.contains("never begin"));
     }
 }

@@ -63,6 +63,10 @@ fn heading(w: &World, m: &Mail) -> String {
     match m.outcome {
         Outcome::Failed(Some(c)) => out.push_str(&format!(" · #{} failed", c + 1)),
         Outcome::Failed(None) => out.push_str(" · failed"),
+        Outcome::Late(c) if w.cards[c].column == Column::Withdrawn => out.push_str(&format!(
+            " · late: #{} was withdrawn, it closes nothing",
+            c + 1
+        )),
         Outcome::Late(c) => out.push_str(&format!(
             " · late: #{} is {}'s now, it closes nothing",
             c + 1,
@@ -146,7 +150,10 @@ pub(super) fn system_prompt(
                      it is not offered until they are done, and an assign with it waits \
                      on the card and goes then, so assign the whole order at once; one \
                      that waits on a failed card waits until that card is handed again \
-                     and done. A worker's done shows the person its change (its \
+                     and done. A card nobody is to do any more (its plan changed, \
+                     another card did it) you withdraw with the withdraw tool and a line \
+                     why; whoever has it stops, and the cards waiting on it never begin. \
+                     A worker's done shows the person its change (its \
                      worktree's diff); they apply it to their checkout or reject it, and \
                      only an applied change is in the checkout you read. A card is \
                      done once its change is in; one sent back is at work again. A \
@@ -535,6 +542,12 @@ mod tests {
         assert_eq!(
             head(&w, mail(1, MsgKind::Done, Outcome::Late(c), None)),
             "[done 12 · late: #1 is nobody's now, it closes nothing] from claude-1:"
+        );
+        // Withdrawn, it went to no other try (record 126).
+        w.cards[c].column = Column::Withdrawn;
+        assert_eq!(
+            head(&w, mail(1, MsgKind::Done, Outcome::Late(c), None)),
+            "[done 12 · late: #1 was withdrawn, it closes nothing] from claude-1:"
         );
         // An assign handing a card names it and its try, and its paths.
         let p = mail_prompt(&w, &[mail(0, MsgKind::Assign, Outcome::Ok, Some(c))]);

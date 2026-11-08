@@ -37,7 +37,7 @@ A card is one unit of work: posted by the leader (or opened by your message to a
 
 Left, in the team's place:
 
-- The title row: `#3` and the card's title; then its project, its column in the board's words (TO DO, IN PROGRESS, TO REVIEW, VERIFYING, DONE, or FAILED for one that failed), ` · try 2` from its second try, and its minutes, to its end when done or failed.
+- The title row: `#3` and the card's title; then its project, its column in the board's words (TO DO, IN PROGRESS, TO REVIEW, VERIFYING, DONE, or FAILED for one that failed, WITHDRAWN for one the leader withdrew), ` · try 2` from its second try, and its minutes, to its end when done or failed.
 - What it edits (its leases), when it has any (demo only; symbol leases are not built live).
 - The paths it owns (`owns   src/parser.rs, docs (shared)`), when its `assign` or `post` gave it any ([the paths a card owns](../concepts/messages-and-board.md#the-paths-a-card-owns)); a write outside them is a `change` line of its story, `changed src/other.rs, outside the card's paths`.
 - **WHO**: who posted it, its owner, the owner's helpers while it is still the owner's card, then everyone its story says talked about it, each once with the first part it had. They are drawn as the team's agent rows, so their state is live; `j` `k` select among them and `enter` opens the selected one's focus as in the team.
