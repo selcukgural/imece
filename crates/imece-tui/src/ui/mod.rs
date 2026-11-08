@@ -2341,6 +2341,7 @@ mod tests {
             )],
             looking: true,
             failed: None,
+            left: Vec::new(),
         };
         app.ps = Some(crate::app::PsWin { at: 2, sure: None });
         let s = render(&app, 120, 30);
@@ -2378,7 +2379,7 @@ mod tests {
         assert!(s.contains("end this one"), "{s}");
         app.ps = Some(crate::app::PsWin {
             at: 2,
-            sure: Some((1, 502)),
+            sure: Some(crate::app::Sure::One(crate::app::Whose::Agent(1), 502)),
         });
         let s = render(&app, 120, 30);
         assert!(
@@ -2396,6 +2397,61 @@ mod tests {
         app.ps = Some(crate::app::PsWin { at: 2, sure: None });
         let s = render(&app, 120, 9);
         assert!(s.contains("▶"), "{s}");
+        // What an earlier run left, under its own heading, `a` named.
+        app.world.procs.failed = None;
+        assert!(!render(&app, 120, 30).contains("end all left over"));
+        app.world.procs.left = vec![
+            crate::procs::Left {
+                place: "imece-b6-notes/claude-3".into(),
+                procs: vec![
+                    p(700, 1, 40, 200 * 1024, "claude"),
+                    p(701, 700, 900, 100 * 1024, "node"),
+                ],
+            },
+            crate::procs::Left {
+                place: String::new(),
+                procs: vec![p(800, 1, 0, 1024, "sh")],
+            },
+        ];
+        app.ps = Some(crate::app::PsWin { at: 4, sure: None });
+        let s = render(&app, 120, 30);
+        assert!(s.contains("PROCESSES · 6"), "{s}");
+        let at = |s: &str, text: &str| s.lines().position(|l| l.contains(text));
+        let head = at(&s, "LEFT FROM AN EARLIER RUN · 3").expect("its heading");
+        assert!(at(&s, "  cargo").unwrap() < head, "{s}");
+        assert!(
+            s.contains("│imece-b6-notes/claude-3 · 94.0% · 300 MiB"),
+            "{s}"
+        );
+        assert!(s.contains("│? · 0.0% · 1 MiB"), "{s}");
+        let node = row(&s, "node");
+        assert!(node.contains("▶   node"), "{node:?}");
+        assert!(at(&s, "▶").unwrap() > head);
+        assert!(s.contains("end all left over"), "{s}");
+        app.ps = Some(crate::app::PsWin {
+            at: 4,
+            sure: Some(crate::app::Sure::One(crate::app::Whose::Left(0), 701)),
+        });
+        let s = render(&app, 120, 30);
+        assert!(
+            s.contains("end node (701), left from an earlier run? y ends it"),
+            "{s}"
+        );
+        app.ps = Some(crate::app::PsWin {
+            at: 4,
+            sure: Some(crate::app::Sure::AllLeft),
+        });
+        let s = render(&app, 120, 30);
+        assert!(
+            s.contains("end all 3 processes left from an earlier run? y ends them"),
+            "{s}"
+        );
+        // No agent's session, and what was left: both said.
+        app.world.procs.agents.clear();
+        app.world.procs.looking = false;
+        let s = render(&app, 120, 30);
+        assert!(s.contains("no agent has a session running"), "{s}");
+        assert!(s.contains("PROCESSES · 3"), "{s}");
         assert_eq!(overlay::cpu(0), "0.0%");
         assert_eq!(overlay::cpu(1009), "100.9%");
     }

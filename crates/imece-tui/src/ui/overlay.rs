@@ -8,8 +8,8 @@ use ratatui::widgets::{Block, Paragraph, Wrap};
 
 use super::*;
 use crate::app::{
-    App, Digest, LeftOff, LoncaWin, PickStep, PsWin, SoloPick, TalkNote, TeardownAsk, Thread,
-    TidyWin, Window,
+    App, Digest, LeftOff, LoncaWin, PickStep, PsWin, SoloPick, Sure, TalkNote, TeardownAsk, Thread,
+    TidyWin, Whose, Window,
 };
 use crate::archives::{self, Browser, Row};
 use crate::keys::{Keymap, Scope};
@@ -399,7 +399,7 @@ pub fn ps(f: &mut Frame, app: &App, win: PsWin) -> Rect {
         )));
     } else if procs.looking && rows.is_empty() {
         lines.push(Line::from(Span::styled(t.ps_looking, dim())));
-    } else if rows.is_empty() {
+    } else if procs.agents.is_empty() {
         lines.push(Line::from(Span::styled(t.ps_empty, dim())));
     }
     let width = (rows.iter())
@@ -408,10 +408,12 @@ pub fn ps(f: &mut Frame, app: &App, win: PsWin) -> Rect {
         .unwrap_or(0);
     let mut i = 0;
     let mut at_line = 0;
-    for (id, list) in &procs.agents {
+    // A tree's heading (what it is, what all of it takes), then each of
+    // its processes, the first and those under it indented.
+    let mut tree = |lines: &mut Vec<Line<'static>>, head: String, list: &[crate::procs::Proc]| {
         let (all_cpu, all_rss) = crate::procs::Procs::sum(list);
         lines.push(Line::from(vec![
-            Span::styled(clean(&app.world.agents[*id].name), bold(pal().fg)),
+            Span::styled(head, bold(pal().fg)),
             Span::styled(
                 format!(" · {} · {}", cpu(all_cpu), words::size(all_rss * 1024)),
                 dim(),
@@ -442,25 +444,53 @@ pub fn ps(f: &mut Frame, app: &App, win: PsWin) -> Rect {
             ]));
             i += 1;
         }
+    };
+    for (id, list) in &procs.agents {
+        tree(&mut lines, clean(&app.world.agents[*id].name), list);
+    }
+    if !procs.left.is_empty() {
+        let n = crate::app::left_pids(&app.world).len();
+        lines.push(Line::default());
+        lines.push(Line::from(Span::styled(
+            fill(t.ps_left_head, &[&n.to_string()]),
+            fg(pal().warn),
+        )));
+        for left in &procs.left {
+            let head = match left.place.is_empty() {
+                true => "?".to_string(),
+                false => clean(&left.place),
+            };
+            tree(&mut lines, head, &left.procs);
+        }
     }
     let [body, keys] = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(inner);
     // The row at hand stays on the window: the rows above it scroll away.
     let room = usize::from(body.height).max(1);
     let skip = (at_line + 1).saturating_sub(room);
     f.render_widget(Paragraph::new(lines).scroll((skip as u16, 0)), body);
-    let foot = match win.sure {
-        Some((id, pid)) => Line::from(Span::styled(
-            fill(
-                t.ps_sure,
-                &[
-                    &crate::live::proc_name(&app.world, id, pid),
-                    &pid.to_string(),
-                    &app.world.agents[id].name,
-                ],
-            ),
-            fg(pal().warn),
-        )),
-        None => Line::from(hint_spans(&t.ps_hints)),
+    let pid_name = |whose, pid: u32| {
+        let name = crate::app::whose_name(&app.world, whose, pid);
+        (name, pid.to_string())
+    };
+    let sure = match win.sure {
+        Some(Sure::One(whose @ Whose::Agent(id), pid)) => {
+            let (name, pid) = pid_name(whose, pid);
+            Some(fill(t.ps_sure, &[&name, &pid, &app.world.agents[id].name]))
+        }
+        Some(Sure::One(whose @ Whose::Left(_), pid)) => {
+            let (name, pid) = pid_name(whose, pid);
+            Some(fill(t.ps_left_sure, &[&name, &pid]))
+        }
+        Some(Sure::AllLeft) => {
+            let n = crate::app::left_pids(&app.world).len();
+            Some(fill(t.ps_all_sure, &[&n.to_string()]))
+        }
+        None => None,
+    };
+    let foot = match sure {
+        Some(said) => Line::from(Span::styled(said, fg(pal().warn))),
+        None if procs.left.is_empty() => Line::from(hint_spans(&t.ps_hints)),
+        None => Line::from(hint_spans(&t.ps_left_hints)),
     };
     f.render_widget(Paragraph::new(foot), keys);
     area

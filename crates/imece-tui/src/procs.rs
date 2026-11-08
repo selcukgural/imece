@@ -2,8 +2,12 @@
 //! #58): each session's process and every process under it, with the CPU
 //! and memory `ps` reports, and ending one of them (never the session
 //! itself, never imece's own bus relay) after checking again, just before
-//! the signal, that it is still under that session.
+//! the signal, that it is still under that session. And the processes left
+//! from an earlier run of imece (E16's second half): a process whose
+//! command line names imece's worktrees with no imece above it, and what
+//! runs under it; listed, and ended only on the person's word.
 
+use std::path::Path;
 use std::process::Command;
 use std::time::Duration;
 
@@ -19,6 +23,15 @@ pub const MOST_UNDER: usize = 200;
 
 /// After `SIGTERM`, how long a process has before `SIGKILL`.
 pub const KILL_GRACE: Duration = Duration::from_secs(2);
+
+/// The most trees left from an earlier run listed.
+pub const MOST_LEFT: usize = 20;
+
+/// How far up a process's parents are followed.
+const MOST_UP: usize = 64;
+
+/// The longest place said of a tree left from an earlier run.
+const PLACE_MOST: usize = 80;
 
 /// One process as `ps` reported it.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -43,6 +56,20 @@ pub struct Procs {
     pub looking: bool,
     /// Why the last look failed; none when it did not.
     pub failed: Option<String>,
+    /// The trees left from an earlier run of imece.
+    pub left: Vec<Left>,
+}
+
+/// A tree of processes left from an earlier run of imece: a process whose
+/// command line names imece's worktrees, with no imece above it (a run
+/// that ended without ending its sessions), and those under it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Left {
+    /// What its command line names under the worktrees, as
+    /// `imece-b69361b1-notes/claude-3`; empty when it was not read.
+    pub place: String,
+    /// It first, then those under it, parents before children.
+    pub procs: Vec<Proc>,
 }
 
 impl Procs {
@@ -156,23 +183,27 @@ pub fn read(roots: &[(AgentId, u32)]) -> Result<Vec<(AgentId, Vec<Proc>)>, Strin
     if trees.is_empty() {
         return Ok(Vec::new());
     }
-    let list: Vec<String> = (trees.iter())
-        .flat_map(|(_, pids)| pids.iter().map(u32::to_string))
-        .collect();
-    let list = list.join(",");
-    // A process gone between the two looks is simply not listed, and ps
-    // says so by its status alone: what it wrote is read either way.
+    let pids: Vec<u32> = trees.iter().flat_map(|(_, p)| p.clone()).collect();
+    Ok(group(&trees, &listed(&pids)?))
+}
+
+/// `ps -o pid=,ppid=,pcpu=,rss=,comm= -p LIST` for `pids`: what it read.
+/// A process gone meanwhile is simply not listed (`ps` says so by its
+/// status alone, so what it wrote is read either way).
+fn listed(pids: &[u32]) -> Result<Vec<Proc>, String> {
+    if pids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let list: Vec<String> = pids.iter().map(u32::to_string).collect();
     let mut cmd = Command::new("ps");
-    cmd.args(["-o", "pid=,ppid=,pcpu=,rss=,comm=", "-p", &list])
+    cmd.args(["-o", "pid=,ppid=,pcpu=,rss=,comm=", "-p", &list.join(",")])
         .env_clear()
         .env("PATH", "/usr/bin:/bin")
         .env("LC_ALL", "C");
-    let out = match child::ask(cmd, PS_WAIT) {
-        Some((_, out)) => out,
-        None => return Err("ps did not answer".into()),
-    };
-    let procs = parse(&out);
-    Ok(group(&trees, &procs))
+    match child::ask(cmd, PS_WAIT) {
+        Some((_, out)) => Ok(parse(&out)),
+        None => Err("ps did not answer".into()),
+    }
 }
 
 /// The processes `procs` in each tree's order; one not read is left out,
@@ -216,20 +247,21 @@ pub fn end(pid: u32, root: u32, name: &str) -> Result<(), Refusal> {
     if relay(pid, root, name, own_name().as_deref()) {
         return Err(Refusal::Bus);
     }
-    let signal = move |sig| {
-        // A number past i32 is no process of ours.
-        if let Ok(p) = i32::try_from(pid) {
-            unsafe { libc::kill(p, sig) };
-        }
-    };
-    signal(libc::SIGTERM);
+    signal(pid, libc::SIGTERM);
     std::thread::spawn(move || {
         std::thread::sleep(KILL_GRACE);
         if child::descends(pid, root) {
-            signal(libc::SIGKILL);
+            signal(pid, libc::SIGKILL);
         }
     });
     Ok(())
+}
+
+/// Sends `sig` to process `pid`; a number past i32 is no process of ours.
+fn signal(pid: u32, sig: i32) {
+    if let Ok(p) = i32::try_from(pid) {
+        unsafe { libc::kill(p, sig) };
+    }
 }
 
 /// Whether `pid`, named `name`, is imece's relay for session `root`: a
@@ -239,9 +271,213 @@ fn relay(pid: u32, root: u32, name: &str, own: Option<&str>) -> bool {
 }
 
 /// The name imece's own program runs under (its relay's too).
-fn own_name() -> Option<String> {
+pub(crate) fn own_name() -> Option<String> {
     let exe = std::env::current_exe().ok()?;
     Some(exe.file_name()?.to_string_lossy().into_owned())
+}
+
+/// `s` with every character an extended regular expression gives a
+/// meaning to escaped: only the text itself matches.
+pub fn literal(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        if "\\.^$*+?()[]{}|".contains(c) {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out
+}
+
+/// How a command line names something under imece's worktrees directory
+/// `worktrees`: the directory and a `/`.
+fn named(worktrees: &Path) -> String {
+    format!("{}/", worktrees.to_string_lossy())
+}
+
+/// The numbers in `pgrep`'s answer, one a line; anything else is left out.
+fn numbers(text: &str) -> Vec<u32> {
+    text.lines().filter_map(|l| l.trim().parse().ok()).collect()
+}
+
+/// This user's processes whose command line names something under
+/// `worktrees` (`pgrep -f`); none is an empty list.
+fn naming(worktrees: &Path) -> Result<Vec<u32>, String> {
+    let uid = unsafe { libc::getuid() }.to_string();
+    let mut cmd = Command::new("pgrep");
+    cmd.args(["-U", &uid, "-f", &literal(&named(worktrees))])
+        .env_clear()
+        .env("PATH", "/usr/bin:/bin")
+        .env("LC_ALL", "C");
+    match child::ask(cmd, PS_WAIT) {
+        // 1: nothing matched.
+        Some((status, out)) if status.success() || status.code() == Some(1) => Ok(numbers(&out)),
+        Some((status, out)) => Err(format!(
+            "pgrep ended with {status}: {}",
+            out.lines().next().unwrap_or_default()
+        )),
+        None => Err("pgrep did not answer".into()),
+    }
+}
+
+/// The processes above `pid` in `pairs`, its parent first, at most
+/// [`MOST_UP`]; the walk stops at one with no parent listed, at 0, and at
+/// a loop.
+pub fn above(pairs: &[(u32, u32)], pid: u32) -> Vec<u32> {
+    let mut up: Vec<u32> = Vec::new();
+    let mut at = pid;
+    // A bounded range: each step is one parent.
+    for _ in 0..MOST_UP {
+        let Some(&(_, parent)) = pairs.iter().find(|&&(p, _)| p == at) else {
+            break;
+        };
+        if parent == 0 || parent == pid || up.contains(&parent) {
+            break;
+        }
+        up.push(parent);
+        at = parent;
+    }
+    up
+}
+
+/// Whether a process `ps` names `name` is imece's own program, named
+/// `own` (Linux cuts a process's name at 15 bytes).
+pub fn is_imece(name: &str, own: &str) -> bool {
+    name == own || (name.len() == 15 && own.starts_with(name))
+}
+
+/// Of the processes `naming` imece's worktrees, those left from an earlier
+/// run, in their order, at most [`MOST_LEFT`]: one is not imece (named
+/// `own`, its relay too), nothing above it is this imece (process `me`)
+/// or another imece, and none above it names the worktrees too (it is in
+/// that one's tree then). `procs` names them and those above them.
+pub fn left_roots(
+    naming: &[u32],
+    pairs: &[(u32, u32)],
+    procs: &[Proc],
+    own: &str,
+    me: u32,
+) -> Vec<u32> {
+    let imece = |pid: u32| {
+        pid == me
+            || (procs.iter())
+                .find(|p| p.pid == pid)
+                .is_some_and(|p| is_imece(&p.name, own))
+    };
+    (naming.iter().copied())
+        .filter(|&pid| {
+            !imece(pid)
+                && (above(pairs, pid).into_iter()).all(|up| !imece(up) && !naming.contains(&up))
+        })
+        .take(MOST_LEFT)
+        .collect()
+}
+
+/// What a command line `args` names under `worktrees`: the word after
+/// it, cut at [`PLACE_MOST`] characters; empty when it names nothing.
+pub fn place_in(args: &str, worktrees: &Path) -> String {
+    let named = named(worktrees);
+    let Some(at) = args.find(&named) else {
+        return String::new();
+    };
+    let rest = &args[at + named.len()..];
+    let word = rest.split_whitespace().next().unwrap_or_default();
+    word.chars().take(PLACE_MOST).collect()
+}
+
+/// The trees left from an earlier run of imece (named `own`; this one is
+/// process `me`): each process whose command line names something under
+/// `worktrees` with no imece above it, and those under it.
+pub fn leftovers(worktrees: &Path, own: &str, me: u32) -> Result<Vec<Left>, String> {
+    let naming = naming(worktrees)?;
+    if naming.is_empty() {
+        return Ok(Vec::new());
+    }
+    let pairs = pairs(&ps(&["-A", "-o", "pid=,ppid="])?);
+    let mut asked = naming.clone();
+    for &pid in &naming {
+        for up in above(&pairs, pid) {
+            if !asked.contains(&up) {
+                asked.push(up);
+            }
+        }
+    }
+    let roots = left_roots(&naming, &pairs, &listed(&asked)?, own, me);
+    let trees: Vec<(usize, Vec<u32>)> = (roots.iter().enumerate())
+        .map(|(i, &root)| (i, under(&pairs, root)))
+        .collect();
+    let pids: Vec<u32> = trees.iter().flat_map(|(_, p)| p.clone()).collect();
+    let procs = listed(&pids)?;
+    Ok((group(&trees, &procs).into_iter())
+        .map(|(i, procs)| {
+            let args = ps(&["-ww", "-o", "args=", "-p", &roots[i].to_string()]);
+            Left {
+                place: place_in(&args.unwrap_or_default(), worktrees),
+                procs,
+            }
+        })
+        .collect())
+}
+
+/// Of `roots`, those still left from an earlier run, as [`leftovers`]
+/// tells one; none when that cannot be read.
+fn still_left(roots: &[u32], worktrees: &Path, own: &str, me: u32) -> Vec<u32> {
+    let Ok(naming) = naming(worktrees) else {
+        return Vec::new();
+    };
+    let roots: Vec<u32> = roots
+        .iter()
+        .copied()
+        .filter(|r| naming.contains(r))
+        .collect();
+    let Ok(text) = ps(&["-A", "-o", "pid=,ppid="]) else {
+        return Vec::new();
+    };
+    let pairs = pairs(&text);
+    let mut asked = roots.clone();
+    for &root in &roots {
+        asked.extend(above(&pairs, root));
+    }
+    match listed(&asked) {
+        Ok(named) => left_roots(&roots, &pairs, &named, own, me),
+        Err(_) => Vec::new(),
+    }
+}
+
+/// Of `asked` (each a process and the first of the tree left from an
+/// earlier run it was listed in), those still in that tree: the tree
+/// still left (`roots`), and the process it or under it.
+fn in_trees(asked: &[(u32, u32)], roots: &[u32]) -> Vec<(u32, u32)> {
+    (asked.iter().copied())
+        .filter(|&(pid, root)| roots.contains(&root) && (pid == root || child::descends(pid, root)))
+        .collect()
+}
+
+/// Ends the processes `asked` left from an earlier run (each with the
+/// first of its tree): checked again first (the tree still left, the
+/// process still in it), then `SIGTERM`, and `SIGKILL` after
+/// [`KILL_GRACE`] for each still there and still in its tree. How many
+/// were sent the first.
+pub fn end_left(asked: &[(u32, u32)], worktrees: &Path, own: &str, me: u32) -> usize {
+    let mut roots: Vec<u32> = asked.iter().map(|&(_, root)| root).collect();
+    roots.sort_unstable();
+    roots.dedup();
+    let ended = in_trees(asked, &still_left(&roots, worktrees, own, me));
+    for &(pid, _) in &ended {
+        signal(pid, libc::SIGTERM);
+    }
+    let n = ended.len();
+    if n > 0 {
+        let (worktrees, own) = (worktrees.to_path_buf(), own.to_string());
+        std::thread::spawn(move || {
+            std::thread::sleep(KILL_GRACE);
+            let roots = still_left(&roots, &worktrees, &own, me);
+            for (pid, _) in in_trees(&ended, &roots) {
+                signal(pid, libc::SIGKILL);
+            }
+        });
+    }
+    n
 }
 
 #[cfg(test)]
@@ -431,5 +667,267 @@ mod tests {
         );
         assert!(procs[0].rss > 0);
         stop(root, &[sleep]);
+    }
+    #[test]
+    fn a_path_is_matched_as_written_and_a_place_is_the_word_after_it() {
+        assert_eq!(literal("a.b"), "a\\.b");
+        assert_eq!(
+            literal(r"/x y/\.^$*+?()[]{}|z"),
+            r"/x y/\\\.\^\$\*\+\?\(\)\[\]\{\}\|z"
+        );
+        assert_eq!(literal("/plain/dir-1_ü"), "/plain/dir-1_ü");
+        let w = Path::new("/s/imece/worktrees");
+        assert_eq!(named(w), "/s/imece/worktrees/");
+        let args = "claude -p --add-dir /s/imece/worktrees/imece-b6-notes/claude-3 --x";
+        assert_eq!(place_in(args, w), "imece-b6-notes/claude-3");
+        assert_eq!(place_in("claude /s/imece/worktrees/a", w), "a");
+        assert_eq!(place_in("claude /s/imece/worktreesx/a", w), "");
+        assert_eq!(place_in("claude /s/imece/worktrees", w), "");
+        assert_eq!(place_in("", w), "");
+        let long = format!("x /s/imece/worktrees/{} y", "a".repeat(100));
+        assert_eq!(place_in(&long, w), "a".repeat(PLACE_MOST));
+        assert_eq!(numbers("12\n x\n 13 \n\n-1\n"), vec![12, 13]);
+    }
+
+    #[test]
+    fn the_processes_above_one_are_its_parents_nearest_first() {
+        let pairs = [(5, 4), (4, 3), (3, 1), (1, 0), (9, 8), (8, 9), (7, 7)];
+        assert_eq!(above(&pairs, 5), vec![4, 3, 1]);
+        assert!(above(&pairs, 1).is_empty());
+        assert!(above(&pairs, 6).is_empty(), "not listed");
+        assert_eq!(above(&pairs, 9), vec![8], "a loop stops");
+        assert!(above(&pairs, 7).is_empty(), "its own parent");
+        let deep: Vec<(u32, u32)> = (2..200).map(|pid| (pid, pid - 1)).collect();
+        let up = above(&deep, 150);
+        assert_eq!(up.len(), MOST_UP);
+        assert_eq!(up[..2], [149, 148]);
+        // A loop past the start: 3 → 2 → 1 → 2.
+        assert_eq!(above(&[(3, 2), (2, 1), (1, 2)], 3), vec![2, 1]);
+    }
+
+    #[test]
+    fn a_tree_is_left_over_with_no_imece_above_it() {
+        assert!(is_imece("imece", "imece"));
+        assert!(!is_imece("imec", "imece"));
+        assert!(!is_imece("imece2", "imece"));
+        // Linux cuts a name at 15 bytes.
+        assert!(is_imece("imece_tui-0123a", "imece_tui-0123abcdef"));
+        assert!(!is_imece("imece_tui-0123", "imece_tui-0123abcdef"));
+        assert!(!is_imece("imece_tui-9999a", "imece_tui-0123abcdef"));
+        let proc = |pid, name: &str| Proc {
+            pid,
+            ppid: 0,
+            cpu: 0,
+            rss: 0,
+            name: name.into(),
+        };
+        // 1 launchd; 100 a live imece (me) and 110 its session; 200 another
+        // imece and 210 its; 300 a shell and 310 a left session, 320 under
+        // it naming the worktrees too; 400 imece's own command line.
+        let pairs = [
+            (1, 0),
+            (100, 1),
+            (110, 100),
+            (200, 300),
+            (210, 200),
+            (300, 1),
+            (310, 300),
+            (320, 310),
+            (400, 1),
+            (500, 1),
+        ];
+        let procs = [
+            proc(1, "launchd"),
+            proc(100, "imece"),
+            proc(110, "claude"),
+            proc(200, "imece"),
+            proc(210, "claude"),
+            proc(300, "zsh"),
+            proc(310, "claude"),
+            proc(320, "node"),
+            proc(400, "imece"),
+        ];
+        let naming = [110, 210, 310, 320, 400, 500, 600];
+        assert_eq!(
+            left_roots(&naming, &pairs, &procs, "imece", 100),
+            vec![310, 500, 600],
+            "not unnamed ones"
+        );
+        // This imece is known by its number whatever it is named.
+        assert_eq!(
+            left_roots(&naming, &pairs, &procs, "other", 100),
+            vec![210, 310, 400, 500, 600]
+        );
+        assert_eq!(
+            left_roots(&naming, &pairs, &procs, "other", 7),
+            vec![110, 210, 310, 400, 500, 600]
+        );
+        assert!(left_roots(&[100], &pairs, &procs, "other", 100).is_empty());
+        let many: Vec<u32> = (1000..1100).collect();
+        assert_eq!(left_roots(&many, &[], &[], "imece", 1).len(), MOST_LEFT);
+    }
+
+    /// A process whose command line names `place` under `worktrees`, its
+    /// parent gone (as a run that ended leaves it), with a `sleep` under
+    /// it: its number.
+    fn orphan(worktrees: &Path, place: &str) -> u32 {
+        let arg = format!("{}/{place}", worktrees.display());
+        let out = Command::new("sh")
+            .args([
+                "-c",
+                "sh -c 'sleep 60 & wait' left \"$1\" </dev/null >/dev/null 2>&1 & echo $!",
+                "outer",
+                &arg,
+            ])
+            .output()
+            .unwrap();
+        String::from_utf8(out.stdout)
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap()
+    }
+
+    fn tree_of(worktrees: &Path, root: u32) -> Option<Left> {
+        let me = std::process::id();
+        let own = own_name().unwrap();
+        (leftovers(worktrees, &own, me).unwrap().into_iter()).find(|l| l.procs[0].pid == root)
+    }
+
+    #[test]
+    fn a_tree_left_from_an_earlier_run_is_found_and_ended() {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .subsec_nanos();
+        let dir = std::env::temp_dir().join(format!("imece-left-{}-{nanos}", std::process::id()));
+        let w = dir.join("worktrees");
+        assert_eq!(leftovers(&w, "imece", 1), Ok(vec![]), "none names it");
+        let root = orphan(&w, "p-notes/claude-1");
+        // Ours, named the same: under this process, so not left over.
+        let (mine, mine_sleep) =
+            session(&format!("sh -c 'sleep 60' mine {}/p/claude-2", w.display()));
+        let start = Instant::now();
+        let left = loop {
+            if let Some(l) = tree_of(&w, root).filter(|l| l.procs.len() > 1) {
+                break l;
+            }
+            assert!(start.elapsed() < Duration::from_secs(5), "not found");
+            std::thread::sleep(Duration::from_millis(20));
+        };
+        assert_eq!(left.place, "p-notes/claude-1");
+        assert_eq!(left.procs[0].name, "sh");
+        let sleep = left.procs[1].pid;
+        assert_eq!(
+            (left.procs[1].ppid, left.procs[1].name.as_str()),
+            (root, "sleep")
+        );
+        let me = std::process::id();
+        let own = own_name().unwrap();
+        let all = leftovers(&w, &own, me).unwrap();
+        assert_eq!(all.len(), 1, "{all:?}");
+        // Not ours, nor one asked under the wrong tree.
+        assert_eq!(end_left(&[(mine.id(), mine.id())], &w, &own, me), 0);
+        assert_eq!(end_left(&[(mine_sleep, root)], &w, &own, me), 0);
+        assert_eq!(end_left(&[(sleep, root), (root, root)], &w, &own, me), 2);
+        assert!(gone_soon(sleep, root, Duration::from_secs(2)));
+        let start = Instant::now();
+        while tree_of(&w, root).is_some() {
+            assert!(start.elapsed() < Duration::from_secs(3), "still there");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert_eq!(end_left(&[(root, root)], &w, &own, me), 0, "gone");
+        stop(mine, &[mine_sleep]);
+    }
+    /// A unique worktrees directory for one test.
+    fn worktrees_for(test: &str) -> std::path::PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .subsec_nanos();
+        let dir = format!("imece-{test}-{}-{nanos}", std::process::id());
+        std::env::temp_dir().join(dir).join("worktrees")
+    }
+
+    /// Waits for what `look` finds.
+    fn soon<T>(mut look: impl FnMut() -> Option<T>) -> T {
+        let start = Instant::now();
+        loop {
+            if let Some(found) = look() {
+                return found;
+            }
+            assert!(start.elapsed() < Duration::from_secs(5), "not found");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+
+    #[test]
+    fn one_under_a_program_named_as_imece_is_not_left_over() {
+        let w = worktrees_for("named");
+        // `xargs`, its parent gone, runs a `sh` that names the worktrees;
+        // xargs itself does not.
+        let arg = format!("{}/p/claude-1", w.display());
+        let out = Command::new("sh")
+            .args([
+                "-c",
+                "printf '%s\\n' \"$1\" | xargs sh -c 'sleep 60; :' child >/dev/null 2>&1 & echo $!",
+                "outer",
+                &arg,
+            ])
+            .output()
+            .unwrap();
+        let xargs: u32 = String::from_utf8(out.stdout)
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        let left = soon(|| {
+            let all = leftovers(&w, "imece", u32::MAX).unwrap();
+            all.into_iter().find(|l| l.procs.len() > 1)
+        });
+        let child = left.procs[0].pid;
+        assert_eq!(left.procs[0].ppid, xargs);
+        assert_eq!(left.place, "p/claude-1");
+        // xargs named as imece: what runs under it is that imece's.
+        assert_eq!(leftovers(&w, "xargs", u32::MAX), Ok(vec![]));
+        assert_eq!(end_left(&[(child, child)], &w, "xargs", u32::MAX), 0);
+        // Under this process by number, whatever its name.
+        assert_eq!(leftovers(&w, "imece", xargs), Ok(vec![]));
+        let sleep = left.procs[1].pid;
+        assert_eq!(
+            end_left(&[(sleep, child), (child, child)], &w, "imece", u32::MAX),
+            2
+        );
+        unsafe { libc::kill(xargs as i32, libc::SIGKILL) };
+    }
+
+    #[test]
+    fn one_left_over_that_will_not_end_is_killed_after_the_grace() {
+        let w = worktrees_for("stubborn");
+        let arg = format!("{}/p/claude-1", w.display());
+        let out = Command::new("sh")
+            .args([
+                "-c",
+                "sh -c 'trap \"\" TERM; sleep 60 & wait' left \"$1\" </dev/null >/dev/null 2>&1 & echo $!",
+                "outer",
+                &arg,
+            ])
+            .output()
+            .unwrap();
+        let root: u32 = String::from_utf8(out.stdout)
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        let left = soon(|| tree_of(&w, root).filter(|l| l.procs.len() > 1));
+        let me = std::process::id();
+        let own = own_name().unwrap();
+        assert_eq!(end_left(&[(root, root)], &w, &own, me), 1);
+        std::thread::sleep(KILL_GRACE / 2);
+        assert!(tree_of(&w, root).is_some(), "TERM is ignored");
+        soon(|| tree_of(&w, root).is_none().then_some(()));
+        for p in &left.procs {
+            unsafe { libc::kill(p.pid as i32, libc::SIGKILL) };
+        }
     }
 }

@@ -15,7 +15,7 @@ use crate::live::{
     SUGGEST_DAY_COST, TidyRefusal, numbers, standing,
 };
 use crate::model::*;
-use crate::procs::{Proc, Refusal as ProcRefusal};
+use crate::procs::{Left, Proc, Refusal as ProcRefusal};
 use crate::rng::Rng;
 use imece_agent::Tier;
 
@@ -253,6 +253,9 @@ const SESSION_PIDS: u32 = 41_000;
 
 /// And the commands they run here, a thousand an agent.
 const COMMAND_PIDS: u32 = 60_000;
+
+/// The demo's processes left from an earlier run start here (`:ps`).
+const LEFT_PIDS: u32 = 39_000;
 
 /// A working agent of the demo runs a new command this often.
 const PROC_TICKS: u64 = 60;
@@ -1750,7 +1753,58 @@ impl Sim {
             agents,
             looking: false,
             failed: None,
+            left: self.left(),
         };
+    }
+
+    /// The demo's processes left from an earlier run, as if one had
+    /// crashed: a session with its relay and a test under it, and a
+    /// server alone; what the person ended stays gone, a tree with its
+    /// first.
+    fn left(&self) -> Vec<Left> {
+        let proc = |n: u32, up: Option<u32>, cpu, mib: u64, name: &str| Proc {
+            pid: LEFT_PIDS + n,
+            ppid: up.map_or(1, |u| LEFT_PIDS + u),
+            cpu,
+            rss: mib * 1024,
+            name: name.into(),
+        };
+        let trees = [
+            Left {
+                place: "demo-notes/claude-9".into(),
+                procs: vec![
+                    proc(0, None, 4, 310, "claude"),
+                    proc(1, Some(0), 0, 9, "imece"),
+                    proc(2, Some(0), 990, 520, "cargo"),
+                ],
+            },
+            Left {
+                place: "demo/claude-8".into(),
+                procs: vec![proc(100, None, 31, 180, "node")],
+            },
+        ];
+        let ended = &self.extras.ended;
+        (trees.into_iter())
+            .filter(|t| !ended.contains(&t.procs[0].pid))
+            .map(|mut t| {
+                t.procs.retain(|p| !ended.contains(&p.pid));
+                t
+            })
+            .collect()
+    }
+
+    /// Ends the demo's processes `asked` left from an earlier run (each
+    /// with the first of its tree), those still in their tree as live
+    /// checks: how many.
+    pub fn end_left(&mut self, w: &mut World, asked: &[(u32, u32)]) -> usize {
+        let left = self.left();
+        let found = |&(pid, root): &(u32, u32)| {
+            (left.iter()).any(|t| t.procs[0].pid == root && t.procs.iter().any(|p| p.pid == pid))
+        };
+        let ended: Vec<u32> = asked.iter().filter(|a| found(a)).map(|a| a.0).collect();
+        self.extras.ended.extend(&ended);
+        self.look_procs(w);
+        ended.len()
     }
 
     /// Ends made-up process `pid` of agent `id`, refused as live refuses
@@ -9522,6 +9576,7 @@ diff --git a/b.rs b/b.rs
         };
         s.look_procs(&mut w);
         assert_eq!(w.procs.agents, vec![], "nobody started yet");
+        assert_eq!(w.procs.left.len(), 2, "left from an earlier run");
         s.mind(1).started = true;
         s.mind(2).started = true;
         w.agents[1].status = Status::Idle;
@@ -9583,6 +9638,53 @@ diff --git a/b.rs b/b.rs
         w.projects[0].closed = true;
         s.look_procs(&mut w);
         assert_eq!(w.procs.agents, vec![]);
+    }
+
+    #[test]
+    fn the_demo_s_leftovers_end_as_live_s_do() {
+        let (mut w, mut s) = world(1, 2, 0, 1, Lang::En);
+        let p = |pid, ppid, cpu, mib: u64, name: &str| Proc {
+            pid,
+            ppid,
+            cpu,
+            rss: mib * 1024,
+            name: name.into(),
+        };
+        s.look_procs(&mut w);
+        assert_eq!(
+            w.procs.left,
+            vec![
+                Left {
+                    place: "demo-notes/claude-9".into(),
+                    procs: vec![
+                        p(39_000, 1, 4, 310, "claude"),
+                        p(39_001, 39_000, 0, 9, "imece"),
+                        p(39_002, 39_000, 990, 520, "cargo"),
+                    ],
+                },
+                Left {
+                    place: "demo/claude-8".into(),
+                    procs: vec![p(39_100, 1, 31, 180, "node")],
+                },
+            ]
+        );
+        // Not in its tree, or not there: nothing.
+        assert_eq!(s.end_left(&mut w, &[(39_002, 39_100), (39_005, 39_000)]), 0);
+        assert_eq!(s.end_left(&mut w, &[(39_002, 39_000)]), 1);
+        let pids: Vec<u32> = w.procs.left[0].procs.iter().map(|p| p.pid).collect();
+        assert_eq!(pids, vec![39_000, 39_001]);
+        assert_eq!(s.end_left(&mut w, &[(39_002, 39_000)]), 0, "stays gone");
+        // Its first gone, a tree is.
+        assert_eq!(s.end_left(&mut w, &[(39_000, 39_000)]), 1);
+        assert_eq!(w.procs.left.len(), 1);
+        assert_eq!(w.procs.left[0].place, "demo/claude-8");
+        assert_eq!(s.end_left(&mut w, &[(39_100, 39_100), (39_001, 39_000)]), 1);
+        assert_eq!(w.procs.left, vec![]);
+        assert!(
+            w.journal
+                .iter()
+                .all(|e| !matches!(e.event, Event::Killed { .. }))
+        );
     }
 
     #[test]
