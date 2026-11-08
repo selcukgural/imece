@@ -478,7 +478,7 @@ mod tests {
                 why: Vec::new(),
                 redacted: Vec::new(),
                 cut: false,
-                verifies: Vec::new(),
+                verifies: Runs::default(),
                 on_trunk: true,
             },
         );

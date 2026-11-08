@@ -125,7 +125,7 @@ What Lonca does next is said whoever decided, `lonca approve` in your own shell 
 
 ### What is checked on Lonca
 
-`.imece/check` does not run in a workspace. A repository on Lonca says what to run in `[verification]` of its `lonca.toml`, and Lonca's merge queue runs it on the merged tree after your yes, in a sandbox; imece runs nothing. The Δ's verdict line says which it is: `after your yes Lonca runs: build, test`, or `nothing runs after your yes`. The settings are signed, so changing them is `lonca policy set`, by you:
+`.imece/check` does not run in a workspace. A repository on Lonca says what to run in `[verification]` of its `lonca.toml`, and Lonca's merge queue runs it on the merged tree after your yes, in a sandbox; imece runs nothing. The Δ's verdict line says which it is, as Lonca says it for that change: `after your yes Lonca runs: build, tests`, `nothing runs after your yes`, or `Lonca did not say what runs after your yes` (an older Lonca, or a policy it can not read: nothing promises a check then). `extended` is `on_signature_change`, for a change that reaches other code; a named check of the policy (`verification.checks`) shows by its name, here and in the journal line of what ran. The settings are signed, so changing them is `lonca policy set`, by you:
 
 ```toml
 [verification]

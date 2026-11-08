@@ -148,7 +148,8 @@ pub fn status(pending: &[u64]) -> Value {
         .map(|seq| {
             json!({"seq": seq, "created_ms": 5, "actor": "agent:a/s", "op": "change.propose",
                 "reasons": ["unobserved_session"], "approvals": [], "required": 1, "change": "kkkk", "base": TRUNK,
-                "intent": "fix", "agent": "a", "task": "T-1", "paths": ["src/a.rs"]})
+                "intent": "fix", "agent": "a", "task": "T-1", "paths": ["src/a.rs"],
+                "checks": [], "runs": ["build", "tests", "api"]})
         })
         .collect();
     json!({"repo": "demo", "trunk": TRUNK, "policy": POLICY, "next_seq": 9, "pending": pending,

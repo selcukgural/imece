@@ -771,6 +771,7 @@ pub struct Text {
     /// What Lonca's queue runs after the yes, or that nothing does.
     pub verdict_verifies: &'static str,
     pub verdict_verifies_none: &'static str,
+    pub verdict_verifies_unsaid: &'static str,
     /// The card screen's line with the paths it owns.
     pub card_owns: &'static str,
     pub card_after: &'static str,
@@ -1892,6 +1893,7 @@ pub const EN: Text = Text {
     verdict_stale: "based before trunk, merged after your yes",
     verdict_verifies: "after your yes Lonca runs: {}",
     verdict_verifies_none: "nothing runs after your yes",
+    verdict_verifies_unsaid: "Lonca did not say what runs after your yes",
     card_owns: "owns   ",
     card_after: "after  ",
     ev_check_yes: "you said yes to the repository's check ({} asked); it runs on every change read until a byte of it changes",
@@ -3163,6 +3165,7 @@ pub const TR: Text = Text {
     verdict_stale: "temeli gövdenin gerisinde, evetinden sonra birleştirilir",
     verdict_verifies: "evetinden sonra Lonca şunları çalıştırır: {}",
     verdict_verifies_none: "evetinden sonra hiçbir şey çalışmaz",
+    verdict_verifies_unsaid: "Lonca evetinden sonra neyin çalışacağını söylemedi",
     card_owns: "sahibi ",
     card_after: "sonra  ",
     ev_check_yes: "deponun kontrolüne evet dedin ({} sordu); bir baytı değişene dek okunan her değişiklikte çalışır",
@@ -4057,6 +4060,7 @@ mod tests {
             (e.verdict_stale, t.verdict_stale),
             (e.verdict_verifies, t.verdict_verifies),
             (e.verdict_verifies_none, t.verdict_verifies_none),
+            (e.verdict_verifies_unsaid, t.verdict_verifies_unsaid),
             (e.card_owns, t.card_owns),
             (e.ev_posted, t.ev_posted),
             (e.ev_claimed, t.ev_claimed),

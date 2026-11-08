@@ -130,8 +130,6 @@ struct Kept {
     /// Each repository's policy and whether it holds a change for a
     /// person. Only an answer is kept.
     held: HashMap<String, (String, bool)>,
-    /// Each repository's policy and the commands it verifies with.
-    verifies: HashMap<String, (String, Vec<String>)>,
     /// How many looks in a row each repository's daemon asked to be asked
     /// again.
     again: HashMap<String, u8>,
@@ -150,19 +148,6 @@ impl Kept {
         self.held
             .insert(repo.to_string(), (policy.to_string(), held));
         held
-    }
-
-    /// What policy `policy` of `repo` runs on an approved change. What
-    /// can not be read is nothing: a line on the Δ, not a gate.
-    fn verifies(&mut self, client: &mut Client, repo: &str, policy: &str) -> Vec<String> {
-        if let Some((_, names)) = self.verifies.get(repo).filter(|(p, _)| p == policy) {
-            return names.clone();
-        }
-        let Ok(names) = client.verifies(repo, policy) else {
-            return Vec::new();
-        };
-        (self.verifies).insert(repo.to_string(), (policy.to_string(), names.clone()));
-        names
     }
 
     /// The diff of `change`; none while the daemon can not say.
@@ -209,7 +194,7 @@ fn offers(status: &lonca::Status, read: &mut impl FnMut(&str) -> Option<Arc<Diff
                 why: newest.reasons.clone(),
                 redacted: diff.redacted.clone(),
                 cut: diff.cut,
-                verifies: vec![],
+                verifies: newest.runs.clone().into(),
                 on_trunk: newest.base.as_deref() == Some(status.trunk.as_str()),
             },
             diff,
@@ -606,13 +591,7 @@ fn look(place: &Place, repos: &Repos, watched: &[String], kept: &mut Kept) -> Lo
                     let trunk = status.trunk.clone();
                     (looked.pending).push((*p, repo.clone(), trunk, proposals.collect()));
                     let mut read = |change: &str| kept.diff(c, repo, change);
-                    let mut offered = offers(&status, &mut read);
-                    if !offered.is_empty() {
-                        let names = kept.verifies(c, repo, &status.policy);
-                        for offer in &mut offered {
-                            offer.proposal.verifies.clone_from(&names);
-                        }
-                    }
+                    let offered = offers(&status, &mut read);
                     waiting.extend(offered.iter().map(|o| o.proposal.change.clone()));
                     looked.offers.extend(offered.into_iter().map(|o| (*p, o)));
                     for change in settled(&status, watched) {
@@ -1227,7 +1206,7 @@ mod tests {
 
     use super::*;
     use crate::live::testing::{Stub, idle_live, idle_live_in, team, with_card, with_helper};
-    use crate::model::{Event, Status, StoreAct};
+    use crate::model::{Event, Runs, Status, StoreAct};
 
     const WAIT: Duration = Duration::from_secs(10);
 
@@ -2343,6 +2322,7 @@ mod tests {
                     agent: agent.map(str::to_string),
                     task: None,
                     paths: Vec::new(),
+                    runs: None,
                 })
                 .collect(),
             changes: Vec::new(),
@@ -2381,7 +2361,7 @@ mod tests {
                 why: vec!["unobserved_session".into()],
                 redacted: Vec::new(),
                 cut: false,
-                verifies: vec![],
+                verifies: Runs::default(),
                 on_trunk: true,
             },
             diff: diff_of("diff --git a/a.rs b/a.rs\n"),
@@ -2397,6 +2377,8 @@ mod tests {
             (6, Some("w2"), Some("c6")),
         ]);
         status.pending[1].base = Some("0ther".into());
+        status.pending[1].runs = Some(vec!["build".into(), "api".into()]);
+        status.pending[0].runs = Some(vec!["older".into()]);
         let mut asked = Vec::new();
         let got = offers(&status, &mut |change: &str| {
             asked.push(change.to_string());
@@ -2413,10 +2395,11 @@ mod tests {
             why: vec!["unobserved_session".into()],
             redacted: vec!["s.txt".into()],
             cut: true,
-            verifies: vec![],
+            verifies: Runs::These(vec!["build".into(), "api".into()]),
             on_trunk: false,
         };
         assert_eq!(got[0].proposal, want);
+        assert_eq!(got[1].proposal.verifies, Runs::Unsaid, "Lonca said nothing");
         assert_eq!(got[1].agent, "w2");
         assert_eq!(got[1].proposal.older, Vec::<u64>::new());
         assert!(got[1].proposal.on_trunk, "based on trunk as it stands");
@@ -2555,12 +2538,13 @@ mod tests {
     }
 
     #[test]
-    fn what_a_policy_verifies_reaches_the_offer_and_is_read_once() {
+    fn what_lonca_says_runs_after_a_yes_reaches_the_offer() {
         let mut v = status(&[7]);
         v["policy"] = serde_json::json!("P");
         let d = Daemon::start(PROTOCOL, move |asked| {
             Ok(match asked["method"].as_str() {
                 Some("status") => v.clone(),
+                // `[verification]\ntest = "t"\n`: Lonca's word is what counts.
                 Some("tree") => serde_json::json!([{
                     "path": "lonca.toml",
                     "content_b64": "W3ZlcmlmaWNhdGlvbl0KdGVzdCA9ICJ0Igo="
@@ -2571,29 +2555,10 @@ mod tests {
         });
         d.sign_in();
         let repos = vec![(0, "demo".to_string(), None)];
-        let mut kept = Kept::default();
-        let offers = look(&d.place, &repos, &[], &mut kept).offers;
+        let offers = look(&d.place, &repos, &[], &mut Kept::default()).offers;
         assert_eq!(offers.len(), 1, "a proposal waits");
-        assert_eq!(offers[0].1.proposal.verifies, ["test"]);
-        let trees = || {
-            let heard = d.heard.lock().unwrap();
-            let policy = |h: &&serde_json::Value| h["method"] == "tree";
-            heard.iter().filter(policy).count()
-        };
-        let read = trees();
-        let again = look(&d.place, &repos, &[], &mut kept).offers;
-        assert_eq!(again[0].1.proposal.verifies, ["test"]);
-        assert_eq!(trees(), read, "kept while the policy stands");
-    }
-
-    #[test]
-    fn a_policy_that_can_not_be_read_verifies_nothing_and_is_read_again() {
-        let d = Daemon::start(PROTOCOL, |_| Err("internal"));
-        d.sign_in();
-        let mut kept = Kept::default();
-        let mut c = d.place.open().unwrap();
-        assert!(kept.verifies(&mut c, "demo", "P").is_empty());
-        assert!(kept.verifies.is_empty(), "only an answer is kept");
+        let want = ["build", "tests", "api"].map(String::from).to_vec();
+        assert_eq!(offers[0].1.proposal.verifies, Runs::These(want));
     }
 
     #[test]
