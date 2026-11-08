@@ -94,7 +94,9 @@ Bütçeyi, açık proje başına bir satırı, en eski açık öğeleri (en çok
 
 ## Süreçler
 
-`:ps` her ajanın oturumunun şu an çalıştırdıklarını gösterir: `claude`'u, altındaki imece bus aktarıcısını ve ajanın başlattığı her komutu, `ps`'in söylediği CPU ve bellekle; pencere açıkken üç saniyede bir yeniden okunur. Takılan ya da makineyi yiyen bir komut (hiç bitmeyen bir test, kontrolden çıkmış bir derleme) orada `d` ve `y` ile sonlandırılabilir: yalnızca o süreç, hâlâ o ajanın oturumunun altında olduğu yeniden denetlendikten sonra; oturum sürer ve ajan komutunun hata verdiğini görür. imece burada hiçbir süreci kendiliğinden sonlandırmaz ve başlatmadığı birine asla dokunmaz. Bkz. [`:ps`](../reference/commands.md#ps).
+`:ps` her ajanın oturumunun şu an çalıştırdıklarını gösterir: `claude`'u, altındaki imece bus aktarıcısını ve ajanın başlattığı her komutu, `ps`'in söylediği CPU ve bellekle; pencere açıkken üç saniyede bir yeniden okunur. Takılan ya da makineyi yiyen bir komut (hiç bitmeyen bir test, kontrolden çıkmış bir derleme) orada `d` ve `y` ile sonlandırılabilir: yalnızca o süreç, hâlâ o ajanın oturumunun altında olduğu yeniden denetlendikten sonra; oturum sürer ve ajan komutunun hata verdiğini görür. imece burada hiçbir süreci kendiliğinden sonlandırmaz ve başlatmadığı birine asla dokunmaz.
+
+Oturumlarını bitirmeden sona eren bir imece çalışması (bir çökme, kapanan bir terminal, `kill -9`) onları, başlattıklarıyla birlikte, çalışır hâlde bırakabilir. imece açılışta onlara bakar ve `:tidy`'nin worktree'ler için yaptığı gibi kaç tane bulduğunu söyler: `önceki bir çalışmadan kalan 4 süreç var: :ps listeler`. Bunlar, komut satırında imece'nin worktree'lerini anan ve üstünde hiçbir imece olmayan süreçler ile onların altında çalışanlardır; şu an çalışan başka bir imece kendininkileri korur. `:ps` onları kendi başlıkları altında listeler, `d` birini, `a` hepsini sonlandırır, her biri bir `y`'den sonra. Bkz. [`:ps`](../reference/commands.md#ps).
 
 ## Ayrıca bakınız
 

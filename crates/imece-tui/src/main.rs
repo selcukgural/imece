@@ -447,6 +447,7 @@ fn main() -> std::io::Result<()> {
     app.notify = saved.notify.unwrap_or_default();
     app.start_push();
     app.start_tidy();
+    app.start_ps();
     app.motion = saved.motion.unwrap_or_default();
     app.away = saved.away.unwrap_or_default();
     app.story = saved.story.unwrap_or(true);

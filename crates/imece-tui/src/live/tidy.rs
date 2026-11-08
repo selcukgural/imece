@@ -189,7 +189,7 @@ fn dirs_in(dir: &Path) -> Vec<PathBuf> {
 
 impl Live {
     /// Where every worktree is: one directory per checkout.
-    fn worktrees(&self) -> PathBuf {
+    pub(super) fn worktrees(&self) -> PathBuf {
         self.state.join("worktrees")
     }
 

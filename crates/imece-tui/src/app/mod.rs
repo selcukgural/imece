@@ -66,8 +66,8 @@ pub enum Engine {
 
 /// The `:tidy` window: the row at hand, and whether a `y` is asked for
 /// removing it with what it holds.
-pub use self::ps::PsWin;
-pub(crate) use self::ps::ps_rows;
+pub use self::ps::{PsWin, Sure, Whose};
+pub(crate) use self::ps::{left_pids, ps_rows, whose_name};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct TidyWin {
@@ -914,6 +914,8 @@ pub struct App {
     /// (`:ps`, record 129), and when they were last asked for.
     pub ps: Option<PsWin>,
     pub ps_looked: Option<Instant>,
+    /// The start's look at the processes has not been said yet.
+    ps_start: bool,
     /// The project at hand's Lonca repository in a window over the screen
     /// (bare `:lonca`, record 125): what waits for a human, what is held.
     pub lonca_win: Option<LoncaWin>,
@@ -1241,6 +1243,7 @@ impl App {
             tidy: None,
             ps: None,
             ps_looked: None,
+            ps_start: false,
             lonca_win: None,
             window: None,
             board_ready: false,

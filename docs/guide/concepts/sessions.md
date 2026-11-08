@@ -94,7 +94,9 @@ It shows the pot, one line per open project, the oldest open items (6 at most, t
 
 ## Processes
 
-`:ps` shows what each agent's session runs right now: its `claude`, imece's bus relay under it and every command the agent started, with CPU and memory as `ps` reports them, read again every three seconds while the window is open. A command that hangs or eats the machine (a test that never ends, a build gone wild) can be ended there with `d` and `y`: only that process, after checking again that it is still under that agent's session; the session goes on and the agent sees its command fail. imece never ends a process by itself here, and never one it did not start. See [`:ps`](../reference/commands.md#ps).
+`:ps` shows what each agent's session runs right now: its `claude`, imece's bus relay under it and every command the agent started, with CPU and memory as `ps` reports them, read again every three seconds while the window is open. A command that hangs or eats the machine (a test that never ends, a build gone wild) can be ended there with `d` and `y`: only that process, after checking again that it is still under that agent's session; the session goes on and the agent sees its command fail. imece never ends a process by itself here, and never one it did not start.
+
+A run of imece that ended without ending its sessions (a crash, a closed terminal, `kill -9`) can leave them running, with what they had started. At a start imece looks for them and says how many it found, as `:tidy` does for worktrees: `4 processes left from an earlier run: :ps lists them`. They are what names imece's worktrees on its command line with no imece above it, and what runs under it; another imece running now keeps its own. `:ps` lists them under their own heading, `d` ends one and `a` all of them, each after a `y`. See [`:ps`](../reference/commands.md#ps).
 
 ## See also
 
