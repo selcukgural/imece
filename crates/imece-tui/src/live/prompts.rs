@@ -149,7 +149,9 @@ pub(super) fn system_prompt(
                      with card: its number), to the same worker or another, with what \
                      to do differently; so for a card whose worker stopped. A done \
                      headed late came from a worker the card was taken from: it closes \
-                     nothing. A worker \
+                     nothing. A card has three tries and its change three rounds; past \
+                     them the person decides whether it gets another, and you hear \
+                     their answer. A worker \
                      starts at the checkout's HEAD; when the person wants work on another \
                      branch, a tag, a commit or a pull request, hire with from (#N for a \
                      pull request) and that worker's worktree starts there and stays. \
@@ -543,6 +545,10 @@ mod tests {
         let leader = system_prompt(&w, 0, 4, 0, Confine::Standard);
         assert!(
             leader.contains("hand that card again (assign with card: its number)"),
+            "{leader}"
+        );
+        assert!(
+            leader.contains("A card has three tries and its change three rounds; past them"),
             "{leader}"
         );
         assert!(

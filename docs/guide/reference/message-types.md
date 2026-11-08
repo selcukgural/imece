@@ -52,6 +52,7 @@ Deny by default: a message that does not fit is refused with the reason and leav
 | `outcome` on anything but a `done`, or not `done`/`failed` | `outcome goes with a done` / `outcome is done or failed` |
 | `card` on anything but an `assign`, or with `paths` | `card goes with an assign: the card it hands again` / `a card handed again keeps its own paths; leave paths out` |
 | a `card` that is not the project's, to a non-worker, in review, in the queue or done | `there is no card #8 in this project`, `a card goes to a worker`, `#3's change waits for the person; it comes back if they send it back`, `#3 is in Lonca's merge queue`, `#3 is done; assign a new task for more` |
+| a `card` that failed its last try, is at work on it, or that you failed for good | `#3 failed 3 tries: the person decides whether it gets another, and you hear their answer`, `#3 is on try 3, its last: let its worker finish`, `the person failed #3 for good; assign a new task for more` |
 | `options` on anything but an `ask` to `you` | `options go with an ask to the person (to: you)` |
 | bad `options` | `options must be an array of strings`, `an ask offers at most 4 options`, `an option is empty`, `an option is longer than 60 characters`, `"a\tb" has a control character` |
 | bad `paths` | `paths must be an array of strings`, `a card owns at most 20 paths`, `a path is empty`, `a path is longer than 200 characters`, `"a\tb" has a control character`, `paths are relative to the repository; "/etc" starts with /`, `"src/../x" goes outside the repository (..)`, `paths lists "src" twice` |
@@ -123,7 +124,7 @@ imece's MCP server is called `imece`; its tools reach a session as `mcp__imece__
 | `re` | integer ≥ 1 | no | the number of the message this replies to |
 | `paths` | array of at most 20 strings, each at most 200 | no | for `assign`: the paths the card owns, relative to the repository, as git pathspecs (a file, a directory, or a pattern with `*`); one ending in the word `shared` is named, not owned. Refused on any other type |
 | `options` | array of at most 4 strings, each at most 60 | no | for an `ask` to `you`: the answers the person can pick with one key, short, the one the agent would take first; the person may still answer in words. Refused on any other message |
-| `card` | integer ≥ 1 | no | for the leader's `assign`: a card to hand again (`#N`), its next try ([a card's tries](../concepts/messages-and-board.md#a-cards-tries)) |
+| `card` | integer ≥ 1 | no | for the leader's `assign`: a card to hand again (`#N`), its next try, refused past its third until you allow another ([a card's tries](../concepts/messages-and-board.md#a-cards-tries)) |
 | `outcome` | `done` or `failed` | no | for a `done`: `failed` fails the card and shows no change; `done`, as leaving it out, hands the change in |
 
 An `assign` with paths is delivered with them: the mail ends `This card owns src/parser.rs, docs (shared): stay in them; what else needs changing goes in your done, or ask for the card to be widened.`

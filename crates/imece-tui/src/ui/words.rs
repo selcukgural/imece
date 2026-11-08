@@ -171,6 +171,24 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
         Event::LateDone { agent, card } => {
             fill(t.ev_late_done, &[name(w, *agent), &card_ref(*card)])
         }
+        Event::Capped {
+            card, cap, count, ..
+        } => {
+            let text = match cap {
+                Cap::Tries => t.ev_capped_tries,
+                Cap::Rounds => t.ev_capped_rounds,
+            };
+            let title = &w.cards[*card].title;
+            fill(text, &[&card_ref(*card), title, &count.to_string()])
+        }
+        Event::CapAnswered { card, cap, yes, .. } => {
+            let text = match (cap, yes) {
+                (Cap::Tries, true) => t.ev_cap_more_try,
+                (Cap::Rounds, true) => t.ev_cap_more_round,
+                (_, false) => t.ev_cap_failed,
+            };
+            fill(text, &[&card_ref(*card)])
+        }
         Event::Hired {
             by,
             agent,
@@ -617,6 +635,19 @@ pub fn story(lang: Lang, w: &World, card: &Card, e: &StoryEvent) -> String {
         },
         StoryEvent::Failed(why) => fill(t.st_failed, &[why]),
         StoryEvent::LateDone { from } => fill(t.st_late_done, &[name(w, *from)]),
+        StoryEvent::Capped { cap, count } => {
+            let text = match cap {
+                Cap::Tries => t.st_capped_tries,
+                Cap::Rounds => t.st_capped_rounds,
+            };
+            fill(text, &[&count.to_string()])
+        }
+        StoryEvent::CapAnswered { cap, yes } => match (cap, yes) {
+            (Cap::Tries, true) => t.st_cap_more_try,
+            (Cap::Rounds, true) => t.st_cap_more_round,
+            (_, false) => t.st_cap_failed,
+        }
+        .to_string(),
         StoryEvent::Stopped(why) => fill(t.st_stopped, &[why]),
         StoryEvent::Interrupted => t.st_interrupted.to_string(),
         StoryEvent::Posted { by, text } => fill(t.st_posted, &[name(w, *by), text]),
@@ -906,6 +937,7 @@ pub fn notice(lang: Lang, w: &World, note: crate::notify::Note) -> String {
                 InboxKind::Script => t.notice_script,
                 InboxKind::Check => t.notice_check,
                 InboxKind::Plan => t.notice_plan,
+                InboxKind::Tries | InboxKind::Rounds => t.notice_cap,
                 InboxKind::Sensitive | InboxKind::Research => t.notice_sensitive,
             };
             (text, item.agent)
@@ -941,9 +973,30 @@ pub fn push_why(lang: Lang, why: &crate::push::Why) -> String {
     }
 }
 
+/// What cap item `item` counts (record 126, F9): its card's tries, or
+/// the times its change came back.
+pub(crate) fn cap_count(w: &World, item: &InboxItem) -> u32 {
+    let Some(card) = item.card.and_then(|c| w.cards.get(c)) else {
+        return 0;
+    };
+    match item.kind {
+        InboxKind::Tries => card.attempt,
+        _ => card.breaker.sent_back,
+    }
+}
+
 pub fn inbox(lang: Lang, w: &World, item: &InboxItem) -> String {
     let t = lang.text();
     match (item.kind, item.researcher) {
+        (InboxKind::Tries | InboxKind::Rounds, _) => {
+            let text = match item.kind {
+                InboxKind::Tries => t.in_tries,
+                _ => t.in_rounds,
+            };
+            let card = item.card.map_or(String::new(), card_ref);
+            let count = cap_count(w, item).to_string();
+            fill(text, &[name(w, item.agent), &card, &count])
+        }
         (InboxKind::Research, Some(r)) => fill(
             t.in_research,
             &[name(w, r), &item.detail, name(w, item.agent)],
@@ -1964,6 +2017,164 @@ mod tests {
             "silindi: a · a söküldü: exit 0, 0.4 s · dropped · b söküldü: exit 0, 0.4 s · \
              c sökümü başarısız: exit 0, 0.4 s · no db · d sökümü çalışmadı: not a plain file · \
              e sökümü çalışmadı: hayır dedin"
+        );
+    }
+
+    #[test]
+    fn a_card_at_its_breaker_and_the_persons_answer_are_said_in_both_languages() {
+        let mut w = crate::live::testing::team(2);
+        let c = crate::live::testing::with_card(&mut w, 1);
+        w.cards[c].attempt = 3;
+        w.cards[c].breaker.sent_back = 4;
+        let say = |lang, e: Event| event(lang, &w, &e);
+        let capped = |cap| Event::Capped {
+            agent: 0,
+            card: c,
+            cap,
+            count: 3,
+        };
+        assert_eq!(
+            say(Lang::En, capped(Cap::Tries)),
+            "#1 fix it failed 3 tries: another waits for your yes"
+        );
+        assert_eq!(
+            say(Lang::En, capped(Cap::Rounds)),
+            "#1 fix it came back 3 times: another round waits for your yes"
+        );
+        assert_eq!(
+            say(Lang::Tr, capped(Cap::Tries)),
+            "#1 fix it 3 denemede başarısız: bir deneme daha onayınızı bekliyor"
+        );
+        assert_eq!(
+            say(Lang::Tr, capped(Cap::Rounds)),
+            "#1 fix it 3 kez geri döndü: bir tur daha onayınızı bekliyor"
+        );
+        let answered = |cap, yes| Event::CapAnswered {
+            agent: 0,
+            card: c,
+            cap,
+            yes,
+        };
+        for (cap, yes, en, tr) in [
+            (
+                Cap::Tries,
+                true,
+                "you allowed #1 one more try",
+                "#1 için bir deneme daha verdiniz",
+            ),
+            (
+                Cap::Rounds,
+                true,
+                "you allowed #1 one more round",
+                "#1 için bir tur daha verdiniz",
+            ),
+            (
+                Cap::Tries,
+                false,
+                "you failed #1: nobody hands it again",
+                "#1 kartını başarısız saydınız: kimse onu yeniden vermez",
+            ),
+            (
+                Cap::Rounds,
+                false,
+                "you failed #1: nobody hands it again",
+                "#1 kartını başarısız saydınız: kimse onu yeniden vermez",
+            ),
+        ] {
+            assert_eq!(say(Lang::En, answered(cap, yes)), en);
+            assert_eq!(say(Lang::Tr, answered(cap, yes)), tr);
+        }
+        let card = w.cards[c].clone();
+        let tell = |lang, e: StoryEvent| story(lang, &w, &card, &e);
+        assert_eq!(
+            tell(
+                Lang::En,
+                StoryEvent::Capped {
+                    cap: Cap::Tries,
+                    count: 3
+                }
+            ),
+            "failed 3 tries: the person decides"
+        );
+        assert_eq!(
+            tell(
+                Lang::Tr,
+                StoryEvent::Capped {
+                    cap: Cap::Rounds,
+                    count: 4
+                }
+            ),
+            "4 kez geri döndü: karar kişinin"
+        );
+        assert_eq!(
+            tell(
+                Lang::En,
+                StoryEvent::Capped {
+                    cap: Cap::Rounds,
+                    count: 4
+                }
+            ),
+            "came back 4 times: the person decides"
+        );
+        for (cap, yes, en) in [
+            (Cap::Tries, true, "the person allowed one more try"),
+            (Cap::Rounds, true, "the person allowed one more round"),
+            (Cap::Tries, false, "the person failed it"),
+            (Cap::Rounds, false, "the person failed it"),
+        ] {
+            assert_eq!(tell(Lang::En, StoryEvent::CapAnswered { cap, yes }), en);
+        }
+        assert_eq!(
+            tell(
+                Lang::Tr,
+                StoryEvent::CapAnswered {
+                    cap: Cap::Rounds,
+                    yes: true
+                }
+            ),
+            "kişi bir tur daha verdi"
+        );
+        // The items: who waits, the card, and what it counts.
+        let item = |kind, agent| InboxItem {
+            kind,
+            agent,
+            detail: "fix it".into(),
+            researcher: None,
+            open: true,
+            tick: 0,
+            card: Some(c),
+        };
+        assert_eq!(
+            inbox(Lang::En, &w, &item(InboxKind::Tries, 0)),
+            "lead: #1 failed 3 tries; another needs your yes"
+        );
+        assert_eq!(
+            inbox(Lang::En, &w, &item(InboxKind::Rounds, 1)),
+            "claude-1: #1's change came back 4 times; another round needs your yes"
+        );
+        assert_eq!(
+            inbox(Lang::Tr, &w, &item(InboxKind::Rounds, 1)),
+            "claude-1: #1 değişikliği 4 kez geri döndü; bir tur daha onayınızı bekliyor"
+        );
+        let cardless = InboxItem {
+            card: None,
+            ..item(InboxKind::Tries, 0)
+        };
+        assert_eq!(cap_count(&w, &cardless), 0);
+        let gone = InboxItem {
+            card: Some(9),
+            ..item(InboxKind::Rounds, 0)
+        };
+        assert_eq!(cap_count(&w, &gone), 0);
+        w.inbox.push(item(InboxKind::Rounds, 1));
+        assert_eq!(
+            notice(Lang::En, &w, crate::notify::Note::Item(0)),
+            "imece · claude-1: a card waits for your word"
+        );
+        w.inbox[0].kind = InboxKind::Tries;
+        assert_eq!(
+            notice(Lang::Tr, &w, crate::notify::Note::Item(0)),
+            "imece · claude-1: bir kart kararınızı bekliyor"
         );
     }
 

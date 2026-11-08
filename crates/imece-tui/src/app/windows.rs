@@ -155,6 +155,29 @@ impl App {
         self.inbox_sel = self.inbox_sel.min(open.saturating_sub(1));
     }
 
+    /// The person's answer to cap item `item` (record 126, F9): one more
+    /// try or round for its card, or the card fails for good; the flash
+    /// says which, and that it is no longer waiting when it is not.
+    pub(super) fn answer_cap(&mut self, item: usize, yes: bool) {
+        let t = self.lang.text();
+        let (kind, card) = (self.world.inbox[item].kind, self.world.inbox[item].card);
+        let took = match &mut self.engine {
+            Engine::Live(l) => l.decide_cap(&mut self.world, item, yes),
+            Engine::Sim(s) => s.decide_cap(&mut self.world, item, yes),
+            Engine::View(_) => return self.read_only(),
+        };
+        let words = match (took, yes, kind) {
+            (false, ..) => t.cap_gone,
+            (true, true, InboxKind::Tries) => t.cap_more_try,
+            (true, true, _) => t.cap_more_round,
+            (true, false, _) => t.cap_failed,
+        };
+        let card = card.map_or(String::new(), ui::words::card_ref);
+        self.flash(fill(words, &[&card]));
+        let open = self.inbox_rows().len();
+        self.inbox_sel = self.inbox_sel.min(open.saturating_sub(1));
+    }
+
     /// `n` on a plan: the composer opens to the leader; what the person
     /// writes closes the plan unanswered and starts the leader's turn,
     /// which plans again from it.
@@ -1210,5 +1233,50 @@ mod script_next_tests {
         app.script = Some((i, 0));
         app.on_key(key(KeyCode::Char('x')));
         assert_eq!(app.script, Some((i, 0)));
+    }
+
+    #[test]
+    fn a_and_r_on_a_card_at_its_breaker_answer_it_and_the_flash_says_how() {
+        use crate::model::Cap;
+        let mut app = waiting(&[]);
+        let leader = app.world.projects[0].leader;
+        assert!(app.world.cards.len() > 1, "the demo posts cards");
+        let worker = app.world.projects[0].leader + 1;
+        for c in [0, 1] {
+            app.world.cards[c].column = Column::Failed;
+            app.world.cards[c].owner = Some(worker);
+            app.world.cards[c].attempt = 3;
+        }
+        // a: one more try.
+        assert!(app.world.capped(Cap::Tries, leader, 0));
+        let item = app.world.inbox.len() - 1;
+        app.answer_item(item, true);
+        assert!(!app.world.inbox[item].open);
+        assert_eq!(app.world.cards[0].breaker.more_tries, 1);
+        assert_eq!(
+            flashed(&app).as_deref(),
+            Some("one more try for #1: the leader hears it")
+        );
+        // Answered already: said so, nothing more.
+        app.answer_item(item, false);
+        assert_eq!(flashed(&app).as_deref(), Some("that is no longer waiting"));
+        assert!(!app.world.cards[0].breaker.stopped);
+        // r: failed for good.
+        assert!(app.world.capped(Cap::Tries, leader, 1));
+        let item = app.world.inbox.len() - 1;
+        app.answer_item(item, false);
+        assert!(app.world.cards[1].breaker.stopped);
+        assert_eq!(flashed(&app).as_deref(), Some("#2 failed for good"));
+        // a on a round: one more round.
+        app.world.cards[0].column = Column::Working;
+        app.world.cards[0].breaker.sent_back = 3;
+        assert!(app.world.capped(Cap::Rounds, worker, 0));
+        let item = app.world.inbox.len() - 1;
+        app.answer_item(item, true);
+        assert_eq!(app.world.cards[0].breaker.more_rounds, 1);
+        assert_eq!(
+            flashed(&app).as_deref(),
+            Some("one more round for #1: its worker goes on")
+        );
     }
 }

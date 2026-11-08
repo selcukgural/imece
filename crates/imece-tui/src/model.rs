@@ -1187,6 +1187,60 @@ pub enum Column {
     Failed,
 }
 
+/// The tries a card has before the person decides on another (record
+/// 126, F9): the leader hands a failed card again at most this many tries
+/// in all.
+pub const TRIES: u32 = 3;
+/// The rounds a card's change has before the person decides on another:
+/// it comes back to work by itself (Lonca's queue or a human there said
+/// no) at most this many times.
+pub const ROUNDS: u32 = 3;
+
+/// Which of a card's caps stopped what would have gone on by itself
+/// (record 126, F9).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Cap {
+    /// It failed its last try: the leader may not hand it again.
+    Tries,
+    /// Its change came back its last time: its worker is not woken.
+    Rounds,
+}
+
+impl Cap {
+    /// The kind of the item that waits for the person.
+    pub fn kind(self) -> InboxKind {
+        match self {
+            Cap::Tries => InboxKind::Tries,
+            Cap::Rounds => InboxKind::Rounds,
+        }
+    }
+
+    /// The cap an item of `kind` is about, if it is about one.
+    pub fn of(kind: InboxKind) -> Option<Cap> {
+        match kind {
+            InboxKind::Tries => Some(Cap::Tries),
+            InboxKind::Rounds => Some(Cap::Rounds),
+            _ => None,
+        }
+    }
+}
+
+/// What a card's circuit breaker counts and what the person said past it
+/// (record 126, F9).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Breaker {
+    /// Times its change came back to work: the person's reject, notes or
+    /// clash sent back, or Lonca's queue or a human there saying no.
+    pub sent_back: u32,
+    /// Tries the person allowed past [`TRIES`].
+    pub more_tries: u32,
+    /// Rounds the person allowed past [`ROUNDS`].
+    pub more_rounds: u32,
+    /// The person failed it at the breaker: nobody hands it again.
+    pub stopped: bool,
+}
+
 /// What a worker's `done` is for (record 126).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DoneFor {
@@ -1297,6 +1351,18 @@ pub enum StoryEvent {
     LateDone {
         from: AgentId,
     },
+    /// Its `cap` stopped what would have gone on by itself, after `count`
+    /// tries or rounds: the person decides (record 126, F9).
+    Capped {
+        cap: Cap,
+        count: u32,
+    },
+    /// The person allowed one more try or round past `cap`, or failed the
+    /// card.
+    CapAnswered {
+        cap: Cap,
+        yes: bool,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1333,6 +1399,7 @@ impl StoryEvent {
             | StoryEvent::Stopped(_)
             | StoryEvent::Failed(_)
             | StoryEvent::LateDone { .. }
+            | StoryEvent::Capped { .. }
             | StoryEvent::Interrupted => StoryKind::Evidence,
             StoryEvent::Change { .. }
             | StoryEvent::Sensitive(_)
@@ -1340,6 +1407,7 @@ impl StoryEvent {
             | StoryEvent::Strayed(_) => StoryKind::Change,
             StoryEvent::YouApproved { .. }
             | StoryEvent::YouRejected { .. }
+            | StoryEvent::CapAnswered { .. }
             | StoryEvent::YouSaid(_) => StoryKind::Person,
         }
     }
@@ -1370,6 +1438,8 @@ pub struct Card {
     /// `assign` opened, a `claim`, or an `assign` naming it to hand it
     /// again; none while it waits on the board untaken.
     pub attempt: u32,
+    /// Its circuit breaker (record 126, F9).
+    pub breaker: Breaker,
 }
 
 /// The part an agent had in a card, for the card's screen.
@@ -1515,6 +1585,18 @@ impl Card {
     /// it unless it is handed again.
     pub fn over(&self) -> bool {
         matches!(self.column, Column::Done | Column::Failed)
+    }
+
+    /// Whether its tries are out (record 126, F9): another needs the
+    /// person's yes.
+    pub fn tries_out(&self) -> bool {
+        self.attempt >= TRIES + self.breaker.more_tries
+    }
+
+    /// Whether its rounds are out: its change came back as often as it
+    /// may by itself.
+    pub fn rounds_out(&self) -> bool {
+        self.breaker.sent_back >= ROUNDS + self.breaker.more_rounds
     }
 }
 
@@ -1696,6 +1778,24 @@ pub enum Event {
     LateDone {
         agent: AgentId,
         card: CardId,
+    },
+    /// Card `card`'s `cap` stopped what would have gone on by itself after
+    /// `count` tries or rounds; `agent` (the leader that would hand it, or
+    /// the worker whose change came back) waits for the person (record
+    /// 126, F9).
+    Capped {
+        agent: AgentId,
+        card: CardId,
+        cap: Cap,
+        count: u32,
+    },
+    /// The person allowed card `card` one more try or round past `cap`,
+    /// or failed it.
+    CapAnswered {
+        agent: AgentId,
+        card: CardId,
+        cap: Cap,
+        yes: bool,
     },
     /// A live leader hired a worker; `model` is the one it was given, or
     /// none for Claude Code's own default; `from` the start point its
@@ -2131,7 +2231,7 @@ impl Event {
             | Event::ChangeCost { .. }
             | Event::LateDone { .. }
             | Event::WorktreeKept { .. } => EntryKind::Assumption,
-            Event::Blocked { .. } => EntryKind::Blocked,
+            Event::Blocked { .. } | Event::Capped { .. } => EntryKind::Blocked,
             Event::ResearchOpened { .. }
             | Event::ResearchDelivered { .. }
             | Event::FromCache { .. } => EntryKind::Research,
@@ -2180,6 +2280,7 @@ impl Event {
             | Event::SetupAnswered { .. }
             | Event::CheckAnswered { .. }
             | Event::PlanAnswered { .. }
+            | Event::CapAnswered { .. }
             | Event::Standing { .. }
             | Event::Budget { .. }
             | Event::Shell { .. }
@@ -2202,6 +2303,8 @@ impl Event {
             | Event::Handed { card, .. }
             | Event::CardFailed { card, .. }
             | Event::LateDone { card, .. }
+            | Event::Capped { card, .. }
+            | Event::CapAnswered { card, .. }
             | Event::Claimed { card, .. } => Some(card),
             _ => None,
         }
@@ -2270,6 +2373,8 @@ impl Event {
             | Event::Handed { agent, .. }
             | Event::CardFailed { agent, .. }
             | Event::LateDone { agent, .. }
+            | Event::Capped { agent, .. }
+            | Event::CapAnswered { agent, .. }
             | Event::Planned { leader: agent, .. }
             | Event::PlanAnswered { leader: agent, .. }
             | Event::CommandsMissing { agent }
@@ -2353,6 +2458,16 @@ pub enum InboxKind {
     /// first card's title. Closes with the answer, or with the person's
     /// word to the leader.
     Plan,
+    /// A failed card's tries are out (record 126, F9): the leader may not
+    /// hand it again unless the person allows one more try, or they fail
+    /// it for good. The agent is the leader, the card the item's, the
+    /// detail its title. The leader's mail goes on.
+    Tries,
+    /// A card's change came back to work as often as it may by itself:
+    /// its worker is not woken unless the person allows one more round,
+    /// or they fail the card. The agent is the worker, the card the
+    /// item's, the detail its title. Its mail waits.
+    Rounds,
 }
 
 impl InboxKind {
@@ -2367,7 +2482,7 @@ impl InboxKind {
     pub fn holds_mail(self) -> bool {
         !matches!(
             self,
-            InboxKind::Reply | InboxKind::Change | InboxKind::Check
+            InboxKind::Reply | InboxKind::Change | InboxKind::Check | InboxKind::Tries
         )
     }
 
@@ -4039,13 +4154,26 @@ impl World {
     /// The cards of worker `id`'s that stood in `from` follow what became
     /// of its proposal (record 126): into the queue, on trunk, or back to
     /// work.
+    /// A conflict or a no sends them back (record 126, F9): a round more;
+    /// a worker that withdrew its own proposal was sent back by nobody.
     fn cards_landed(&mut self, id: AgentId, from: Column, how: &Landed) {
-        let to = match how {
-            Landed::Queued => Column::Verifying,
-            Landed::Integrated(_) => Column::Done,
-            Landed::Conflicted(_) | Landed::Rejected(_) | Landed::Withdrawn => Column::Working,
+        let (to, back) = match how {
+            Landed::Queued => (Column::Verifying, false),
+            Landed::Integrated(_) => (Column::Done, false),
+            Landed::Conflicted(_) | Landed::Rejected(_) => (Column::Working, true),
+            Landed::Withdrawn => (Column::Working, false),
         };
-        self.move_cards(id, from, to);
+        let moved = self.move_cards(id, from, to);
+        if back {
+            self.sent_back(&moved);
+        }
+    }
+
+    /// Cards `cards` came back to work: a round more each.
+    fn sent_back(&mut self, cards: &[CardId]) {
+        for &c in cards {
+            self.cards[c].breaker.sent_back += 1;
+        }
     }
 
     fn landed(&mut self, id: AgentId, how: Landed) {
@@ -4150,7 +4278,8 @@ impl World {
     pub fn change_rejected(&mut self, id: AgentId) {
         self.carry_spend(id);
         self.forget_change(id);
-        self.move_cards(id, Column::Review, Column::Working);
+        let moved = self.move_cards(id, Column::Review, Column::Working);
+        self.sent_back(&moved);
         self.note(Event::Rejected { agent: id });
     }
 
@@ -4160,13 +4289,14 @@ impl World {
     /// now.
     /// A card back at work has lost the leases another card took while
     /// it waited, as a lapsed lease in Lonca; the paths it owns stay.
-    fn move_cards(&mut self, id: AgentId, from: Column, to: Column) {
+    /// The cards moved.
+    fn move_cards(&mut self, id: AgentId, from: Column, to: Column) -> Vec<CardId> {
         let tick = self.tick;
         let moving: Vec<CardId> = (self.cards.iter())
             .filter(|c| c.owner == Some(id) && c.column == from)
             .map(|c| c.id)
             .collect();
-        for m in moving {
+        for &m in &moving {
             let held: Vec<Symbol> = (self.cards.iter())
                 .filter(|o| o.project == self.cards[m].project && o.holds_leases())
                 .flat_map(|o| o.symbols.iter().copied())
@@ -4180,6 +4310,7 @@ impl World {
                 c.symbols.retain(|s| !held.contains(s));
             }
         }
+        moving
     }
 
     /// What a `done` of agent `from` is for (record 126): its card, when it
@@ -4238,6 +4369,76 @@ impl World {
             card: c,
             why: why.to_string(),
         });
+    }
+
+    /// Card `c`'s `cap` stopped what would have gone on by itself (record
+    /// 126, F9): an item waits for the person, `agent`'s (the leader that
+    /// would hand it, or the worker whose change came back), one at a time
+    /// a card and cap. True when one opened.
+    pub fn capped(&mut self, cap: Cap, agent: AgentId, c: CardId) -> bool {
+        let kind = cap.kind();
+        if (self.inbox.iter()).any(|i| i.open && i.kind == kind && i.card == Some(c)) {
+            return false;
+        }
+        let card = &self.cards[c];
+        let count = match cap {
+            Cap::Tries => card.attempt,
+            Cap::Rounds => card.breaker.sent_back,
+        };
+        self.inbox.push(InboxItem {
+            kind,
+            agent,
+            detail: card.title.clone(),
+            researcher: None,
+            open: true,
+            tick: self.tick,
+            card: Some(c),
+        });
+        self.story(Some(c), StoryEvent::Capped { cap, count });
+        self.note(Event::Capped {
+            agent,
+            card: c,
+            cap,
+            count,
+        });
+        true
+    }
+
+    /// The person's answer to cap item `item`: yes allows one more try or
+    /// round; no fails the card for good, and nobody hands it again. Who
+    /// waited, the card and the cap; nothing when no such item is open.
+    pub fn decide_cap(&mut self, item: usize, yes: bool) -> Option<(AgentId, CardId, Cap)> {
+        let it = self.inbox.get(item).filter(|i| i.open)?;
+        let cap = Cap::of(it.kind)?;
+        let (agent, c) = (it.agent, it.card?);
+        self.inbox[item].open = false;
+        let tick = self.tick;
+        let card = &mut self.cards[c];
+        match (cap, yes) {
+            (Cap::Tries, true) => card.breaker.more_tries += 1,
+            (Cap::Rounds, true) => card.breaker.more_rounds += 1,
+            (_, false) => {
+                card.breaker.stopped = true;
+                card.column = Column::Failed;
+                card.finished = tick;
+            }
+        }
+        self.story(Some(c), StoryEvent::CapAnswered { cap, yes });
+        self.note(Event::CapAnswered {
+            agent,
+            card: c,
+            cap,
+            yes,
+        });
+        Some((agent, c, cap))
+    }
+
+    /// The card of worker `id`'s at work whose rounds are out: its change
+    /// came back as often as it may by itself (record 126, F9).
+    pub fn rounds_out_of(&self, id: AgentId) -> Option<CardId> {
+        (self.cards.iter())
+            .find(|c| c.owner == Some(id) && c.column == Column::Working && c.rounds_out())
+            .map(|c| c.id)
     }
 
     /// Agent `id` sent a `done` for card `c` after it was handed again.
@@ -5437,6 +5638,7 @@ mod tests {
             started: 0,
             finished: 0,
             attempt: 1,
+            breaker: Default::default(),
         };
         for (column, held, over) in [
             (Column::Waiting, false, false),
@@ -5775,6 +5977,7 @@ mod tests {
             started: 0,
             finished: 0,
             attempt: 1,
+            breaker: Default::default(),
         };
         w.cards = vec![
             card(Column::Done),
@@ -6045,6 +6248,8 @@ mod tests {
             (Script, true, false),
             (Check, false, false),
             (Plan, true, true),
+            (Tries, false, false),
+            (Rounds, true, false),
         ] {
             assert_eq!(kind.holds_mail(), holds, "{kind:?}");
             assert_eq!(kind.closes_on_word(), word, "{kind:?}");
@@ -6188,6 +6393,7 @@ mod tests {
                 started: 0,
                 finished: 0,
                 attempt: 1,
+                breaker: Default::default(),
             });
             id
         };
@@ -6272,6 +6478,10 @@ mod tests {
             w.tick = 9;
             w.proposal_left(1, how.clone());
             assert_eq!(w.cards[c].column, to, "{how:?}");
+            // A conflict or a no is a round sent back (record 126, F9).
+            let back = matches!(how, Landed::Conflicted(_) | Landed::Rejected(_));
+            assert_eq!(w.cards[c].breaker.sent_back, u32::from(back), "{how:?}");
+            assert_eq!(w.cards[queued].breaker.sent_back, 0, "{how:?}");
             assert_eq!(
                 w.cards[c].finished,
                 if to == Done { 9 } else { 0 },
@@ -6291,8 +6501,190 @@ mod tests {
             w.cards[review].column = Review;
             w.proposal_landed(1, how.clone());
             assert_eq!(w.cards[c].column, to, "{how:?}");
+            let back = matches!(how, Landed::Conflicted(_) | Landed::Rejected(_));
+            assert_eq!(w.cards[c].breaker.sent_back, u32::from(back), "{how:?}");
             assert_eq!(w.cards[review].column, Review, "{how:?}: a newer one waits");
         }
+    }
+
+    #[test]
+    fn a_reject_sends_back_every_card_in_review_a_round_each() {
+        use crate::live::testing::{team, with_card};
+        let mut w = team(2);
+        let (a, b, other) = (
+            with_card(&mut w, 1),
+            with_card(&mut w, 1),
+            with_card(&mut w, 2),
+        );
+        for c in [a, b, other] {
+            w.cards[c].column = Column::Review;
+        }
+        w.cards[b].breaker.sent_back = 2;
+        w.change_rejected(1);
+        let back: Vec<u32> = [a, b, other].map(|c| w.cards[c].breaker.sent_back).to_vec();
+        assert_eq!(back, [1, 3, 0]);
+        w.change_rejected(1);
+        assert_eq!(w.cards[a].breaker.sent_back, 1, "none in review now");
+    }
+
+    #[test]
+    fn a_card_s_tries_and_rounds_run_out_at_three_and_one_more_each_the_person_allows() {
+        use crate::live::testing::{team, with_card};
+        let mut w = team(1);
+        let c = with_card(&mut w, 1);
+        let card = |w: &World| (w.cards[c].tries_out(), w.cards[c].rounds_out());
+        w.cards[c].attempt = 2;
+        w.cards[c].breaker.sent_back = 2;
+        assert_eq!(card(&w), (false, false));
+        w.cards[c].attempt = 3;
+        assert_eq!(card(&w), (true, false), "the third try is the last");
+        w.cards[c].breaker.sent_back = 3;
+        assert_eq!(card(&w), (true, true), "the third time back is the last");
+        w.cards[c].breaker.more_tries = 1;
+        assert_eq!(card(&w), (false, true));
+        w.cards[c].breaker.more_rounds = 2;
+        assert_eq!(card(&w), (false, false));
+        w.cards[c].attempt = 4;
+        w.cards[c].breaker.sent_back = 5;
+        assert_eq!(card(&w), (true, true));
+        assert_eq!((TRIES, ROUNDS), (3, 3));
+        // The card of a worker's at work whose rounds are out.
+        assert_eq!(w.rounds_out_of(1), Some(c));
+        assert_eq!(w.rounds_out_of(2), None, "not its owner");
+        w.cards[c].breaker.more_rounds = 3;
+        assert_eq!(w.rounds_out_of(1), None, "a round left");
+        w.cards[c].breaker.more_rounds = 2;
+        w.cards[c].column = Column::Failed;
+        assert_eq!(w.rounds_out_of(1), None, "not at work");
+    }
+
+    #[test]
+    fn a_cap_opens_one_item_for_the_person_and_their_answer_moves_the_card() {
+        use crate::live::testing::{team, with_card};
+        let mut w = team(2);
+        let (c, d) = (with_card(&mut w, 1), with_card(&mut w, 2));
+        w.cards[c].attempt = 3;
+        w.cards[c].breaker.sent_back = 2;
+        w.cards[c].column = Column::Failed;
+        w.tick = 40;
+        assert!(w.capped(Cap::Tries, 0, c));
+        assert!(!w.capped(Cap::Tries, 0, c), "one open at a time");
+        let it = w.inbox.last().unwrap();
+        assert_eq!(
+            (
+                it.kind,
+                it.agent,
+                it.card,
+                it.open,
+                it.tick,
+                it.detail.as_str()
+            ),
+            (
+                InboxKind::Tries,
+                0,
+                Some(c),
+                true,
+                40,
+                w.cards[c].title.as_str()
+            )
+        );
+        assert!(matches!(
+            w.cards[c].story.last().unwrap().event,
+            StoryEvent::Capped {
+                cap: Cap::Tries,
+                count: 3
+            }
+        ));
+        let capped = Event::Capped {
+            agent: 0,
+            card: c,
+            cap: Cap::Tries,
+            count: 3,
+        };
+        assert_eq!(w.journal.last().unwrap().event, capped);
+        assert_eq!(
+            (capped.kind(), capped.agent(), capped.card()),
+            (EntryKind::Blocked, 0, Some(c))
+        );
+        // Another cap or card has its own; rounds count what came back.
+        assert!(w.capped(Cap::Rounds, 1, c));
+        assert!(matches!(
+            w.cards[c].story.last().unwrap().event,
+            StoryEvent::Capped {
+                cap: Cap::Rounds,
+                count: 2
+            }
+        ));
+        assert!(w.capped(Cap::Tries, 0, d));
+        let items: Vec<usize> = (0..w.inbox.len()).collect();
+        let [tries, rounds, other] = items[..] else {
+            panic!("three items")
+        };
+        // Yes: one more try; the item closes, a second answer is nothing.
+        assert_eq!(w.decide_cap(tries, true), Some((0, c, Cap::Tries)));
+        assert_eq!(w.decide_cap(tries, true), None, "closed");
+        assert_eq!(w.cards[c].breaker.more_tries, 1);
+        assert_eq!(w.cards[c].breaker.more_rounds, 0);
+        let answered = Event::CapAnswered {
+            agent: 0,
+            card: c,
+            cap: Cap::Tries,
+            yes: true,
+        };
+        assert_eq!(w.journal.last().unwrap().event, answered);
+        assert_eq!(
+            (answered.kind(), answered.agent(), answered.card()),
+            (EntryKind::Person, 0, Some(c))
+        );
+        assert!(matches!(
+            w.cards[c].story.last().unwrap().event,
+            StoryEvent::CapAnswered {
+                cap: Cap::Tries,
+                yes: true
+            }
+        ));
+        // Yes to a round: one more round.
+        w.cards[c].column = Column::Working;
+        assert_eq!(w.decide_cap(rounds, true), Some((1, c, Cap::Rounds)));
+        assert_eq!(
+            (
+                w.cards[c].breaker.more_tries,
+                w.cards[c].breaker.more_rounds
+            ),
+            (1, 1)
+        );
+        assert_eq!(w.cards[c].column, Column::Working);
+        // No: failed for good, now.
+        w.tick = 50;
+        assert_eq!(w.decide_cap(other, false), Some((0, d, Cap::Tries)));
+        let card = &w.cards[d];
+        assert_eq!(
+            (card.column, card.finished, card.breaker.stopped),
+            (Column::Failed, 50, true)
+        );
+        assert_eq!(card.breaker.more_tries, 0);
+        assert!(!w.cards[c].breaker.stopped);
+        // An item of another kind, or none, is no cap.
+        w.inbox.push(item(InboxKind::Plan, 0, true));
+        assert_eq!(w.decide_cap(w.inbox.len() - 1, true), None);
+        let mut cardless = item(InboxKind::Rounds, 1, true);
+        cardless.card = None;
+        w.inbox.push(cardless);
+        assert_eq!(w.decide_cap(w.inbox.len() - 1, true), None);
+        assert_eq!(w.decide_cap(99, true), None);
+        assert_eq!(
+            (
+                Cap::of(InboxKind::Tries),
+                Cap::of(InboxKind::Rounds),
+                Cap::of(InboxKind::Plan)
+            ),
+            (Some(Cap::Tries), Some(Cap::Rounds), None)
+        );
+        assert_eq!(
+            (Cap::Tries.kind(), Cap::Rounds.kind()),
+            (InboxKind::Tries, InboxKind::Rounds)
+        );
+        assert!(w.capped(Cap::Tries, 0, c), "one answered is no longer open");
     }
 
     #[test]
@@ -6708,6 +7100,7 @@ mod tests {
             started: 0,
             finished: 0,
             attempt: 1,
+            breaker: Default::default(),
         });
         w.agents[1].card = Some(0);
         w.tick = 10;
@@ -7230,6 +7623,7 @@ mod tests {
             started: 0,
             finished: 0,
             attempt: 1,
+            breaker: Default::default(),
         }
     }
 
@@ -8502,6 +8896,7 @@ mod tests {
             started: 0,
             finished: 0,
             attempt: 1,
+            breaker: Default::default(),
         };
         w.cards.push(card(0, &[]));
         w.cards.push(card(1, &["src/"]));
@@ -8712,6 +9107,7 @@ mod change_proof_tests {
             started: 0,
             finished: 0,
             attempt: 1,
+            breaker: Default::default(),
         }
     }
 

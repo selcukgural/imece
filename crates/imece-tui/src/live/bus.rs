@@ -115,6 +115,7 @@ impl Live {
         }
         if let Some(c) = handed {
             hands(w, project, c, to)?;
+            tries_left(w, from, c)?;
         }
         self.owned_elsewhere(w, project, Some(to), &paths)?;
         if w.agents[to].status == Status::Stopped {
@@ -392,6 +393,7 @@ impl Live {
             started: t,
             finished: 0,
             attempt: 0,
+            breaker: Default::default(),
         });
         self.posts.insert(
             card,
@@ -436,11 +438,12 @@ impl Live {
                     w.agents[o].name
                 )),
                 (Column::Failed, Some(o)) => taken.push(format!(
-                    "#{} {} (failed by {}, try {}: the leader may hand it again)",
+                    "#{} {} (failed by {}, try {}: {})",
                     c.id + 1,
                     c.title,
                     w.agents[o].name,
-                    c.attempt
+                    c.attempt,
+                    after_failure(c)
                 )),
                 (Column::Review | Column::Verifying, Some(o)) => taken.push(format!(
                     "#{} {} (done by {}, its change waits)",
@@ -707,6 +710,42 @@ impl Group {
 }
 
 impl Live {
+    /// The person's answer to cap item `item` (record 126, F9): the world
+    /// allows one more try or round, or fails the card, and who waited
+    /// hears it with its next prompt. A leader wakes for it; a worker
+    /// allowed one more round wakes to what it heard of its change; one
+    /// whose card failed is not woken, its leader is. False when nothing
+    /// waits there.
+    pub fn decide_cap(&mut self, w: &mut World, item: usize, yes: bool) -> bool {
+        let Some((agent, c, cap)) = w.decide_cap(item, yes) else {
+            return false;
+        };
+        let card = words::card_ref(c);
+        let leader = w.projects[w.agents[agent].project].leader;
+        let woken = match (cap, yes) {
+            (Cap::Tries, true) => {
+                self.notes[agent].push(crate::i18n::fill(TRIES_YES, &[&card]));
+                agent
+            }
+            (Cap::Tries, false) => {
+                self.notes[agent].push(crate::i18n::fill(TRIES_NO, &[&card]));
+                agent
+            }
+            (Cap::Rounds, true) => agent,
+            (Cap::Rounds, false) => {
+                self.notes[agent].push(crate::i18n::fill(ROUNDS_NO, &[&card]));
+                self.lost[agent] = false;
+                let back = w.cards[c].breaker.sent_back.to_string();
+                self.notes[leader].push(crate::i18n::fill(ROUNDS_NO_LEADER, &[&card, &back]));
+                leader
+            }
+        };
+        self.lost[woken] = true;
+        let said = if yes { "one more" } else { "failed" };
+        w.agents[agent].trace(w.tick, format!("{card} {said}"));
+        true
+    }
+
     /// The leader `from` writes `body` (an inform or a notice) to every
     /// worker of `group` in its project, one message each, through the
     /// checks a message to one of them has; the answer names who got it
@@ -828,6 +867,12 @@ fn hands(w: &World, project: ProjectId, c: CardId, to: AgentId) -> Result<(), St
     if w.agents[to].role != Role::Worker {
         return Err("a card goes to a worker".into());
     }
+    if card.breaker.stopped {
+        return Err(format!(
+            "the person failed #{} for good; assign a new task for more",
+            c + 1
+        ));
+    }
     match card.column {
         Column::Waiting | Column::Working | Column::Failed => Ok(()),
         Column::Review => Err(format!(
@@ -836,6 +881,39 @@ fn hands(w: &World, project: ProjectId, c: CardId, to: AgentId) -> Result<(), St
         )),
         Column::Verifying => Err(format!("#{} is in Lonca's merge queue", c + 1)),
         Column::Done => Err(format!("#{} is done; assign a new task for more", c + 1)),
+    }
+}
+
+/// Whether card `c` has a try left for leader `from` to hand (record 126,
+/// F9): past its last, a failed card waits for the person, and the leader
+/// hears their answer; one still at work is its worker's to finish.
+fn tries_left(w: &mut World, from: AgentId, c: CardId) -> Result<(), String> {
+    let card = &w.cards[c];
+    if !card.tries_out() {
+        return Ok(());
+    }
+    let (n, tries) = (c + 1, card.attempt);
+    if card.column != Column::Failed {
+        return Err(format!(
+            "#{n} is on try {tries}, its last: let its worker finish"
+        ));
+    }
+    w.capped(Cap::Tries, from, c);
+    Err(format!(
+        "#{n} failed {tries} tries: the person decides whether it gets another, and you hear \
+         their answer"
+    ))
+}
+
+/// What may come of failed card `c` (record 126, F9): another try from
+/// the leader, the person's yes first, or nothing.
+fn after_failure(c: &Card) -> &'static str {
+    if c.breaker.stopped {
+        "the person failed it for good"
+    } else if c.tries_out() {
+        "its tries are out: another waits for the person's yes"
+    } else {
+        "the leader may hand it again"
     }
 }
 
@@ -1295,6 +1373,7 @@ mod tests {
             started: 0,
             finished: 0,
             attempt: 1,
+            breaker: Default::default(),
         });
         w.agents[1].card = Some(0);
         live.turns[1] = 1;
@@ -2735,6 +2814,12 @@ in p.rs",
             Err("there is no card #8 in this project".into())
         );
         assert_eq!(hands(&w, 0, c, 0), Err("a card goes to a worker".into()));
+        w.cards[c].breaker.stopped = true;
+        assert_eq!(
+            hands(&w, 0, c, 2),
+            Err("the person failed #1 for good; assign a new task for more".into())
+        );
+        w.cards[c].breaker.stopped = false;
         for (column, ok) in [
             (Column::Waiting, true),
             (Column::Working, true),
@@ -2905,6 +2990,75 @@ in p.rs",
     }
 
     #[test]
+    fn a_card_past_its_last_try_waits_for_the_person_and_the_leader_hears_their_answer() {
+        let mut w = team(2);
+        let mut live = idle_live(3);
+        let c = with_card(&mut w, 1);
+        w.cards[c].attempt = 3;
+        let mut args = msg("claude-2", "assign", "Once more");
+        args["card"] = json!(c + 1);
+        let open = |w: &World| -> Vec<(InboxKind, AgentId, Option<CardId>)> {
+            (w.open_inbox().into_iter())
+                .map(|i| (w.inbox[i].kind, w.inbox[i].agent, w.inbox[i].card))
+                .collect()
+        };
+        // At work on its last try: its worker's to finish, nothing asked.
+        assert_eq!(
+            sent(&mut live, &mut w, 0, &args).unwrap_err(),
+            "#1 is on try 3, its last: let its worker finish"
+        );
+        assert!(open(&w).is_empty());
+        // Failed on it: refused, the person asked once (record 126, F9).
+        w.cards[c].column = Column::Failed;
+        for _ in 0..2 {
+            assert_eq!(
+                sent(&mut live, &mut w, 0, &args).unwrap_err(),
+                "#1 failed 3 tries: the person decides whether it gets another, and you hear \
+                 their answer"
+            );
+        }
+        assert_eq!(open(&w), [(InboxKind::Tries, 0, Some(c))]);
+        assert!(!w.waits_on_person(0), "the leader's mail goes on");
+        assert_eq!((w.cards[c].attempt, w.cards[c].owner), (3, Some(1)));
+        assert!(live.mail[2].is_empty());
+        // Yes: the leader hears it, is woken, and may hand it once more.
+        let item = w.open_inbox()[0];
+        assert!(live.decide_cap(&mut w, item, true));
+        assert!(!live.decide_cap(&mut w, item, true), "answered");
+        assert!(live.lost[0] && !live.lost[1]);
+        assert_eq!(
+            live.notes[0],
+            [
+                "The person allows #1 one more try: hand it again (send type assign with its \
+              card) with what to do differently."
+            ]
+        );
+        sent(&mut live, &mut w, 0, &args).unwrap();
+        assert_eq!((w.cards[c].attempt, w.cards[c].owner), (4, Some(2)));
+        // Its fourth fails too: asked again; no, and it is nobody's.
+        w.cards[c].column = Column::Failed;
+        assert!(sent(&mut live, &mut w, 0, &args).is_err());
+        let item = w.open_inbox()[0];
+        live.lost[0] = false;
+        live.notes[0].clear();
+        assert!(live.decide_cap(&mut w, item, false));
+        assert!(live.lost[0]);
+        assert_eq!(
+            live.notes[0],
+            [
+                "The person failed #1 for good: nobody hands it again. Plan without it, or ask \
+              the person (send to: you, type ask)."
+            ]
+        );
+        assert_eq!(
+            sent(&mut live, &mut w, 0, &args).unwrap_err(),
+            "the person failed #1 for good; assign a new task for more"
+        );
+        assert!(open(&w).is_empty(), "nothing asked again");
+        assert!(!live.decide_cap(&mut w, 99, true));
+    }
+
+    #[test]
     fn a_done_to_the_person_fails_or_comes_late_as_one_to_the_leader() {
         let mut w = team(2);
         let mut live = idle_live(3);
@@ -2984,6 +3138,22 @@ in p.rs",
         assert!(
             live.board(&w, 0)
                 .contains("#2 Add docs (done by claude-2, its change waits)")
+        );
+        // Its tries out, or failed by the person (record 126, F9).
+        w.cards[0].attempt = 3;
+        assert!(
+            live.board(&w, 0).contains(
+                "#1 Add a test (failed by claude-1, try 3: its tries are out: another waits for \
+                 the person's yes)"
+            ),
+            "{}",
+            live.board(&w, 0)
+        );
+        w.cards[0].breaker.stopped = true;
+        assert!(
+            live.board(&w, 0).contains(
+                "#1 Add a test (failed by claude-1, try 3: the person failed it for good)"
+            )
         );
     }
 }

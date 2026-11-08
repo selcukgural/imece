@@ -1257,6 +1257,7 @@ mod tests {
                 started: 0,
                 finished: 0,
                 attempt: 1,
+                breaker: Default::default(),
             });
         }
         w.projects[1].closed = true;

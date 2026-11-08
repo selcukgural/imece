@@ -384,6 +384,9 @@ impl App {
         if self.world.inbox[item].kind == InboxKind::Plan {
             return self.answer_plan(item, approve);
         }
+        if Cap::of(self.world.inbox[item].kind).is_some() {
+            return self.answer_cap(item, approve);
+        }
         if self.world.inbox[item].kind == InboxKind::Approval {
             let name = self.world.agents[self.world.inbox[item].agent].name.clone();
             match &mut self.engine {

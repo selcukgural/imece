@@ -643,6 +643,7 @@ impl Live {
                 started: t,
                 finished: 0,
                 attempt: 1,
+                breaker: Default::default(),
             });
             w.takes(id, card);
             w.story(Some(card), StoryEvent::Took { agent: id });

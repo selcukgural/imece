@@ -18,7 +18,7 @@ use imece_agent::worktree::{self, Forward};
 use super::Live;
 use super::Slot;
 use crate::model::{
-    Agent, AgentId, Attested, Behind, Change, ChangedFile, Check, Decision, ImportAsk, Landed,
+    Agent, AgentId, Attested, Behind, Cap, Change, ChangedFile, Check, Decision, ImportAsk, Landed,
     MsgKind, ProjectId, Role, StoreDown, StoreJob, StoreLease, StorePending, StoreProposal,
     StoreSeen, Synced, World,
 };
@@ -982,7 +982,7 @@ impl Live {
     /// message already.
     fn tell_landed(
         &mut self,
-        w: &World,
+        w: &mut World,
         id: AgentId,
         change: &str,
         how: &Landed,
@@ -997,6 +997,11 @@ impl Live {
             return;
         };
         self.notes[id].push(words);
+        // Its rounds out, it wakes once the person allows one more: the
+        // item holds it (record 126, F9).
+        if act && let Some(c) = w.rounds_out_of(id) {
+            w.capped(Cap::Rounds, id, c);
+        }
         self.lost[id] |= act && !w.agents[id].gone;
     }
 
@@ -1109,7 +1114,7 @@ mod tests {
     use imece_agent::lonca_fake::{Daemon, POLICY, TRUNK, status};
 
     use super::*;
-    use crate::live::testing::{Stub, idle_live, idle_live_in, team, with_helper};
+    use crate::live::testing::{Stub, idle_live, idle_live_in, team, with_card, with_helper};
     use crate::model::{Event, StoreAct};
 
     const WAIT: Duration = Duration::from_secs(10);
@@ -2935,6 +2940,89 @@ mod tests {
         assert!(live.land(&mut w, &standing("c5", clash), &HashMap::new()));
         assert!(live.notes[1][0].contains("a#b"), "{:?}", live.notes[1]);
         assert!(live.lost[1]);
+    }
+
+    /// Worker 1's proposal for its card, sent back `back` times before,
+    /// is sent back by Lonca's queue once more.
+    fn sent_back_by_lonca(back: u32) -> (World, Live, usize) {
+        let (mut w, mut live, word) = proposer();
+        let c = with_card(&mut w, 1);
+        w.cards[c].breaker.sent_back = back;
+        live.offered(&mut w, 0, &offer(&word, 5, "c5"));
+        let no = Standing::Rejected(vec!["verification_failed:tests".into()]);
+        assert!(live.land(&mut w, &standing("c5", no), &HashMap::new()));
+        assert_eq!(w.cards[c].breaker.sent_back, back + 1);
+        (w, live, c)
+    }
+
+    #[test]
+    fn a_change_back_its_last_time_waits_for_the_person_and_their_answer_wakes_or_fails() {
+        use crate::model::{Column, InboxKind};
+        let open = |w: &World| -> Vec<(InboxKind, usize, Option<usize>)> {
+            (w.open_inbox().into_iter())
+                .map(|i| (w.inbox[i].kind, w.inbox[i].agent, w.inbox[i].card))
+                .collect()
+        };
+        // Its second time back: woken as ever.
+        let (w, live, _) = sent_back_by_lonca(1);
+        assert!(open(&w).is_empty());
+        assert!(live.lost[1] && !w.waits_on_person(1));
+        // Its third: the person decides; its words wait, the item holds
+        // the wake (record 126, F9).
+        let (mut w, mut live, c) = sent_back_by_lonca(2);
+        assert_eq!(open(&w), [(InboxKind::Rounds, 1, Some(c))]);
+        assert!(live.lost[1] && !live.notes[1].is_empty());
+        assert!(w.waits_on_person(1));
+        let item = w.open_inbox()[0];
+        // A run since forgot the wake: the yes wakes it all the same.
+        live.lost[1] = false;
+        assert!(live.decide_cap(&mut w, item, true));
+        assert!(!live.decide_cap(&mut w, item, true), "answered");
+        assert!(live.lost[1] && !w.waits_on_person(1), "woken");
+        assert_eq!(w.cards[c].breaker.more_rounds, 1);
+        assert!(!live.lost[0], "its leader sleeps");
+        // No: the card fails, its worker sleeps, its leader hears.
+        let (mut w, mut live, c) = sent_back_by_lonca(2);
+        let item = w.open_inbox()[0];
+        assert!(live.decide_cap(&mut w, item, false));
+        assert_eq!(w.cards[c].column, Column::Failed);
+        assert!(!live.lost[1]);
+        assert_eq!(
+            live.notes[1].last().unwrap(),
+            "The person failed #1 for good: leave it, and send nothing more for it."
+        );
+        assert!(live.lost[0]);
+        assert_eq!(
+            live.notes[0],
+            [
+                "The person failed #1 for good after its change came back 3 times: nobody hands \
+              it again."
+            ]
+        );
+    }
+
+    #[test]
+    fn a_change_the_person_sent_back_never_meets_the_breaker() {
+        let (mut w, mut live, word) = proposer();
+        let c = with_card(&mut w, 1);
+        w.cards[c].breaker.sent_back = 5;
+        live.offered(&mut w, 0, &offer(&word, 5, "c5"));
+        live.lonca.worded.push("c5".into());
+        let no = Standing::Rejected(vec!["human".into()]);
+        live.land(&mut w, &standing("c5", no), &HashMap::new());
+        assert!(w.open_inbox().is_empty(), "they decide already");
+        // Nor one that is on trunk, while another card of its worker's,
+        // at work, has its rounds out: nothing woke it.
+        let (mut w, mut live, word) = proposer();
+        let c = with_card(&mut w, 1);
+        w.cards[c].breaker.sent_back = 5;
+        live.offered(&mut w, 0, &offer(&word, 5, "c5"));
+        let other = with_card(&mut w, 1);
+        w.cards[other].breaker.sent_back = 5;
+        assert_eq!(w.rounds_out_of(1), Some(other));
+        let on_trunk = Standing::Integrated("c1".into());
+        live.land(&mut w, &standing("c5", on_trunk), &HashMap::new());
+        assert!(w.open_inbox().is_empty());
     }
 
     #[test]
