@@ -267,15 +267,11 @@ jobs:
   # Every mutant. 9,471 of them on 2026-11-07, 47 s each in imece-tui, 11 s
   # in imece-agent, two at a time: 57 hours of a runner. Six shards under
   # two hours tried a quarter and were cancelled every night from
-  # 2026-11-01. Fourteen slices (cargo-mutants' default `slice`: shard k
-  # takes the k-th run of consecutive mutants) took 66 minutes for
-  # imece-agent's and over 350 for six of imece-tui's on 2026-11-07, so
-  # 407 mutants were never tried. Round robin spreads the slow crate over
-  # every shard: about 4,450 runner minutes in sixteen is under five hours
-  # each; when a shard nears the cap, add shards. A job may take six hours;
-  # this one stops before that, so its artifact is still written. The
-  # account runs twenty jobs at once, Lonca's night takes them all from
-  # 00:07 UTC, and four stay free here for a pull request.
+  # 2026-11-01. Fourteen take about four and a half hours; when a shard
+  # nears the cap, add shards. A job may take six hours; this one stops
+  # before that, so its artifact is still written. The account runs twenty
+  # jobs at once, Lonca's night takes them all from 00:07 UTC, and six stay
+  # free here for a pull request.
   all:
     name: all (shard ${{ matrix.shard }})
     needs: recent
@@ -285,7 +281,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -311,7 +307,7 @@ jobs:
           SHARD: ${{ matrix.shard }}
         run: |
           set +e
-          cargo mutants --shard "$SHARD/16" --sharding round-robin --no-shuffle --jobs 2 --timeout 90
+          cargo mutants --shard "$SHARD/14" --no-shuffle --jobs 2 --timeout 90
           code=$?
           set -e
           case $code in 0|2|3) ;; *) exit $code ;; esac
@@ -334,7 +330,7 @@ jobs:
           SHARD: ${{ matrix.shard }}
         run: |
           {
-            echo "## Mutants (shard $SHARD of 16)"
+            echo "## Mutants (shard $SHARD of 14)"
             echo
             for f in caught missed timeout unviable; do
               n=0

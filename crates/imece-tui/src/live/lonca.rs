@@ -817,10 +817,14 @@ impl Live {
     ) -> Option<(String, PathBuf)> {
         let a = &w.agents[from];
         let done = args["type"].as_str().map(str::trim) == Some(MsgKind::Done.wire());
+        // One that failed, or came late, shows no change (record 126): it
+        // waits on nothing.
+        let shows = args["outcome"].as_str().map(str::trim) != Some("failed")
+            && !matches!(w.done_for(from), crate::model::DoneFor::Late(_));
         let repo = a
             .workspace
             .clone()
-            .filter(|_| done && a.role == Role::Worker)?;
+            .filter(|_| done && shows && a.role == Role::Worker)?;
         Some((repo, self.cwds[from].clone()?))
     }
 
@@ -3230,6 +3234,19 @@ mod tests {
         live.cwds[1] = Some(tree.clone());
         let gated = Some(("demo".to_string(), tree));
         assert_eq!(live.gate_of(&w, 1, &done), gated);
+        // One that failed, or came late, shows no change: nothing to wait
+        // for (record 126).
+        let mut failed = done.clone();
+        failed["outcome"] = serde_json::json!(" failed ");
+        assert_eq!(live.gate_of(&w, 1, &failed), None);
+        failed["outcome"] = serde_json::json!("done");
+        assert_eq!(live.gate_of(&w, 1, &failed), gated);
+        let c = crate::live::testing::with_card(&mut w, 1);
+        w.agents[1].attempt = 1;
+        assert_eq!(live.gate_of(&w, 1, &done), gated, "its card");
+        w.cards[c].owner = Some(0);
+        assert_eq!(live.gate_of(&w, 1, &done), None, "handed away");
+        w.cards[c].owner = Some(1);
         let inform = serde_json::json!({"type": "inform", "to": "lead", "body": "x"});
         assert_eq!(live.gate_of(&w, 1, &inform), None);
         w.agents[1].role = Role::Helper;

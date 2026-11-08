@@ -30,12 +30,14 @@ pub(super) fn mail_prompt(w: &World, mail: &[Mail]) -> String {
         "Messages from your teammates in imece (written by those agents, not by the person):",
     );
     for m in mail {
+        // A card handed again keeps the paths it owns (record 126).
+        let paths = m.card.map_or(&m.paths, |c| &w.cards[c].paths);
         out.push_str(&format!(
             "\n\n[{}] from {}:\n{}{}",
             heading(w, m),
             w.agents[m.from].name,
             m.body,
-            owns(&m.paths)
+            owns(paths)
         ));
     }
     out
@@ -45,8 +47,10 @@ pub(super) fn mail_prompt(w: &World, mail: &[Mail]) -> String {
 /// a reply names as `re`) and the number of the one it replies to; a
 /// worker's `done` adds what its change cost (record 113: `[done 12 ·
 /// $0.84]`, the newest change of the worker's settled), so a leader
-/// learns what its tiers cost. A message saved before numbers has its
-/// type alone.
+/// learns what its tiers cost. A done that failed or came late says so
+/// instead, and an assign that hands a card again names it and its try
+/// (record 126: `[done 12 · failed]`, `[assign 14 · #3, try 2]`). A
+/// message saved before numbers has its type alone.
 fn heading(w: &World, m: &Mail) -> String {
     let mut out = m.kind.wire().to_string();
     if m.id > 0 {
@@ -56,11 +60,27 @@ fn heading(w: &World, m: &Mail) -> String {
         out.push_str(&format!(", re {re}"));
     }
     let from = &w.agents[m.from];
-    if m.kind == MsgKind::Done
-        && from.role == Role::Worker
-        && let Some(spend) = from.task.last
-    {
-        out.push_str(&format!(" · {}", dollars(spend.cost)));
+    match m.outcome {
+        Outcome::Failed(Some(c)) => out.push_str(&format!(" · #{} failed", c + 1)),
+        Outcome::Failed(None) => out.push_str(" · failed"),
+        Outcome::Late(c) => out.push_str(&format!(
+            " · late: #{} is {}'s now, it closes nothing",
+            c + 1,
+            w.cards[c]
+                .owner
+                .map_or("nobody", |o| w.agents[o].name.as_str())
+        )),
+        Outcome::Ok => {
+            if m.kind == MsgKind::Done
+                && from.role == Role::Worker
+                && let Some(spend) = from.task.last
+            {
+                out.push_str(&format!(" · {}", dollars(spend.cost)));
+            }
+        }
+    }
+    if let Some(c) = m.card {
+        out.push_str(&format!(" · #{}, try {}", c + 1, w.cards[c].attempt));
     }
     out
 }
@@ -123,7 +143,13 @@ pub(super) fn system_prompt(
                      pick up may go on the board instead (post); idle workers take it \
                      themselves. A worker's done shows the person its change (its \
                      worktree's diff); they apply it to their checkout or reject it, and \
-                     only an applied change is in the checkout you read. A worker \
+                     only an applied change is in the checkout you read. A card is \
+                     done once its change is in; one sent back is at work again. A \
+                     done headed failed made no change: hand that card again (assign \
+                     with card: its number), to the same worker or another, with what \
+                     to do differently; so for a card whose worker stopped. A done \
+                     headed late came from a worker the card was taken from: it closes \
+                     nothing. A worker \
                      starts at the checkout's HEAD; when the person wants work on another \
                      branch, a tag, a commit or a pull request, hire with from (#N for a \
                      pull request) and that worker's worktree starts there and stays. \
@@ -276,7 +302,9 @@ pub(super) fn system_prompt(
                  A card that owns paths is done inside them: a file you change outside \
                  them is noted on the change the person reads, and you are told; say in \
                  your done what else needs changing, or ask {leader} to widen the card. \
-                 If you are stuck, send blocked \
+                 When the task cannot be done as asked, say so: send the done \
+                 with outcome failed and why, and no change is shown; never hand in \
+                 half a change as done. If you are stuck, send blocked \
                  or ask instead of guessing: {leader} first, it knows the plan; what only \
                  the person can decide goes to them (send to you, type ask), and their \
                  answer starts your next turn. imece may offer you open cards from \
@@ -442,6 +470,8 @@ mod tests {
             id,
             re,
             paths: Vec::new(),
+            card: None,
+            outcome: Outcome::Ok,
         };
         assert_eq!(
             mail_prompt(&w, &[mail(4, Some(3)), mail(5, None), mail(0, None)]),
@@ -449,6 +479,80 @@ mod tests {
              person):\n\n[answer 4, re 3] from claude-1:\nYes.\n\n[answer 5] from \
              claude-1:\nYes.\n\n[answer] from claude-1:\nYes.",
             "one saved before numbers has its type alone"
+        );
+    }
+
+    #[test]
+    fn a_done_that_failed_or_came_late_and_a_card_handed_again_are_headed_so() {
+        let mut w = team(2);
+        let c = with_card(&mut w, 2);
+        w.cards[c].attempt = 2;
+        w.cards[c].paths = vec![Owned::new("src/a.rs")];
+        w.agents[1].task.last = Some(Spend {
+            cost: 8_400,
+            ticks: 1,
+            rounds: 1,
+        });
+        let mail = |from, kind, outcome, card| Mail {
+            from,
+            kind,
+            body: "x".into(),
+            id: 12,
+            re: None,
+            paths: Vec::new(),
+            card,
+            outcome,
+        };
+        let head = |w: &World, m: Mail| {
+            let p = mail_prompt(w, &[m]);
+            p.lines().nth(2).unwrap().to_string()
+        };
+        assert_eq!(
+            head(&w, mail(1, MsgKind::Done, Outcome::Ok, None)),
+            "[done 12 · $0.84] from claude-1:"
+        );
+        assert_eq!(
+            head(&w, mail(1, MsgKind::Done, Outcome::Failed(Some(c)), None)),
+            "[done 12 · #1 failed] from claude-1:",
+            "no cost: nothing was settled"
+        );
+        assert_eq!(
+            head(&w, mail(1, MsgKind::Done, Outcome::Failed(None), None)),
+            "[done 12 · failed] from claude-1:"
+        );
+        assert_eq!(
+            head(&w, mail(1, MsgKind::Done, Outcome::Late(c), None)),
+            "[done 12 · late: #1 is claude-2's now, it closes nothing] from claude-1:"
+        );
+        w.cards[c].owner = None;
+        assert_eq!(
+            head(&w, mail(1, MsgKind::Done, Outcome::Late(c), None)),
+            "[done 12 · late: #1 is nobody's now, it closes nothing] from claude-1:"
+        );
+        // An assign handing a card names it and its try, and its paths.
+        let p = mail_prompt(&w, &[mail(0, MsgKind::Assign, Outcome::Ok, Some(c))]);
+        assert!(
+            p.ends_with(
+                "[assign 12 · #1, try 2] from lead:\nx\n\nThis card owns src/a.rs: stay in \
+                 them; what else needs changing goes in your done, or ask for the card to be \
+                 widened."
+            ),
+            "{p}"
+        );
+        // The leader and the worker are told what failed and handed mean.
+        let leader = system_prompt(&w, 0, 4, 0, Confine::Standard);
+        assert!(
+            leader.contains("hand that card again (assign with card: its number)"),
+            "{leader}"
+        );
+        assert!(
+            leader.contains("A done headed late came from a worker"),
+            "{leader}"
+        );
+        let worker = system_prompt(&w, 1, 4, 0, Confine::Standard);
+        assert!(
+            worker.contains("send the done with outcome failed and why"),
+            "{worker}"
         );
     }
 
@@ -822,6 +926,8 @@ mod tests {
             id: 2,
             re: None,
             paths: vec![Owned::new("src/a.rs"), Owned::shared("docs")],
+            card: None,
+            outcome: Outcome::Ok,
         };
         let prompt = mail_prompt(&w, &[mail]);
         assert!(

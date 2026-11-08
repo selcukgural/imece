@@ -91,3 +91,7 @@ Demo (record 31): the fake workers' spending runs by tick; a round opens
 at an agent's first busy tick, the done settles as it is read (the
 demo's turn is over then), a rejected change's rounds add up, a helper's
 cost counts, an apply drops the carried figure.
+
+Since record 126 (2026-11-08) the card moves with the change as well: a
+change sent back puts its card back to work, so a card's rounds are the
+rounds of the change that carries it.

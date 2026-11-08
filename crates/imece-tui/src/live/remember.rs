@@ -331,9 +331,15 @@ impl Live {
         }
         if let Some(c) = a.card {
             let card = &w.cards[c];
-            let state = match card.column {
-                Column::Done => "done",
-                _ => "not finished",
+            // Where it stands now (record 126); one handed to another is
+            // not this agent's to finish.
+            let state = match (card.column, card.owner) {
+                (_, Some(o)) if o != id => format!("handed to {}", w.agents[o].name),
+                (Column::Done, _) => "done".to_string(),
+                (Column::Review, _) => "done, its change waits for the person".to_string(),
+                (Column::Verifying, _) => "in Lonca's merge queue".to_string(),
+                (Column::Failed, _) => "failed".to_string(),
+                _ => "not finished".to_string(),
             };
             line(format!(
                 "Your task: #{} {} ({state}). Its story, latest last:",
@@ -574,6 +580,7 @@ mod tests {
             paths: Vec::new(),
             started: 0,
             finished: 0,
+            attempt: 1,
         });
         w.inbox.push(item(InboxKind::Reply, 1, "an old answer"));
         w.inbox.push(item(InboxKind::Change, 1, "an older change"));
@@ -621,6 +628,8 @@ mod tests {
                     id: 0,
                     re: None,
                     paths: Vec::new(),
+                    card: None,
+                    outcome: Outcome::Ok,
                 }],
                 Vec::new(),
                 Vec::new(),
@@ -807,6 +816,8 @@ mod tests {
                 id: 0,
                 re: None,
                 paths: Vec::new(),
+                card: None,
+                outcome: Outcome::Ok,
             });
         }
         w.agents[1].status = Status::Asleep;
@@ -866,6 +877,28 @@ mod tests {
         live.told(&mut w, 1, "next").unwrap();
         assert!(queued(&live, 1)[0].contains("#1 fix it (done)"));
         assert_eq!(w.agents[1].card, Some(1));
+        // Where its card stands now (record 126).
+        for (column, owner, said) in [
+            (Column::Review, 1, "(done, its change waits for the person)"),
+            (Column::Verifying, 1, "(in Lonca's merge queue)"),
+            (Column::Failed, 1, "(failed)"),
+            (Column::Working, 1, "(not finished)"),
+            (Column::Working, 0, "(handed to lead)"),
+            (Column::Done, 0, "(handed to lead)"),
+        ] {
+            let mut w = team(1);
+            let c = with_card(&mut w, 1);
+            (w.cards[c].column, w.cards[c].owner) = (column, Some(owner));
+            let mut live = idle_live(2);
+            live.remembered[1] = true;
+            w.agents[1].status = Status::Asleep;
+            live.told(&mut w, 1, "next").unwrap();
+            let text = &queued(&live, 1)[0];
+            assert!(
+                text.contains(&format!("#1 fix it {said}")),
+                "{column:?}: {text}"
+            );
+        }
     }
 
     #[test]
@@ -903,6 +936,8 @@ mod tests {
             id: 0,
             re: None,
             paths: Vec::new(),
+            card: None,
+            outcome: Outcome::Ok,
         });
         live.remembered[1] = true;
         w.agents[1].status = Status::Asleep;
@@ -1047,6 +1082,8 @@ mod tests {
             id: 0,
             re: None,
             paths: Vec::new(),
+            card: None,
+            outcome: Outcome::Ok,
         });
         live.step(&mut w);
         assert_eq!(live.turns[1], 0, "mail that waited through does not wake");
@@ -1362,6 +1399,8 @@ mod tests {
             id: 0,
             re: None,
             paths: Vec::new(),
+            card: None,
+            outcome: Outcome::Ok,
         });
         w.agents[1].status = Status::Asleep;
         if there {
@@ -1889,6 +1928,8 @@ mod tests {
             id: 0,
             re: None,
             paths: Vec::new(),
+            card: None,
+            outcome: Outcome::Ok,
         });
         assert_eq!(live.mail[1].len(), 1);
     }

@@ -2679,7 +2679,7 @@ mod tests {
         let app = on_card_one(Lang::En);
         let s = render(&app, 140, 38);
         let card = &app.world.cards[0];
-        assert!(!card.symbols.is_empty() && card.column == Column::Done);
+        assert!(!card.symbols.is_empty() && card.column == Column::Review);
         let owner = &app.world.agents[card.owner.unwrap()].name;
         let owns = format!("owns   {}", crate::paths::listed(&card.paths));
         assert!(!card.paths.is_empty());
@@ -2829,7 +2829,7 @@ mod tests {
         let minutes = card::minutes(w, card);
         for want in [
             format!("# #1 {}\n\n", card.title),
-            format!("shop-api · DONE · {minutes} min\n\n"),
+            format!("shop-api · TO REVIEW · {minutes} min\n\n"),
             "editing  ".to_string(),
             "## WHO\n\n- posted: ".to_string(),
             format!("- owner: {owner}\n"),
@@ -3697,6 +3697,7 @@ mod tests {
             paths: Vec::new(),
             started: 0,
             finished: 0,
+            attempt: 1,
         };
         app.world.cards = vec![
             card(0, Some(w[0]), Column::Working),
@@ -4625,6 +4626,7 @@ mod tests {
             paths: Vec::new(),
             started: 0,
             finished: 0,
+            attempt: 1,
         }
     }
 
@@ -4951,6 +4953,15 @@ mod tests {
         let s = render_story(&mut app);
         let head = s.lines().rev().find(|l| l.contains("#1 card 1")).unwrap();
         assert!(head.contains("✓ done") && !head.contains('≡'), "{head}");
+        // A failed one says so, and its owner has no line of now.
+        app.world.cards[0].column = Column::Failed;
+        let s = render_story(&mut app);
+        let head = s.lines().rev().find(|l| l.contains("#1 card 1")).unwrap();
+        assert!(
+            head.contains("✕ failed") && !head.contains("✓ done"),
+            "{head}"
+        );
+        assert!(!head.contains('≡') && !s.contains("now ▸"), "{s}");
         app.world.cards[0].column = Column::Working;
         // A change waiting on a card not done: that, not its list; the
         // owner off the card has no line of now.
@@ -5770,6 +5781,25 @@ mod tests {
         assert!(!bar("newer done"), "{s}");
         assert!(!glyph("newer review").contains('●'), "{s}");
         assert!(!glyph("newer done").contains('●'), "{s}");
+        // Record 126: a card waiting for review stands there by its own
+        // column, a failed one with the done ones marked, a later try says
+        // which.
+        app.world.inbox.clear();
+        app.world.cards[2].column = Column::Review;
+        app.world.cards[1].column = Column::Failed;
+        app.world.cards[1].attempt = 2;
+        let s = render(&app, 160, 40);
+        assert!(s.contains("TO REVIEW (1)") && s.contains("DONE (3)"), "{s}");
+        let row = s.lines().find(|l| l.contains("newer done")).unwrap();
+        let cell = &row[row.find("#2").unwrap()..];
+        let cell = cell.split('│').next().unwrap();
+        assert!(cell.starts_with("#2  ✕ newer done "), "{cell}");
+        assert!(
+            cell.ends_with(" · try 2"),
+            "the try at the column's end: {cell}"
+        );
+        let row = s.lines().find(|l| l.contains("older done")).unwrap();
+        assert!(!row.contains('✕') && !row.contains("try"), "{row}");
     }
 
     #[test]
@@ -6080,6 +6110,7 @@ mod tests {
             paths: Vec::new(),
             started: 0,
             finished: 0,
+            attempt: 1,
         };
         app.world.cards = vec![
             card(0, Column::Done),
@@ -8978,6 +9009,7 @@ mod tests {
                 paths: Vec::new(),
                 started: 0,
                 finished: 0,
+                attempt: 1,
             };
             app.world.cards.clear();
             app.world.cards.push(card(0, 1, Column::Done));
@@ -9271,6 +9303,7 @@ mod tests {
             paths: Vec::new(),
             started: 0,
             finished: 0,
+            attempt: 1,
         });
         let board = render(&app, 200, 40);
         for title in &theirs {

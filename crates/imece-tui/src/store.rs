@@ -81,7 +81,11 @@ use crate::recall::{Hit, Line};
 /// assign's until it is delivered (`mail.paths`), and the `Strayed` event.
 /// 26 (2026-11-04): the plan gate (`projects.plan`, record 114), the `Plan`
 /// inbox kind and the `Planned`/`PlanAnswered` events.
-pub const SCHEMA_VERSION: i64 = 27;
+/// 28 (2026-11-08): a card's attempts (`cards.attempt`, record 126), an
+/// assign's card and a done's outcome until delivered (`mail.card`,
+/// `mail.outcome`), the `Review` and `Failed` columns, and the `Handed`/
+/// `CardFailed`/`LateDone` events.
+pub const SCHEMA_VERSION: i64 = 28;
 /// Trace lines kept per agent, as the world keeps them.
 const TRACE_KEEP: usize = 200;
 /// The file's name under the state directory.
@@ -117,7 +121,7 @@ CREATE TABLE IF NOT EXISTS agents (
 CREATE TABLE IF NOT EXISTS cards (
     id INTEGER PRIMARY KEY, project INTEGER NOT NULL, title TEXT NOT NULL,
     owner INTEGER, col TEXT NOT NULL, started INTEGER NOT NULL, finished INTEGER NOT NULL,
-    paths TEXT NOT NULL DEFAULT '[]');
+    paths TEXT NOT NULL DEFAULT '[]', attempt INTEGER NOT NULL DEFAULT 1);
 -- Read whole, in key order (`load`): no index beyond the key.
 CREATE TABLE IF NOT EXISTS story (
     card INTEGER NOT NULL, seq INTEGER NOT NULL, tick INTEGER NOT NULL,
@@ -139,7 +143,7 @@ CREATE TABLE IF NOT EXISTS trace (
 CREATE TABLE IF NOT EXISTS mail (
     agent INTEGER NOT NULL, seq INTEGER NOT NULL, sender INTEGER NOT NULL,
     kind TEXT NOT NULL, body TEXT NOT NULL, number INTEGER NOT NULL DEFAULT 0, re INTEGER,
-    paths TEXT NOT NULL DEFAULT '[]',
+    paths TEXT NOT NULL DEFAULT '[]', card INTEGER, outcome TEXT NOT NULL DEFAULT '\"Ok\"',
     PRIMARY KEY (agent, seq)) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS notes (
     agent INTEGER NOT NULL, seq INTEGER NOT NULL, text TEXT NOT NULL,
@@ -621,6 +625,15 @@ impl Store {
                  ALTER TABLE mail ADD COLUMN paths TEXT NOT NULL DEFAULT '[]';",
             )?;
         }
+        if !self.has_column("cards", "attempt")? {
+            // A card on the board nobody took was tried no times.
+            self.conn.execute_batch(
+                "ALTER TABLE cards ADD COLUMN attempt INTEGER NOT NULL DEFAULT 1;
+                 UPDATE cards SET attempt = 0 WHERE col = 'Waiting';
+                 ALTER TABLE mail ADD COLUMN card INTEGER;
+                 ALTER TABLE mail ADD COLUMN outcome TEXT NOT NULL DEFAULT '\"Ok\"';",
+            )?;
+        }
         if !self.has_column("journal", "marked")? {
             self.conn.execute_batch(
                 "ALTER TABLE journal ADD COLUMN marked INTEGER NOT NULL DEFAULT 0;",
@@ -1003,7 +1016,7 @@ impl Store {
             let card = &w.cards[c];
             tx.execute(
                 "INSERT OR REPLACE INTO cards (id, project, title, owner, col, started, finished, \
-                 paths) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                 paths, attempt) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
                 params![
                     n(card.id),
                     n(card.project),
@@ -1012,7 +1025,8 @@ impl Store {
                     tag(&card.column),
                     big(card.started),
                     big(card.finished),
-                    serde_json::to_string(&card.paths).unwrap_or_default()
+                    serde_json::to_string(&card.paths).unwrap_or_default(),
+                    card.attempt
                 ],
             )?;
         }
@@ -1096,8 +1110,8 @@ impl Store {
             tx.execute("DELETE FROM mail WHERE agent = ?1", params![n(id)])?;
             for (seq, m) in k.mail[id].iter().enumerate() {
                 tx.execute(
-                    "INSERT INTO mail (agent, seq, sender, kind, body, number, re, paths) \
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                    "INSERT INTO mail (agent, seq, sender, kind, body, number, re, paths, card, \
+                     outcome) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
                     params![
                         n(id),
                         n(seq),
@@ -1106,7 +1120,9 @@ impl Store {
                         m.body,
                         m.id,
                         m.re,
-                        serde_json::to_string(&m.paths).unwrap_or_default()
+                        serde_json::to_string(&m.paths).unwrap_or_default(),
+                        opt(m.card),
+                        serde_json::to_string(&m.outcome).unwrap_or_default()
                     ],
                 )?;
             }
@@ -1664,7 +1680,8 @@ impl Store {
         let mut traces =
             conn.prepare("SELECT line FROM trace WHERE agent = ?1 ORDER BY seq DESC LIMIT ?2")?;
         let mut mails = conn.prepare(
-            "SELECT sender, kind, body, number, re, paths FROM mail WHERE agent = ?1 ORDER BY seq",
+            "SELECT sender, kind, body, number, re, paths, card, outcome FROM mail WHERE agent = ?1 \
+             ORDER BY seq",
         )?;
         let mut texts = [
             conn.prepare("SELECT text FROM notes WHERE agent = ?1 ORDER BY seq")?,
@@ -1685,6 +1702,9 @@ impl Store {
                     id: r.get(3)?,
                     re: r.get(4)?,
                     paths: paths_of(&r.get::<_, String>(5)?)?,
+                    card: uopt(r.get(6)?),
+                    outcome: serde_json::from_str(&r.get::<_, String>(7)?)
+                        .map_err(|e| bad(format!("outcome: {e}")))?,
                 })
             })? {
                 mail.push(m?);
@@ -1701,7 +1721,8 @@ impl Store {
             }
         }
         let mut st = conn.prepare(
-            "SELECT id, project, title, owner, col, started, finished, paths FROM cards ORDER BY id",
+            "SELECT id, project, title, owner, col, started, finished, paths, attempt FROM cards \
+             ORDER BY id",
         )?;
         for row in st.query_map([], |r| {
             Ok(Card {
@@ -1715,6 +1736,7 @@ impl Store {
                 paths: paths_of(&r.get::<_, String>(7)?)?,
                 started: ubig(r.get(5)?),
                 finished: ubig(r.get(6)?),
+                attempt: r.get(8)?,
             })
         })? {
             let c = row?;
@@ -1722,6 +1744,13 @@ impl Store {
                 return Err(bad(format!("card {} is out of order", c.id)));
             }
             w.cards.push(c);
+        }
+        // Each agent goes on at its card's try now (record 126): its turns
+        // from before ended with the run.
+        for a in &mut w.agents {
+            if let Some(c) = a.card.and_then(|c| w.cards.get(c)) {
+                a.attempt = c.attempt;
+            }
         }
         let mut st = conn.prepare("SELECT card, tick, data FROM story ORDER BY card, seq")?;
         for row in st.query_map([], |r| {
@@ -2226,6 +2255,7 @@ mod tests {
                     paths: Vec::new(),
                     started: 10,
                     finished: 0,
+                    attempt: 3,
                 },
                 Card {
                     id: 1,
@@ -2244,6 +2274,7 @@ mod tests {
                     paths: Vec::new(),
                     started: 20,
                     finished: 0,
+                    attempt: 0,
                 },
                 Card {
                     id: 2,
@@ -2256,6 +2287,7 @@ mod tests {
                     paths: Vec::new(),
                     started: 5,
                     finished: 9,
+                    attempt: 1,
                 },
             ],
             journal: vec![
@@ -2513,6 +2545,8 @@ mod tests {
                         id: 0,
                         re: None,
                         paths: Vec::new(),
+                        card: Some(1),
+                        outcome: Outcome::Ok,
                     },
                     Mail {
                         from: 2,
@@ -2521,6 +2555,8 @@ mod tests {
                         id: 12,
                         re: Some(11),
                         paths: Vec::new(),
+                        card: None,
+                        outcome: Outcome::Late(2),
                     },
                 ],
                 Vec::new(),
@@ -3038,6 +3074,7 @@ mod tests {
                         paths: Vec::new(),
                         started: 40,
                         finished: 0,
+                        attempt: 1,
                     })
                 }),
             ),
@@ -3098,6 +3135,8 @@ mod tests {
                         id: 0,
                         re: None,
                         paths: Vec::new(),
+                        card: None,
+                        outcome: Outcome::Ok,
                     })
                 }),
             ),
@@ -4141,13 +4180,13 @@ mod tests {
                 )
                 .unwrap();
             assert_eq!(
-                version, "27",
+                version, "28",
                 "the sent table, the Fault kind, archives, restores, start points, standing yes, the \
                  recall index, forks, paid kinds, reviews, no vendor, the check on a change, what \
-                 it cost, the paths a card owns, the plan gate and a project's Lonca repository: \
-                 an older imece knows none"
+                 it cost, the paths a card owns, the plan gate, a project's Lonca repository and \
+                 a card's attempts: an older imece knows none"
             );
-            assert_eq!(SCHEMA_VERSION, 27);
+            assert_eq!(SCHEMA_VERSION, 28);
         }
         let back = Store::open(&path)
             .unwrap()
@@ -5068,6 +5107,102 @@ mod tests {
     }
 
     #[test]
+    fn a_file_of_schema_27_gets_the_attempt_columns_and_keeps_them_from_then_on() {
+        let d = dir("schema27");
+        std::fs::create_dir_all(&d).unwrap();
+        let path = d.join(FILE);
+        {
+            // A whole file as schema 27 wrote it: no tries, no outcomes.
+            let mut store = Store::open(&path).unwrap();
+            assert!(store.save(&world(), &kept().kept()).unwrap());
+            store
+                .raw()
+                .execute_batch(
+                    "ALTER TABLE cards DROP COLUMN attempt;
+                     ALTER TABLE mail DROP COLUMN card;
+                     ALTER TABLE mail DROP COLUMN outcome;
+                     UPDATE meta SET value = '27' WHERE key = 'schema_version';",
+                )
+                .unwrap();
+        }
+        let mut store = Store::open(&path).unwrap();
+        let back = store.load(100).unwrap().expect("a world");
+        let tries: Vec<(Column, u32)> = (back.world.cards.iter())
+            .map(|c| (c.column, c.attempt))
+            .collect();
+        assert_eq!(
+            tries,
+            [
+                (Column::Working, 1),
+                (Column::Waiting, 0),
+                (Column::Done, 1)
+            ],
+            "a card nobody took was tried no times"
+        );
+        assert!(
+            back.found
+                .mail
+                .iter()
+                .flatten()
+                .all(|m| m.card.is_none() && m.outcome == Outcome::Ok)
+        );
+        // The next save writes them, and they come back.
+        let mut k = back.found();
+        let mut w = back.world;
+        w.cards[0].attempt = 4;
+        w.cards[0].column = Column::Failed;
+        k.mail[1].push(Mail {
+            from: 1,
+            kind: MsgKind::Done,
+            body: "Could not".into(),
+            id: 9,
+            re: None,
+            paths: Vec::new(),
+            card: Some(0),
+            outcome: Outcome::Failed(Some(0)),
+        });
+        assert!(store.save(&w, &k.kept()).unwrap());
+        let back = store.load(100).unwrap().expect("a world");
+        assert_eq!(
+            (back.world.cards[0].attempt, back.world.cards[0].column),
+            (4, Column::Failed)
+        );
+        let m = back.found.mail[1].last().unwrap();
+        assert_eq!((m.card, m.outcome), (Some(0), Outcome::Failed(Some(0))));
+        assert!(!store.save(&w, &k.kept()).unwrap(), "nothing moved");
+        // An outcome that is no JSON is a file imece did not write.
+        store
+            .raw()
+            .execute_batch("UPDATE mail SET outcome = 'x';")
+            .unwrap();
+        let why = match store.load(100) {
+            Err(e) => e.to_string(),
+            Ok(_) => panic!("a file imece did not write loaded"),
+        };
+        assert!(why.contains("outcome"), "{why}");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn an_agent_comes_back_at_its_cards_try() {
+        let d = dir("tries");
+        std::fs::create_dir_all(&d).unwrap();
+        let path = d.join(FILE);
+        let mut store = Store::open(&path).unwrap();
+        let mut w = world();
+        w.agents[1].card = Some(0);
+        w.agents[2].card = None;
+        w.agents[3].card = Some(9);
+        assert!(store.save(&w, &kept().kept()).unwrap());
+        let back = store.load(100).unwrap().expect("a world");
+        assert_eq!(back.world.cards[0].attempt, 3);
+        assert_eq!(back.world.agents[1].attempt, 3, "its card's");
+        assert_eq!(back.world.agents[2].attempt, 0, "no card");
+        assert_eq!(back.world.agents[3].attempt, 0, "a card that is not there");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
     fn a_file_of_schema_24_gets_the_paths_columns_and_keeps_them_from_then_on() {
         let d = dir("schema24");
         std::fs::create_dir_all(&d).unwrap();
@@ -5115,6 +5250,8 @@ mod tests {
             id: 9,
             re: None,
             paths: vec![crate::paths::Owned::new("src/b.rs")],
+            card: None,
+            outcome: Outcome::Ok,
         });
         assert!(store.save(&w, &k.kept()).unwrap());
         let back = store.load(100).unwrap().expect("a world");

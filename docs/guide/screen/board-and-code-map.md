@@ -24,11 +24,11 @@ Five columns, each titled with its count:
 | --- | --- |
 | TO DO | posted and not yet taken: the leader's `post`, or a card the leader wrote for a worker that is not free yet |
 | IN PROGRESS | taken: assigned by the leader or claimed from the board by an idle worker. Under the title, its owner with the owner's state glyph and a progress bar; a working owner's glyph breathes as on the team (`:motion`) |
-| TO REVIEW | finished with a `done`, and its change (`Δ`) waits for you in TO DECIDE, newest first: the agent is through, the work is not in yet |
-| VERIFYING | nothing fills it live. The demo's merge queue used it |
-| DONE | finished, and no change of it waits for you, newest first, with the owner that finished it. Only a card at work shows its owner's state: in the last two columns the owner may be at work on something else |
+| TO REVIEW | finished with a `done`, and its change (`Δ`) waits for you in TO DECIDE, newest first: the agent is through, the work is not in yet. Sent back, the card goes back to IN PROGRESS |
+| VERIFYING | on Lonca, its change is in the merge queue after your yes |
+| DONE | its change is in whole (or its `done` left nothing to take), newest first, with the owner that finished it; a card that failed stands here too, marked `✕`. Only a card at work shows its owner's state: in the last two columns the owner may be at work on something else |
 
-Each card is `#N` and its title. When several projects are open, the project's name follows in dim. The cards themselves live in the model and in the store, so the board is the same after a restart.
+Each card is `#N` and its title, then ` · try 2` from its second try ([a card's tries](../concepts/messages-and-board.md#a-cards-tries)). When several projects are open, the project's name follows in dim. The cards themselves live in the model and in the store, so the board is the same after a restart.
 
 What a card is, how the leader posts and assigns and how a worker claims, is in [messages and the board](../concepts/messages-and-board.md). The board has no keys of its own: it lists; to open a card use `#N` from anywhere, to write to its owner `@name text`.
 

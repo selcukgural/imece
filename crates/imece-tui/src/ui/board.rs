@@ -36,9 +36,20 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
         let width = usize::from(inner.width);
         let mut lines = Vec::new();
         for c in cards {
+            // A failed card stands with the done ones, marked; a card on
+            // its second try or later says which (record 126).
+            let mark = if c.column == Column::Failed {
+                "✕ "
+            } else {
+                ""
+            };
+            let tries = super::card::tries(t, c);
+            let room = width.saturating_sub(4 + mark.chars().count() + tries.chars().count());
             lines.push(Line::from(vec![
                 Span::styled(format!("#{:<3}", c.id + 1), dim()),
-                Span::raw(fit(&c.title, width.saturating_sub(4))),
+                Span::styled(mark, fg(pal().bad)),
+                Span::raw(fit(&c.title, room)),
+                Span::styled(tries, dim()),
             ]));
             let mut spans = vec![Span::raw("    ")];
             // The owner's state says what the card's agent does now, which

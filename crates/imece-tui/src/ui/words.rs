@@ -144,6 +144,33 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
             t.ev_claimed,
             &[name(w, *agent), &card_ref(*card), &w.cards[*card].title],
         ),
+        Event::Handed {
+            agent,
+            card,
+            from,
+            attempt,
+        } => {
+            let (card, title, n) = (card_ref(*card), &w.cards[*card].title, attempt.to_string());
+            match from {
+                Some(f) => fill(
+                    t.ev_handed_from,
+                    &[name(w, *agent), &card, title, name(w, *f), &n],
+                ),
+                None => fill(t.ev_handed, &[name(w, *agent), &card, title, &n]),
+            }
+        }
+        Event::CardFailed { agent, card, why } => fill(
+            t.ev_card_failed,
+            &[
+                name(w, *agent),
+                &card_ref(*card),
+                &w.cards[*card].title,
+                why,
+            ],
+        ),
+        Event::LateDone { agent, card } => {
+            fill(t.ev_late_done, &[name(w, *agent), &card_ref(*card)])
+        }
         Event::Hired {
             by,
             agent,
@@ -581,6 +608,15 @@ pub fn story(lang: Lang, w: &World, card: &Card, e: &StoryEvent) -> String {
         StoryEvent::YouRejected { research: true } => t.st_you_rejected_research.to_string(),
         StoryEvent::Touched(file) => fill(t.st_touched, &[file]),
         StoryEvent::Strayed(file) => fill(t.st_strayed, &[file]),
+        StoryEvent::Handed { from, to, attempt } => match from {
+            Some(f) => fill(
+                t.st_handed_from,
+                &[name(w, *f), name(w, *to), &attempt.to_string()],
+            ),
+            None => fill(t.st_handed, &[name(w, *to), &attempt.to_string()]),
+        },
+        StoryEvent::Failed(why) => fill(t.st_failed, &[why]),
+        StoryEvent::LateDone { from } => fill(t.st_late_done, &[name(w, *from)]),
         StoryEvent::Stopped(why) => fill(t.st_stopped, &[why]),
         StoryEvent::Interrupted => t.st_interrupted.to_string(),
         StoryEvent::Posted { by, text } => fill(t.st_posted, &[name(w, *by), text]),
@@ -1928,6 +1964,84 @@ mod tests {
             "silindi: a · a söküldü: exit 0, 0.4 s · dropped · b söküldü: exit 0, 0.4 s · \
              c sökümü başarısız: exit 0, 0.4 s · no db · d sökümü çalışmadı: not a plain file · \
              e sökümü çalışmadı: hayır dedin"
+        );
+    }
+
+    #[test]
+    fn a_card_handed_failed_or_done_late_is_said_in_both_languages() {
+        let mut w = crate::live::testing::team(2);
+        let c = crate::live::testing::with_card(&mut w, 1);
+        let say = |lang, e: Event| event(lang, &w, &e);
+        let handed = |from| Event::Handed {
+            agent: 2,
+            card: c,
+            from,
+            attempt: 2,
+        };
+        assert_eq!(say(Lang::En, handed(None)), "claude-2 got #1 fix it, try 2");
+        assert_eq!(
+            say(Lang::En, handed(Some(1))),
+            "claude-2 got #1 fix it from claude-1, try 2"
+        );
+        assert_eq!(
+            say(Lang::Tr, handed(None)),
+            "claude-2 aldı: #1 fix it, 2. deneme"
+        );
+        assert_eq!(
+            say(Lang::Tr, handed(Some(1))),
+            "claude-2 aldı: #1 fix it, claude-1 elinden, 2. deneme"
+        );
+        let failed = Event::CardFailed {
+            agent: 1,
+            card: c,
+            why: "Cannot".into(),
+        };
+        assert_eq!(
+            say(Lang::En, failed.clone()),
+            "claude-1: #1 fix it failed: Cannot"
+        );
+        assert_eq!(
+            say(Lang::Tr, failed),
+            "claude-1: #1 fix it başarısız: Cannot"
+        );
+        let late = Event::LateDone { agent: 1, card: c };
+        assert_eq!(
+            say(Lang::En, late.clone()),
+            "claude-1: a late done for #1, which went to another try; it closes nothing"
+        );
+        assert!(say(Lang::Tr, late).starts_with("claude-1: #1 için geç bir done"));
+        let card = w.cards[c].clone();
+        let tell = |lang, e: StoryEvent| story(lang, &w, &card, &e);
+        let handed = |from| StoryEvent::Handed {
+            from,
+            to: 2,
+            attempt: 3,
+        };
+        assert_eq!(tell(Lang::En, handed(None)), "handed to claude-2, try 3");
+        assert_eq!(
+            tell(Lang::En, handed(Some(1))),
+            "handed from claude-1 to claude-2, try 3"
+        );
+        assert_eq!(tell(Lang::Tr, handed(None)), "claude-2 aldı, 3. deneme");
+        assert_eq!(
+            tell(Lang::Tr, handed(Some(1))),
+            "claude-1 elinden claude-2 aldı, 3. deneme"
+        );
+        assert_eq!(
+            tell(Lang::En, StoryEvent::Failed("Cannot".into())),
+            "failed: Cannot"
+        );
+        assert_eq!(
+            tell(Lang::Tr, StoryEvent::Failed("Cannot".into())),
+            "başarısız: Cannot"
+        );
+        assert_eq!(
+            tell(Lang::En, StoryEvent::LateDone { from: 1 }),
+            "a late done from claude-1: it closes nothing"
+        );
+        assert_eq!(
+            tell(Lang::Tr, StoryEvent::LateDone { from: 1 }),
+            "claude-1 geç bir done gönderdi: hiçbir şeyi kapatmıyor"
         );
     }
 

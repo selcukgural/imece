@@ -24,11 +24,11 @@ Beş sütun, her biri sayısıyla başlıklı:
 | --- | --- |
 | YAPILACAK | asılmış, henüz alınmamış: liderin `post`'u ya da liderin henüz boşta olmayan bir işçi için yazdığı kart |
 | ÜZERİNDE | alınmış: lider görev vermiş ya da boşta bir işçi panodan almış. Başlığın altında sahibi, sahibinin durum işaretiyle ve bir ilerleme çubuğuyla; çalışan bir sahibin işareti ekipteki gibi nefes alır (`:motion`) |
-| İNCELENECEK | bir `done` ile bitmiş ve değişikliği (`Δ`) KARAR BEKLEYEN'de sizi bekliyor, en yeni önce: ajan işini bitirdi, iş henüz içeri girmedi |
-| DOĞRULANIYOR | canlıda hiçbir şey doldurmaz. Demonun merge queue'su kullanıyordu |
-| BİTTİ | bitmiş ve hiçbir değişikliği sizi beklemiyor, en yeni önce, bitiren sahibiyle. Sahibinin durumunu yalnız üzerinde çalışılan kart gösterir: son iki sütunda sahibi başka bir iş yapıyor olabilir |
+| İNCELENECEK | bir `done` ile bitmiş ve değişikliği (`Δ`) KARAR BEKLEYEN'de sizi bekliyor, en yeni önce: ajan işini bitirdi, iş henüz içeri girmedi. Geri gönderilince kart ÜZERİNDE'ye döner |
+| DOĞRULANIYOR | Lonca'da, değişikliği onayınızdan sonra merge queue'da |
+| BİTTİ | değişikliği tamamen içeride (ya da `done`'ı alınacak bir şey bırakmadı), en yeni önce, bitiren sahibiyle; başarısız olan bir kart da burada durur, `✕` ile. Sahibinin durumunu yalnız üzerinde çalışılan kart gösterir: son iki sütunda sahibi başka bir iş yapıyor olabilir |
 
-Her kart `#N` ve başlığıdır. Birden çok proje açıkken projenin adı soluk olarak izler. Kartlar modelde ve depoda yaşar, bu yüzden pano yeniden başlatmadan sonra da aynıdır.
+Her kart `#N` ve başlığıdır, ikinci denemesinden itibaren ardından ` · 2. deneme` ([kartın denemeleri](../concepts/messages-and-board.md#kartın-denemeleri)). Birden çok proje açıkken projenin adı soluk olarak izler. Kartlar modelde ve depoda yaşar, bu yüzden pano yeniden başlatmadan sonra da aynıdır.
 
 Kartın ne olduğu, liderin nasıl astığı ve görev verdiği, bir işçinin nasıl aldığı [mesajlar ve pano](../concepts/messages-and-board.md) sayfasında. Panonun kendi tuşu yoktur: listeler; bir kartı açmak için her yerden `#N`, sahibine yazmak için `@name text`.
 

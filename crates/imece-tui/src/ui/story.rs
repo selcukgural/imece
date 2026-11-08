@@ -64,11 +64,7 @@ impl Held {
         let mut by = vec![Vec::new(); w.agents.len()];
         for c in w.shown_cards().filter(|c| c.column != Column::Waiting) {
             if let Some(cards) = c.owner.and_then(|o| by.get_mut(o)) {
-                let done = if c.column == Column::Done {
-                    c.finished
-                } else {
-                    u64::MAX
-                };
+                let done = if c.over() { c.finished } else { u64::MAX };
                 cards.push((done, c.id));
             }
         }
@@ -315,9 +311,11 @@ fn card_head(app: &App, c: CardId) -> Line<'static> {
     }
     let change = (w.open_inbox().into_iter())
         .any(|i| w.inbox[i].kind == InboxKind::Change && w.inbox[i].card == Some(c));
-    let done = card.column == Column::Done;
-    if done {
-        spans.push(Span::styled(format!("  {}", t.story_done), fg(pal().ok)));
+    let done = card.over();
+    match card.column {
+        Column::Done => spans.push(Span::styled(format!("  {}", t.story_done), fg(pal().ok))),
+        Column::Failed => spans.push(Span::styled(format!("  {}", t.story_failed), fg(pal().bad))),
+        _ => {}
     }
     if change {
         let gap = if done { " · " } else { "  " };
@@ -338,7 +336,7 @@ fn card_head(app: &App, c: CardId) -> Line<'static> {
 fn now_line(app: &App, c: CardId) -> Option<Line<'static>> {
     let w = &app.world;
     let card = &w.cards[c];
-    let o = card.owner.filter(|_| card.column != Column::Done)?;
+    let o = card.owner.filter(|_| !card.over())?;
     let a = &w.agents[o];
     if a.gone || a.card != Some(c) {
         return None;

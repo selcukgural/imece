@@ -1128,6 +1128,8 @@ mod tests {
             id: 0,
             re: None,
             paths: Vec::new(),
+            card: None,
+            outcome: Outcome::Ok,
         });
         finish(&mut live, &mut w, 2, "done");
         let h = &w.agents[2];
@@ -1154,6 +1156,8 @@ mod tests {
             id: 0,
             re: None,
             paths: Vec::new(),
+            card: None,
+            outcome: Outcome::Ok,
         });
         live.step(&mut w);
         assert_eq!(live.turns[2], 0);

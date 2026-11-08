@@ -82,7 +82,7 @@ Two things in TO DECIDE hold nothing: an answer waiting to be read, and a worker
 
 ## You on the bus
 
-Plain text in the command line goes to the selected project's leader; `@name text` goes to one agent. A message to an idle worker opens a card; its answer closes it. Your messages have no number. An agent's answer to you waits in TO DECIDE ("claude-1 answered you: …") until you open it (`enter`), dismiss it (`r`) or just write back.
+Plain text in the command line goes to the selected project's leader; `@name text` goes to one agent. A message to an idle worker opens a card; its change closes it ([a card's tries](#a-cards-tries)). Your messages have no number. An agent's answer to you waits in TO DECIDE ("claude-1 answered you: …") until you open it (`enter`), dismiss it (`r`) or just write back.
 
 ## The board
 
@@ -110,6 +110,16 @@ An `assign` or a `post` names the paths its card owns: `paths`, at most 20 git p
 
 This is the cheap stand-in for symbol leases (see [the code map](../screen/board-and-code-map.md)): a path is what the leader can name when it plans, and what a change can be checked against without reading the files. Leases come only if paths prove not enough.
 
+## A card's tries
+
+A card follows its change, not its worker's turns. It is at work until the worker's `done`; it waits for you to review while its change (`Δ`) is in TO DECIDE; it goes back to work when you send the change back (a reject, notes, a clash), and your words to the worker go on with that card, a round more; it is done once the change is applied whole, or when the `done` left nothing to take. On Lonca it is verifying in the merge queue after your yes, done on trunk, and back at work when the queue or a reviewer says no.
+
+- **A try.** A card counts the times it was taken: the `assign` that opened it is the first, a `claim` from the board is one, and the leader may hand a card again with `assign` and `card: 3` (one that failed, whose worker stopped, or that waits on the board), its next try. The card keeps its title and its paths; the new worker's mail is headed `[assign 14 · #3, try 2]`, and whoever had it is told `Card #3 (…) went to claude-2. Stop work on it; a done from you for it closes nothing now.` A card in review, in the queue or done cannot be handed: `#3's change waits for the person; it comes back if they send it back`.
+- **A late `done`.** A `done` from a turn that began before its card was handed again closes nothing and shows no change: the journal says `claude-1: a late done for #3, which went to another try; it closes nothing`, and the leader's mail is headed `[done 12 · late: #3 is claude-2's now, it closes nothing]`. imece knows which turn a `done` came from; the agent never writes its try.
+- **A failed card.** A worker that cannot do a task as asked sends its `done` with `outcome: "failed"` and why. The card fails (`✕` on the board, FAILED on its screen), no change is shown, and the leader's mail is headed `[done 12 · #3 failed]`; the leader is told to hand it again with what to do differently.
+
+The demo shows all three: every seventh first try fails, its leader hands a failed card to another worker once, and now and then takes a card that has run long from its worker, whose turn then ends with a late `done`.
+
 ## The plan
 
 The first worker is cheap and you asked for work; before the leader hires a second one, you see what it means to do. It calls `plan(cards, cost)`: the cards it means to assign or post, each with a title, a tier, the paths it owns and a body, and what it expects them all to cost in dollars. The plan comes to TO DECIDE as one `▤` item (`lead: plans 3 cards for $1.20; enter reads it`), the journal says `lead planned 3 cards for $1.20; waits for your yes`, and the leader is told to end its turn; while the plan waits, the leader's mail waits with it ([mail waits](#mail-waits-with-an-agent-that-waits-on-you)) and `hire` answers `the person is reading your plan; end your turn, their yes starts your next`.
@@ -123,7 +133,7 @@ A new plan replaces the one waiting. The plan is checked as cards would be: a ti
 
 ## Cards and their stories
 
-A card is a unit of work with a story: `intent`, `assumption`, `decision`, `talk`, `evidence`, `change`, `you` (what you said or decided). The board view shows cards in columns (WAITING, IN PROGRESS, VERIFYING, DONE); `#N` or `#word` opens a card's own screen with who was on it, its story, and its own inbox and journal lines ([cards](../screen/cards.md)).
+A card is a unit of work with a story: `intent`, `assumption`, `decision`, `talk`, `evidence`, `change`, `you` (what you said or decided). The board window shows cards in columns (TO DO, IN PROGRESS, TO REVIEW, VERIFYING, DONE; a failed card stands with the done ones, marked `✕`); `#N` or `#word` opens a card's own screen with who was on it, its story, and its own inbox and journal lines ([cards](../screen/cards.md)).
 
 ## The wake briefing
 
