@@ -13153,6 +13153,7 @@ after | not a table";
             (StoreDown::Forbidden, "not enrolled"),
             (StoreDown::NoRepo, "no such repository"),
             (StoreDown::Refused, "refused"),
+            (StoreDown::Busy, "busy"),
         ];
         for (why, word) in all {
             let e = Event::StoreDown {

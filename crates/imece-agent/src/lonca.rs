@@ -85,7 +85,7 @@ const SAID_MOST: usize = 300;
 const WARNINGS_MOST: usize = 8;
 
 /// Why the store can not be read. Every one of them closes a project on
-/// Lonca to hires and Δ decisions.
+/// Lonca to hires and Δ decisions, [`Down::Again`] once it goes on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Down {
     /// Nothing answers on the socket.
@@ -105,6 +105,11 @@ pub enum Down {
     NoRepo,
     /// The daemon refused for a reason of its own.
     Refused,
+    /// Nothing ran, and the daemon asks to be asked again: it is busy, the
+    /// session is past its rate, checks are running, or it closed a quiet
+    /// connection or a slow line (`busy`, `rate_limited`, `verifying`,
+    /// `closed`, `timeout`). A new connection may get an answer.
+    Again,
 }
 
 /// Why a `lonca` command of the person's did not go through.
@@ -700,12 +705,18 @@ fn answered(answer: &[u8], id: u64) -> Result<Value, Down> {
         return Err(Down::NoDaemon);
     };
     let told: Value = serde_json::from_slice(line).map_err(|_| Down::Protocol)?;
-    if told["id"].as_u64() != Some(id) {
+    let code = told["error"]["code"].as_str();
+    // A connection closed while quiet, or a line too slow, is said under
+    // id 0, whatever was asked after it.
+    let quiet = told["id"].as_u64() == Some(0)
+        && told["ok"].as_bool() == Some(false)
+        && down_of(code) == Down::Again;
+    if told["id"].as_u64() != Some(id) && !quiet {
         return Err(Down::Protocol);
     }
     match told["ok"].as_bool() {
         Some(true) => Ok(told["result"].clone()),
-        Some(false) => Err(down_of(told["error"]["code"].as_str())),
+        Some(false) => Err(down_of(code)),
         None => Err(Down::Protocol),
     }
 }
@@ -716,6 +727,7 @@ fn down_of(code: Option<&str>) -> Down {
         Some("unauthenticated") => Down::SignedOut,
         Some("forbidden") => Down::Forbidden,
         Some("not_found") => Down::NoRepo,
+        Some("busy" | "rate_limited" | "verifying" | "closed" | "timeout") => Down::Again,
         Some(_) => Down::Refused,
         None => Down::Protocol,
     }
@@ -1817,10 +1829,28 @@ mod tests {
             ("forbidden", Down::Forbidden),
             ("not_found", Down::NoRepo),
             ("frozen", Down::Refused),
+            ("busy", Down::Again),
+            ("rate_limited", Down::Again),
+            ("verifying", Down::Again),
+            ("closed", Down::Again),
+            ("timeout", Down::Again),
         ] {
             let e = format!(r#"{{"id":3,"ok":false,"error":{{"code":"{code}"}}}}"#);
             assert_eq!(answered(&line(&e), 3), Err(down), "{code}");
         }
+        // Under id 0 only what asks to be asked again is an answer.
+        for (code, down) in [
+            ("closed", Down::Again),
+            ("timeout", Down::Again),
+            ("forbidden", Down::Protocol),
+        ] {
+            let e = format!(r#"{{"id":0,"ok":false,"error":{{"code":"{code}"}}}}"#);
+            assert_eq!(answered(&line(&e), 3), Err(down), "{code} under id 0");
+        }
+        let zero = line(r#"{"id":0,"ok":true,"error":{"code":"closed"}}"#);
+        assert_eq!(answered(&zero, 3), Err(Down::Protocol), "id 0 and ok");
+        let other = line(r#"{"id":2,"ok":false,"error":{"code":"closed"}}"#);
+        assert_eq!(answered(&other, 3), Err(Down::Protocol), "another id");
         let bare = line(r#"{"id":3,"ok":false}"#);
         assert_eq!(
             answered(&bare, 3),

@@ -1017,6 +1017,16 @@ fn store_stopped(tick: u64) -> bool {
     tick % STORE_EVERY >= STORE_EVERY - STORE_STOPS
 }
 
+/// Why the demo's daemon stopped at `tick`: every second stop it is busy,
+/// as a real one past its limits keeps asking to be asked again.
+fn store_stop(tick: u64) -> StoreDown {
+    if (tick / STORE_EVERY) % 2 == 1 {
+        StoreDown::Busy
+    } else {
+        StoreDown::NoDaemon
+    }
+}
+
 /// The commit trunk is at after `integrated` changes: looks like one.
 fn demo_trunk(integrated: u32) -> String {
     let head = 0x9d3f_1c2a_u32.wrapping_add(integrated.wrapping_mul(0x51_7cc1));
@@ -1344,7 +1354,7 @@ impl Sim {
             let row = self.extras.store.iter().find(|(r, _)| *r == repo);
             let pending = demo_pending(w, p);
             let seen = match row {
-                _ if store_stopped(w.tick) => StoreSeen::Down(StoreDown::NoDaemon),
+                _ if store_stopped(w.tick) => StoreSeen::Down(store_stop(w.tick)),
                 // As a real daemon says it to a human session.
                 None => StoreSeen::Down(StoreDown::Forbidden),
                 Some((_, integrated)) => StoreSeen::Up {
@@ -7892,6 +7902,14 @@ diff --git a/b.rs b/b.rs
         let said: Vec<&Event> = (w.journal.iter()).map(|e| &e.event).collect();
         assert!(said.iter().any(|e| matches!(e, Event::StoreDown { .. })));
         assert!(said.iter().any(|e| matches!(e, Event::StoreBack { .. })));
+        // The next stop is a busy daemon's, the one after a gone one's.
+        w.tick = 114;
+        s.store_answers(&mut w);
+        assert_eq!(w.store_closed(1), Some(StoreDown::Busy.why()));
+        assert_eq!(store_stop(119), StoreDown::Busy);
+        assert_eq!(store_stop(120), StoreDown::NoDaemon);
+        assert_eq!(store_stop(174), StoreDown::NoDaemon);
+        assert_eq!(store_stop(180), StoreDown::Busy);
     }
 
     /// Runs `job` to its end: not a tick early.

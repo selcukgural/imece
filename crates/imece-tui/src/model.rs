@@ -657,6 +657,9 @@ pub enum StoreDown {
     /// The repository's policy can not be said to hold a change for a
     /// person: without that it would integrate unseen (record 120).
     Unguarded,
+    /// The daemon asked to be asked again, look after look (`busy`,
+    /// `rate_limited`, `closed`, …): one such answer closes nothing.
+    Busy,
 }
 
 impl StoreDown {
@@ -675,6 +678,7 @@ impl StoreDown {
                 "this repository's policy does not hold a change for the person \
                  (unobserved_is_tainted): set it true"
             }
+            StoreDown::Busy => "Lonca's daemon is busy: it asks to be asked again",
         }
     }
 }
@@ -7514,6 +7518,7 @@ mod tests {
             StoreDown::Forbidden,
             StoreDown::NoRepo,
             StoreDown::Refused,
+            StoreDown::Busy,
         ];
         let said: std::collections::HashSet<&str> = all.iter().map(|d| d.why()).collect();
         assert_eq!(said.len(), all.len());
