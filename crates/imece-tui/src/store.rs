@@ -1608,6 +1608,7 @@ impl Store {
             proposals: Default::default(),
             orphans: crate::model::Orphans::default(),
             health: Default::default(),
+            procs: Default::default(),
             messages,
         };
         let mut found = Found::default();
@@ -2464,6 +2465,7 @@ mod tests {
             proposals: Default::default(),
             orphans: crate::model::Orphans::default(),
             health: Default::default(),
+            procs: Default::default(),
             messages: 12,
         };
         w.agents[1].cost = 4_321;

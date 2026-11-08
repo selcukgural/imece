@@ -63,6 +63,7 @@ description: imece'nin aldığı her `:` komutu; argümanları, karşılığı o
 | `:pending` | `q s` | | | | |
 | `:pin [NAME]` | — | | | | eldeki proje, sabitse `▴` |
 | `:plan [on\|off]` | — | | | | on / off |
+| `:ps` | — | | | | |
 | `:quit` | `q` | `:q` | | | |
 | `:recall [WORDS]` | `H` | | | | |
 | `:rename NAME` | — | | | | eldeki proje |
@@ -300,6 +301,10 @@ Ajanın odağı görünümün üstünde bir pencerede, `K` gibi; ad yoksa eldeki
 ### `:plan [on|off]`
 
 Eldeki projenin plan kapısı ([plan](../concepts/messages-and-board.md#plan)): `on` (varsayılan) lidere ikinci işçiyi almadan önce planını KARAR BEKLEYEN'e `▤` ögesi olarak koydurur; `off` uygun gördüğü gibi işe almasına izin verir, yine de gönderdiği bir plan `the person turned the plan gate off for this project` yanıtını alır ve saklanmaz. Yalın, kapının nerede durduğunu söyler: `kule için plan kapısı açık: ikinci işçiden önce onayınızı alan bir plan` / `kule için plan kapısı kapalı: lider uygun gördüğü gibi işe alır`. Depoda proje başına saklanır. Menü notu on / off gösterir.
+
+### `:ps`
+
+Her ajanın oturumu ve altındaki her süreç, ekranın üstünde bir pencerede, `ps`'in söylediği gibi (bir çekirdeğin yüzdesi olarak CPU, kullanılan bellek): her ajan için tüm süreçlerinin toplamını veren bir satır, ardından içeriden oturumunun süreci (`claude`), imece'nin bus aktarıcısı (`imece`) ve ajanın çalıştırdıkları (`cargo`, `node`). Açıkken üç saniyede bir yeniden okunur. `j` `k` (oklar) ve `g` `G` gezer, `d` sorar: `cargo (60321) sonlandırılsın mı (claude-1 altında)? y sonlandırır, başka bir tuş bırakır`; `esc` ya da `q` kapatır. Süreç `SIGTERM` ile, hâlâ oradaysa iki saniye sonra `SIGKILL` ile biter; imece her sinyalden hemen önce hâlâ o oturumun altında olduğunu yeniden denetler, böylece arada yeniden kullanılmış bir numaraya dokunulmaz. Ajanın oturumu sürer ve komutunun hata verdiğini görür. Oturumun kendisi (onu `:forget` ya da durdurmak bitirir) ve imece'nin aktarıcısı reddedilir. Günlük `cargo (60321) sonlandırıldı, claude-1 altında` der. Demo uydurma süreçleri aynı biçimde listeler. Bkz. [oturumlar](../concepts/sessions.md#süreçler).
 
 ### `:quit`
 

@@ -13,6 +13,9 @@ crates/imece-tui/src/live/bus.rs
 crates/imece-tui/src/live/tools.rs
 crates/imece-tui/src/paths.rs
 crates/imece-tui/src/checks.rs
+# Ending a process (`:ps`): only one under an agent's session, never the
+# session or imece's relay.
+crates/imece-tui/src/procs.rs
 # The Δ gate between a worktree and the person's checkout.
 crates/imece-tui/src/live/changes.rs
 # What runs only once the person said yes: setup and teardown scripts,

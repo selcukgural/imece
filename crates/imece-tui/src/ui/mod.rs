@@ -106,6 +106,9 @@ pub fn draw(f: &mut Frame, app: &App) {
     if let Some(win) = app.tidy {
         over.push(overlay::tidy(f, app, win));
     }
+    if let Some(win) = app.ps {
+        over.push(overlay::ps(f, app, win));
+    }
     if let Some(win) = app.lonca_win {
         over.push(overlay::lonca(f, app, win));
     }
@@ -2307,6 +2310,94 @@ mod tests {
             app.step();
         }
         app
+    }
+
+    #[test]
+    fn the_ps_window_sums_each_session_and_asks_before_one_ends() {
+        use crate::procs::{Proc, Procs};
+        let mut app = app_after(1, 2, 0, Lang::En);
+        app.command("ps");
+        let p = |pid, ppid, cpu, kib, name: &str| Proc {
+            pid,
+            ppid,
+            cpu,
+            rss: kib,
+            name: name.into(),
+        };
+        app.world.procs = Procs::default();
+        let s = render(&app, 120, 30);
+        assert!(s.contains("PROCESSES · 0"), "{s}");
+        assert!(s.contains("no agent has a session running"), "{s}");
+        app.world.procs.looking = true;
+        assert!(render(&app, 120, 30).contains("looking…"));
+        app.world.procs = Procs {
+            agents: vec![(
+                1,
+                vec![
+                    p(500, 1, 123, 300 * 1024, "claude"),
+                    p(501, 500, 0, 9 * 1024, "imece"),
+                    p(502, 500, 950, 400 * 1024, "cargo\u{1b}[2J"),
+                ],
+            )],
+            looking: true,
+            failed: None,
+        };
+        app.ps = Some(crate::app::PsWin { at: 2, sure: None });
+        let s = render(&app, 120, 30);
+        assert!(s.contains("PROCESSES · 3"), "{s}");
+        assert!(!s.contains("looking…"), "what was read shows meanwhile");
+        let row = |s: &str, name: &str| {
+            s.lines()
+                .find(|l| l.contains(name))
+                .unwrap_or_default()
+                .to_string()
+        };
+        assert!(s.contains("│claude-1 · 107.3% · 709 MiB "), "{s}");
+        let root = row(&s, "  claude ");
+        assert!(
+            root.contains("  claude           500   12.3%  300 MiB"),
+            "{root:?}"
+        );
+        assert!(!root.contains('▶'));
+        let relay = row(&s, "  imece   ");
+        assert!(
+            relay.contains("    imece          501    0.0%  9 MiB"),
+            "{relay:?}"
+        );
+        let cmd = row(&s, "▶");
+        assert!(
+            cmd.contains("▶   cargo [2J      502   95.0%  400 MiB"),
+            "{cmd:?}"
+        );
+        let column = |l: &str, pid: &str| l[..l.find(pid).unwrap()].chars().count();
+        assert_eq!(
+            column(&root, "500"),
+            column(&cmd, "502"),
+            "the columns line up"
+        );
+        assert!(s.contains("end this one"), "{s}");
+        app.ps = Some(crate::app::PsWin {
+            at: 2,
+            sure: Some((1, 502)),
+        });
+        let s = render(&app, 120, 30);
+        assert!(
+            s.contains("end cargo [2J (502) under claude-1? y ends it, any other key keeps it"),
+            "{s}"
+        );
+        assert!(!s.contains("end this one"), "{s}");
+        app.world.procs.failed = Some("ps did not answer".into());
+        let s = render(&app, 120, 30);
+        assert!(
+            s.contains("the processes could not be read: ps did not answer"),
+            "{s}"
+        );
+        // On a short screen the row at hand stays in view.
+        app.ps = Some(crate::app::PsWin { at: 2, sure: None });
+        let s = render(&app, 120, 9);
+        assert!(s.contains("▶"), "{s}");
+        assert_eq!(overlay::cpu(0), "0.0%");
+        assert_eq!(overlay::cpu(1009), "100.9%");
     }
 
     #[test]
@@ -7489,7 +7580,7 @@ mod tests {
         key(&mut app, KeyCode::Char('p'));
         assert_eq!(
             app.menu.as_ref().unwrap().items,
-            ["peek", "pending", "pin", "plan"],
+            ["peek", "pending", "pin", "plan", "ps"],
             "not pause"
         );
         key(&mut app, KeyCode::Backspace);

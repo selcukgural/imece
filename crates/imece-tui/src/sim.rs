@@ -15,6 +15,7 @@ use crate::live::{
     SUGGEST_DAY_COST, TidyRefusal, numbers, standing,
 };
 use crate::model::*;
+use crate::procs::{Proc, Refusal as ProcRefusal};
 use crate::rng::Rng;
 use imece_agent::Tier;
 
@@ -246,6 +247,15 @@ const FAIL_EVERY: u32 = 7;
 /// Every this many failed test runs, the worker goes round on it: the
 /// same run fails again until imece tells its leader (record 128).
 const LOOP_EVERY: u32 = 4;
+/// The demo's made-up sessions' processes start here, ten numbers an
+/// agent (`:ps`).
+const SESSION_PIDS: u32 = 41_000;
+
+/// And the commands they run here, a thousand an agent.
+const COMMAND_PIDS: u32 = 60_000;
+
+/// A working agent of the demo runs a new command this often.
+const PROC_TICKS: u64 = 60;
 /// A first try at work this many ticks may go to a free worker, the
 /// leader tired of waiting; the first worker's turn ends with a done that
 /// comes late.
@@ -785,6 +795,8 @@ struct Extras {
     /// How many test runs of its workers failed: every
     /// [`LOOP_EVERY`]th goes round (record 128).
     test_fails: u32,
+    /// The made-up processes the person ended (`:ps`): they stay gone.
+    ended: HashSet<u32>,
     /// Cards whose change failed its tests in the queue: it fails them
     /// again each round until the person allows one more (record 126,
     /// F9).
@@ -975,6 +987,7 @@ pub fn world(
         reviews: Default::default(),
         orphans: crate::model::Orphans::default(),
         health: Default::default(),
+        procs: Default::default(),
         messages: 0,
         plans: Vec::new(),
     };
@@ -1698,6 +1711,76 @@ impl Sim {
                 ..change
             });
         }
+    }
+
+    /// `:ps` in the demo (record 129): each started agent's session as a
+    /// made-up `claude` with imece's relay under it, and while it works
+    /// the command it runs (its project's test program, a new one every
+    /// [`PROC_TICKS`]); what the person ended stays gone. Read at once.
+    pub fn look_procs(&mut self, w: &mut World) {
+        let t = w.tick;
+        let mut agents = Vec::new();
+        for a in &w.agents {
+            let id = a.id;
+            if a.gone || w.put_away(id) || !self.started(id) {
+                continue;
+            }
+            let root = SESSION_PIDS + 10 * id as u32;
+            let proc = |pid, ppid, cpu, mib: u64, name: &str| Proc {
+                pid,
+                ppid,
+                cpu,
+                rss: mib * 1024,
+                name: name.into(),
+            };
+            let mut procs = vec![
+                proc(root, 1, 12 + 3 * id as u32, 280 + 7 * id as u64, "claude"),
+                proc(root + 1, root, 0, 9, "imece"),
+            ];
+            if a.status.busy() {
+                let run = (t / PROC_TICKS) as u32 % 1000;
+                let pid = COMMAND_PIDS + 1000 * id as u32 + run;
+                let name = kit(a.project).test.split(' ').next().unwrap_or("sh");
+                procs.push(proc(pid, root, 640 + 10 * (run % 30), 420, name));
+            }
+            procs.retain(|p| !self.extras.ended.contains(&p.pid));
+            agents.push((id, procs));
+        }
+        w.procs = crate::procs::Procs {
+            agents,
+            looking: false,
+            failed: None,
+        };
+    }
+
+    /// Ends made-up process `pid` of agent `id`, refused as live refuses
+    /// (its session, imece's relay, one not under it); the journal says
+    /// so.
+    pub fn end_proc(&mut self, w: &mut World, id: AgentId, pid: u32) -> Result<(), ProcRefusal> {
+        let procs = (w.procs.agents.iter())
+            .find(|(a, _)| *a == id)
+            .map(|(_, ps)| ps.clone())
+            .unwrap_or_default();
+        let root = procs.first().map(|p| p.pid);
+        let Some(p) = procs.iter().find(|p| p.pid == pid) else {
+            return Err(ProcRefusal::NotUnder);
+        };
+        if Some(pid) == root {
+            return Err(ProcRefusal::Session);
+        }
+        if p.name == "imece" && Some(p.ppid) == root {
+            return Err(ProcRefusal::Bus);
+        }
+        let name = p.name.clone();
+        self.extras.ended.insert(pid);
+        w.agents[id].trace(w.tick, format!("ended by the person: {name} ({pid})"));
+        w.note(Event::Killed {
+            agent: id,
+            pid,
+            name,
+        });
+        self.look_procs(w);
+        Ok(())
     }
 
     /// `:tidy` in the demo, as live does it: the next step answers with
@@ -9425,6 +9508,81 @@ diff --git a/b.rs b/b.rs
         w.look_health();
         assert_eq!(looped(&w), 0);
         assert_eq!(s.extras.test_fails, LOOP_EVERY - 1);
+    }
+
+    #[test]
+    fn the_demo_s_sessions_run_made_up_processes_and_one_ended_stays_gone() {
+        let (mut w, mut s) = world(1, 2, 0, 1, Lang::En);
+        let p = |pid, ppid, cpu, mib: u64, name: &str| Proc {
+            pid,
+            ppid,
+            cpu,
+            rss: mib * 1024,
+            name: name.into(),
+        };
+        s.look_procs(&mut w);
+        assert_eq!(w.procs.agents, vec![], "nobody started yet");
+        s.mind(1).started = true;
+        s.mind(2).started = true;
+        w.agents[1].status = Status::Idle;
+        w.agents[2].status = Status::Working;
+        w.procs.looking = true;
+        w.procs.failed = Some("old".into());
+        w.tick = PROC_TICKS * 2 - 1;
+        s.look_procs(&mut w);
+        assert!(!w.procs.looking && w.procs.failed.is_none());
+        let test = kit(0).test.split(' ').next().unwrap();
+        assert_eq!(
+            w.procs.agents,
+            vec![
+                (
+                    1,
+                    vec![
+                        p(41_010, 1, 15, 287, "claude"),
+                        p(41_011, 41_010, 0, 9, "imece")
+                    ]
+                ),
+                (
+                    2,
+                    vec![
+                        p(41_020, 1, 18, 294, "claude"),
+                        p(41_021, 41_020, 0, 9, "imece"),
+                        p(62_001, 41_020, 650, 420, test),
+                    ]
+                ),
+            ]
+        );
+        // A new command every so often; one ended stays gone.
+        w.tick = PROC_TICKS * 2;
+        s.look_procs(&mut w);
+        assert_eq!(w.procs.agents[1].1[2], p(62_002, 41_020, 660, 420, test));
+        assert_eq!(s.end_proc(&mut w, 2, 62_002), Ok(()));
+        assert_eq!(w.procs.agents[1].1.len(), 2);
+        assert!(
+            w.agents[2]
+                .trace
+                .back()
+                .unwrap()
+                .ends_with(&format!("ended by the person: {test} (62002)"))
+        );
+        assert_eq!(s.end_proc(&mut w, 2, 62_002), Err(ProcRefusal::NotUnder));
+        assert_eq!(
+            s.end_proc(&mut w, 1, 41_020),
+            Err(ProcRefusal::NotUnder),
+            "not its"
+        );
+        assert_eq!(s.end_proc(&mut w, 2, 41_020), Err(ProcRefusal::Session));
+        assert_eq!(s.end_proc(&mut w, 2, 41_021), Err(ProcRefusal::Bus));
+        // An `imece` not right under the session is a process like any.
+        w.procs.agents[1].1.push(p(70_000, 62_002, 0, 1, "imece"));
+        assert_eq!(s.end_proc(&mut w, 2, 70_000), Ok(()));
+        // Gone, or put away, nothing.
+        w.agents[1].gone = true;
+        s.look_procs(&mut w);
+        assert_eq!(w.procs.agents.len(), 1);
+        w.projects[0].closed = true;
+        s.look_procs(&mut w);
+        assert_eq!(w.procs.agents, vec![]);
     }
 
     #[test]

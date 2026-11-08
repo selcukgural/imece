@@ -8,8 +8,8 @@ use ratatui::widgets::{Block, Paragraph, Wrap};
 
 use super::*;
 use crate::app::{
-    App, Digest, LeftOff, LoncaWin, PickStep, SoloPick, TalkNote, TeardownAsk, Thread, TidyWin,
-    Window,
+    App, Digest, LeftOff, LoncaWin, PickStep, PsWin, SoloPick, TalkNote, TeardownAsk, Thread,
+    TidyWin, Window,
 };
 use crate::archives::{self, Browser, Row};
 use crate::keys::{Keymap, Scope};
@@ -360,6 +360,107 @@ pub fn tidy(f: &mut Frame, app: &App, win: TidyWin) -> Rect {
             fg(pal().warn),
         )),
         _ => Line::from(hint_spans(&t.tidy_hints)),
+    };
+    f.render_widget(Paragraph::new(foot), keys);
+    area
+}
+
+/// A CPU in tenths of a percent as `ps` writes it: `12.3%`.
+pub(crate) fn cpu(tenths: u32) -> String {
+    format!("{}.{}%", tenths / 10, tenths % 10)
+}
+
+/// The `:ps` window (record 129): each agent with a session, what all
+/// its processes take together, then each of them (its session first,
+/// those under it indented); the row at hand marked, `d`'s question at
+/// the foot.
+pub fn ps(f: &mut Frame, app: &App, win: PsWin) -> Rect {
+    let t = app.lang.text();
+    let full = f.area();
+    let area = centered(
+        full,
+        full.width.saturating_sub(8),
+        full.height.saturating_sub(4),
+    );
+    shade(f, area);
+    clear(f, area);
+    let procs = &app.world.procs;
+    let rows = crate::app::ps_rows(&app.world);
+    let block = Block::bordered()
+        .title(fill(t.ps_title, &[&rows.len().to_string()]))
+        .border_style(fg(pal().accent));
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    let mut lines = vec![Line::from(Span::styled(t.ps_head, dim())), Line::default()];
+    if let Some(why) = &procs.failed {
+        lines.push(Line::from(Span::styled(
+            fill(t.ps_failed, &[why]),
+            fg(pal().warn),
+        )));
+    } else if procs.looking && rows.is_empty() {
+        lines.push(Line::from(Span::styled(t.ps_looking, dim())));
+    } else if rows.is_empty() {
+        lines.push(Line::from(Span::styled(t.ps_empty, dim())));
+    }
+    let width = (rows.iter())
+        .map(|(_, p)| clean(&p.name).chars().count())
+        .max()
+        .unwrap_or(0);
+    let mut i = 0;
+    let mut at_line = 0;
+    for (id, list) in &procs.agents {
+        let (all_cpu, all_rss) = crate::procs::Procs::sum(list);
+        lines.push(Line::from(vec![
+            Span::styled(clean(&app.world.agents[*id].name), bold(pal().fg)),
+            Span::styled(
+                format!(" · {} · {}", cpu(all_cpu), words::size(all_rss * 1024)),
+                dim(),
+            ),
+        ]));
+        for (n, p) in list.iter().enumerate() {
+            let here = i == win.at;
+            if here {
+                at_line = lines.len();
+            }
+            let mark = if here { "▶ " } else { "  " };
+            let indent = if n == 0 { "" } else { "  " };
+            let name = format!(
+                "{:<w$}",
+                format!("{indent}{}", clean(&p.name)),
+                w = width + 2
+            );
+            let name = match here {
+                true => Span::styled(name, bold(pal().fg)),
+                false => Span::raw(name),
+            };
+            lines.push(Line::from(vec![
+                Span::raw(mark),
+                name,
+                Span::styled(format!("  {:>7}", p.pid), dim()),
+                Span::raw(format!("  {:>6}", cpu(p.cpu))),
+                Span::styled(format!("  {}", words::size(p.rss * 1024)), dim()),
+            ]));
+            i += 1;
+        }
+    }
+    let [body, keys] = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(inner);
+    // The row at hand stays on the window: the rows above it scroll away.
+    let room = usize::from(body.height).max(1);
+    let skip = (at_line + 1).saturating_sub(room);
+    f.render_widget(Paragraph::new(lines).scroll((skip as u16, 0)), body);
+    let foot = match win.sure {
+        Some((id, pid)) => Line::from(Span::styled(
+            fill(
+                t.ps_sure,
+                &[
+                    &crate::live::proc_name(&app.world, id, pid),
+                    &pid.to_string(),
+                    &app.world.agents[id].name,
+                ],
+            ),
+            fg(pal().warn),
+        )),
+        None => Line::from(hint_spans(&t.ps_hints)),
     };
     f.render_widget(Paragraph::new(foot), keys);
     area

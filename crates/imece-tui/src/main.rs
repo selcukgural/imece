@@ -22,6 +22,7 @@ mod notify;
 mod paths;
 mod prefs;
 mod probe;
+mod procs;
 mod push;
 mod recall;
 mod rng;

@@ -247,6 +247,10 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
                 false => fill(t.ev_checks_set, &[name(w, *agent), &card_ref(*card), &list]),
             }
         }
+        Event::Killed { agent, pid, name } => fill(
+            t.ev_killed,
+            &[name, &pid.to_string(), &w.agents[*agent].name],
+        ),
         Event::Withdrawn { agent, card, why } => fill(
             t.ev_withdrawn,
             &[
@@ -2399,6 +2403,26 @@ mod tests {
             "lead failed 3 times this turn on Bash make [2J",
             "lead bu turda 3 kez başarısız oldu: Bash make [2J",
         );
+    }
+
+    #[test]
+    fn a_process_the_person_ended_is_said_in_both_languages() {
+        let w = crate::live::testing::team(1);
+        let e = Event::Killed {
+            agent: 1,
+            pid: 502,
+            name: "cargo".into(),
+        };
+        assert_eq!(
+            event(Lang::En, &w, &e),
+            "you ended cargo (502) under claude-1"
+        );
+        assert_eq!(
+            event(Lang::Tr, &w, &e),
+            "cargo (502) sonlandırıldı, claude-1 altında"
+        );
+        assert_eq!(e.kind(), EntryKind::Person);
+        assert_eq!(e.agent(), 1);
     }
 
     #[test]
