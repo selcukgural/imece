@@ -1066,8 +1066,8 @@ pub struct Text {
     pub ev_landed_rejected: &'static str,
     pub ev_landed_withdrawn: &'static str,
     pub diff_proposal: &'static str,
-    pub diff_whys: [&'static str; 5],
-    pub landed_whys: [&'static str; 8],
+    pub diff_whys: [&'static str; 7],
+    pub landed_whys: [&'static str; 9],
     pub diff_place: &'static str,
     pub diff_proposal_older: &'static str,
     pub diff_redacted: &'static str,
@@ -2167,6 +2167,8 @@ pub const EN: Text = Text {
         "it changes a critical path: {}",
         "a file outside its scope: {}",
         "a file written unseen: {}",
+        "this session's hooks did not run: Lonca saw a tool it was not told of",
+        "it changes a critical path from a session whose hooks did not run",
     ],
     landed_whys: [
         "its {} check failed",
@@ -2177,6 +2179,7 @@ pub const EN: Text = Text {
         "it clashes with trunk at {}",
         "it is based on a trunk that moved on",
         "the repository is frozen: {}",
+        "its {} check never ran",
     ],
     diff_place: " change {} of {} ",
     diff_proposal_older: " · holds {} older",
@@ -3441,6 +3444,8 @@ pub const TR: Text = Text {
         "kritik bir yolu değiştiriyor: {}",
         "kapsamının dışında bir dosya: {}",
         "görülmeden yazılmış bir dosya: {}",
+        "bu oturumun kancaları çalışmadı: Lonca haber verilmeyen bir araç gördü",
+        "kancaları çalışmayan bir oturumdan kritik bir yolu değiştiriyor",
     ],
     landed_whys: [
         "{} denetimi başarısız oldu",
@@ -3451,6 +3456,7 @@ pub const TR: Text = Text {
         "gövdeyle {} noktasında çakışıyor",
         "ilerlemiş bir gövdeye dayanıyor",
         "depo donduruldu: {}",
+        "{} denetimi hiç çalışmadı",
     ],
     diff_place: " değişiklik {} / {} ",
     diff_proposal_older: " · {} eski öneriyi kapsıyor",
@@ -4388,6 +4394,9 @@ mod tests {
             assert_eq!(count(en), count(tr), "{en} / {tr}");
         }
         for (en, tr) in e.landed_whys.iter().zip(t.landed_whys) {
+            assert_eq!(count(en), count(tr), "{en} / {tr}");
+        }
+        for (en, tr) in e.diff_whys.iter().zip(t.diff_whys) {
             assert_eq!(count(en), count(tr), "{en} / {tr}");
         }
     }

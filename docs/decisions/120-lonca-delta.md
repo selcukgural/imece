@@ -65,6 +65,18 @@ unseen with the flag on. imece refuses a hardened daemon (record 116) and
 machine; when Lonca's hardened mode comes in, this check has to look at the level
 too.
 
+**Hooks that do not run (lonca#190, 2026-11-08).** Lonca `04f954e` checks a
+Claude Code session's hooks: `lonca mcp` reports each call to its own tools, and
+a call whose `PreToolUse` never came marks the session `unhooked`, tainted, with
+the reasons `unhooked_session` and `unhooked_critical_path`. Probed the same day
+on a real run (Claude Code 2.1.319, haiku, an isolated daemon): imece's hooks
+(`claude::hook_settings`, matcher `*` through `--settings`) fire for
+`mcp__lonca__*` too, so a worker is bound (`bound_ms`), its `last_hook_ms` moves
+and `unhooked` stays null; its proposal waited for `unobserved_session` alone.
+The Δ words both reasons and the queue's `verification_missing:<check>`. Reading
+`status.sessions[]` to stop and renew a worker Lonca marked is the next step,
+not done here.
+
 **`a`.** `StoreJob::Decide` runs `lonca approve SEQ --repo=R --json` as a child,
 `DECIDE_WAIT` 120 s, one job at a time, in the project's checkout. `Live.applying`
 stops a second press while it runs. A success changes nothing on screen: the look
