@@ -324,7 +324,7 @@ fn proposed(place: &Place, repo: &str, tree: &Path) -> Result<(), String> {
 enum Done {
     Login(Result<String, Failed>),
     /// An import, and why critical paths stay refused if they do.
-    Import(Result<Vec<String>, Failed>, Option<Failed>),
+    Import(Result<lonca::Imported, Failed>, Option<Failed>),
     Sync(Result<Synced, Failed>),
     Decide(Result<(), Failed>),
 }
@@ -776,8 +776,8 @@ impl Live {
             // Lonca has it: the next look says what became of it, whoever's
             // hand it was.
             (Some(Done::Decide(Ok(()))), _) => {}
-            (Some(Done::Import(Ok(warned), kept)), StoreJob::Import(ask)) => {
-                w.store_imported(ask, warned);
+            (Some(Done::Import(Ok(made), kept)), StoreJob::Import(ask)) => {
+                w.store_imported(ask, made.warnings, made.hardened);
                 if let Some(why) = kept {
                     w.store_critical_kept(ask, said(why));
                 }

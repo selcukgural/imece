@@ -13276,16 +13276,27 @@ after | not a table";
         };
         assert_eq!(line(signed("")), "signed in to Lonca");
         assert_eq!(line(signed("ayse")), "signed in to Lonca as ayse");
-        let imported = |warnings: Vec<String>| Event::StoreImported {
+        let imported = |warnings: Vec<String>, hardened| Event::StoreImported {
             leader: 0,
             repo: "demo".into(),
             warnings,
+            hardened,
         };
         let went = format!("{project} went into Lonca as repository demo");
-        assert_eq!(line(imported(vec![])), went);
+        assert_eq!(line(imported(vec![], false)), went);
         assert_eq!(
-            line(imported(vec!["big.bin".into(), "x".into(), "y".into()])),
+            line(imported(
+                vec!["big.bin".into(), "x".into(), "y".into()],
+                false
+            )),
             format!("{went}; Lonca warns: big.bin (+2 more)")
+        );
+        let hard =
+            format!("{went}, from Lonca's hardened profile (lonca doctor says what it asks for)");
+        assert_eq!(line(imported(vec![], true)), hard);
+        assert_eq!(
+            line(imported(vec!["big.bin".into()], true)),
+            format!("{hard}; Lonca warns: big.bin (+0 more)")
         );
         let verified = |checks: Vec<Attested>| Event::Verified {
             agent: 1,

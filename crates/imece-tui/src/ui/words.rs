@@ -188,8 +188,12 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
             leader,
             repo,
             warnings,
+            hardened,
         } => {
-            let line = fill(t.ev_store_imported, &[project(w, *leader), repo]);
+            let mut line = fill(t.ev_store_imported, &[project(w, *leader), repo]);
+            if *hardened {
+                line = fill(t.ev_store_imported_hardened, &[&line]);
+            }
             match warnings.first() {
                 None => line,
                 Some(first) => fill(

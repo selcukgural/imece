@@ -112,6 +112,17 @@ pub enum Down {
     Again,
 }
 
+/// What an import made.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Imported {
+    /// What Lonca warned of.
+    pub warnings: Vec<String>,
+    /// Whether the repository's policy starts from Lonca's hardened
+    /// profile: a yes needs a key that proves presence, verification is
+    /// required, the network is denied.
+    pub hardened: bool,
+}
+
 /// Why a `lonca` command of the person's did not go through.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Failed {
@@ -175,10 +186,14 @@ impl Place {
     }
 
     /// `lonca init` of `repo` from `branch` of the checkout: Lonca's store
-    /// gets the branch and its history. What it warned of comes back: a
-    /// file too large for a proposal, for one. The caller has the person's
-    /// yes; nothing can take this back.
-    pub fn import(&self, repo: &str, checkout: &Path, branch: &str) -> Result<Vec<String>, Failed> {
+    /// gets the branch and its history. What it warned of comes back (a
+    /// file too large for a proposal, for one), and the profile its policy
+    /// starts from. No profile is named: the install's own is taken, which
+    /// is hardened on a hardened install, and imece never chooses a weaker
+    /// one; a hardened repository refuses a key that can not prove presence,
+    /// in Lonca's words. The caller has the person's yes; nothing can take
+    /// this back.
+    pub fn import(&self, repo: &str, checkout: &Path, branch: &str) -> Result<Imported, Failed> {
         let args = [
             OsStr::new("init"),
             OsStr::new("--import"),
@@ -189,7 +204,11 @@ impl Place {
             OsStr::new("--"),
             OsStr::new(repo),
         ];
-        Ok(warnings(&self.run(checkout, &args, IMPORT_WAIT)?))
+        let said = self.run(checkout, &args, IMPORT_WAIT)?;
+        Ok(Imported {
+            warnings: warnings(&said),
+            hardened: said.lines().any(|l| l.trim_end() == "profile hardened"),
+        })
     }
 
     /// Has `repo`, made just now, take a change to a critical path to the
@@ -1215,14 +1234,31 @@ mod tests {
              echo 'warning: big.bin is 3 bytes, above the cap' >&2\n\
              echo 'a line of no matter' >&2",
         );
-        let warned = place.import("-demo", &dir, "feature/x").unwrap();
-        assert_eq!(warned, ["big.bin is 3 bytes, above the cap"]);
+        let made = place.import("-demo", &dir, "feature/x").unwrap();
+        assert_eq!(made.warnings, ["big.bin is 3 bytes, above the cap"]);
+        assert!(!made.hardened, "no profile said");
         let args = format!(
             "|init --import {} --branch feature/x -- -demo|",
             dir.display()
         );
         assert!(seen(&dir).contains(&args), "{}", seen(&dir));
         fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn an_import_says_the_profile_it_starts_from_and_names_none() {
+        for (says, hardened) in [
+            ("profile hardened", true),
+            ("profile cooperative", false),
+            ("a profile hardened", false),
+            ("profile hardened, then", false),
+        ] {
+            let (place, dir) = program(&format!("echo '#0 allow'\necho '{says}'"));
+            let made = place.import("demo", &dir, "main").unwrap();
+            assert_eq!(made.hardened, hardened, "{says}");
+            assert!(!seen(&dir).contains("--profile"), "{}", seen(&dir));
+            fs::remove_dir_all(dir).unwrap();
+        }
     }
 
     #[test]
@@ -2435,7 +2471,11 @@ mod tests {
             matches!(place.login(&checkout), Err(Failed::Said(_))),
             "no repository yet"
         );
-        assert_eq!(place.import("-odd.name", &checkout, &branch), Ok(vec![]));
+        assert_eq!(
+            place.import("-odd.name", &checkout, &branch),
+            Ok(Imported::default()),
+            "a cooperative install's own profile"
+        );
         assert_eq!(place.login(&checkout), Ok("ayse".to_string()));
         assert_eq!(place.critical_waits("-odd.name", &checkout), Ok(()));
         assert_eq!(

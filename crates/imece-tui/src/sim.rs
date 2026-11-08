@@ -1793,7 +1793,9 @@ impl Sim {
             StoreJob::Import(ask) => {
                 self.extras.store.push((ask.repo.clone(), 0));
                 let warned = "tour.mp4 is 3145728 bytes, above the change cap of 2097152";
-                w.store_imported(ask, vec![warned.to_string()]);
+                // Every second repository as a hardened install starts one.
+                let hardened = self.extras.store.len().is_multiple_of(2);
+                w.store_imported(ask, vec![warned.to_string()], hardened);
             }
             // The demo's proposals are decided in `apply_change` and
             // `reject_proposal`, as its other changes are.
@@ -8004,6 +8006,20 @@ diff --git a/b.rs b/b.rs
             &w.journal.last().unwrap().event,
             Event::StoreImported { warnings, .. } if warnings.len() == 1
         ));
+        // Every second repository the demo's daemon makes is hardened.
+        let first = matches!(
+            &w.journal.last().unwrap().event,
+            Event::StoreImported { hardened: true, .. }
+        );
+        w.on_lonca(0, None);
+        let other = s.import_ask(&w, 0, "other").unwrap();
+        run_job(&mut s, &mut w, StoreJob::Import(other));
+        let second = matches!(
+            &w.journal.last().unwrap().event,
+            Event::StoreImported { hardened: true, .. }
+        );
+        assert_ne!(first, second);
+        w.projects[0].lonca.as_mut().unwrap().repo = "fresh".into();
         w.on_lonca(0, None);
         run_job(&mut s, &mut w, StoreJob::Import(ask));
         assert!(w.projects[0].lonca.is_none());
