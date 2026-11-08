@@ -1700,11 +1700,14 @@ pub enum Event {
         human: String,
     },
     /// The checkout of `leader`'s project went into Lonca as `repo`, with
-    /// what Lonca warned of.
+    /// what Lonca warned of, its policy from Lonca's hardened profile when
+    /// `hardened`.
     StoreImported {
         leader: AgentId,
         repo: String,
         warnings: Vec<String>,
+        #[serde(default)]
+        hardened: bool,
     },
     /// Repository `repo`, imported for `leader`'s project, still refuses a
     /// change to a critical path (record 121), for `why`.
@@ -3062,7 +3065,7 @@ impl World {
     /// The import asked went through: the project is on the repository,
     /// unless the person named another while it ran (the repository still
     /// exists, and the line says so).
-    pub fn store_imported(&mut self, ask: &ImportAsk, warnings: Vec<String>) {
+    pub fn store_imported(&mut self, ask: &ImportAsk, warnings: Vec<String>, hardened: bool) {
         let p = ask.project;
         if self.projects[p].lonca.is_none() {
             self.on_lonca(p, Some(ask.repo.clone()));
@@ -3073,6 +3076,7 @@ impl World {
             leader,
             repo,
             warnings,
+            hardened,
         });
     }
 
@@ -7614,7 +7618,7 @@ mod tests {
         let p = second(&mut w, "a");
         let leader = w.projects[p].leader;
         w.store_signed_in(p, "ayse".into());
-        w.store_imported(&ask(p), vec!["big".into()]);
+        w.store_imported(&ask(p), vec!["big".into()], true);
         w.store_failed(&StoreJob::Login(p), Some("no key".into()));
         w.store_failed(&StoreJob::Import(ask(p)), None);
         assert!(!w.did_anything(p));
@@ -7637,7 +7641,8 @@ mod tests {
             Event::StoreImported {
                 leader,
                 repo: "r".into(),
-                warnings: vec!["big".into()]
+                warnings: vec!["big".into()],
+                hardened: true,
             }
         );
         assert_eq!(
@@ -7826,14 +7831,14 @@ mod tests {
     fn an_import_does_not_replace_a_repository_named_while_it_ran() {
         let mut w = world(vec![lead(0)]);
         w.on_lonca(0, Some("other".into()));
-        w.store_imported(&ask(0), vec![]);
+        w.store_imported(&ask(0), vec![], false);
         assert_eq!(w.projects[0].lonca.as_ref().unwrap().repo, "other");
         assert!(matches!(
             &w.journal.last().unwrap().event,
             Event::StoreImported { repo, .. } if repo == "r"
         ));
         w.on_lonca(0, None);
-        w.store_imported(&ask(0), vec![]);
+        w.store_imported(&ask(0), vec![], false);
         assert_eq!(w.projects[0].lonca.as_ref().unwrap().repo, "r");
     }
 

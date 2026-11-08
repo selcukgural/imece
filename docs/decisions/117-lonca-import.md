@@ -58,6 +58,19 @@ proposal can not change it), the first in the journal with the count of the
 rest; lonca#97 asks for them as data. The same yes then signs the repository's policy
 so a critical path waits for the person (record 121).
 
+**The profile** (lonca `010ba7e`). `lonca init` starts a repository's policy from a
+profile: the install's own unless named, which is hardened on a hardened install
+(presence for every human signature, verification required, the network denied,
+agents given a list). imece names none: choosing cooperative there would weaken
+what the person installed, and nothing weakens silently. It reads the `profile
+hardened` line `init` prints (`lonca::Imported.hardened`) and the journal says it
+(`…, from Lonca's hardened profile (lonca doctor says what it asks for)`,
+`Event::StoreImported.hardened`, `serde(default)` for older lines). A hardened
+repository refuses a key that can not prove presence; Lonca's own words say what to
+do (a Secure Enclave key, or `lonca init --without-presence` by hand, then
+`:lonca NAME`), and they reach the journal as any refusal does (probed: `invalid: a
+hardened repository requires presence and this key can not prove it: …`).
+
 **What a real daemon did** (`832c161`, by hand; CI has no daemon).
 
 - A daemon that serves no repository can sign nobody in: `human login` and
@@ -83,7 +96,8 @@ rests on parsing a line. A job does not hold the project open: `store_closed` is
 as it was, and a project only goes on Lonca through a look that answers.
 
 **The demo** (record 31). `Sim::store_job` takes the same `StoreJob`, three ticks
-long. An import adds a row to the store's table, warns of a large file, and is
+long. An import adds a row to the store's table, warns of a large file, every
+second one says it is hardened, and is
 refused as a real daemon refuses a name already in the table; a login says
 `signed in to Lonca as demo`. The window is the same window. What can not be
 faked: a real key, a finger, the daemon's bootstrap.
