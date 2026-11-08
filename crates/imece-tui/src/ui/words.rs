@@ -1048,8 +1048,30 @@ fn landed(t: &Text, name: &str, how: &Landed) -> String {
             fill(t.ev_landed_integrated, &[name, &short])
         }
         Landed::Conflicted(symbols) => fill(t.ev_landed_conflicted, &[name, &symbols.join(", ")]),
-        Landed::Rejected(reasons) => fill(t.ev_landed_rejected, &[name, &reasons.join("; ")]),
+        Landed::Rejected(reasons) => {
+            let said: Vec<String> = reasons.iter().map(|r| refused_why(t, r)).collect();
+            fill(t.ev_landed_rejected, &[name, &said.join("; ")])
+        }
         Landed::Withdrawn => fill(t.ev_landed_withdrawn, &[name]),
+    }
+}
+
+/// Lonca's word for why its queue refused a change, as a person says it;
+/// a word imece does not know (a person's own reason among them), as Lonca
+/// said it. Uncleaned: it goes through `fill` as every argument does.
+fn refused_why(t: &Text, why: &str) -> String {
+    let (word, rest) = why.split_once(':').unwrap_or((why, ""));
+    let [failed, error, session, day, merge, clash, stale, frozen] = t.landed_whys;
+    match (word, rest) {
+        ("verification_failed", check) => fill(failed, &[check]),
+        ("verification_error", check) => fill(error, &[check]),
+        ("verification_quota", "session") => session.to_string(),
+        ("verification_quota", "day") => day.to_string(),
+        ("merge_conflict", "") => merge.to_string(),
+        ("conflict", symbol) => fill(clash, &[symbol]),
+        ("stale_trunk" | "unknown_base", "") => stale.to_string(),
+        ("frozen", why) => fill(frozen, &[why]),
+        _ => why.to_string(),
     }
 }
 
@@ -2145,7 +2167,48 @@ mod tests {
                 landed(t, "w", &reasons),
                 fill(t.ev_landed_rejected, &["w", "a; b"])
             );
+            let reasons = Landed::Rejected(vec!["verification_quota:day".into(), "x:y".into()]);
+            assert_eq!(
+                landed(t, "w", &reasons),
+                fill(
+                    t.ev_landed_rejected,
+                    &["w", &format!("{}; x:y", t.landed_whys[3])]
+                )
+            );
         }
+    }
+
+    #[test]
+    fn lonca_s_words_for_why_its_queue_refused_are_said_as_a_person_says_them() {
+        let t = Lang::En.text();
+        for (word, said) in [
+            ("verification_failed:build", "its build check failed"),
+            ("verification_error:test", "its test check could not run"),
+            (
+                "verification_quota:session",
+                "this session's verification time is used up",
+            ),
+            (
+                "verification_quota:day",
+                "the day's verification time is used up until midnight UTC",
+            ),
+            ("verification_quota:week", "verification_quota:week"),
+            ("merge_conflict", "it does not merge with trunk"),
+            ("merge_conflict:x", "merge_conflict:x"),
+            ("conflict:a.rs#f", "it clashes with trunk at a.rs#f"),
+            ("stale_trunk", "it is based on a trunk that moved on"),
+            ("unknown_base", "it is based on a trunk that moved on"),
+            ("stale_trunk:x", "stale_trunk:x"),
+            ("frozen:audit", "the repository is frozen: audit"),
+            ("rejected: not this", "rejected: not this"),
+        ] {
+            assert_eq!(refused_why(t, word), said);
+        }
+        // Every word has a Turkish one of its own.
+        let tr = Lang::Tr.text();
+        let words: std::collections::HashSet<&str> = tr.landed_whys.iter().copied().collect();
+        assert_eq!(words.len(), tr.landed_whys.len());
+        assert_eq!(refused_why(tr, "frozen:audit"), "depo donduruldu: audit");
     }
 
     #[test]

@@ -527,6 +527,8 @@ pub struct StoreLease {
     /// The holder's name, as Lonca has it: what the map says of anyone
     /// else; `?` for a session it does not list.
     pub name: String,
+    /// Held `shared`: others may hold it too.
+    pub shared: bool,
 }
 
 /// What imece knows of a project's Lonca repository.
@@ -7689,6 +7691,7 @@ mod tests {
             symbol: symbol.into(),
             holder: None,
             name: "x".into(),
+            shared: false,
         };
         assert!(
             !w.store_leases(0, "r", vec![lease("f")]),

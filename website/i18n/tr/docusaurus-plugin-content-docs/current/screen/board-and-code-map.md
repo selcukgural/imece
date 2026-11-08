@@ -55,7 +55,7 @@ Kartın ne olduğu, liderin nasıl astığı ve görev verdiği, bir işçinin n
 
 ### Harita bugün ne gösterir
 
-[Lonca](../concepts/projects.md#loncada)'daki bir projede harita, daemon'ının tutulduğunu söylediği şeydir, birkaç saniyede bir okunur: yalnız birinin tuttuğu dosyalar, her lease aynı hücrelerde, bekleyen bir değişikliğin lease'leri de aralarında. Bu projenin agent'ı olmayan biri soluk `· ad` olarak görünür. Hiçbir şey tutulmuyorsa `AD içinde şu an kimsede lease yok` der, yanıt vermeyen bir daemon da haritayı temizler. Worktree'lerdeki bir projede agent'lar kendi dosyalarında kalır, bu yüzden harita gösterecek bir şey olmadığını söyler; `--demo` haritayı kartlarından çizer.
+[Lonca](../concepts/projects.md#loncada)'daki bir projede harita, daemon'ının tutulduğunu söylediği şeydir, birkaç saniyede bir okunur: yalnız birinin tuttuğu dosyalar, her lease aynı hücrelerde, bekleyen bir değişikliğin lease'leri de aralarında. Bu projenin agent'ı olmayan biri soluk `· ad` olarak görünür. Ortak tutulan bir lease, deponun izin verdiği yerde başkalarının da tutabildiği, `(ortak)` ile biter. Hiçbir şey tutulmuyorsa `AD içinde şu an kimsede lease yok` der, yanıt vermeyen bir daemon da haritayı temizler. Worktree'lerdeki bir projede agent'lar kendi dosyalarında kalır, bu yüzden harita gösterecek bir şey olmadığını söyler; `--demo` haritayı kartlarından çizer.
 
 Yukarıdaki satırlı ve hücreli harita `--demo`'nun gösterdiğidir: projeleri bir dosya listesi taşır ve kartları sembol kiralar, böylece görünümün iş başında görülebildiği yer demodur. Bkz. [demo](../getting-started/demo.md).
 

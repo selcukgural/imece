@@ -1022,6 +1022,8 @@ pub struct Lease {
     /// Its holder's name as Lonca took it; none for a session `status` does
     /// not list.
     pub agent: Option<String>,
+    /// Held `shared`: others may hold it too (Lonca's `[leases] shared`).
+    pub shared: bool,
 }
 
 /// What `v`, a `status`, says is held, each symbol of a holder once, by
@@ -1047,6 +1049,7 @@ fn leases_of(v: &Value) -> Option<Vec<Lease>> {
                     file: file.to_string(),
                     symbol: symbol.to_string(),
                     agent: agent.clone(),
+                    shared: item["kind"] == "shared",
                 });
             }
         }
@@ -2254,19 +2257,24 @@ mod tests {
                  {"symbol": "a.rs#f", "kind": "edit"},
                  {"symbol": "a.rs#<file>", "kind": "insert"},
              ]}]},
-            {"session": "gone", "items": [{"symbol": "b.rs#g", "kind": "edit"}]},
+            {"session": "gone", "items": [{"symbol": "b.rs#g", "kind": "edit"},
+                {"symbol": "c.rs#h", "kind": "shared"}]},
         ]);
         let held = |file: &str, symbol: &str, agent: Option<&str>| Lease {
             file: file.into(),
             symbol: symbol.into(),
             agent: agent.map(str::to_string),
+            shared: false,
         };
+        let mut both = held("c.rs", "h", None);
+        both.shared = true;
         assert_eq!(
             Status::of(&v).unwrap().leases,
             [
                 held("a.rs", "<file>", Some("a")),
                 held("a.rs", "f", Some("a")),
                 held("b.rs", "g", None),
+                both,
                 held("z.rs", "T.m", Some("b")),
             ]
         );

@@ -927,6 +927,7 @@ pub struct Text {
     pub same_file: &'static str,
     pub no_code_map: &'static str,
     pub no_leases: &'static str,
+    pub lease_shared: &'static str,
     // Focus
     pub focus_title: &'static str,
     pub minutes: &'static str,
@@ -1027,6 +1028,7 @@ pub struct Text {
     pub ev_landed_withdrawn: &'static str,
     pub diff_proposal: &'static str,
     pub diff_whys: [&'static str; 5],
+    pub landed_whys: [&'static str; 8],
     pub diff_place: &'static str,
     pub diff_proposal_older: &'static str,
     pub diff_redacted: &'static str,
@@ -1987,6 +1989,7 @@ pub const EN: Text = Text {
     same_file: "⇆ {}",
     no_code_map: "no shared trunk yet: each agent works in its own worktree, so there is nothing to show of who edits what",
     no_leases: "nobody is editing anything in {} now",
+    lease_shared: " (shared)",
     focus_title: " FOCUS · {} ",
     minutes: " · {} min",
     no_card: "no card right now",
@@ -2077,6 +2080,16 @@ pub const EN: Text = Text {
         "it changes a critical path: {}",
         "a file outside its scope: {}",
         "a file written unseen: {}",
+    ],
+    landed_whys: [
+        "its {} check failed",
+        "its {} check could not run",
+        "this session's verification time is used up",
+        "the day's verification time is used up until midnight UTC",
+        "it does not merge with trunk",
+        "it clashes with trunk at {}",
+        "it is based on a trunk that moved on",
+        "the repository is frozen: {}",
     ],
     diff_place: " change {} of {} ",
     diff_proposal_older: " · holds {} older",
@@ -3198,6 +3211,7 @@ pub const TR: Text = Text {
     same_file: "⇆ {}",
     no_code_map: "henüz ortak trunk yok: her agent kendi worktree'sinde çalışıyor, kimin neyi düzenlediği gösterilemez",
     no_leases: "{} içinde şu an kimse bir şey düzenlemiyor",
+    lease_shared: " (ortak)",
     focus_title: " ODAK · {} ",
     minutes: " · {} dk",
     no_card: "şu an bir kartı yok",
@@ -3288,6 +3302,16 @@ pub const TR: Text = Text {
         "kritik bir yolu değiştiriyor: {}",
         "kapsamının dışında bir dosya: {}",
         "görülmeden yazılmış bir dosya: {}",
+    ],
+    landed_whys: [
+        "{} denetimi başarısız oldu",
+        "{} denetimi çalışamadı",
+        "bu oturumun doğrulama süresi doldu",
+        "günün doğrulama süresi UTC gece yarısına kadar doldu",
+        "gövdeyle birleşmiyor",
+        "gövdeyle {} noktasında çakışıyor",
+        "ilerlemiş bir gövdeye dayanıyor",
+        "depo donduruldu: {}",
     ],
     diff_place: " değişiklik {} / {} ",
     diff_proposal_older: " · {} eski öneriyi kapsıyor",
@@ -4078,6 +4102,7 @@ mod tests {
             (e.ev_store_imported_warned, t.ev_store_imported_warned),
             (e.ev_store_critical_kept, t.ev_store_critical_kept),
             (e.no_leases, t.no_leases),
+            (e.lease_shared, t.lease_shared),
             (e.ev_verified, t.ev_verified),
             (e.ev_store_failed, t.ev_store_failed),
             (e.lonca_up, t.lonca_up),
@@ -4170,6 +4195,9 @@ mod tests {
             (e.uncleared, t.uncleared),
         ];
         for (en, tr) in pairs {
+            assert_eq!(count(en), count(tr), "{en} / {tr}");
+        }
+        for (en, tr) in e.landed_whys.iter().zip(t.landed_whys) {
             assert_eq!(count(en), count(tr), "{en} / {tr}");
         }
     }

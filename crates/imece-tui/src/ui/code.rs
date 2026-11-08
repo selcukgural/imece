@@ -92,20 +92,20 @@ enum Holder<'a> {
     Other(&'a str),
 }
 
-/// The files of `project`'s map, and every lease on them now as (file,
-/// symbol, holder): on Lonca what its daemon says, and only the files held;
-/// else what the demo's cards hold. The files come in the order they show.
-fn map_of<'a>(
-    w: &'a World,
-    project: &'a Project,
-) -> (Vec<&'a str>, Vec<(&'a str, &'a str, Holder<'a>)>) {
+/// A lease on the map: file, symbol, holder, and whether it is held shared.
+type Held<'a> = (&'a str, &'a str, Holder<'a>, bool);
+
+/// The files of `project`'s map, and every lease on them now: on Lonca what
+/// its daemon says, and only the files held; else what the demo's cards
+/// hold. The files come in the order they show.
+fn map_of<'a>(w: &'a World, project: &'a Project) -> (Vec<&'a str>, Vec<Held<'a>>) {
     if let Some(on) = project.lonca.as_ref().filter(|_| project.repo.is_empty()) {
         let holder = |l: &'a StoreLease| match l.holder {
             Some(id) => Holder::Agent(id),
             None => Holder::Other(&l.name),
         };
         let held: Vec<_> = (on.leases.iter())
-            .map(|l| (l.file.as_str(), l.symbol.as_str(), holder(l)))
+            .map(|l| (l.file.as_str(), l.symbol.as_str(), holder(l), l.shared))
             .collect();
         let mut files: Vec<&str> = held.iter().map(|h| h.0).collect();
         files.dedup();
@@ -117,7 +117,7 @@ fn map_of<'a>(
         .flat_map(|(c, o)| {
             c.symbols
                 .iter()
-                .map(move |s| (s.file, s.name, Holder::Agent(o)))
+                .map(move |s| (s.file, s.name, Holder::Agent(o), false))
         })
         .collect();
     (project.repo.iter().map(|(file, _)| *file).collect(), held)
@@ -179,7 +179,7 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
             lines.push(Line::from(Span::styled(format!("{d}/"), dim())));
             dir = d;
         }
-        let here: Vec<&(&str, &str, Holder)> = held.iter().filter(|h| h.0 == file).collect();
+        let here: Vec<&Held> = held.iter().filter(|h| h.0 == file).collect();
         let file_style = if here.is_empty() {
             dim()
         } else {
@@ -189,12 +189,15 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
             format!("  {}  ", fit(name, widths.file)),
             file_style,
         )];
-        for &&(_, symbol, holder) in &here {
+        for &&(_, symbol, holder, both) in &here {
             let owner = match holder {
                 Holder::Agent(id) => id,
                 Holder::Other(name) => {
                     let (head, tail) = cell(OTHER, name, symbol, &widths);
                     spans.push(Span::styled(format!("{head}{tail}"), dim()));
+                    if both {
+                        spans.push(Span::styled(t.lease_shared, dim()));
+                    }
                     continue;
                 }
             };
@@ -210,6 +213,9 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
                 fg(pal().agent),
             ));
             spans.push(Span::styled(tail, dim()));
+            if both {
+                spans.push(Span::styled(t.lease_shared, dim()));
+            }
         }
         let owners: Vec<Holder> = here.iter().map(|h| h.2).collect();
         if let Some(n) = shared(&owners) {
@@ -443,6 +449,7 @@ mod tests {
             symbol: symbol.into(),
             holder,
             name: name.into(),
+            shared: false,
         }
     }
 
@@ -469,6 +476,23 @@ mod tests {
         assert!(rows.contains("4 being edited · 1 "), "{rows}");
         // A file nobody holds on Lonca is no row.
         assert!(!rows.contains("Cargo.toml"), "{rows}");
+        assert!(!rows.contains("(shared)"), "{rows}");
+        // A lease held shared says so, whoever holds it.
+        let mut mine = lease("src/b.rs", "h", Some(worker), &name);
+        mine.shared = true;
+        let mut theirs = lease("src/c.rs", "i", None, "someone");
+        theirs.shared = true;
+        let app = on_lonca(vec![mine, theirs]);
+        let rows = render(&app, 160, 50);
+        let said = |file: &str| rows.iter().find(|r| r.contains(file)).cloned().unwrap();
+        assert!(said("b.rs").contains("h             (shared)"), "{rows:?}");
+        assert!(said("c.rs").contains("i             (shared)"), "{rows:?}");
+        let mut theirs = lease("src/c.rs", "i", None, "someone");
+        theirs.shared = true;
+        let mut app = on_lonca(vec![theirs]);
+        app.lang = Lang::Tr;
+        let rows = render(&app, 160, 50).join("\n");
+        assert!(rows.contains("(ortak)"), "{rows}");
     }
 
     #[test]
