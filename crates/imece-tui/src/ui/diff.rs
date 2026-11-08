@@ -825,10 +825,20 @@ pub(crate) fn verdict_lines(lang: Lang, v: &Verdict, width: usize) -> Vec<Line<'
 /// a word imece does not know, as Lonca said it.
 fn why_it_waits(t: &Text, why: &str) -> String {
     let (word, path) = why.split_once(':').unwrap_or((why, ""));
-    let [unwatched, tainted, critical, outside, written] = t.diff_whys;
+    let [
+        unwatched,
+        tainted,
+        critical,
+        outside,
+        written,
+        unhooked,
+        unhooked_critical,
+    ] = t.diff_whys;
     match word {
         "unobserved_session" => unwatched.to_string(),
         "tainted_session" => tainted.to_string(),
+        "unhooked_session" => unhooked.to_string(),
+        "unhooked_critical_path" => unhooked_critical.to_string(),
         "critical_path" | "unobserved_critical_path" | "tainted_critical_path" => {
             fill(critical, &[path])
         }
@@ -1140,10 +1150,26 @@ mod tests {
             ("tainted_critical_path", "it changes a critical path"),
             ("scope_path:a.rs", "a file outside its scope: a.rs"),
             ("unobserved_write:b.rs", "a file written unseen: b.rs"),
+            (
+                "unhooked_session",
+                "this session's hooks did not run: Lonca saw a tool it was not told of",
+            ),
+            (
+                "unhooked_critical_path",
+                "it changes a critical path from a session whose hooks did not run",
+            ),
             ("something_new", "something_new"),
         ] {
             assert_eq!(why_it_waits(t, word), said);
         }
+        // Every word has a Turkish one of its own, none said twice.
+        let tr = Lang::Tr.text();
+        let words: std::collections::HashSet<&str> = tr.diff_whys.iter().copied().collect();
+        assert_eq!(words.len(), tr.diff_whys.len());
+        assert_eq!(
+            why_it_waits(tr, "unhooked_session"),
+            "bu oturumun kancaları çalışmadı: Lonca haber verilmeyen bir araç gördü"
+        );
     }
 
     #[test]

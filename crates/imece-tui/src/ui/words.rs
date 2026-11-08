@@ -1189,10 +1189,21 @@ fn landed(t: &Text, name: &str, how: &Landed) -> String {
 /// said it. Uncleaned: it goes through `fill` as every argument does.
 fn refused_why(t: &Text, why: &str) -> String {
     let (word, rest) = why.split_once(':').unwrap_or((why, ""));
-    let [failed, error, session, day, merge, clash, stale, frozen] = t.landed_whys;
+    let [
+        failed,
+        error,
+        session,
+        day,
+        merge,
+        clash,
+        stale,
+        frozen,
+        missing,
+    ] = t.landed_whys;
     match (word, rest) {
         ("verification_failed", check) => fill(failed, &[check]),
         ("verification_error", check) => fill(error, &[check]),
+        ("verification_missing", check) => fill(missing, &[check]),
         ("verification_quota", "session") => session.to_string(),
         ("verification_quota", "day") => day.to_string(),
         ("merge_conflict", "") => merge.to_string(),
@@ -2621,6 +2632,7 @@ mod tests {
         for (word, said) in [
             ("verification_failed:build", "its build check failed"),
             ("verification_error:test", "its test check could not run"),
+            ("verification_missing:api", "its api check never ran"),
             (
                 "verification_quota:session",
                 "this session's verification time is used up",
