@@ -1236,6 +1236,26 @@ mod tests {
         assert_eq!(said(&["--tools"], "").1, "");
     }
 
+    /// Runs `f` on a thread of its own and fails when it takes longer
+    /// than `WITHIN`: a scripted server that waits on a line the stand-in
+    /// did not send, while the stand-in waits on its answer, fails the
+    /// test instead of holding it (a mutant of the exchange would).
+    fn within<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> T {
+        const WITHIN: std::time::Duration = std::time::Duration::from_secs(10);
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(f());
+        });
+        match rx.recv_timeout(WITHIN) {
+            Ok(t) => t,
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                panic!("the exchange with the server did not end")
+            }
+            // The thread panicked: its message is above.
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => panic!("it failed"),
+        }
+    }
+
     /// A server that answers `initialize` and `tools/list` with tool
     /// `echo`, then each call with `body` (a shell line that reads the
     /// call and writes its answer), in a directory of its own.
@@ -1256,66 +1276,70 @@ mod tests {
 
     #[test]
     fn a_server_that_would_not_end_is_ended_with_the_stand_in() {
-        let (dir, script) = script_server("stays", "sleep 30");
-        let s = Server::start(&script.to_string_lossy(), &[], &dir);
-        assert!(s.connected());
-        let pid = s.pid().unwrap() as libc::pid_t;
-        assert_eq!(unsafe { libc::kill(pid, 0) }, 0, "it runs");
-        drop(s);
-        assert_eq!(unsafe { libc::kill(pid, 0) }, -1, "killed and reaped");
-        assert!(Server::listing(&[]).pid().is_none());
-        let _ = std::fs::remove_dir_all(&dir);
+        within(move || {
+            let (dir, script) = script_server("stays", "sleep 30");
+            let s = Server::start(&script.to_string_lossy(), &[], &dir);
+            assert!(s.connected());
+            let pid = s.pid().unwrap() as libc::pid_t;
+            assert_eq!(unsafe { libc::kill(pid, 0) }, 0, "it runs");
+            drop(s);
+            assert_eq!(unsafe { libc::kill(pid, 0) }, -1, "killed and reaped");
+            assert!(Server::listing(&[]).pid().is_none());
+            let _ = std::fs::remove_dir_all(&dir);
+        });
     }
 
     #[test]
     fn the_bus_is_the_server_named_imece_and_its_calls_are_streamed() {
-        let answer = r#"read -r l; echo '{"jsonrpc":"2.0","id":3,"result":{"content":[{"type":"text","text":"name: lead"}]}}'; read -r l"#;
-        let (dir, script) = script_server("bus", answer);
-        let mut servers = vec![
-            ("other".to_string(), Server::listing(&["whoami"])),
-            (
-                crate::claude::MCP_SERVER.to_string(),
-                Server::start(&script.to_string_lossy(), &[], &dir),
-            ),
-        ];
-        let mut stream = Stream {
-            out: Vec::new(),
-            spent: 0,
-            context: 0,
-            calls: 0,
-            model: "m".into(),
-        };
-        let mut hands = Busy {
-            stream: &mut stream,
-            servers: &mut servers,
-            cwd: &dir,
-        };
-        assert_eq!(
-            hands.call("whoami", json!({ "a": 1 })),
-            Ok("name: lead".into())
-        );
-        let text = String::from_utf8(stream.out.clone()).unwrap();
-        let lines: Vec<Value> = text
-            .lines()
-            .map(|l| serde_json::from_str(l).unwrap())
-            .collect();
-        let call = &lines[0]["message"]["content"][0];
-        assert_eq!(call["name"], "mcp__imece__whoami");
-        assert_eq!(call["input"], json!({ "a": 1 }));
-        assert_eq!(lines[1]["message"]["content"][0]["content"], "name: lead");
-        let mut alone = vec![("other".to_string(), Server::listing(&["whoami"]))];
-        let mut hands = Busy {
-            stream: &mut stream,
-            servers: &mut alone,
-            cwd: &dir,
-        };
-        assert_eq!(
-            hands.call("whoami", json!({})),
-            Err("no imece MCP server".into())
-        );
-        assert_eq!(stream.calls, 1, "nothing streamed without the bus");
-        drop(servers);
-        let _ = std::fs::remove_dir_all(&dir);
+        within(move || {
+            let answer = r#"read -r l; echo '{"jsonrpc":"2.0","id":3,"result":{"content":[{"type":"text","text":"name: lead"}]}}'; read -r l"#;
+            let (dir, script) = script_server("bus", answer);
+            let mut servers = vec![
+                ("other".to_string(), Server::listing(&["whoami"])),
+                (
+                    crate::claude::MCP_SERVER.to_string(),
+                    Server::start(&script.to_string_lossy(), &[], &dir),
+                ),
+            ];
+            let mut stream = Stream {
+                out: Vec::new(),
+                spent: 0,
+                context: 0,
+                calls: 0,
+                model: "m".into(),
+            };
+            let mut hands = Busy {
+                stream: &mut stream,
+                servers: &mut servers,
+                cwd: &dir,
+            };
+            assert_eq!(
+                hands.call("whoami", json!({ "a": 1 })),
+                Ok("name: lead".into())
+            );
+            let text = String::from_utf8(stream.out.clone()).unwrap();
+            let lines: Vec<Value> = text
+                .lines()
+                .map(|l| serde_json::from_str(l).unwrap())
+                .collect();
+            let call = &lines[0]["message"]["content"][0];
+            assert_eq!(call["name"], "mcp__imece__whoami");
+            assert_eq!(call["input"], json!({ "a": 1 }));
+            assert_eq!(lines[1]["message"]["content"][0]["content"], "name: lead");
+            let mut alone = vec![("other".to_string(), Server::listing(&["whoami"]))];
+            let mut hands = Busy {
+                stream: &mut stream,
+                servers: &mut alone,
+                cwd: &dir,
+            };
+            assert_eq!(
+                hands.call("whoami", json!({})),
+                Err("no imece MCP server".into())
+            );
+            assert_eq!(stream.calls, 1, "nothing streamed without the bus");
+            drop(servers);
+            let _ = std::fs::remove_dir_all(&dir);
+        });
     }
 
     #[test]
@@ -1331,15 +1355,17 @@ mod tests {
 
     #[test]
     fn a_server_is_asked_its_tools_and_called_over_stdio() {
-        // A server that answers in order, with a notification and an
-        // answer to another id first, as a server may send them: the
-        // stand-in waits for the answer to its own request.
-        use std::os::unix::fs::PermissionsExt;
-        let dir = std::env::temp_dir().join(format!("imece-stand-in-mcp-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let script = dir.join("server");
-        let body = r#"#!/bin/sh
+        within(move || {
+            // A server that answers in order, with a notification and an
+            // answer to another id first, as a server may send them: the
+            // stand-in waits for the answer to its own request.
+            use std::os::unix::fs::PermissionsExt;
+            let dir =
+                std::env::temp_dir().join(format!("imece-stand-in-mcp-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).unwrap();
+            let script = dir.join("server");
+            let body = r#"#!/bin/sh
 read -r l; echo "$l" > asked.txt
 echo '{"jsonrpc":"2.0","method":"notifications/message"}'
 echo 'not json'
@@ -1357,35 +1383,36 @@ echo '{"jsonrpc":"2.0","id":5,"error":{"code":-32601,"message":"method not found
 read -r l
 echo '{"jsonrpc":"2.0","id":6,"error":{}}'
 "#;
-        std::fs::write(&script, body).unwrap();
-        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700)).unwrap();
-        let mut s = Server::start(&script.to_string_lossy(), &[], &dir);
-        assert_eq!(s.tools, strings(&["echo", "approve"]));
-        assert!(s.connected());
-        assert_eq!(s.call("echo", &json!({ "word": "hi" })), Ok("a\nb".into()));
-        assert_eq!(s.call("echo", &json!({})), Err("no".into()));
-        assert_eq!(s.call("echo", &json!({})), Err("method not found".into()));
-        assert_eq!(s.call("echo", &json!({})), Err("error".into()));
-        assert_eq!(s.call("echo", &json!({})), Err("the server is gone".into()));
-        drop(s);
-        let asked = std::fs::read_to_string(dir.join("asked.txt")).unwrap();
-        let asked: Vec<Value> = asked
-            .lines()
-            .map(|l| serde_json::from_str(l).unwrap())
-            .collect();
-        assert_eq!(asked[0]["method"], "initialize");
-        assert_eq!(asked[0]["id"], 1);
-        assert_eq!(asked[0]["params"]["protocolVersion"], "2025-06-18");
-        assert_eq!(
-            asked[1],
-            json!({ "jsonrpc": "2.0", "method": "notifications/initialized" })
-        );
-        assert_eq!(asked[2]["method"], "tools/list");
-        assert_eq!(asked[3]["method"], "tools/call");
-        assert_eq!(
-            asked[3]["params"],
-            json!({ "name": "echo", "arguments": { "word": "hi" } })
-        );
-        let _ = std::fs::remove_dir_all(&dir);
+            std::fs::write(&script, body).unwrap();
+            std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700)).unwrap();
+            let mut s = Server::start(&script.to_string_lossy(), &[], &dir);
+            assert_eq!(s.tools, strings(&["echo", "approve"]));
+            assert!(s.connected());
+            assert_eq!(s.call("echo", &json!({ "word": "hi" })), Ok("a\nb".into()));
+            assert_eq!(s.call("echo", &json!({})), Err("no".into()));
+            assert_eq!(s.call("echo", &json!({})), Err("method not found".into()));
+            assert_eq!(s.call("echo", &json!({})), Err("error".into()));
+            assert_eq!(s.call("echo", &json!({})), Err("the server is gone".into()));
+            drop(s);
+            let asked = std::fs::read_to_string(dir.join("asked.txt")).unwrap();
+            let asked: Vec<Value> = asked
+                .lines()
+                .map(|l| serde_json::from_str(l).unwrap())
+                .collect();
+            assert_eq!(asked[0]["method"], "initialize");
+            assert_eq!(asked[0]["id"], 1);
+            assert_eq!(asked[0]["params"]["protocolVersion"], "2025-06-18");
+            assert_eq!(
+                asked[1],
+                json!({ "jsonrpc": "2.0", "method": "notifications/initialized" })
+            );
+            assert_eq!(asked[2]["method"], "tools/list");
+            assert_eq!(asked[3]["method"], "tools/call");
+            assert_eq!(
+                asked[3]["params"],
+                json!({ "name": "echo", "arguments": { "word": "hi" } })
+            );
+            let _ = std::fs::remove_dir_all(&dir);
+        });
     }
 }
