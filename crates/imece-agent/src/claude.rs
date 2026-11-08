@@ -583,6 +583,9 @@ pub struct Parser {
     /// Whether the session is on Lonca: its server must be there, and
     /// more tools of that server are no surprise.
     store: bool,
+    /// A `SessionStart` hook started before `init`: on Lonca, the `lonca
+    /// hook` the session was given, which watches every tool.
+    hooked: bool,
     started: bool,
     /// Tool names by tool-use id, to name a failed result.
     calls: HashMap<String, String>,
@@ -654,6 +657,7 @@ impl Parser {
             open: spec.confine == Confine::Open,
             mcp: spec.mcp.is_some(),
             store: spec.store.is_some(),
+            hooked: false,
             started: false,
             calls: HashMap::new(),
             commands: Vec::new(),
@@ -700,6 +704,10 @@ impl Parser {
         let kind = v["type"].as_str().unwrap_or_default();
         if kind == "system" && v["subtype"] == "init" {
             return self.init(&v);
+        }
+        if kind == "system" && v["subtype"] == "hook_started" && v["hook_event"] == "SessionStart" {
+            self.hooked = true;
+            return Ok(Vec::new());
         }
         if !self.started && matches!(kind, "assistant" | "user" | "result") {
             // A session that is not there to resume ends with a result
@@ -761,6 +769,13 @@ impl Parser {
     }
 
     fn init(&mut self, v: &Value) -> Result<Vec<Event>, String> {
+        // `lonca hook` comes by `--settings`; a Claude Code that skipped the
+        // hooks it was given (`--bare` does, and its docs say it may become
+        // the default for `-p`) would run unobserved by Lonca. Its
+        // `SessionStart` hook starts before `init` (probed on 2.1.319).
+        if self.store && !self.hooked {
+            return Err("ran none of the hooks it was given: Lonca would not see its tools".into());
+        }
         let mode = v["permissionMode"].as_str().unwrap_or_default();
         if mode != PERMISSION_MODE {
             return Err(format!("runs in permission mode {mode:?}"));
@@ -1343,6 +1358,9 @@ mod tests {
     const BOTH: &str =
         r#"[{"name":"imece","status":"connected"},{"name":"lonca","status":"connected"}]"#;
     const BUS: &str = r#"[{"name":"imece","status":"connected","source":"dynamic"}]"#;
+    /// Claude Code's line for a `SessionStart` hook starting, as 2.1.319
+    /// writes it.
+    const HOOK_STARTED: &str = r#"{"type":"system","subtype":"hook_started","hook_id":"h1","hook_name":"SessionStart:startup","hook_event":"SessionStart"}"#;
     const BUS_INIT: &str = r#"["Edit","Glob","Grep","Read","Write","mcp__imece__send"]"#;
 
     #[test]
@@ -1401,12 +1419,35 @@ mod tests {
     fn a_session_on_lonca_stops_without_all_of_its_tools_and_server() {
         let s = on_lonca(&["Read"]);
         let check = |tools: &str, servers: &str| {
-            Parser::new(&s)
-                .line(&init(tools, PERMISSION_MODE, servers))
-                .map(|_| ())
+            let mut p = Parser::new(&s);
+            p.line(HOOK_STARTED).unwrap();
+            p.line(&init(tools, PERMISSION_MODE, servers)).map(|_| ())
         };
         let good = lonca_init(&["Read", "mcp__imece__send"]);
         check(&good, BOTH).unwrap();
+        // Without its SessionStart hook, Lonca would not see the session.
+        let mut p = Parser::new(&s);
+        let e = p.line(&init(&good, PERMISSION_MODE, BOTH)).unwrap_err();
+        assert!(e.contains("ran none of the hooks"), "{e}");
+        for other in [
+            HOOK_STARTED.replace("SessionStart\"}", "PreToolUse\"}"),
+            HOOK_STARTED.replace("hook_started", "hook_response"),
+        ] {
+            let mut p = Parser::new(&s);
+            p.line(&other).unwrap();
+            assert!(
+                p.line(&init(&good, PERMISSION_MODE, BOTH)).is_err(),
+                "{other}"
+            );
+        }
+        // A session off Lonca needs none.
+        let mut p = Parser::new(&with_bus(&["Read"]));
+        p.line(&init(
+            r#"["Read","mcp__imece__send"]"#,
+            PERMISSION_MODE,
+            BUS,
+        ))
+        .unwrap();
 
         // A tool of Lonca's gone is a Lonca imece can not work with.
         let short = lonca_init(&["Read", "mcp__imece__send"]).replace("mcp__lonca__sync", "x");
