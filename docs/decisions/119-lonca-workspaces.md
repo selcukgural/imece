@@ -47,6 +47,18 @@ nothing (below), lease,
 preview, propose, propose *before* `done`, `blocked` when a denial can not be
 put right. Lonca's own rules come by its `SessionStart` hook.
 
+**It names its harness** (`lonca::HARNESS`, `claude-code`): `session start`,
+fresh or `--continue`, passes `--harness claude-code --no-setup`, and the hook
+runs as `lonca hook --harness claude-code`. Since lonca `a6d214c` an
+observation level is granted only to the harness a signed `session.start`
+names; a session that names none is `unobserved` on any machine, a hardened
+one with Claude Code's hooks locked included. `--no-setup` because imece
+brings the hooks and the MCP entry itself; Lonca writes nothing in the
+workspace. A cooperative daemon changes nothing (every session there is
+`unobserved`). An older `lonca` refuses the flag, and the start says so.
+Checked 2026-11-08 on lonca `010ba7e`: the daemon's `status.sessions` carry
+`harness: claude-code` for a fresh seat and a continued one.
+
 **The scope is the whole tree** (`--paths=**`), for 8 h, Lonca's most (9 h is
 `session_ttl`). A session's paths could be a card's owned paths (record 114),
 but one session outlives many cards and `--continue` refuses a wider scope;
