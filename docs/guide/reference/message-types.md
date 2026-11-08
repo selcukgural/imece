@@ -15,12 +15,12 @@ The leader may also write to a group of its workers: `to: workers` (every one) o
 
 | Type | Wakes the receiver | Usual sender → receiver | What imece does |
 | --- | --- | --- | --- |
-| `assign` | yes | leader → worker, worker → helper | the first line becomes the card's title; an idle worker gets a new card and starts on it; refused to `you` |
+| `assign` | yes | leader → worker, worker → helper | the first line becomes the card's title; an idle worker gets a new card and starts on it; with `card` it hands that card again, its next try; refused to `you` |
 | `ask` | yes | anyone → anyone, or → `you` | to a teammate: starts its next turn; to `you`: a question `?` in TO DECIDE that waits until you write to that agent |
 | `answer` | yes | the asked → the asker | the reply; carries `re`, drawn with `↩` |
 | `inform` | no | anyone → anyone, or → `you` | waits for the receiver's next turn; to `you`, a journal line only |
 | `handoff` | yes | worker → worker | starts the receiver's next turn; refused to `you` |
-| `done` | yes | worker → leader, helper → worker, or → `you` | a worker's done also makes imece read its worktree: a change (`Δ`) in TO DECIDE; the leader gets it once the worker's turn ended, headed with what the change cost (`[done 12 · $0.84]`); a helper's done to its worker makes it leave when its turn ends |
+| `done` | yes | worker → leader, helper → worker, or → `you` | a worker's done also makes imece read its worktree: a change (`Δ`) in TO DECIDE; the leader gets it once the worker's turn ended, headed with what the change cost (`[done 12 · $0.84]`); with `outcome: "failed"` it fails the card and shows no change (`[done 12 · #3 failed]`); one for a card handed again since its turn began closes nothing (`[done 12 · late: …]`); a helper's done to its worker makes it leave when its turn ends |
 | `blocked` | yes | worker → leader, or → `you` | starts the receiver's next turn; to `you`, a journal line only |
 | `progress` | no | worker → leader, or → `you` | rides along with the next waking message |
 | `notice` | no | anyone → anyone, or → `you` | rides along |
@@ -49,6 +49,9 @@ Deny by default: a message that does not fit is refused with the reason and leav
 | `assign`, `handoff` or `cancel` to `you` | `assign is not for the person; ask them, or tell them (inform, done, blocked)` |
 | a bad `re` | see below |
 | `paths` on anything but an `assign` | `paths go with an assign: the card it opens owns them` |
+| `outcome` on anything but a `done`, or not `done`/`failed` | `outcome goes with a done` / `outcome is done or failed` |
+| `card` on anything but an `assign`, or with `paths` | `card goes with an assign: the card it hands again` / `a card handed again keeps its own paths; leave paths out` |
+| a `card` that is not the project's, to a non-worker, in review, in the queue or done | `there is no card #8 in this project`, `a card goes to a worker`, `#3's change waits for the person; it comes back if they send it back`, `#3 is in Lonca's merge queue`, `#3 is done; assign a new task for more` |
 | `options` on anything but an `ask` to `you` | `options go with an ask to the person (to: you)` |
 | bad `options` | `options must be an array of strings`, `an ask offers at most 4 options`, `an option is empty`, `an option is longer than 60 characters`, `"a\tb" has a control character` |
 | bad `paths` | `paths must be an array of strings`, `a card owns at most 20 paths`, `a path is empty`, `a path is longer than 200 characters`, `"a\tb" has a control character`, `paths are relative to the repository; "/etc" starts with /`, `"src/../x" goes outside the repository (..)`, `paths lists "src" twice` |
@@ -120,6 +123,8 @@ imece's MCP server is called `imece`; its tools reach a session as `mcp__imece__
 | `re` | integer ≥ 1 | no | the number of the message this replies to |
 | `paths` | array of at most 20 strings, each at most 200 | no | for `assign`: the paths the card owns, relative to the repository, as git pathspecs (a file, a directory, or a pattern with `*`); one ending in the word `shared` is named, not owned. Refused on any other type |
 | `options` | array of at most 4 strings, each at most 60 | no | for an `ask` to `you`: the answers the person can pick with one key, short, the one the agent would take first; the person may still answer in words. Refused on any other message |
+| `card` | integer ≥ 1 | no | for the leader's `assign`: a card to hand again (`#N`), its next try ([a card's tries](../concepts/messages-and-board.md#a-cards-tries)) |
+| `outcome` | `done` or `failed` | no | for a `done`: `failed` fails the card and shows no change; `done`, as leaving it out, hands the change in |
 
 An `assign` with paths is delivered with them: the mail ends `This card owns src/parser.rs, docs (shared): stay in them; what else needs changing goes in your done, or ask for the card to be widened.`
 

@@ -14,3 +14,8 @@ Since record 125's step 5 (2026-11-07) the board is no view: `:board`
 alone opens it in a window over the screen (`App.window`,
 `overlay::view`), `esc` or `q` closes it, and it takes every key while
 it is open; `2` does nothing.
+
+Since record 126 (2026-11-08) a claim is a try (`Card.attempt`, a posted
+card starts at 0), the card is done once its change is in rather than at
+its owner's turn end, and the `board` tool says a card failed or waits
+for review.

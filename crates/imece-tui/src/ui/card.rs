@@ -22,7 +22,8 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, c: CardId) {
 
     let mut head = vec![Line::from(vec![
         Span::styled(format!("{} · ", w.projects[card.project].name), dim()),
-        Span::styled(t.columns[board_column(&app.world, card)], bold(pal().info)),
+        Span::styled(state(t, w, card), bold(pal().info)),
+        Span::styled(tries(t, card), dim()),
         Span::styled(fill(t.minutes, &[&minutes(w, card).to_string()]), dim()),
     ])];
     if !card.symbols.is_empty() {
@@ -82,18 +83,39 @@ pub(crate) fn column_index(column: Column) -> usize {
     match column {
         Column::Waiting => 0,
         Column::Working => 1,
+        Column::Review => TO_REVIEW,
         Column::Verifying => 3,
-        Column::Done => 4,
+        // A failed card is through: it stands with the done ones, marked.
+        Column::Done | Column::Failed => 4,
     }
 }
 
-/// Which of the board's columns `card` stands in.
+/// Which of the board's columns `card` stands in. A card saved done
+/// with its change still waiting (before record 126 a card was done at
+/// its owner's turn end) stands to review.
 pub(crate) fn board_column(w: &World, card: &Card) -> usize {
     let waits = |i: &InboxItem| i.kind == InboxKind::Change && i.card == Some(card.id);
     if card.column == Column::Done && w.inbox.iter().any(|i| i.open && waits(i)) {
         TO_REVIEW
     } else {
         column_index(card.column)
+    }
+}
+
+/// The word for where `card` stands: its board column's, or that it
+/// failed (record 126).
+pub(crate) fn state(t: &crate::i18n::Text, w: &World, card: &Card) -> &'static str {
+    match card.column {
+        Column::Failed => t.card_failed,
+        _ => t.columns[board_column(w, card)],
+    }
+}
+
+/// Which try `card` is on, from the second; nothing before.
+pub(crate) fn tries(t: &crate::i18n::Text, card: &Card) -> String {
+    match card.attempt {
+        0 | 1 => String::new(),
+        n => fill(t.card_try, &[&n.to_string()]),
     }
 }
 
@@ -110,11 +132,7 @@ pub(crate) fn part_index(part: Part) -> usize {
 /// How long the card has run: from its start to its end, or to now while
 /// it is not done.
 pub(crate) fn minutes(w: &World, card: &Card) -> u64 {
-    let end = if card.column == Column::Done {
-        card.finished
-    } else {
-        w.tick
-    };
+    let end = if card.over() { card.finished } else { w.tick };
     end.saturating_sub(card.started) * SECONDS_PER_TICK / 60
 }
 
@@ -181,6 +199,7 @@ mod tests {
             paths: Vec::new(),
             started: 12,
             finished: 24,
+            attempt: 1,
         };
         // 24 ticks of 5 s.
         assert_eq!(minutes(&w, &card), 2);
@@ -188,5 +207,32 @@ mod tests {
         assert_eq!(minutes(&w, &card), 1);
         card.started = 30;
         assert_eq!(minutes(&w, &card), 0, "never below nothing");
+    }
+
+    #[test]
+    fn a_failed_card_says_so_and_a_card_says_its_try_from_the_second() {
+        let mut w = crate::live::testing::team(1);
+        let c = crate::live::testing::with_card(&mut w, 1);
+        let t = crate::i18n::Lang::En.text();
+        let mut card = w.cards[c].clone();
+        assert_eq!(state(t, &w, &card), "IN PROGRESS");
+        card.column = Column::Failed;
+        assert_eq!(state(t, &w, &card), "FAILED");
+        assert_eq!(state(crate::i18n::Lang::Tr.text(), &w, &card), "BAŞARISIZ");
+        card.column = Column::Review;
+        assert_eq!(state(t, &w, &card), "TO REVIEW");
+        assert_eq!(column_index(Column::Review), TO_REVIEW);
+        assert_eq!(column_index(Column::Failed), column_index(Column::Done));
+        for (attempt, said) in [(0, ""), (1, ""), (2, " · try 2"), (11, " · try 11")] {
+            card.attempt = attempt;
+            assert_eq!(tries(t, &card), said, "{attempt}");
+        }
+        card.attempt = 2;
+        assert_eq!(tries(crate::i18n::Lang::Tr.text(), &card), " · 2. deneme");
+        // A failed card's time ends where it failed.
+        card.column = Column::Failed;
+        (card.started, card.finished) = (0, 24);
+        w.tick = 240;
+        assert_eq!(minutes(&w, &card), 2);
     }
 }

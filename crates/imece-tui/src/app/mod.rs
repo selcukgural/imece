@@ -791,7 +791,7 @@ impl LeftOff {
                 let cards = w
                     .cards
                     .iter()
-                    .filter(|c| c.project == q.id && c.column != Column::Done)
+                    .filter(|c| c.project == q.id && !c.over())
                     .count();
                 (q.name.clone(), agents, cards)
             })

@@ -67,11 +67,22 @@ impl Live {
         if !options.is_empty() && (arg("to") != YOU || kind != MsgKind::Ask) {
             return Err("options go with an ask to the person (to: you)".into());
         }
+        let failed = failed_of(&args["outcome"])?;
+        if failed && kind != MsgKind::Done {
+            return Err("outcome goes with a done".into());
+        }
+        let handed = card_of(&args["card"])?;
+        if handed.is_some() && kind != MsgKind::Assign {
+            return Err("card goes with an assign: the card it hands again".into());
+        }
+        if handed.is_some() && !paths.is_empty() {
+            return Err("a card handed again keeps its own paths; leave paths out".into());
+        }
         if arg("to") == YOU {
             if re.is_some() {
                 return Err("re is for a teammate's message: the person's have no number".into());
             }
-            return self.send_you(w, from, kind, body, options);
+            return self.send_you(w, from, kind, body, options, failed);
         }
         let project = w.agents[from].project;
         if w.agent_by_name(arg("to")).is_none()
@@ -102,6 +113,9 @@ impl Live {
         if let Some(re) = re {
             replies(w, from, to, re)?;
         }
+        if let Some(c) = handed {
+            hands(w, project, c, to)?;
+        }
         self.owned_elsewhere(w, project, Some(to), &paths)?;
         if w.agents[to].status == Status::Stopped {
             return Err(format!(
@@ -123,6 +137,10 @@ impl Live {
             ));
         }
         let id = w.number();
+        let (outcome, read_it) = self.done_comes(w, from, kind, failed, body);
+        if let Some(c) = handed {
+            self.hand(w, c, to);
+        }
         self.mail[to].push(Mail {
             from,
             kind,
@@ -130,6 +148,8 @@ impl Live {
             id,
             re,
             paths,
+            card: handed,
+            outcome,
         });
         if kind.wakes() && w.agents[to].status == Status::Asleep {
             // Something new since the start: a sleeper takes it like any
@@ -146,8 +166,7 @@ impl Live {
 
         let t = w.tick;
         let first = body.lines().next().unwrap_or_default().to_string();
-        let read =
-            (kind == MsgKind::Done && w.agents[from].role == Role::Worker).then(|| first.clone());
+        let read = read_it.then(|| first.clone());
         let story = StoryEvent::Sent {
             from,
             to,
@@ -196,6 +215,7 @@ impl Live {
                 "delivered as message {id}; {name} gets it when this turn of yours ends, \
                  headed with what it cost"
             ),
+
             (true, false, false) => {
                 format!("delivered as message {id}; {name} starts on it now")
             }
@@ -207,6 +227,9 @@ impl Live {
                 kind.wire()
             ),
         };
+        if outcome != Outcome::Ok {
+            return Ok((format!("{delivered}; {}", said_of(w, outcome)), read));
+        }
         Ok((delivered, read))
     }
 
@@ -223,6 +246,7 @@ impl Live {
         kind: MsgKind,
         body: &str,
         options: Vec<String>,
+        failed: bool,
     ) -> Result<(String, Option<String>), String> {
         if matches!(kind, MsgKind::Assign | MsgKind::Handoff | MsgKind::Cancel) {
             return Err(format!(
@@ -232,8 +256,8 @@ impl Live {
         }
         let t = w.tick;
         let first = body.lines().next().unwrap_or_default().to_string();
-        let read =
-            (kind == MsgKind::Done && w.agents[from].role == Role::Worker).then(|| first.clone());
+        let (outcome, read_it) = self.done_comes(w, from, kind, failed, body);
+        let read = read_it.then(|| first.clone());
         let card = w.agents[from].card;
         w.story(
             card,
@@ -270,11 +294,59 @@ impl Live {
              can, which starts your next turn. Until then, end your turn or go on with \
              what does not depend on the answer; your teammates' messages wait for that \
              answer too, but for a cancel."
+        } else if outcome != Outcome::Ok {
+            return Ok((format!("noted; {}", said_of(w, outcome)), read));
         } else {
             "noted; the person sees it in the journal. Nothing wakes them: a question \
              goes as type ask."
         };
         Ok((answer.to_string(), read))
+    }
+
+    /// What worker `from`'s `done` comes to (record 126), once it is sure to
+    /// be sent: one for a card handed again since its turn took it closes
+    /// nothing; one that says it `failed` fails the card. Either shows no
+    /// change. The outcome for its heading, and whether its change is read.
+    fn done_comes(
+        &mut self,
+        w: &mut World,
+        from: AgentId,
+        kind: MsgKind,
+        failed: bool,
+        body: &str,
+    ) -> (Outcome, bool) {
+        if kind != MsgKind::Done || w.agents[from].role != Role::Worker {
+            return (Outcome::Ok, false);
+        }
+        let first = body.lines().next().unwrap_or_default();
+        match w.done_for(from) {
+            DoneFor::Late(c) => {
+                w.late_done(from, c);
+                (Outcome::Late(c), false)
+            }
+            DoneFor::Card(c) if failed => {
+                w.card_failed(from, c, first);
+                (Outcome::Failed(Some(c)), false)
+            }
+            _ if failed => (Outcome::Failed(None), false),
+            _ => (Outcome::Ok, true),
+        }
+    }
+
+    /// Card `c` goes to `to` (record 126): whoever held it is told it is
+    /// not theirs now, in its next prompt.
+    fn hand(&mut self, w: &mut World, c: CardId, to: AgentId) {
+        let from = w.cards[c].owner.filter(|&o| o != to);
+        w.hand(c, to);
+        if let Some(o) = from {
+            self.notes[o].push(format!(
+                "Card #{} ({}) went to {}. Stop work on it; a done from you for it closes \
+                 nothing now.",
+                c + 1,
+                w.cards[c].title,
+                w.agents[to].name
+            ));
+        }
     }
 
     /// Agent `from` puts a card on the board (the `post` tool's arguments).
@@ -319,6 +391,7 @@ impl Live {
             paths,
             started: t,
             finished: 0,
+            attempt: 0,
         });
         self.posts.insert(
             card,
@@ -358,6 +431,19 @@ impl Live {
                 }
                 (Column::Done, Some(o)) => taken.push(format!(
                     "#{} {} (done by {})",
+                    c.id + 1,
+                    c.title,
+                    w.agents[o].name
+                )),
+                (Column::Failed, Some(o)) => taken.push(format!(
+                    "#{} {} (failed by {}, try {}: the leader may hand it again)",
+                    c.id + 1,
+                    c.title,
+                    w.agents[o].name,
+                    c.attempt
+                )),
+                (Column::Review | Column::Verifying, Some(o)) => taken.push(format!(
+                    "#{} {} (done by {}, its change waits)",
                     c.id + 1,
                     c.title,
                     w.agents[o].name
@@ -421,7 +507,8 @@ impl Live {
         c.owner = Some(from);
         c.column = Column::Working;
         c.started = t;
-        w.agents[from].card = Some(card);
+        c.attempt += 1;
+        w.takes(from, card);
         w.story(Some(card), StoryEvent::Took { agent: from });
         w.note(Event::Claimed { agent: from, card });
         w.agents[from].trace(t, format!("claim #{}", card + 1));
@@ -579,6 +666,7 @@ impl Live {
         let opening = Opening {
             title: &title,
             paths: &first.paths,
+            card: first.card,
         };
         if let Err(why) = self.prompt(w, id, mail_prompt(w, &mail), Some(opening)) {
             apply(w, id, AgentEvent::Stopped(why), self.spent_before[id]);
@@ -707,6 +795,69 @@ fn options_of(v: &Value) -> Result<Vec<String>, String> {
 
 /// The `send` tool's `re`: none when it is not given, else a message's
 /// number.
+/// Whether a `done`'s `outcome` says it failed (record 126): `failed`,
+/// or `done` (the same as none).
+fn failed_of(v: &Value) -> Result<bool, String> {
+    match v.as_str().map(str::trim) {
+        _ if v.is_null() => Ok(false),
+        Some("done") => Ok(false),
+        Some("failed") => Ok(true),
+        _ => Err("outcome is done or failed".into()),
+    }
+}
+
+/// The card an `assign` hands again: its number on the board.
+fn card_of(v: &Value) -> Result<Option<CardId>, String> {
+    if v.is_null() {
+        return Ok(None);
+    }
+    v.as_u64()
+        .and_then(|n| usize::try_from(n).ok()?.checked_sub(1))
+        .map(Some)
+        .ok_or_else(|| "card must be a card's number, as #N on the board".into())
+}
+
+/// Whether card `c` may be handed to `to` (record 126): a card of the
+/// project that is not under review, in the queue or done, to a worker.
+fn hands(w: &World, project: ProjectId, c: CardId, to: AgentId) -> Result<(), String> {
+    let card = w
+        .cards
+        .get(c)
+        .filter(|card| card.project == project)
+        .ok_or_else(|| format!("there is no card #{} in this project", c + 1))?;
+    if w.agents[to].role != Role::Worker {
+        return Err("a card goes to a worker".into());
+    }
+    match card.column {
+        Column::Waiting | Column::Working | Column::Failed => Ok(()),
+        Column::Review => Err(format!(
+            "#{}'s change waits for the person; it comes back if they send it back",
+            c + 1
+        )),
+        Column::Verifying => Err(format!("#{} is in Lonca's merge queue", c + 1)),
+        Column::Done => Err(format!("#{} is done; assign a new task for more", c + 1)),
+    }
+}
+
+/// What a done that showed no change is said to its sender.
+fn said_of(w: &World, outcome: Outcome) -> String {
+    match outcome {
+        Outcome::Late(c) => format!(
+            "#{} went to {} (try {}) since your turn took it: this done closes nothing \
+             and shows no change. Your worktree keeps what you wrote.",
+            c + 1,
+            w.cards[c]
+                .owner
+                .map_or("nobody", |o| w.agents[o].name.as_str()),
+            w.cards[c].attempt
+        ),
+        Outcome::Failed(_) => "the card is marked failed; no change is shown. Your worktree \
+                               keeps what you wrote."
+            .to_string(),
+        Outcome::Ok => String::new(),
+    }
+}
+
 fn reply_to(re: &Value) -> Result<Option<MsgId>, String> {
     if re.is_null() {
         return Ok(None);
@@ -1074,6 +1225,8 @@ mod tests {
             id: 2,
             re: None,
             paths: Vec::new(),
+            card: None,
+            outcome: Outcome::Ok,
         };
         let helper = with_helper(&mut w, 1);
         live.turns[1] = 1;
@@ -1141,6 +1294,7 @@ mod tests {
             paths: Vec::new(),
             started: 0,
             finished: 0,
+            attempt: 1,
         });
         w.agents[1].card = Some(0);
         live.turns[1] = 1;
@@ -1176,6 +1330,8 @@ mod tests {
                 id: 8,
                 re: Some(7),
                 paths: Vec::new(),
+                card: None,
+                outcome: Outcome::Ok,
             }]
         );
         assert_eq!(
@@ -1632,7 +1788,8 @@ mod tests {
             live.board(&w, 2)
                 .contains("#1 Add a test (taken by claude-1)")
         );
-        // The turn ends: the card is done, and stays off the open list.
+        // The turn ends: the card goes on until a done (record 126), and
+        // stays off the open list.
         live.step(&mut w);
         assert!(
             queued(&live, 2).is_empty(),
@@ -1649,6 +1806,14 @@ mod tests {
             },
             0,
         );
+        assert_eq!(w.cards[0].column, Column::Working);
+        assert_eq!(
+            (w.cards[0].attempt, w.agents[1].attempt),
+            (1, 1),
+            "a claim is a try"
+        );
+        // Its done with nothing in the worktree closes it.
+        w.change_none(1);
         assert_eq!(w.cards[0].column, Column::Done);
         assert!(live.board(&w, 0).contains("(done by claude-1)"));
     }
@@ -2157,6 +2322,8 @@ Taken:
             id: 1,
             re: None,
             paths: Vec::new(),
+            card: None,
+            outcome: Outcome::Ok,
         });
         // Mail that may still move: no report yet.
         live.turns[0] = 1;
@@ -2493,5 +2660,315 @@ in p.rs",
             .post(&mut w, 0, &with_paths(card("Bad", "x"), json!(["a", "a"])))
             .unwrap_err();
         assert_eq!(err, "paths lists \"a\" twice");
+    }
+
+    // Record 126: attempts, a done that failed, a late done, a card handed
+    // again.
+
+    #[test]
+    fn an_outcome_is_done_or_failed_and_a_card_is_a_number_from_one() {
+        assert_eq!(failed_of(&Value::Null), Ok(false));
+        assert_eq!(failed_of(&json!("done")), Ok(false));
+        assert_eq!(failed_of(&json!(" failed ")), Ok(true));
+        for bad in [json!("fail"), json!(1), json!(true)] {
+            assert_eq!(
+                failed_of(&bad),
+                Err("outcome is done or failed".into()),
+                "{bad}"
+            );
+        }
+        assert_eq!(card_of(&Value::Null), Ok(None));
+        assert_eq!(card_of(&json!(1)), Ok(Some(0)));
+        assert_eq!(card_of(&json!(3)), Ok(Some(2)));
+        for bad in [json!(0), json!("3"), json!(-1)] {
+            assert_eq!(
+                card_of(&bad),
+                Err("card must be a card's number, as #N on the board".into()),
+                "{bad}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_outcome_goes_with_a_done_and_a_card_with_an_assign_without_paths() {
+        let mut w = team(2);
+        let mut live = idle_live(3);
+        with_card(&mut w, 1);
+        let mut args = msg("lead", "inform", "x");
+        args["outcome"] = json!("failed");
+        let err = sent(&mut live, &mut w, 1, &args).unwrap_err();
+        assert_eq!(err, "outcome goes with a done");
+        let mut args = msg("claude-2", "ask", "x");
+        args["card"] = json!(1);
+        let err = sent(&mut live, &mut w, 0, &args).unwrap_err();
+        assert_eq!(err, "card goes with an assign: the card it hands again");
+        let mut args = msg("claude-2", "assign", "x");
+        args["card"] = json!(1);
+        args["paths"] = json!(["src"]);
+        let err = sent(&mut live, &mut w, 0, &args).unwrap_err();
+        assert_eq!(
+            err,
+            "a card handed again keeps its own paths; leave paths out"
+        );
+        // The person gets no outcome on anything but a done either.
+        let mut args = msg("you", "inform", "x");
+        args["outcome"] = json!("failed");
+        assert_eq!(
+            sent(&mut live, &mut w, 1, &args).unwrap_err(),
+            "outcome goes with a done"
+        );
+        assert!(live.mail.iter().all(Vec::is_empty), "nothing was sent");
+        assert_eq!(w.cards[0].column, Column::Working);
+    }
+
+    #[test]
+    fn only_a_card_of_the_project_not_under_review_queued_or_done_goes_to_a_worker() {
+        let mut w = team(2);
+        let c = with_card(&mut w, 1);
+        assert_eq!(hands(&w, 0, c, 2), Ok(()));
+        assert_eq!(
+            hands(&w, 1, c, 2),
+            Err("there is no card #1 in this project".into())
+        );
+        assert_eq!(
+            hands(&w, 0, 7, 2),
+            Err("there is no card #8 in this project".into())
+        );
+        assert_eq!(hands(&w, 0, c, 0), Err("a card goes to a worker".into()));
+        for (column, ok) in [
+            (Column::Waiting, true),
+            (Column::Working, true),
+            (Column::Failed, true),
+            (Column::Review, false),
+            (Column::Verifying, false),
+            (Column::Done, false),
+        ] {
+            w.cards[c].column = column;
+            assert_eq!(hands(&w, 0, c, 2).is_ok(), ok, "{column:?}");
+        }
+        w.cards[c].column = Column::Review;
+        assert_eq!(
+            hands(&w, 0, c, 2),
+            Err("#1's change waits for the person; it comes back if they send it back".into())
+        );
+        w.cards[c].column = Column::Verifying;
+        assert_eq!(
+            hands(&w, 0, c, 2),
+            Err("#1 is in Lonca's merge queue".into())
+        );
+        w.cards[c].column = Column::Done;
+        assert_eq!(
+            hands(&w, 0, c, 2),
+            Err("#1 is done; assign a new task for more".into())
+        );
+    }
+
+    #[test]
+    fn a_done_that_failed_fails_its_card_shows_no_change_and_is_headed_so() {
+        let mut w = team(1);
+        let mut live = idle_live(2);
+        let c = with_card(&mut w, 1);
+        w.agents[1].attempt = 1;
+        w.tick = 30;
+        let mut args = msg("lead", "done", "Cannot: the API is gone\nDetails.");
+        args["outcome"] = json!("failed");
+        let got = sent(&mut live, &mut w, 1, &args).unwrap();
+        assert!(
+            got.ends_with(
+                "; the card is marked failed; no change is shown. Your worktree keeps what \
+                 you wrote."
+            ),
+            "{got}"
+        );
+        assert!(got.starts_with("delivered as message "), "{got}");
+        assert_eq!(
+            (w.cards[c].column, w.cards[c].finished),
+            (Column::Failed, 30)
+        );
+        assert!(matches!(
+            &w.cards[c].story.iter().rev().find(|s| matches!(s.event, StoryEvent::Failed(_))).unwrap().event,
+            StoryEvent::Failed(why) if why == "Cannot: the API is gone"
+        ));
+        assert_eq!(live.mail[0][0].outcome, Outcome::Failed(Some(c)));
+        assert!(
+            w.change_of(1).is_none() && !live.reading[1].gt(&0),
+            "no change read"
+        );
+        assert_eq!(
+            journaled(
+                &w,
+                &Event::CardFailed {
+                    agent: 1,
+                    card: c,
+                    why: "Cannot: the API is gone".into()
+                }
+            ),
+            1
+        );
+        // One that held no card fails nothing, and is headed failed.
+        let mut w = team(1);
+        let mut live = idle_live(2);
+        let got = sent(&mut live, &mut w, 1, &args).unwrap();
+        assert!(got.contains("the card is marked failed"), "{got}");
+        assert_eq!(live.mail[0][0].outcome, Outcome::Failed(None));
+        // A plain done is Ok, and one from the leader to a worker is never
+        // a worker's outcome.
+        let mut w = team(1);
+        let mut live = idle_live(2);
+        let mut args = msg("claude-1", "done", "fyi");
+        args["outcome"] = json!("failed");
+        sent(&mut live, &mut w, 0, &args).unwrap();
+        assert_eq!(live.mail[1][0].outcome, Outcome::Ok);
+    }
+
+    #[test]
+    fn a_done_for_a_card_handed_again_closes_nothing_and_says_so() {
+        let mut w = team(2);
+        let mut live = idle_live(3);
+        let c = with_card(&mut w, 1);
+        w.agents[1].attempt = 1;
+        w.agents[1].name = "claude-1".into();
+        // The leader hands it to claude-2: its next try, claude-1 told.
+        let mut args = msg("claude-2", "assign", "Try it with the old API");
+        args["card"] = json!(c + 1);
+        let got = sent(&mut live, &mut w, 0, &args).unwrap();
+        assert!(got.starts_with("delivered as message"), "{got}");
+        let card = &w.cards[c];
+        assert_eq!(
+            (card.owner, card.attempt, card.column),
+            (Some(2), 2, Column::Working)
+        );
+        let m = &live.mail[2][0];
+        assert_eq!((m.card, m.outcome), (Some(c), Outcome::Ok));
+        assert_eq!(
+            live.notes[1],
+            [
+                "Card #1 (fix it) went to claude-2. Stop work on it; a done from you for it \
+              closes nothing now."
+            ]
+        );
+        assert!(live.notes[2].is_empty());
+        assert_eq!(
+            journaled(
+                &w,
+                &Event::Handed {
+                    agent: 2,
+                    card: c,
+                    from: Some(1),
+                    attempt: 2
+                }
+            ),
+            1
+        );
+        // claude-1's turn ends with a done for it: late.
+        let got = sent(&mut live, &mut w, 1, &msg("lead", "done", "Fixed it.")).unwrap();
+        assert!(
+            got.ends_with(
+                "; #1 went to claude-2 (try 2) since your turn took it: this done closes \
+                 nothing and shows no change. Your worktree keeps what you wrote."
+            ),
+            "{got}"
+        );
+        assert_eq!(w.cards[c].column, Column::Working, "untouched");
+        assert_eq!(w.cards[c].owner, Some(2));
+        assert_eq!(live.mail[0][0].outcome, Outcome::Late(c));
+        assert_eq!(live.reading[1], 0, "no change read");
+        assert_eq!(journaled(&w, &Event::LateDone { agent: 1, card: c }), 1);
+        // Handed back to its own owner: no note.
+        w.cards[c].column = Column::Failed;
+        let mut args = msg("claude-2", "assign", "Once more");
+        args["card"] = json!(c + 1);
+        sent(&mut live, &mut w, 0, &args).unwrap();
+        assert!(live.notes[2].is_empty(), "nobody else had it");
+        assert_eq!(w.cards[c].attempt, 3);
+        // Refused: no try counted.
+        w.cards[c].column = Column::Done;
+        let mut args = msg("claude-2", "assign", "And again");
+        args["card"] = json!(c + 1);
+        assert!(sent(&mut live, &mut w, 0, &args).is_err());
+        assert_eq!(w.cards[c].attempt, 3);
+    }
+
+    #[test]
+    fn a_done_to_the_person_fails_or_comes_late_as_one_to_the_leader() {
+        let mut w = team(2);
+        let mut live = idle_live(3);
+        let c = with_card(&mut w, 1);
+        w.agents[1].attempt = 1;
+        let mut args = msg("you", "done", "Could not.");
+        args["outcome"] = json!("failed");
+        let got = sent(&mut live, &mut w, 1, &args).unwrap();
+        assert_eq!(
+            got,
+            "noted; the card is marked failed; no change is shown. Your worktree keeps what \
+             you wrote."
+        );
+        assert_eq!(w.cards[c].column, Column::Failed);
+        w.hand(c, 2);
+        let got = sent(&mut live, &mut w, 1, &msg("you", "done", "Done.")).unwrap();
+        assert!(
+            got.starts_with("noted; #1 went to claude-2 (try 2)"),
+            "{got}"
+        );
+        assert_eq!(journaled(&w, &Event::LateDone { agent: 1, card: c }), 1);
+        // A plain inform to the person says what it always did.
+        let got = sent(&mut live, &mut w, 1, &msg("you", "inform", "fyi")).unwrap();
+        assert!(
+            got.starts_with("noted; the person sees it in the journal"),
+            "{got}"
+        );
+    }
+
+    #[test]
+    fn what_a_done_that_showed_no_change_is_told() {
+        let mut w = team(2);
+        let c = with_card(&mut w, 1);
+        w.cards[c].attempt = 4;
+        assert_eq!(said_of(&w, Outcome::Ok), "");
+        assert!(said_of(&w, Outcome::Late(c)).starts_with("#1 went to claude-1 (try 4)"));
+        w.cards[c].owner = None;
+        assert!(said_of(&w, Outcome::Late(c)).starts_with("#1 went to nobody (try 4)"));
+        assert!(said_of(&w, Outcome::Failed(None)).starts_with("the card is marked failed"));
+    }
+
+    #[test]
+    fn a_post_is_tried_no_times_and_a_claim_counts_one() {
+        let mut w = team(2);
+        let mut live = idle_live(3);
+        live.post(&mut w, 0, &card("Add a test", "x")).unwrap();
+        assert_eq!(w.cards[0].attempt, 0);
+        w.agents[1].attempt = 9;
+        live.claim(&mut w, 1, &json!({ "card": 1 })).unwrap();
+        assert_eq!((w.cards[0].attempt, w.agents[1].attempt), (1, 1));
+        assert_eq!(w.done_for(1), DoneFor::Card(0));
+    }
+
+    #[test]
+    fn the_board_says_a_card_failed_or_waits_for_review() {
+        let mut w = team(2);
+        let mut live = idle_live(3);
+        live.post(&mut w, 0, &card("Add a test", "x")).unwrap();
+        live.post(&mut w, 0, &card("Add docs", "y")).unwrap();
+        live.claim(&mut w, 1, &json!({ "card": 1 })).unwrap();
+        live.claim(&mut w, 2, &json!({ "card": 2 })).unwrap();
+        w.cards[0].column = Column::Failed;
+        w.cards[0].attempt = 2;
+        w.cards[1].column = Column::Review;
+        let board = live.board(&w, 0);
+        assert!(
+            board.contains(
+                "#1 Add a test (failed by claude-1, try 2: the leader may hand it again)"
+            ),
+            "{board}"
+        );
+        assert!(
+            board.contains("#2 Add docs (done by claude-2, its change waits)"),
+            "{board}"
+        );
+        w.cards[1].column = Column::Verifying;
+        assert!(
+            live.board(&w, 0)
+                .contains("#2 Add docs (done by claude-2, its change waits)")
+        );
     }
 }

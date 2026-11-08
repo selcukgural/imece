@@ -14,6 +14,9 @@ pub(super) fn writes(name: &str) -> bool {
 pub(super) struct Opening<'a> {
     pub title: &'a str,
     pub paths: &'a [Owned],
+    /// The card an assign hands again (record 126): taken instead of a
+    /// new one.
+    pub card: Option<CardId>,
 }
 
 /// Applies one event of agent `id`'s session. `before` is what its earlier
@@ -146,12 +149,10 @@ pub fn apply(w: &mut World, id: AgentId, e: AgentEvent, before: u64) {
                     text: text.lines().next().unwrap_or_default().to_string(),
                 });
                 // The story keeps it; the journal gets it only when it
-                // goes to the person (`Live::step` decides).
+                // goes to the person (`Live::step` decides). The card goes
+                // on: its change, or a done with none, closes it (record
+                // 126), not the turn's end.
                 w.story(card, StoryEvent::Replied(text));
-                if let Some(c) = card {
-                    w.cards[c].column = Column::Done;
-                    w.cards[c].finished = t;
-                }
             } else {
                 w.story(card, StoryEvent::Stopped(text.clone()));
                 w.turn_failed(id, &text, fault);
@@ -490,6 +491,7 @@ impl Live {
         let opening = Opening {
             title: &title,
             paths: &[],
+            card: None,
         };
         if let Err(why) = self.prompt(w, id, prompt, Some(opening)) {
             self.mail[id] = mail;
@@ -611,9 +613,19 @@ impl Live {
         self.turns[id] += 1;
         let a = &w.agents[id];
         // A worker between tasks gets a card for this one; a task it has
-        // not finished (its session stopped or slept under it) goes on.
-        let unfinished = a.card.is_some_and(|c| w.cards[c].column != Column::Done);
-        if let Some(o) = opening
+        // not finished (its session stopped or slept under it, or it
+        // ended a turn without a done) goes on. A card handed again is
+        // taken at the attempt it is on (record 126).
+        let unfinished = a.card.is_some_and(|c| {
+            let c = &w.cards[c];
+            c.column == Column::Working && c.owner == Some(id)
+        });
+        let handed = opening.as_ref().and_then(|o| o.card);
+        if let Some(c) = handed
+            && a.role == Role::Worker
+        {
+            w.takes(id, c);
+        } else if let Some(o) = opening
             && a.role == Role::Worker
             && a.status != Status::Working
             && !unfinished
@@ -630,8 +642,9 @@ impl Live {
                 paths: o.paths.to_vec(),
                 started: t,
                 finished: 0,
+                attempt: 1,
             });
-            w.agents[id].card = Some(card);
+            w.takes(id, card);
             w.story(Some(card), StoryEvent::Took { agent: id });
         }
         let a = &mut w.agents[id];
@@ -1383,7 +1396,7 @@ mod tests {
     }
 
     #[test]
-    fn a_finished_turn_answers_the_person_and_closes_the_card() {
+    fn a_finished_turn_answers_the_person_and_leaves_the_card_open() {
         let mut w = team(1);
         let c = with_card(&mut w, 1);
         let edit = |target: &str| AgentEvent::Tool {
@@ -1421,7 +1434,11 @@ mod tests {
             .filter(|s| matches!(s.event, StoryEvent::Touched(_)))
             .count();
         assert_eq!(touched, 2, "a file is listed once per card");
-        assert_eq!(w.cards[c].column, Column::Done);
+        assert_eq!(
+            w.cards[c].column,
+            Column::Working,
+            "a turn's end closes no card: its change does (record 126)"
+        );
         assert!(
             matches!(&w.cards[c].story.last().unwrap().event, StoryEvent::Replied(t) if t == "Fixed both.\nDetails."),
             "the story keeps the closing text"
@@ -2890,6 +2907,7 @@ mod tests {
         let opening = Opening {
             title: "next",
             paths: &[],
+            card: None,
         };
         live.prompt(&mut w, 1, "go on".into(), Some(opening))
             .unwrap();
@@ -2899,6 +2917,73 @@ mod tests {
             "{q:?}"
         );
         assert!(live.notes[1].is_empty());
+    }
+
+    #[test]
+    fn a_handed_card_is_taken_at_its_try_and_an_unfinished_one_is_only_the_workers_own() {
+        let open = |card| Opening {
+            title: "next",
+            paths: &[],
+            card,
+        };
+        // An assign naming a card: the worker takes it at its try now,
+        // whatever it held, and no card is made.
+        let mut w = team(2);
+        let mut live = idle_live(3);
+        let mine = with_card(&mut w, 1);
+        let c = with_card(&mut w, 2);
+        w.cards[c].attempt = 3;
+        w.cards[c].owner = Some(1);
+        live.prompt(&mut w, 1, "go".into(), Some(open(Some(c))))
+            .unwrap();
+        assert_eq!((w.agents[1].card, w.agents[1].attempt), (Some(c), 3));
+        assert_eq!(w.cards.len(), 2);
+        assert_eq!(w.cards[mine].column, Column::Working);
+        // Only a worker takes a card so: a helper's turn makes none.
+        let mut w = team(1);
+        let mut live = idle_live(3);
+        let h = with_helper(&mut w, 1);
+        let c = with_card(&mut w, 1);
+        live.prompt(&mut w, h, "go".into(), Some(open(Some(c))))
+            .unwrap();
+        assert_eq!(w.agents[h].card, None);
+        // A card at work but no longer its own is not unfinished: a new
+        // card, its first try.
+        let mut w = team(2);
+        let mut live = idle_live(3);
+        let c = with_card(&mut w, 1);
+        w.cards[c].owner = Some(2);
+        w.agents[1].status = Status::Idle;
+        live.prompt(&mut w, 1, "go".into(), Some(open(None)))
+            .unwrap();
+        assert_eq!(w.cards.len(), 2);
+        assert_eq!((w.agents[1].card, w.agents[1].attempt), (Some(1), 1));
+        assert_eq!((w.cards[1].attempt, w.cards[1].title.as_str()), (1, "next"));
+        // Nor is one whose change waits, or one that failed.
+        for column in [Column::Review, Column::Failed, Column::Done] {
+            let mut w = team(1);
+            let mut live = idle_live(2);
+            let c = with_card(&mut w, 1);
+            w.cards[c].column = column;
+            w.agents[1].status = Status::Idle;
+            live.prompt(&mut w, 1, "go".into(), Some(open(None)))
+                .unwrap();
+            assert_eq!(w.agents[1].card, Some(1), "{column:?}");
+        }
+        // Its own card at work goes on: no new one.
+        let mut w = team(1);
+        let mut live = idle_live(2);
+        let c = with_card(&mut w, 1);
+        w.agents[1].status = Status::Idle;
+        live.prompt(&mut w, 1, "go".into(), Some(open(None)))
+            .unwrap();
+        assert_eq!((w.cards.len(), w.agents[1].card), (1, Some(c)));
+        // Mid-turn, a prompt opens no card.
+        let mut w = team(1);
+        let mut live = idle_live(2);
+        live.prompt(&mut w, 1, "go".into(), Some(open(None)))
+            .unwrap();
+        assert_eq!((w.cards.len(), w.agents[1].card), (0, None));
     }
 
     #[test]

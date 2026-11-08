@@ -174,7 +174,7 @@ impl Live {
     }
 }
 
-pub(super) fn with_card(w: &mut World, id: AgentId) -> CardId {
+pub(crate) fn with_card(w: &mut World, id: AgentId) -> CardId {
     let c = w.cards.len();
     w.cards.push(Card {
         id: c,
@@ -187,6 +187,7 @@ pub(super) fn with_card(w: &mut World, id: AgentId) -> CardId {
         paths: Vec::new(),
         started: 0,
         finished: 0,
+        attempt: 1,
     });
     w.agents[id].card = Some(c);
     c

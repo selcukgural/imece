@@ -501,6 +501,8 @@ mod tests {
             id: 0,
             re: None,
             paths: Vec::new(),
+            card: None,
+            outcome: Outcome::Ok,
         });
         live.notes[2].push("x".into());
         live.asked[2] = true;
@@ -997,6 +999,8 @@ mod tests {
             id: 0,
             re: None,
             paths: Vec::new(),
+            card: None,
+            outcome: Outcome::Ok,
         });
         live.notes[2].push("a note".into());
         live.leaving[2] = true;

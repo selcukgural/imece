@@ -88,9 +88,10 @@ pub fn card(app: &App, c: CardId) -> String {
     let card = &w.cards[c];
     let mut out = format!("# #{} {}\n\n", c + 1, clean(&card.title));
     out.push_str(&format!(
-        "{} · {}{}\n\n",
+        "{} · {}{}{}\n\n",
         clean(&w.projects[card.project].name),
-        t.columns[card::column_index(card.column)],
+        card::state(t, w, card),
+        card::tries(t, card),
         fill(t.minutes, &[&card::minutes(w, card).to_string()])
     ));
     if !card.symbols.is_empty() {

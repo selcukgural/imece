@@ -519,6 +519,25 @@ pub(super) fn send_tool() -> Tool {
                                     sender.",
                 },
                 "paths": paths_schema(),
+                "card": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "With an assign from the leader: the number of a card \
+                                    to hand again (#N on the board), one that failed, \
+                                    whose worker stopped, or that waits on the board; it \
+                                    is its next try, the card keeps its title and paths, \
+                                    and a done from whoever had it closes nothing now. \
+                                    Refused while its change waits for the person or once \
+                                    it is done.",
+                },
+                "outcome": {
+                    "type": "string",
+                    "enum": ["done", "failed"],
+                    "description": "With a done: failed when the task could not be done \
+                                    as asked (say why in the body); the card is marked \
+                                    failed and no change is shown. done, the same as \
+                                    leaving it out, hands in your change.",
+                },
                 "options": {
                     "type": "array",
                     "items": { "type": "string", "maxLength": OPTION_MAX },
@@ -1659,6 +1678,27 @@ mod tests {
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
+    #[test]
+    fn a_send_may_hand_a_card_again_and_say_a_done_failed() {
+        let tool = send_tool();
+        let card = &tool.input["properties"]["card"];
+        assert_eq!(
+            (card["type"].as_str(), card["minimum"].as_u64()),
+            (Some("integer"), Some(1))
+        );
+        assert!(card["description"].as_str().unwrap().contains("hand again"));
+        let outcome = &tool.input["properties"]["outcome"];
+        assert_eq!(outcome["enum"], json!(["done", "failed"]));
+        assert!(
+            outcome["description"]
+                .as_str()
+                .unwrap()
+                .contains("no change is shown")
+        );
+        let required = tool.input["required"].as_array().unwrap();
+        assert!(!required.contains(&json!("card")) && !required.contains(&json!("outcome")));
+    }
+
     #[test]
     fn an_assign_and_a_post_take_the_paths_the_card_owns_capped() {
         for tool in [send_tool(), post_tool()] {

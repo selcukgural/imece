@@ -15,12 +15,12 @@ Lider, işçilerinden bir gruba da yazabilir: `to: workers` (hepsi) ya da `to: i
 
 | Tür | Alıcıyı uyandırır | Olağan gönderen → alıcı | imece'nin yaptığı |
 | --- | --- | --- | --- |
-| `assign` | evet | lider → işçi, işçi → yardımcı | ilk satır kartın başlığı olur; boşta bir işçi yeni bir kart alır ve ona başlar; `you`'ya reddedilir |
+| `assign` | evet | lider → işçi, işçi → yardımcı | ilk satır kartın başlığı olur; boşta bir işçi yeni bir kart alır ve ona başlar; `card` ile o kartı yeniden verir, bir sonraki denemesi olarak; `you`'ya reddedilir |
 | `ask` | evet | herkes → herkes, ya da → `you` | bir takım arkadaşına: sonraki turunu başlatır; `you`'ya: KARAR BEKLEYEN'de o ajana yazmanıza dek bekleyen bir soru `?` |
 | `answer` | evet | sorulan → soran | yanıt; `re` taşır, `↩` ile çizilir |
 | `inform` | hayır | herkes → herkes, ya da → `you` | alıcının sonraki turunu bekler; `you`'ya yalnızca bir günlük satırı |
 | `handoff` | evet | işçi → işçi | alıcının sonraki turunu başlatır; `you`'ya reddedilir |
-| `done` | evet | işçi → lider, yardımcı → işçi, ya da → `you` | bir işçinin done'ı imece'ye worktree'sini de okutur: KARAR BEKLEYEN'de bir değişiklik (`Δ`); lider onu işçinin turu bitince, değişikliğin maliyeti başlıkta (`[done 12 · $0.84]`) alır; bir yardımcının işçisine done'ı turu bitince ayrılmasını sağlar |
+| `done` | evet | işçi → lider, yardımcı → işçi, ya da → `you` | bir işçinin done'ı imece'ye worktree'sini de okutur: KARAR BEKLEYEN'de bir değişiklik (`Δ`); lider onu işçinin turu bitince, değişikliğin maliyeti başlıkta (`[done 12 · $0.84]`) alır; `outcome: "failed"` ile kartı başarısız sayar ve değişiklik göstermez (`[done 12 · #3 failed]`); turu başladıktan sonra yeniden verilmiş bir kart için olanı hiçbir şeyi kapatmaz (`[done 12 · late: …]`); bir yardımcının işçisine done'ı turu bitince ayrılmasını sağlar |
 | `blocked` | evet | işçi → lider, ya da → `you` | alıcının sonraki turunu başlatır; `you`'ya yalnızca bir günlük satırı |
 | `progress` | hayır | işçi → lider, ya da → `you` | sonraki uyandıran mesajla birlikte gider |
 | `notice` | hayır | herkes → herkes, ya da → `you` | birlikte gider |
@@ -49,6 +49,9 @@ Varsayılan ret: uymayan bir mesaj nedeniyle reddedilir ve iz bırakmaz.
 | `you`'ya `assign`, `handoff` ya da `cancel` | `assign is not for the person; ask them, or tell them (inform, done, blocked)` |
 | bozuk bir `re` | aşağıda |
 | `assign` dışında bir türde `paths` | `paths go with an assign: the card it opens owns them` |
+| `done` dışında bir türde `outcome`, ya da `done`/`failed` olmayan | `outcome goes with a done` / `outcome is done or failed` |
+| `assign` dışında bir türde `card`, ya da `paths` ile | `card goes with an assign: the card it hands again` / `a card handed again keeps its own paths; leave paths out` |
+| projenin olmayan, işçi olmayana giden, incelemede, kuyrukta ya da bitmiş bir `card` | `there is no card #8 in this project`, `a card goes to a worker`, `#3's change waits for the person; it comes back if they send it back`, `#3 is in Lonca's merge queue`, `#3 is done; assign a new task for more` |
 | `you`'ya bir `ask` dışında `options` | `options go with an ask to the person (to: you)` |
 | bozuk `options` | `options must be an array of strings`, `an ask offers at most 4 options`, `an option is empty`, `an option is longer than 60 characters`, `"a\tb" has a control character` |
 | bozuk `paths` | `paths must be an array of strings`, `a card owns at most 20 paths`, `a path is empty`, `a path is longer than 200 characters`, `"a\tb" has a control character`, `paths are relative to the repository; "/etc" starts with /`, `"src/../x" goes outside the repository (..)`, `paths lists "src" twice` |
@@ -120,6 +123,8 @@ imece'nin MCP sunucusunun adı `imece`'dir; araçları bir oturuma `mcp__imece__
 | `re` | tam sayı ≥ 1 | hayır | yanıtladığı mesajın numarası |
 | `paths` | en çok 20 dizelik dizi, her biri en çok 200 | hayır | `assign` için: kartın sahip olduğu yollar, depoya göre, git pathspec'i olarak (bir dosya, bir dizin ya da `*`'lı bir desen); `shared` sözcüğüyle biten adlandırılır, sahiplenilmez. Başka her türde reddedilir |
 | `options` | en çok 4 dizelik dizi, her biri en çok 60 | hayır | `you`'ya bir `ask` için: kişinin tek tuşla seçebileceği yanıtlar, kısa, ajanın kendi seçeceği önce; kişi yine sözcüklerle yanıtlayabilir. Başka her mesajda reddedilir |
+| `card` | tam sayı ≥ 1 | hayır | liderin `assign`'ı için: yeniden verilecek kart (`#N`), bir sonraki denemesi ([kartın denemeleri](../concepts/messages-and-board.md#kartın-denemeleri)) |
+| `outcome` | `done` ya da `failed` | hayır | bir `done` için: `failed` kartı başarısız sayar ve değişiklik göstermez; `done`, hiç yazılmamış gibi, değişikliği teslim eder |
 
 Yollu bir `assign` onlarla teslim edilir: posta `This card owns src/parser.rs, docs (shared): stay in them; what else needs changing goes in your done, or ask for the card to be widened.` ile biter.
 

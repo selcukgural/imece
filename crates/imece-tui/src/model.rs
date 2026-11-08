@@ -262,6 +262,24 @@ pub struct Mail {
     /// The paths an `assign` gives its card (record 114); nothing on
     /// the other types.
     pub paths: Vec<Owned>,
+    /// The card an `assign` hands again (record 126): its receiver takes
+    /// it with the turn the mail starts, instead of a new one.
+    pub card: Option<CardId>,
+    /// What a worker's `done` came to (record 126), for its heading.
+    pub outcome: Outcome,
+}
+
+/// What a worker's `done` came to (record 126); `Ok` on every other
+/// message.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Outcome {
+    #[default]
+    Ok,
+    /// It said its card failed (none when it held none): no change came
+    /// of it.
+    Failed(Option<CardId>),
+    /// Its card had gone to another try: it closed nothing.
+    Late(CardId),
 }
 
 /// A Claude Code session an agent had, kept to go on with it after imece
@@ -777,6 +795,11 @@ pub struct Agent {
     pub fault: Option<Fault>,
     /// Where its spend on the change at hand stands (record 113).
     pub task: Task,
+    /// Which attempt at its card its turn works on (record 126): set as
+    /// it takes the card, so a `done` of a turn that began before the
+    /// card was handed again is told apart. Memory only: a load sets it
+    /// from the card.
+    pub attempt: u32,
     /// A researcher that finished; kept so ids stay stable.
     pub gone: bool,
 }
@@ -939,6 +962,7 @@ impl Agent {
             held_mail: 0,
             fault: None,
             task: Task::default(),
+            attempt: 0,
             gone: false,
         }
     }
@@ -1147,12 +1171,31 @@ impl Stirs {
     }
 }
 
+/// Where a card stands (record 126). A card follows its owner's change:
+/// it works until a `done`, its change waits for the person in `Review`,
+/// sits in Lonca's merge queue in `Verifying`, and is `Done` once the
+/// change is in whole (or the `done` left nothing to take). Sent back, it
+/// works again. A `done` that says it failed makes no change: `Failed`,
+/// for the leader to hand again.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Column {
     Waiting,
     Working,
     Verifying,
     Done,
+    Review,
+    Failed,
+}
+
+/// What a worker's `done` is for (record 126).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DoneFor {
+    /// The card it holds at the attempt its turn took.
+    Card(CardId),
+    /// A card handed again since its turn took it: the done closes nothing.
+    Late(CardId),
+    /// It holds no card.
+    Nothing,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1240,6 +1283,20 @@ pub enum StoryEvent {
         by: AgentId,
         text: String,
     },
+    /// The leader handed the card to `to` as its `attempt`th try, taking
+    /// it from `from` (record 126).
+    Handed {
+        from: Option<AgentId>,
+        to: AgentId,
+        attempt: u32,
+    },
+    /// The owner's `done` said the card failed, and why: no change.
+    Failed(String),
+    /// A `done` came from `from` after the card was handed again: it
+    /// closed nothing.
+    LateDone {
+        from: AgentId,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1259,7 +1316,8 @@ impl StoryEvent {
             StoryEvent::Took { .. }
             | StoryEvent::WritingTests
             | StoryEvent::BlockedOn(_)
-            | StoryEvent::Posted { .. } => StoryKind::Intent,
+            | StoryEvent::Posted { .. }
+            | StoryEvent::Handed { .. } => StoryKind::Intent,
             StoryEvent::Decision(_) => StoryKind::Decision,
             StoryEvent::Asked { .. }
             | StoryEvent::Answered { .. }
@@ -1273,6 +1331,8 @@ impl StoryEvent {
             | StoryEvent::Verified { .. }
             | StoryEvent::QueueFailed
             | StoryEvent::Stopped(_)
+            | StoryEvent::Failed(_)
+            | StoryEvent::LateDone { .. }
             | StoryEvent::Interrupted => StoryKind::Evidence,
             StoryEvent::Change { .. }
             | StoryEvent::Sensitive(_)
@@ -1306,6 +1366,10 @@ pub struct Card {
     pub paths: Vec<Owned>,
     pub started: u64,
     pub finished: u64,
+    /// How many times the card was taken (record 126): by the turn an
+    /// `assign` opened, a `claim`, or an `assign` naming it to hand it
+    /// again; none while it waits on the board untaken.
+    pub attempt: u32,
 }
 
 /// The part an agent had in a card, for the card's screen.
@@ -1441,9 +1505,16 @@ pub fn mentions(text: &str, c: CardId) -> Vec<std::ops::Range<usize>> {
 }
 
 impl Card {
-    /// Leases count while the change is not merged.
+    /// Leases count while the change is not merged; a change waiting for
+    /// the person lets them go, as the demo's done always did.
     pub fn holds_leases(&self) -> bool {
         matches!(self.column, Column::Working | Column::Verifying)
+    }
+
+    /// Whether the card is through, well or not: nothing more comes of
+    /// it unless it is handed again.
+    pub fn over(&self) -> bool {
+        matches!(self.column, Column::Done | Column::Failed)
     }
 }
 
@@ -1602,6 +1673,27 @@ pub enum Event {
     },
     /// A live worker took a card from the board.
     Claimed {
+        agent: AgentId,
+        card: CardId,
+    },
+    /// The leader handed card `card` to `agent` as its `attempt`th try,
+    /// taking it from `from` when someone held it (record 126).
+    Handed {
+        agent: AgentId,
+        card: CardId,
+        from: Option<AgentId>,
+        attempt: u32,
+    },
+    /// Worker `agent`'s `done` said card `card` failed; `why` is its first
+    /// line. No change comes of it.
+    CardFailed {
+        agent: AgentId,
+        card: CardId,
+        why: String,
+    },
+    /// Worker `agent` sent a `done` after card `card` was handed again
+    /// (or taken from it): it closed nothing and showed no change.
+    LateDone {
         agent: AgentId,
         card: CardId,
     },
@@ -2007,7 +2099,9 @@ impl Event {
             | Event::Forked { .. }
             | Event::Planned { .. }
             | Event::Left { .. } => EntryKind::Plan,
-            Event::Assign { .. } | Event::Claimed { .. } => EntryKind::Assign,
+            Event::Assign { .. } | Event::Claimed { .. } | Event::Handed { .. } => {
+                EntryKind::Assign
+            }
             Event::Talk { .. }
             | Event::Replied { .. }
             | Event::Sent { .. }
@@ -2035,6 +2129,7 @@ impl Event {
             | Event::StoreFailed { .. }
             | Event::Retrying { .. }
             | Event::ChangeCost { .. }
+            | Event::LateDone { .. }
             | Event::WorktreeKept { .. } => EntryKind::Assumption,
             Event::Blocked { .. } => EntryKind::Blocked,
             Event::ResearchOpened { .. }
@@ -2054,6 +2149,7 @@ impl Event {
                 ..
             } => EntryKind::Merged,
             Event::Failed { .. }
+            | Event::CardFailed { .. }
             | Event::Stopped { .. }
             | Event::Interrupted { .. }
             | Event::SuggestFailed { .. }
@@ -2103,6 +2199,9 @@ impl Event {
             Event::Assign { card, .. }
             | Event::Merged { card, .. }
             | Event::Posted { card, .. }
+            | Event::Handed { card, .. }
+            | Event::CardFailed { card, .. }
+            | Event::LateDone { card, .. }
             | Event::Claimed { card, .. } => Some(card),
             _ => None,
         }
@@ -2168,6 +2267,9 @@ impl Event {
             | Event::CheckFailed { agent, .. }
             | Event::CheckAnswered { agent, .. }
             | Event::Strayed { agent, .. }
+            | Event::Handed { agent, .. }
+            | Event::CardFailed { agent, .. }
+            | Event::LateDone { agent, .. }
             | Event::Planned { leader: agent, .. }
             | Event::PlanAnswered { leader: agent, .. }
             | Event::CommandsMissing { agent }
@@ -3848,6 +3950,7 @@ impl World {
         let agent = change.agent;
         self.carry_spend(agent);
         self.forget_change(agent);
+        self.move_cards(agent, Column::Working, Column::Review);
         let (added, removed) = change.counts();
         let files = change.files.len();
         // Read with its turn over (a solo's, or a part's rest): what it
@@ -3907,7 +4010,8 @@ impl World {
     pub fn proposal_left(&mut self, id: AgentId, how: Landed) {
         self.carry_spend(id);
         self.forget_change(id);
-        self.proposal_landed(id, how);
+        self.cards_landed(id, Column::Review, &how);
+        self.landed(id, how);
     }
 
     /// What became of worker `id`'s proposal, which left its waiting
@@ -3928,6 +4032,23 @@ impl World {
     }
 
     pub fn proposal_landed(&mut self, id: AgentId, how: Landed) {
+        self.cards_landed(id, Column::Verifying, &how);
+        self.landed(id, how);
+    }
+
+    /// The cards of worker `id`'s that stood in `from` follow what became
+    /// of its proposal (record 126): into the queue, on trunk, or back to
+    /// work.
+    fn cards_landed(&mut self, id: AgentId, from: Column, how: &Landed) {
+        let to = match how {
+            Landed::Queued => Column::Verifying,
+            Landed::Integrated(_) => Column::Done,
+            Landed::Conflicted(_) | Landed::Rejected(_) | Landed::Withdrawn => Column::Working,
+        };
+        self.move_cards(id, from, to);
+    }
+
+    fn landed(&mut self, id: AgentId, how: Landed) {
         if matches!(how, Landed::Integrated(_)) {
             self.agents[id].task.carried = Spend::default();
         }
@@ -3989,6 +4110,8 @@ impl World {
     /// Agent `id`'s worktree holds no change (a done with nothing in it,
     /// or the rest of a part applied was nothing): nothing is carried on.
     pub fn change_none(&mut self, id: AgentId) {
+        self.move_cards(id, Column::Working, Column::Done);
+        self.move_cards(id, Column::Review, Column::Done);
         let task = &mut self.agents[id].task;
         task.carried = Spend::default();
         // A done with nothing in it costs the leader's mail no figure.
@@ -4011,6 +4134,7 @@ impl World {
         let files = self.change_of(id).map_or(0, |c| c.files.len());
         if whole {
             self.agents[id].task.carried = Spend::default();
+            self.move_cards(id, Column::Review, Column::Done);
         } else {
             self.carry_spend(id);
         }
@@ -4026,7 +4150,100 @@ impl World {
     pub fn change_rejected(&mut self, id: AgentId) {
         self.carry_spend(id);
         self.forget_change(id);
+        self.move_cards(id, Column::Review, Column::Working);
         self.note(Event::Rejected { agent: id });
+    }
+
+    /// Worker `id`'s cards standing in `from` move to `to` (record 126):
+    /// a worker's worktree holds the work of every card it owns that is
+    /// not through, so its change is theirs. A card through is finished
+    /// now.
+    /// A card back at work has lost the leases another card took while
+    /// it waited, as a lapsed lease in Lonca; the paths it owns stay.
+    fn move_cards(&mut self, id: AgentId, from: Column, to: Column) {
+        let tick = self.tick;
+        let moving: Vec<CardId> = (self.cards.iter())
+            .filter(|c| c.owner == Some(id) && c.column == from)
+            .map(|c| c.id)
+            .collect();
+        for m in moving {
+            let held: Vec<Symbol> = (self.cards.iter())
+                .filter(|o| o.project == self.cards[m].project && o.holds_leases())
+                .flat_map(|o| o.symbols.iter().copied())
+                .collect();
+            let c = &mut self.cards[m];
+            c.column = to;
+            if c.over() {
+                c.finished = tick;
+            }
+            if c.holds_leases() {
+                c.symbols.retain(|s| !held.contains(s));
+            }
+        }
+    }
+
+    /// What a `done` of agent `from` is for (record 126): its card, when it
+    /// still owns it at the attempt its turn took; else a late one.
+    pub fn done_for(&self, from: AgentId) -> DoneFor {
+        let a = &self.agents[from];
+        match a.card {
+            None => DoneFor::Nothing,
+            Some(c) => {
+                let card = &self.cards[c];
+                if card.owner == Some(from) && card.attempt == a.attempt {
+                    DoneFor::Card(c)
+                } else {
+                    DoneFor::Late(c)
+                }
+            }
+        }
+    }
+
+    /// Agent `id` takes card `c` for its turn, at the card's attempt now.
+    pub fn takes(&mut self, id: AgentId, c: CardId) {
+        self.agents[id].card = Some(c);
+        self.agents[id].attempt = self.cards[c].attempt;
+    }
+
+    /// The leader hands card `c` to `to` (record 126): its next attempt,
+    /// at work again, taken from whoever held it, whose later `done`
+    /// closes nothing. `to` takes it with the turn the assign starts.
+    pub fn hand(&mut self, c: CardId, to: AgentId) {
+        let card = &mut self.cards[c];
+        let from = card.owner;
+        card.owner = Some(to);
+        card.attempt += 1;
+        card.column = Column::Working;
+        card.finished = 0;
+        let attempt = card.attempt;
+        self.story(Some(c), StoryEvent::Handed { from, to, attempt });
+        self.note(Event::Handed {
+            agent: to,
+            card: c,
+            from,
+            attempt,
+        });
+    }
+
+    /// Agent `id`'s `done` said card `c` failed: through, no change; `why`
+    /// is the done's first line.
+    pub fn card_failed(&mut self, id: AgentId, c: CardId, why: &str) {
+        let tick = self.tick;
+        let card = &mut self.cards[c];
+        card.column = Column::Failed;
+        card.finished = tick;
+        self.story(Some(c), StoryEvent::Failed(why.to_string()));
+        self.note(Event::CardFailed {
+            agent: id,
+            card: c,
+            why: why.to_string(),
+        });
+    }
+
+    /// Agent `id` sent a `done` for card `c` after it was handed again.
+    pub fn late_done(&mut self, id: AgentId, c: CardId) {
+        self.story(Some(c), StoryEvent::LateDone { from: id });
+        self.note(Event::LateDone { agent: id, card: c });
     }
 
     /// Worker `id`'s change did not apply; it still waits.
@@ -5219,15 +5436,19 @@ mod tests {
             paths: Vec::new(),
             started: 0,
             finished: 0,
+            attempt: 1,
         };
-        for (column, held) in [
-            (Column::Waiting, false),
-            (Column::Working, true),
-            (Column::Verifying, true),
-            (Column::Done, false),
+        for (column, held, over) in [
+            (Column::Waiting, false, false),
+            (Column::Working, true, false),
+            (Column::Review, false, false),
+            (Column::Verifying, true, false),
+            (Column::Done, false, true),
+            (Column::Failed, false, true),
         ] {
             c.column = column;
             assert_eq!(c.holds_leases(), held, "{column:?}");
+            assert_eq!(c.over(), over, "{column:?}");
         }
     }
 
@@ -5553,6 +5774,7 @@ mod tests {
             paths: Vec::new(),
             started: 0,
             finished: 0,
+            attempt: 1,
         };
         w.cards = vec![
             card(Column::Done),
@@ -5949,6 +6171,230 @@ mod tests {
     }
 
     #[test]
+    fn a_workers_cards_follow_its_change_to_review_back_to_work_and_done() {
+        use crate::live::testing::team;
+        let mut w = team(2);
+        let card = |w: &mut World, owner, column| {
+            let id = w.cards.len();
+            w.cards.push(Card {
+                id,
+                project: 0,
+                title: format!("c{id}"),
+                owner: Some(owner),
+                column,
+                story: Vec::new(),
+                symbols: Vec::new(),
+                paths: Vec::new(),
+                started: 0,
+                finished: 0,
+                attempt: 1,
+            });
+            id
+        };
+        let a = card(&mut w, 1, Column::Working);
+        let b = card(&mut w, 1, Column::Working);
+        let theirs = card(&mut w, 2, Column::Working);
+        let done = card(&mut w, 1, Column::Done);
+        w.cards[done].finished = 5;
+        let columns = |w: &World| -> Vec<Column> { w.cards.iter().map(|c| c.column).collect() };
+        w.change_ready(change(1, "Fix", &[("a.rs", 1, 0)]));
+        use Column::*;
+        assert_eq!(columns(&w), [Review, Review, Working, Done]);
+        w.change_rejected(1);
+        assert_eq!(columns(&w), [Working, Working, Working, Done], "sent back");
+        w.change_ready(change(1, "Fix", &[("a.rs", 1, 0)]));
+        w.tick = 40;
+        w.change_applied(1, "abc".into(), false);
+        assert_eq!(
+            columns(&w),
+            [Review, Review, Working, Done],
+            "a part: the rest waits"
+        );
+        assert_eq!(w.cards[a].finished, 0);
+        w.change_applied(1, "abc".into(), true);
+        assert_eq!(columns(&w), [Done, Done, Working, Done]);
+        assert_eq!((w.cards[a].finished, w.cards[b].finished), (40, 40));
+        assert_eq!(
+            w.cards[done].finished, 5,
+            "one through before stays as it was"
+        );
+        // A done with nothing in it closes what is at work or waits.
+        let c = card(&mut w, 2, Column::Review);
+        w.tick = 50;
+        w.change_none(2);
+        assert_eq!((w.cards[theirs].column, w.cards[c].column), (Done, Done));
+        assert_eq!((w.cards[theirs].finished, w.cards[c].finished), (50, 50));
+    }
+
+    #[test]
+    fn a_card_back_at_work_has_lost_the_leases_another_took_but_not_its_paths() {
+        use crate::live::testing::{team, with_card};
+        let mut w = team(2);
+        let s = |name| Symbol { file: "a.rs", name };
+        let a = with_card(&mut w, 1);
+        w.cards[a].symbols = vec![s("A"), s("B")];
+        w.cards[a].paths = vec![Owned::new("a.rs")];
+        w.change_ready(change(1, "Fix", &[("a.rs", 1, 0)]));
+        let b = with_card(&mut w, 2);
+        w.cards[b].symbols = vec![s("B")];
+        // Another project's lease is not in the way.
+        let other = with_card(&mut w, 2);
+        w.cards[other].project = 1;
+        w.cards[other].symbols = vec![s("A")];
+        w.change_rejected(1);
+        assert_eq!(w.cards[a].symbols, [s("A")]);
+        assert_eq!(w.cards[a].paths, [Owned::new("a.rs")]);
+        // Through, it keeps what it had.
+        w.cards[a].symbols = vec![s("A"), s("B")];
+        w.change_ready(change(1, "Fix", &[("a.rs", 1, 0)]));
+        w.change_applied(1, "abc".into(), true);
+        assert_eq!(w.cards[a].symbols, [s("A"), s("B")]);
+    }
+
+    #[test]
+    fn a_proposal_moves_its_cards_by_what_became_of_it() {
+        use crate::live::testing::{team, with_card};
+        use Column::*;
+        let cases = [
+            (Landed::Queued, Verifying),
+            (Landed::Integrated("c1".into()), Done),
+            (Landed::Conflicted(Vec::new()), Working),
+            (Landed::Rejected(Vec::new()), Working),
+            (Landed::Withdrawn, Working),
+        ];
+        for (how, to) in cases.clone() {
+            // Left the waiting list: from review.
+            let mut w = team(1);
+            let c = with_card(&mut w, 1);
+            let queued = with_card(&mut w, 1);
+            w.cards[queued].column = Verifying;
+            w.cards[c].column = Review;
+            w.tick = 9;
+            w.proposal_left(1, how.clone());
+            assert_eq!(w.cards[c].column, to, "{how:?}");
+            assert_eq!(
+                w.cards[c].finished,
+                if to == Done { 9 } else { 0 },
+                "{how:?}"
+            );
+            assert_eq!(
+                w.cards[queued].column, Verifying,
+                "{how:?}: the queue's own"
+            );
+        }
+        for (how, to) in cases {
+            // What the queue made of it: from the queue.
+            let mut w = team(1);
+            let c = with_card(&mut w, 1);
+            let review = with_card(&mut w, 1);
+            w.cards[c].column = Verifying;
+            w.cards[review].column = Review;
+            w.proposal_landed(1, how.clone());
+            assert_eq!(w.cards[c].column, to, "{how:?}");
+            assert_eq!(w.cards[review].column, Review, "{how:?}: a newer one waits");
+        }
+    }
+
+    #[test]
+    fn a_done_is_for_the_card_its_turn_took_and_late_once_it_was_handed_again() {
+        use crate::live::testing::{team, with_card};
+        let mut w = team(2);
+        assert_eq!(w.done_for(1), DoneFor::Nothing);
+        let c = with_card(&mut w, 1);
+        w.agents[1].attempt = 1;
+        assert_eq!(w.done_for(1), DoneFor::Card(c));
+        w.cards[c].attempt = 2;
+        assert_eq!(w.done_for(1), DoneFor::Late(c), "a try since");
+        w.takes(1, c);
+        assert_eq!((w.agents[1].card, w.agents[1].attempt), (Some(c), 2));
+        assert_eq!(w.done_for(1), DoneFor::Card(c));
+        // Handed to another: its next try, from whoever had it.
+        w.cards[c].column = Column::Failed;
+        w.cards[c].finished = 7;
+        w.hand(c, 2);
+        let card = &w.cards[c];
+        assert_eq!(
+            (card.owner, card.attempt, card.column, card.finished),
+            (Some(2), 3, Column::Working, 0)
+        );
+        assert_eq!(w.done_for(1), DoneFor::Late(c));
+        assert_eq!(w.done_for(2), DoneFor::Nothing, "taken with its turn");
+        w.takes(2, c);
+        assert_eq!(w.done_for(2), DoneFor::Card(c));
+        assert_eq!(
+            card_story(&w, c).last(),
+            Some(&StoryEvent::Handed {
+                from: Some(1),
+                to: 2,
+                attempt: 3
+            })
+        );
+        let e = Event::Handed {
+            agent: 2,
+            card: c,
+            from: Some(1),
+            attempt: 3,
+        };
+        assert_eq!(w.journal.last().unwrap().event, e);
+        assert_eq!(
+            (e.kind(), e.card(), e.agent()),
+            (EntryKind::Assign, Some(c), 2)
+        );
+        // A late done says so, and closes nothing.
+        w.late_done(1, c);
+        assert_eq!(
+            card_story(&w, c).last(),
+            Some(&StoryEvent::LateDone { from: 1 })
+        );
+        let e = Event::LateDone { agent: 1, card: c };
+        assert_eq!(w.journal.last().unwrap().event, e);
+        assert_eq!(
+            (e.kind(), e.card(), e.agent()),
+            (EntryKind::Assumption, Some(c), 1)
+        );
+        assert_eq!(w.cards[c].column, Column::Working);
+        // One that failed is through, with its why.
+        w.tick = 30;
+        w.card_failed(2, c, "Cannot");
+        assert_eq!(
+            (w.cards[c].column, w.cards[c].finished),
+            (Column::Failed, 30)
+        );
+        assert_eq!(
+            card_story(&w, c).last(),
+            Some(&StoryEvent::Failed("Cannot".into()))
+        );
+        let e = Event::CardFailed {
+            agent: 2,
+            card: c,
+            why: "Cannot".into(),
+        };
+        assert_eq!(w.journal.last().unwrap().event, e);
+        assert_eq!(
+            (e.kind(), e.card(), e.agent()),
+            (EntryKind::Failed, Some(c), 2)
+        );
+        for (event, kind) in [
+            (
+                StoryEvent::Handed {
+                    from: None,
+                    to: 1,
+                    attempt: 1,
+                },
+                StoryKind::Intent,
+            ),
+            (StoryEvent::Failed(String::new()), StoryKind::Evidence),
+            (StoryEvent::LateDone { from: 1 }, StoryKind::Evidence),
+        ] {
+            assert_eq!(event.kind(), kind, "{event:?}");
+        }
+    }
+
+    fn card_story(w: &World, c: CardId) -> Vec<StoryEvent> {
+        w.cards[c].story.iter().map(|s| s.event.clone()).collect()
+    }
+
+    #[test]
     fn a_change_s_cost_is_settled_at_the_turn_s_end_carried_unapplied_and_dropped_once_applied() {
         use crate::live::testing::{team, with_helper};
         let mut w = team(1);
@@ -6261,6 +6707,7 @@ mod tests {
             paths: Vec::new(),
             started: 0,
             finished: 0,
+            attempt: 1,
         });
         w.agents[1].card = Some(0);
         w.tick = 10;
@@ -6782,6 +7229,7 @@ mod tests {
             paths: Vec::new(),
             started: 0,
             finished: 0,
+            attempt: 1,
         }
     }
 
@@ -8053,6 +8501,7 @@ mod tests {
             paths: crate::paths::parse(&serde_json::json!(paths)).unwrap(),
             started: 0,
             finished: 0,
+            attempt: 1,
         };
         w.cards.push(card(0, &[]));
         w.cards.push(card(1, &["src/"]));
@@ -8262,6 +8711,7 @@ mod change_proof_tests {
             paths: crate::paths::parse(&v).unwrap(),
             started: 0,
             finished: 0,
+            attempt: 1,
         }
     }
 

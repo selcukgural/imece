@@ -82,7 +82,7 @@ KARAR BEKLEYEN'de iki şey hiçbir şeyi tutmaz: okunmayı bekleyen bir yanıt v
 
 ## Bus'ta siz
 
-Komut satırındaki düz metin seçili projenin liderine gider; `@ad mesaj` tek bir ajana. Boşta bir işçiye mesaj bir kart açar; yanıtı onu kapatır. Mesajlarınızın numarası yoktur. Bir ajanın size yanıtı KARAR BEKLEYEN'de bekler ("claude-1 yanıt verdi: …"); açarsınız (`enter`), kapatırsınız (`r`) ya da doğrudan yanıt yazarsınız.
+Komut satırındaki düz metin seçili projenin liderine gider; `@ad mesaj` tek bir ajana. Boşta bir işçiye mesaj bir kart açar; değişikliği onu kapatır ([kartın denemeleri](#kartın-denemeleri)). Mesajlarınızın numarası yoktur. Bir ajanın size yanıtı KARAR BEKLEYEN'de bekler ("claude-1 yanıt verdi: …"); açarsınız (`enter`), kapatırsınız (`r`) ya da doğrudan yanıt yazarsınız.
 
 ## Pano
 
@@ -110,6 +110,16 @@ Bir `assign` ya da `post`, kartının sahip olduğu yolları adlandırır: `path
 
 Bu, sembol lease'lerinin ucuz vekilidir (bkz. [kod haritası](../screen/board-and-code-map.md)): yol, liderin planlarken adlandırabildiği ve bir değişikliğin dosyalar okunmadan karşılaştırılabildiği şeydir. Lease'ler ancak yollar yetmezse gelir.
 
+## Kartın denemeleri
+
+Bir kart işçisinin turlarını değil, değişikliğini izler. İşçinin `done`'ına kadar üzerinde çalışılır; değişikliği (`Δ`) KARAR BEKLEYEN'deyken incelemenizi bekler; değişikliği geri gönderdiğinizde (bir red, notlar, bir çakışma) yeniden çalışmaya döner ve işçiye yazdıklarınız o kartla devam eder, bir tur daha; değişiklik tamamen uygulandığında ya da `done` alınacak bir şey bırakmadığında biter. Lonca'da, onayınızdan sonra merge queue'da doğrulanıyor olur, trunk'a girince biter, kuyruk ya da bir inceleyen hayır derse yeniden çalışmaya döner.
+
+- **Bir deneme.** Kart kaç kez alındığını sayar: onu açan `assign` ilki, panodan bir `claim` bir deneme; lider bir kartı `assign` ve `card: 3` ile yeniden verebilir (başarısız olmuş, işçisi durmuş ya da panoda bekleyen bir kartı), bir sonraki denemesi olarak. Kart başlığını ve yollarını korur; yeni işçinin postası `[assign 14 · #3, try 2]` başlığıyla gelir, kartı elinde tutana `Card #3 (…) went to claude-2. Stop work on it; a done from you for it closes nothing now.` denir. İncelemede, kuyrukta ya da bitmiş bir kart yeniden verilemez: `#3's change waits for the person; it comes back if they send it back`.
+- **Geç bir `done`.** Kartı yeniden verilmeden önce başlamış bir turdan gelen `done` hiçbir şeyi kapatmaz ve değişiklik göstermez: günlük `claude-1: #3 için geç bir done; kart başka bir denemede, hiçbir şeyi kapatmıyor` der, liderin postası `[done 12 · late: #3 is claude-2's now, it closes nothing]` başlığıyla gelir. imece bir `done`'ın hangi turdan geldiğini bilir; ajan denemesini hiç yazmaz.
+- **Başarısız bir kart.** Bir görevi istendiği gibi yapamayan işçi `done`'ını `outcome: "failed"` ve nedeniyle gönderir. Kart başarısız olur (panoda `✕`, ekranında BAŞARISIZ), değişiklik gösterilmez, liderin postası `[done 12 · #3 failed]` başlığıyla gelir; lidere kartı neyin farklı yapılacağıyla yeniden vermesi söylenir.
+
+Demo üçünü de gösterir: her yedinci ilk deneme başarısız olur, lideri başarısız bir kartı bir kez başka bir işçiye verir, ve arada bir uzun süren bir kartı işçisinden alır; o işçinin turu geç bir `done` ile biter.
+
 ## Plan
 
 İlk işçi ucuzdur ve işi siz istediniz; lider ikincisini almadan önce ne yapmayı düşündüğünü görürsünüz. `plan(cards, cost)` çağırır: görev vermeyi ya da panoya asmayı düşündüğü kartlar, her biri başlık, kademe, sahip olduğu yollar ve gövdeyle, ve hepsinin dolar olarak beklediği maliyeti. Plan KARAR BEKLEYEN'e tek bir `▤` ögesi olarak gelir (`lead: 3 kart planladı, $1.20; enter okur`), defter `lead 3 kart planladı, $1.20; onayınızı bekliyor` der ve lidere turunu bitirmesi söylenir; plan beklerken liderin postası da onunla bekler ([posta bekler](#sizi-bekleyen-ajanın-postası-da-bekler)) ve `hire`, `the person is reading your plan; end your turn, their yes starts your next` yanıtını verir.
@@ -123,7 +133,7 @@ Yeni bir plan bekleyenin yerini alır. Plan, kartların denetleneceği gibi dene
 
 ## Kartlar ve hikâyeleri
 
-Bir kart, hikâyesi olan bir iş birimidir: `niyet`, `varsayım`, `karar`, `konuşma`, `kanıt`, `değişiklik`, `sen` (sizin söylediğiniz ya da karar verdiğiniz). Pano görünümü kartları sütunlarda gösterir (BEKLİYOR, ÜZERİNDE, DOĞRULANIYOR, BİTTİ); `#N` ya da `#kelime` bir kartın kendi ekranını açar: kim üzerinde çalıştı, hikâyesi, kendi gelen kutusu ve günlük satırları ([kartlar](../screen/cards.md)).
+Bir kart, hikâyesi olan bir iş birimidir: `niyet`, `varsayım`, `karar`, `konuşma`, `kanıt`, `değişiklik`, `sen` (sizin söylediğiniz ya da karar verdiğiniz). Pano penceresi kartları sütunlarda gösterir (YAPILACAK, ÜZERİNDE, İNCELENECEK, DOĞRULANIYOR, BİTTİ; başarısız bir kart bitenlerle durur, `✕` ile); `#N` ya da `#kelime` bir kartın kendi ekranını açar: kim üzerinde çalıştı, hikâyesi, kendi gelen kutusu ve günlük satırları ([kartlar](../screen/cards.md)).
 
 ## Uyanış özeti
 

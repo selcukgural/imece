@@ -2038,6 +2038,7 @@ mod tests {
         let opening = Opening {
             title: "Add b",
             paths: &[],
+            card: None,
         };
         live.prompt(&mut w, 1, "Add b".into(), Some(opening))
             .unwrap();

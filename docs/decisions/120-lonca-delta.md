@@ -130,3 +130,9 @@ is told nothing; its `sync` says.
 `live_a_proposal_is_turned_down_and_its_newer_one_lands`, by hand; CI has none):
 `change.diff`, `status.changes`, `status.policy`, the default `lonca.toml` read as
 held, `reject`, `approve`, `nothing_pending`.
+
+Since record 126 (2026-11-08) a proposal moves its worker's cards:
+shown, they are in review; queued, verifying; on trunk, done; refused,
+conflicted or withdrawn, back to work. A worker's `done` that came late
+(its card handed again) or failed waits on no proposal. A proposal made
+after the card was handed away still shows as the worker's Δ: a gap.

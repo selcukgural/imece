@@ -754,6 +754,7 @@ mod tests {
             paths: Vec::new(),
             started: 0,
             finished: 0,
+            attempt: 1,
         });
         assert_eq!(app.next_motion(now), Some(e + ms(600)), "its card's owner");
         app.world.cards[0].column = Column::Done;
