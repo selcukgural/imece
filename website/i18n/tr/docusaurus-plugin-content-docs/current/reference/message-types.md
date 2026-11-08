@@ -52,6 +52,7 @@ Varsayılan ret: uymayan bir mesaj nedeniyle reddedilir ve iz bırakmaz.
 | `done` dışında bir türde `outcome`, ya da `done`/`failed` olmayan | `outcome goes with a done` / `outcome is done or failed` |
 | `assign` dışında bir türde `card`, ya da `paths` ile | `card goes with an assign: the card it hands again` / `a card handed again keeps its own paths; leave paths out` |
 | projenin olmayan, işçi olmayana giden, incelemede, kuyrukta ya da bitmiş bir `card` | `there is no card #8 in this project`, `a card goes to a worker`, `#3's change waits for the person; it comes back if they send it back`, `#3 is in Lonca's merge queue`, `#3 is done; assign a new task for more` |
+| son denemesini başarısız bitirmiş, son denemesinde çalışan ya da sizin başarısız saydığınız bir `card` | `#3 failed 3 tries: the person decides whether it gets another, and you hear their answer`, `#3 is on try 3, its last: let its worker finish`, `the person failed #3 for good; assign a new task for more` |
 | `you`'ya bir `ask` dışında `options` | `options go with an ask to the person (to: you)` |
 | bozuk `options` | `options must be an array of strings`, `an ask offers at most 4 options`, `an option is empty`, `an option is longer than 60 characters`, `"a\tb" has a control character` |
 | bozuk `paths` | `paths must be an array of strings`, `a card owns at most 20 paths`, `a path is empty`, `a path is longer than 200 characters`, `"a\tb" has a control character`, `paths are relative to the repository; "/etc" starts with /`, `"src/../x" goes outside the repository (..)`, `paths lists "src" twice` |
@@ -123,7 +124,7 @@ imece'nin MCP sunucusunun adı `imece`'dir; araçları bir oturuma `mcp__imece__
 | `re` | tam sayı ≥ 1 | hayır | yanıtladığı mesajın numarası |
 | `paths` | en çok 20 dizelik dizi, her biri en çok 200 | hayır | `assign` için: kartın sahip olduğu yollar, depoya göre, git pathspec'i olarak (bir dosya, bir dizin ya da `*`'lı bir desen); `shared` sözcüğüyle biten adlandırılır, sahiplenilmez. Başka her türde reddedilir |
 | `options` | en çok 4 dizelik dizi, her biri en çok 60 | hayır | `you`'ya bir `ask` için: kişinin tek tuşla seçebileceği yanıtlar, kısa, ajanın kendi seçeceği önce; kişi yine sözcüklerle yanıtlayabilir. Başka her mesajda reddedilir |
-| `card` | tam sayı ≥ 1 | hayır | liderin `assign`'ı için: yeniden verilecek kart (`#N`), bir sonraki denemesi ([kartın denemeleri](../concepts/messages-and-board.md#kartın-denemeleri)) |
+| `card` | tam sayı ≥ 1 | hayır | liderin `assign`'ı için: yeniden verilecek kart (`#N`), bir sonraki denemesi; üçüncüsünden sonra siz bir tane daha verene kadar reddedilir ([kartın denemeleri](../concepts/messages-and-board.md#kartın-denemeleri)) |
 | `outcome` | `done` ya da `failed` | hayır | bir `done` için: `failed` kartı başarısız sayar ve değişiklik göstermez; `done`, hiç yazılmamış gibi, değişikliği teslim eder |
 
 Yollu bir `assign` onlarla teslim edilir: posta `This card owns src/parser.rs, docs (shared): stay in them; what else needs changing goes in your done, or ask for the card to be widened.` ile biter.

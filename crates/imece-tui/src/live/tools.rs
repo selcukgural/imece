@@ -527,8 +527,9 @@ pub(super) fn send_tool() -> Tool {
                                     whose worker stopped, or that waits on the board; it \
                                     is its next try, the card keeps its title and paths, \
                                     and a done from whoever had it closes nothing now. \
-                                    Refused while its change waits for the person or once \
-                                    it is done.",
+                                    Refused while its change waits for the person, once \
+                                    it is done, and past its third try until the person \
+                                    allows another.",
                 },
                 "outcome": {
                     "type": "string",

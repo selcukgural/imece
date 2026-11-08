@@ -5,7 +5,7 @@
 //! shared by all projects, and symbol leases, show what is still to come.
 //! A seed replays the same scenario.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 
 use crate::i18n::Lang;
@@ -248,6 +248,8 @@ const FAIL_EVERY: u32 = 7;
 const SLOW_TICKS: u64 = 100;
 /// How rarely, a tick, the leader takes such a card away.
 const SLOW_ONE_IN: u64 = 10;
+/// What a demo worker whose change failed its tests in the queue is told.
+const FIX_TESTS: &str = "fix the failing test and propose again";
 
 /// What fake agents say, in the person's language.
 struct Content {
@@ -750,6 +752,10 @@ struct Extras {
     told: u32,
     /// First tries at a card finished this run, failed ones included.
     firsts: u32,
+    /// Cards whose change failed its tests in the queue: it fails them
+    /// again each round until the person allows one more (record 126,
+    /// F9).
+    hard: HashSet<CardId>,
     /// No API errors: a test that counts answers.
     calm: bool,
     /// Sessions resumed this run, refused ones included.
@@ -1443,8 +1449,14 @@ impl Sim {
             end: end.to_string(),
             lines: lines.iter().map(|l| l.to_string()).collect(),
         };
-        // Each fifth merges and fails its tests, as a queue finds it.
-        if fits && self.extras.landings.is_multiple_of(5) {
+        // Each fifth merges and fails its tests, as a queue finds it, and
+        // so does each round of its card after, until the person allows
+        // one more (record 126, F9).
+        let card = w.agents[id].card;
+        let hard = card
+            .is_some_and(|c| self.extras.hard.contains(&c) && w.cards[c].breaker.more_rounds == 0);
+        if fits && (self.extras.landings.is_multiple_of(5) || hard) {
+            self.extras.hard.extend(card);
             w.proposal_left(
                 id,
                 Landed::Rejected(vec!["verification_failed:tests".into()]),
@@ -1461,7 +1473,12 @@ impl Sim {
                     ),
                 ],
             );
-            let _ = self.told(w, id, "fix the failing test and propose again");
+            // Its rounds out, it is not woken: the person decides.
+            if let Some(c) = w.rounds_out_of(id) {
+                w.capped(Cap::Rounds, id, c);
+                return;
+            }
+            let _ = self.told(w, id, FIX_TESTS);
             return;
         }
         if fits {
@@ -2827,6 +2844,7 @@ impl Sim {
             started: 0,
             finished: 0,
             attempt: 0,
+            breaker: Default::default(),
         });
         id
     }
@@ -2887,6 +2905,23 @@ impl Sim {
             },
         );
         w.agents[leader].trace(t, format!("plan {n} cards {} (item {item})", dollars(cost)));
+    }
+
+    /// The person's answer to cap item `item`, as live's
+    /// (`Live::decide_cap`): one more try is the leader's to hand, one
+    /// more round wakes the worker to fix its tests; a card failed for
+    /// good is nobody's. False when nothing waits there.
+    pub fn decide_cap(&mut self, w: &mut World, item: usize, yes: bool) -> bool {
+        let Some((agent, c, cap)) = w.decide_cap(item, yes) else {
+            return false;
+        };
+        let t = w.tick;
+        let said = if yes { "one more" } else { "failed" };
+        w.agents[agent].trace(t, format!("#{} {said}", c + 1));
+        if cap == Cap::Rounds && yes {
+            let _ = self.told(w, agent, FIX_TESTS);
+        }
+        true
     }
 
     /// The person's answer to plan item `item`, as live's
@@ -2990,13 +3025,33 @@ impl Sim {
     }
 
     /// The card of `project` the leader hands `agent` now, if any: one
-    /// whose first try failed and was not `agent`'s, or, rarely, one whose
-    /// first try has run `SLOW_TICKS`.
-    fn card_to_hand(&mut self, w: &World, project: ProjectId, agent: AgentId) -> Option<CardId> {
-        let first = |c: &&Card| c.project == project && c.attempt == 1 && c.owner != Some(agent);
-        if let Some(c) = (w.cards.iter().filter(first)).find(|c| c.column == Column::Failed) {
-            return Some(c.id);
+    /// that failed, not `agent`'s, with a try left, or, rarely, one whose
+    /// first try has run `SLOW_TICKS`. A failed one whose tries are out
+    /// waits for the person instead, as a live leader's assign is refused
+    /// (record 126, F9); one the person failed is nobody's.
+    fn card_to_hand(
+        &mut self,
+        w: &mut World,
+        project: ProjectId,
+        agent: AgentId,
+    ) -> Option<CardId> {
+        let failed: Vec<CardId> = (w.cards.iter())
+            .filter(|c| {
+                c.project == project
+                    && c.column == Column::Failed
+                    && !c.breaker.stopped
+                    && c.owner != Some(agent)
+            })
+            .map(|c| c.id)
+            .collect();
+        for c in failed {
+            if !w.cards[c].tries_out() {
+                return Some(c);
+            }
+            let leader = w.projects[project].leader;
+            w.capped(Cap::Tries, leader, c);
         }
+        let first = |c: &&Card| c.project == project && c.attempt == 1 && c.owner != Some(agent);
         let slow = (w.cards.iter().filter(first))
             .find(|c| c.column == Column::Working && w.tick >= c.started + SLOW_TICKS)?;
         self.rng.one_in(SLOW_ONE_IN).then_some(slow.id)
@@ -3721,6 +3776,14 @@ impl Sim {
                 return self.fail(w, id, card);
             }
         }
+        // A card that failed fails each try its leader hands it by itself,
+        // so the breaker stops the next; a try the person allows goes
+        // through (record 126, F9).
+        let c = &w.cards[card];
+        let failed = |s: &Story| matches!(s.event, StoryEvent::Failed(_));
+        if c.attempt <= TRIES && c.story.iter().any(failed) {
+            return self.fail(w, id, card);
+        }
         let title = w.cards[card].title.clone();
         let leader = w.projects[w.agents[id].project].leader;
         if w.agents[id].workspace.is_some() {
@@ -4062,6 +4125,9 @@ mod tests {
                 }
                 InboxKind::Plan => {
                     s.decide_plan(w, i, true);
+                }
+                InboxKind::Tries | InboxKind::Rounds => {
+                    s.decide_cap(w, i, true);
                 }
                 InboxKind::Question | InboxKind::Fault => {
                     // Closed here, once: a run's length never hangs on
@@ -7736,7 +7802,9 @@ diff --git a/b.rs b/b.rs
             }
             w.change_rejected(worker);
         }
-        // A second try never fails, and a card already through counts none.
+        // A second try of a card that never failed does not fail, and a
+        // card already through counts none.
+        w.cards[card].story.clear();
         w.cards[card].attempt = 2;
         w.cards[card].column = Column::Working;
         let firsts = s.extras.firsts;
@@ -7752,7 +7820,7 @@ diff --git a/b.rs b/b.rs
     }
 
     #[test]
-    fn the_demos_leader_hands_a_failed_card_once_and_a_slow_one_rarely() {
+    fn the_demos_leader_hands_a_failed_card_while_it_has_tries_and_a_slow_one_rarely() {
         let (mut w, mut s) = world(1, 2, 0, 3, Lang::En);
         let [worker, other] = workers_of(&w, 0)[..] else {
             panic!("two workers")
@@ -7762,27 +7830,42 @@ diff --git a/b.rs b/b.rs
             .unwrap();
         s.take(&mut w, worker, card, Taken::Claimed);
         w.cards[card].column = Column::Failed;
-        assert_eq!(s.card_to_hand(&w, 0, other), Some(card));
+        assert_eq!(s.card_to_hand(&mut w, 0, other), Some(card));
         assert_eq!(
-            s.card_to_hand(&w, 0, worker),
+            s.card_to_hand(&mut w, 0, worker),
             None,
             "not to whoever failed it"
         );
         w.cards[card].attempt = 2;
-        assert_eq!(s.card_to_hand(&w, 0, other), None, "once");
-        assert_eq!(s.card_to_hand(&w, 1, other), None, "another project's");
+        assert_eq!(s.card_to_hand(&mut w, 0, other), Some(card), "a try left");
+        assert_eq!(s.card_to_hand(&mut w, 1, other), None, "another project's");
+        // Its tries out: the person decides, asked once (record 126, F9).
+        w.cards[card].attempt = 3;
+        assert_eq!(s.card_to_hand(&mut w, 0, other), None, "tries out");
+        assert_eq!(s.card_to_hand(&mut w, 0, other), None);
+        let asks: Vec<(InboxKind, AgentId, Option<CardId>)> = (w.inbox.iter())
+            .filter(|i| i.open)
+            .map(|i| (i.kind, i.agent, i.card))
+            .collect();
+        assert_eq!(asks, [(InboxKind::Tries, w.projects[0].leader, Some(card))]);
+        // One more allowed: handed; failed for good: nobody's.
+        w.cards[card].breaker.more_tries = 1;
+        assert_eq!(s.card_to_hand(&mut w, 0, other), Some(card), "one more");
+        w.cards[card].breaker.stopped = true;
+        assert_eq!(s.card_to_hand(&mut w, 0, other), None, "failed for good");
+        w.cards[card].breaker = Breaker::default();
         // One at work: only once it has run long, and then rarely.
         w.cards[card].attempt = 1;
         w.cards[card].column = Column::Working;
         w.cards[card].started = 0;
         w.tick = SLOW_TICKS - 1;
         assert!(
-            (0..200).all(|_| s.card_to_hand(&w, 0, other).is_none()),
+            (0..200).all(|_| s.card_to_hand(&mut w, 0, other).is_none()),
             "not yet"
         );
         w.tick = SLOW_TICKS;
         let handed = (0..2000)
-            .filter(|_| s.card_to_hand(&w, 0, other).is_some())
+            .filter(|_| s.card_to_hand(&mut w, 0, other).is_some())
             .count();
         assert!((100..400).contains(&handed), "{handed} of 2000");
         // Handed: its next try, its paths kept, the leader's assign says so.
@@ -7827,9 +7910,10 @@ diff --git a/b.rs b/b.rs
     }
 
     #[test]
-    fn the_demo_fails_hands_again_and_comes_late_as_live_does() {
-        let (mut w, mut s) = world(1, 4, 0, 3, Lang::En);
-        let (mut failed, mut handed, mut late) = (0, 0, 0);
+    fn the_demo_fails_hands_again_comes_late_and_meets_the_breaker_as_live_does() {
+        // A run long enough for each (seeded: the same every time).
+        let (mut w, mut s) = world(1, 4, 0, 10, Lang::En);
+        let (mut failed, mut handed, mut late, mut capped) = (0, 0, 0, 0);
         for _ in 0..4000 {
             let n = w.journal.len();
             run(&mut w, &mut s, 1, true);
@@ -7838,16 +7922,17 @@ diff --git a/b.rs b/b.rs
                     Event::CardFailed { .. } => failed += 1,
                     Event::Handed { .. } => handed += 1,
                     Event::LateDone { .. } => late += 1,
+                    Event::Capped { .. } => capped += 1,
                     _ => {}
                 }
             }
-            if failed > 0 && handed > 1 && late > 0 {
+            if failed > 0 && handed > 1 && late > 0 && capped > 0 {
                 break;
             }
         }
         assert!(
-            failed > 0 && handed > 1 && late > 0,
-            "{failed} failed, {handed} handed, {late} late"
+            failed > 0 && handed > 1 && late > 0 && capped > 0,
+            "{failed} failed, {handed} handed, {late} late, {capped} capped"
         );
     }
 
@@ -8569,6 +8654,98 @@ diff --git a/b.rs b/b.rs
             .filter(|l| matches!(l.event, Event::Verified { .. }))
             .count();
         assert_eq!(after, before);
+    }
+
+    #[test]
+    fn a_demo_card_whose_tests_failed_fails_each_round_until_the_person_allows_one_more() {
+        let (mut w, mut s, id) = a_proposal_waits();
+        let c = s.new_card(&mut w, 0, "Rounding".into());
+        w.cards[c].owner = Some(id);
+        w.cards[c].column = Column::Review;
+        w.agents[id].card = Some(c);
+        let landed = |w: &World| {
+            (w.journal.iter().rev())
+                .find_map(|l| match &l.event {
+                    Event::Landed { how, .. } => Some(how.clone()),
+                    _ => None,
+                })
+                .unwrap()
+        };
+        let failed = Landed::Rejected(vec!["verification_failed:tests".into()]);
+        let rounds = |w: &World| {
+            (w.open_inbox().into_iter()).find(|&i| w.inbox[i].kind == InboxKind::Rounds)
+        };
+        // The fifth fails, and each round of its card after: told to fix
+        // it while its rounds last (record 126, F9).
+        s.extras.landings = 4;
+        for (n, back) in [(1, 1), (2, 2)] {
+            let told = s.extras.told;
+            s.landed(&mut w, id, true);
+            assert_eq!(landed(&w), failed, "round {n}");
+            assert_eq!(w.cards[c].breaker.sent_back, back);
+            assert_eq!(s.extras.told, told + 1, "told to fix it");
+            assert_eq!(rounds(&w), None);
+            w.cards[c].column = Column::Review;
+            w.change_proposed(a_change_of(id), a_demo_proposal(20 + n));
+        }
+        // The third time back: not told, the person decides.
+        let told = s.extras.told;
+        s.landed(&mut w, id, true);
+        assert_eq!(landed(&w), failed);
+        assert_eq!(s.extras.told, told, "not woken");
+        let item = rounds(&w).expect("the person decides");
+        assert_eq!(
+            (w.inbox[item].kind, w.inbox[item].agent, w.inbox[item].card),
+            (InboxKind::Rounds, id, Some(c))
+        );
+        // One more round: told, and it goes through.
+        assert!(s.decide_cap(&mut w, item, true));
+        assert!(!s.decide_cap(&mut w, item, true), "answered");
+        assert_eq!(s.extras.told, told + 1);
+        w.cards[c].column = Column::Review;
+        w.change_proposed(a_change_of(id), a_demo_proposal(30));
+        s.landed(&mut w, id, true);
+        assert!(matches!(landed(&w), Landed::Integrated(_)));
+        assert!(s.extras.hard.contains(&c));
+    }
+
+    #[test]
+    fn the_demos_person_may_fail_a_card_at_its_breaker_and_its_worker_is_not_told() {
+        let (mut w, mut s, worker, card) = one_at_work();
+        w.cards[card].breaker.sent_back = 3;
+        assert!(w.capped(Cap::Rounds, worker, card));
+        let told = s.extras.told;
+        assert!(s.decide_cap(&mut w, 0, false));
+        assert_eq!(s.extras.told, told);
+        assert!(w.cards[card].breaker.stopped);
+        // Nor on a try: the leader's to hand.
+        w.cards[card].breaker = Breaker::default();
+        w.cards[card].column = Column::Failed;
+        assert!(w.capped(Cap::Tries, w.projects[0].leader, card));
+        assert!(s.decide_cap(&mut w, 1, true));
+        assert_eq!(s.extras.told, told);
+        assert_eq!(w.cards[card].breaker.more_tries, 1);
+        assert!(!s.decide_cap(&mut w, 7, true), "nothing there");
+    }
+
+    #[test]
+    fn a_demo_card_that_failed_fails_each_try_handed_by_itself_and_goes_through_on_the_persons() {
+        let (mut w, mut s, worker, card) = one_at_work();
+        w.story(Some(card), StoryEvent::Failed("no".into()));
+        for (attempt, fails) in [(2, true), (3, true), (4, false)] {
+            w.cards[card].attempt = attempt;
+            w.agents[worker].attempt = attempt;
+            w.cards[card].column = Column::Working;
+            w.agents[worker].set_status(Status::Working, w.tick);
+            s.done(&mut w, worker);
+            let want = if fails {
+                Column::Failed
+            } else {
+                Column::Review
+            };
+            assert_eq!(w.cards[card].column, want, "try {attempt}");
+            w.change_rejected(worker);
+        }
     }
 
     fn a_demo_proposal(seq: u64) -> StoreProposal {

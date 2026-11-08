@@ -556,6 +556,7 @@ pub(crate) fn inbox_line(app: &App, i: usize) -> Line<'static> {
         InboxKind::Fault => ("■", bold(pal().bad)),
         InboxKind::Script | InboxKind::Check => ("▶", bold(pal().warn)),
         InboxKind::Plan => ("▤", bold(pal().warn)),
+        InboxKind::Tries | InboxKind::Rounds => ("⊘", bold(pal().warn)),
     };
     let mut spans = vec![
         Span::styled(format!("{icon} "), style),
@@ -2073,6 +2074,11 @@ pub(crate) fn home_hints(app: &App) -> Vec<(&'static str, &'static str)> {
             ("s", t.home_later),
         ],
         Some(InboxKind::Approval) => vec![("a", t.allow_once), ("r", t.refuse), ("e", t.this_turn)],
+        Some(InboxKind::Tries | InboxKind::Rounds) => vec![
+            ("enter", t.home_open),
+            ("a", t.home_once_more),
+            ("r", t.home_fail),
+        ],
         Some(_) => vec![("enter", t.home_open), ("a", t.home_yes), ("r", t.home_no)],
         None => match app.home_at() {
             Some(crate::app::HomeRow::Project(_)) => {
@@ -3698,6 +3704,7 @@ mod tests {
             started: 0,
             finished: 0,
             attempt: 1,
+            breaker: Default::default(),
         };
         app.world.cards = vec![
             card(0, Some(w[0]), Column::Working),
@@ -4627,6 +4634,7 @@ mod tests {
             started: 0,
             finished: 0,
             attempt: 1,
+            breaker: Default::default(),
         }
     }
 
@@ -6004,6 +6012,12 @@ mod tests {
         assert!(
             row(&mut app, InboxKind::Plan).contains("   enter  open   a  yes   r  no   ?  help")
         );
+        for kind in [InboxKind::Tries, InboxKind::Rounds] {
+            assert!(
+                row(&mut app, kind).contains("   enter  open   a  one more   r  fail it   ?  help"),
+                "{kind:?}"
+            );
+        }
         app.world.inbox.clear();
         let agent_row = foot(&app, 200);
         assert!(
@@ -6111,6 +6125,7 @@ mod tests {
             started: 0,
             finished: 0,
             attempt: 1,
+            breaker: Default::default(),
         };
         app.world.cards = vec![
             card(0, Column::Done),
@@ -9010,6 +9025,7 @@ mod tests {
                 started: 0,
                 finished: 0,
                 attempt: 1,
+                breaker: Default::default(),
             };
             app.world.cards.clear();
             app.world.cards.push(card(0, 1, Column::Done));
@@ -9304,6 +9320,7 @@ mod tests {
             started: 0,
             finished: 0,
             attempt: 1,
+            breaker: Default::default(),
         });
         let board = render(&app, 200, 40);
         for title in &theirs {

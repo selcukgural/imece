@@ -442,6 +442,13 @@ fn item_tail(app: &App, i: usize) -> Tail {
                 &[&cards.to_string(), &dollars(cost), &item.detail],
             )
         }
+        InboxKind::Tries | InboxKind::Rounds => {
+            let words = match item.kind {
+                InboxKind::Tries => t.row_tries,
+                _ => t.row_rounds,
+            };
+            fill(words, &[&words::cap_count(w, item).to_string()])
+        }
         InboxKind::Sensitive => fill(t.row_sensitive, &[&item.detail]),
         InboxKind::Change => {
             return match (w.change_of(item.agent), w.verdict(item.agent)) {
@@ -510,6 +517,9 @@ fn row_keys(app: &App) -> Vec<Span<'static>> {
             }
             InboxKind::Question | InboxKind::Fault | InboxKind::Reply => {
                 vec![("a", t.home_answer), ("enter", t.home_open)]
+            }
+            InboxKind::Tries | InboxKind::Rounds => {
+                vec![("a", t.home_once_more), ("r", t.home_fail)]
             }
             _ => vec![("a", t.home_yes), ("r", t.home_no)],
         },
@@ -1680,10 +1690,30 @@ mod tests {
             (InboxKind::Plan, " a  yes   r  no  "),
             (InboxKind::Sensitive, " a  yes   r  no  "),
             (InboxKind::Script, " a  yes   r  no  "),
+            (InboxKind::Tries, " a  one more   r  fail it  "),
+            (InboxKind::Rounds, " a  one more   r  fail it  "),
         ] {
             app.world.inbox[0].kind = kind;
             assert!(at(&app, 120).ends_with(want), "{kind:?}: {}", at(&app, 120));
         }
+        // A card at its breaker says what it counts (record 126, F9).
+        assert!(!app.world.cards.is_empty(), "the demo has cards");
+        app.world.cards[0].attempt = 3;
+        app.world.cards[0].breaker.sent_back = 2;
+        app.world.inbox[0].card = Some(0);
+        let all = |app: &App| lines(app, 160).join("\n");
+        app.world.inbox[0].kind = InboxKind::Tries;
+        assert!(
+            all(&app).contains("failed 3 tries: one more, or it fails for good"),
+            "{}",
+            all(&app)
+        );
+        app.world.inbox[0].kind = InboxKind::Rounds;
+        assert!(
+            all(&app).contains("its change came back 2 times: one more round, or it fails"),
+            "{}",
+            all(&app)
+        );
     }
 
     #[test]

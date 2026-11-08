@@ -49,7 +49,9 @@ impl HomeGroup {
             | InboxKind::Research
             | InboxKind::Reply
             | InboxKind::Fault
-            | InboxKind::Plan => HomeGroup::Question,
+            | InboxKind::Plan
+            | InboxKind::Tries
+            | InboxKind::Rounds => HomeGroup::Question,
             InboxKind::Change | InboxKind::Sensitive => HomeGroup::Change,
         }
     }
@@ -927,6 +929,8 @@ mod triage_tests {
             (InboxKind::Reply, HomeGroup::Question),
             (InboxKind::Fault, HomeGroup::Question),
             (InboxKind::Plan, HomeGroup::Question),
+            (InboxKind::Tries, HomeGroup::Question),
+            (InboxKind::Rounds, HomeGroup::Question),
             (InboxKind::Change, HomeGroup::Change),
             (InboxKind::Sensitive, HomeGroup::Change),
         ] {

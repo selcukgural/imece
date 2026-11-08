@@ -200,6 +200,7 @@ mod tests {
             started: 12,
             finished: 24,
             attempt: 1,
+            breaker: Default::default(),
         };
         // 24 ticks of 5 s.
         assert_eq!(minutes(&w, &card), 2);

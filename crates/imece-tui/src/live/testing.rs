@@ -188,6 +188,7 @@ pub(crate) fn with_card(w: &mut World, id: AgentId) -> CardId {
         started: 0,
         finished: 0,
         attempt: 1,
+        breaker: Default::default(),
     });
     w.agents[id].card = Some(c);
     c

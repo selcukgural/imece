@@ -4,7 +4,7 @@ F8, F9 and F10 of backlog #59 (epic #286; the person, 2026-11-08): a Δ
 must provably come from its card's current attempt, and a card must be
 provably finished. Three pieces, one pull request each: attempts and
 outcomes (F8, below, built), a circuit breaker on tries and rounds (F9,
-decided, to come), dependencies between cards (F10, decided, to come).
+below, built), dependencies between cards (F10, decided, to come).
 
 ## Attempts and outcomes (F8)
 
@@ -122,13 +122,91 @@ still becomes its Δ (the proposal is the store's; imece shows it, the
 card does not move). The `board` tool still lists only posted cards;
 F10's ready filter widens it.
 
-## A circuit breaker (F9, to come)
+## A circuit breaker (F9)
 
-Decided: three attempts and three rounds a card. At the cap the
-automatic paths stop (Lonca waking a worker whose proposal came back,
-the leader's `assign` naming the card, the board's offer) and an item
-waits for the person: one more try or round, or the card fails. The
-person's own reject passes: they are deciding already.
+Three tries a card (`TRIES`) and three rounds its change (`ROUNDS`).
+Past them what would go on by itself stops, and an item waits for the
+person: one more, or the card fails for good. The person's own reject
+passes, and so do their notes and a clash they send back: they are
+deciding already.
+
+`Card.breaker: Breaker` counts and keeps what the person said:
+`sent_back` (each time the card's change came back to work: the
+person's reject, notes or clash, or Lonca's queue or a human there
+saying no or finding a conflict, `World::sent_back` from
+`change_rejected` and `cards_landed`; a worker that withdrew its own
+proposal was sent back by nobody), `more_tries` and `more_rounds` (the
+person's yeses past the caps) and `stopped` (failed for good).
+`Card::tries_out` is `attempt >= TRIES + more_tries`, `Card::rounds_out`
+is `sent_back >= ROUNDS + more_rounds`: the third try and the third
+time back are the last that go by themselves.
+
+What stops (`Cap`):
+
+- **Tries.** The leader's `assign` naming a card past its last try is
+  refused (`bus::tries_left`): one still at work is its worker's to
+  finish (`#3 is on try 3, its last`), nothing asked; a failed one opens
+  an `InboxKind::Tries` item for the leader (`World::capped`, one open a
+  card and cap) and the leader hears it is the person's now. That item
+  holds no mail: the leader's team goes on.
+- **Rounds.** Lonca's queue (or a human there) sending back a change for
+  the third time does not wake its worker (`tell_landed`): what it was
+  told waits in its notes, its wake is set, and an `InboxKind::Rounds`
+  item holds it (it holds the worker's mail, record 107, so neither the
+  wake nor the leader's next message starts a turn). A rejection the
+  person worded through imece passes: it is theirs.
+- **The board's offer** never meets it: a claimed card does not go back
+  to the board, so a card there was never tried.
+
+The person's answer (`a` one more, `r` fail it; Home's row says
+`failed 3 tries: one more, or it fails for good` / `its change came back
+3 times: …`, the footer `a  one more   r  fail it`, glyph `⊘`, group
+"questions"): `World::decide_cap` closes the item; yes adds one to
+`more_tries` or `more_rounds`, no sets `stopped` and the card `Failed`
+now. `Live::decide_cap` tells whoever waited with its next prompt: a
+leader hears it may hand the card once more, or that nobody hands it
+again, and wakes for it; a worker allowed one more round wakes to what
+it was told of its change; a worker whose card failed is not woken (its
+wake dropped, a note that it leaves the card) and its leader is, told
+the card failed after N times back. A stopped card is refused to any
+`assign` (`the person failed #3 for good`), and the `board` tool says
+`its tries are out: another waits for the person's yes` or `the person
+failed it for good` where it said `the leader may hand it again`.
+Journal: `Event::Capped` (blocked) and `Event::CapAnswered` (the
+person's); the story `StoryEvent::Capped`/`CapAnswered`; both in both
+languages.
+
+The demo mirrors it (record 31): a card that failed fails each try its
+leader hands it by itself (its story has a failure and its try is at
+most `TRIES`), so the leader's fourth hand meets the breaker; the try the
+person allows goes through. A card whose change failed its tests in the
+queue (each fifth landing) fails them each round after while the person
+allowed none (`Extras.hard`), so its third time back waits for them; the
+round they allow lands. `Sim::decide_cap` as live's; the demo's leader
+goes on with other work while a card waits at its breaker.
+
+- **Growth**: one JSON column a card, an item and two journal lines a
+  breaker; nothing that grows with time.
+- **Concurrency**: the bus answers on the main loop; the Lonca look's
+  result is applied there too, so a cap and a hand never race.
+- **Read cost**: `rounds_out_of` walks the cards once per proposal that
+  came back, not per frame.
+- **Ten times the scale**: the same walks over ten times the cards, per
+  decision.
+- **Migration**: schema 29: `cards.breaker` (`{}`, every card with its
+  tries and rounds whole); `Tries`/`Rounds` and the two events are new
+  serde variants. A card's save sum now takes its attempt and breaker
+  too: a yes past the breaker changes neither column nor owner, and
+  would not have been saved (nor would a try handed back to its own
+  worker at work, from F8).
+- **Failure**: a crash after a cap keeps the item and the card's count;
+  a worker held at its rounds is not woken again at the next start (its
+  wake is memory): the person's yes wakes it.
+
+Gaps. A worker whose card the person failed may still send a `done` for
+it: its change shows and the person rejects it as any (the card stays
+failed). The git path has no automatic round: every change sent back
+there is the person's, so only the tries cap applies to it.
 
 ## Dependencies (F10, to come)
 

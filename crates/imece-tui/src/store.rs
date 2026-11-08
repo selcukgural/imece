@@ -85,7 +85,10 @@ use crate::recall::{Hit, Line};
 /// assign's card and a done's outcome until delivered (`mail.card`,
 /// `mail.outcome`), the `Review` and `Failed` columns, and the `Handed`/
 /// `CardFailed`/`LateDone` events.
-pub const SCHEMA_VERSION: i64 = 28;
+/// 29 (2026-11-08): a card's circuit breaker (`cards.breaker`, record 126,
+/// F9), the `Tries` and `Rounds` inbox kinds and the `Capped`/`CapAnswered`
+/// events.
+pub const SCHEMA_VERSION: i64 = 29;
 /// Trace lines kept per agent, as the world keeps them.
 const TRACE_KEEP: usize = 200;
 /// The file's name under the state directory.
@@ -121,7 +124,8 @@ CREATE TABLE IF NOT EXISTS agents (
 CREATE TABLE IF NOT EXISTS cards (
     id INTEGER PRIMARY KEY, project INTEGER NOT NULL, title TEXT NOT NULL,
     owner INTEGER, col TEXT NOT NULL, started INTEGER NOT NULL, finished INTEGER NOT NULL,
-    paths TEXT NOT NULL DEFAULT '[]', attempt INTEGER NOT NULL DEFAULT 1);
+    paths TEXT NOT NULL DEFAULT '[]', attempt INTEGER NOT NULL DEFAULT 1,
+    breaker TEXT NOT NULL DEFAULT '{}');
 -- Read whole, in key order (`load`): no index beyond the key.
 CREATE TABLE IF NOT EXISTS story (
     card INTEGER NOT NULL, seq INTEGER NOT NULL, tick INTEGER NOT NULL,
@@ -634,6 +638,13 @@ impl Store {
                  ALTER TABLE mail ADD COLUMN outcome TEXT NOT NULL DEFAULT '\"Ok\"';",
             )?;
         }
+        if !self.has_column("cards", "breaker")? {
+            // Nothing counted before: every card starts with its tries and
+            // rounds whole.
+            self.conn.execute_batch(
+                "ALTER TABLE cards ADD COLUMN breaker TEXT NOT NULL DEFAULT '{}';",
+            )?;
+        }
         if !self.has_column("journal", "marked")? {
             self.conn.execute_batch(
                 "ALTER TABLE journal ADD COLUMN marked INTEGER NOT NULL DEFAULT 0;",
@@ -1016,7 +1027,7 @@ impl Store {
             let card = &w.cards[c];
             tx.execute(
                 "INSERT OR REPLACE INTO cards (id, project, title, owner, col, started, finished, \
-                 paths, attempt) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                 paths, attempt, breaker) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
                 params![
                     n(card.id),
                     n(card.project),
@@ -1026,7 +1037,8 @@ impl Store {
                     big(card.started),
                     big(card.finished),
                     serde_json::to_string(&card.paths).unwrap_or_default(),
-                    card.attempt
+                    card.attempt,
+                    serde_json::to_string(&card.breaker).unwrap_or_default()
                 ],
             )?;
         }
@@ -1393,6 +1405,8 @@ impl Store {
                 card.started,
                 card.finished,
                 &card.paths,
+                card.attempt,
+                card.breaker,
             ));
             if s.cards.get(c) != Some(&h) {
                 plan.cards.push(c);
@@ -1721,8 +1735,8 @@ impl Store {
             }
         }
         let mut st = conn.prepare(
-            "SELECT id, project, title, owner, col, started, finished, paths, attempt FROM cards \
-             ORDER BY id",
+            "SELECT id, project, title, owner, col, started, finished, paths, attempt, breaker \
+             FROM cards ORDER BY id",
         )?;
         for row in st.query_map([], |r| {
             Ok(Card {
@@ -1737,6 +1751,8 @@ impl Store {
                 started: ubig(r.get(5)?),
                 finished: ubig(r.get(6)?),
                 attempt: r.get(8)?,
+                breaker: serde_json::from_str(&r.get::<_, String>(9)?)
+                    .map_err(|e| bad(format!("breaker: {e}")))?,
             })
         })? {
             let c = row?;
@@ -2256,6 +2272,7 @@ mod tests {
                     started: 10,
                     finished: 0,
                     attempt: 3,
+                    breaker: Default::default(),
                 },
                 Card {
                     id: 1,
@@ -2275,6 +2292,7 @@ mod tests {
                     started: 20,
                     finished: 0,
                     attempt: 0,
+                    breaker: Default::default(),
                 },
                 Card {
                     id: 2,
@@ -2288,6 +2306,7 @@ mod tests {
                     started: 5,
                     finished: 9,
                     attempt: 1,
+                    breaker: Default::default(),
                 },
             ],
             journal: vec![
@@ -3075,6 +3094,7 @@ mod tests {
                         started: 40,
                         finished: 0,
                         attempt: 1,
+                        breaker: Default::default(),
                     })
                 }),
             ),
@@ -4180,13 +4200,13 @@ mod tests {
                 )
                 .unwrap();
             assert_eq!(
-                version, "28",
+                version, "29",
                 "the sent table, the Fault kind, archives, restores, start points, standing yes, the \
                  recall index, forks, paid kinds, reviews, no vendor, the check on a change, what \
-                 it cost, the paths a card owns, the plan gate, a project's Lonca repository and \
-                 a card's attempts: an older imece knows none"
+                 it cost, the paths a card owns, the plan gate, a project's Lonca repository, \
+                 a card's attempts and its breaker: an older imece knows none"
             );
-            assert_eq!(SCHEMA_VERSION, 28);
+            assert_eq!(SCHEMA_VERSION, 29);
         }
         let back = Store::open(&path)
             .unwrap()
@@ -5180,6 +5200,74 @@ mod tests {
             Ok(_) => panic!("a file imece did not write loaded"),
         };
         assert!(why.contains("outcome"), "{why}");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn a_file_of_schema_28_gets_the_breaker_column_and_keeps_what_the_person_said() {
+        let d = dir("schema28");
+        std::fs::create_dir_all(&d).unwrap();
+        let path = d.join(FILE);
+        {
+            // A whole file as schema 28 wrote it: no breaker.
+            let mut store = Store::open(&path).unwrap();
+            assert!(store.save(&world(), &kept().kept()).unwrap());
+            store
+                .raw()
+                .execute_batch(
+                    "ALTER TABLE cards DROP COLUMN breaker;
+                     UPDATE meta SET value = '28' WHERE key = 'schema_version';",
+                )
+                .unwrap();
+        }
+        let mut store = Store::open(&path).unwrap();
+        let back = store.load(100).unwrap().expect("a world");
+        assert!(
+            (back.world.cards.iter()).all(|c| c.breaker == Breaker::default()),
+            "nothing counted before"
+        );
+        // Each part is saved on its own, the card's column unmoved.
+        let k = back.found();
+        let mut w = back.world;
+        for (n, set) in [
+            |b: &mut Breaker| b.sent_back = 2,
+            |b: &mut Breaker| b.more_tries = 1,
+            |b: &mut Breaker| b.more_rounds = 3,
+            |b: &mut Breaker| b.stopped = true,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            set(&mut w.cards[0].breaker);
+            assert!(store.save(&w, &k.kept()).unwrap(), "part {n} saved");
+            let back = store.load(100).unwrap().expect("a world");
+            assert_eq!(back.world.cards[0].breaker, w.cards[0].breaker, "part {n}");
+        }
+        assert_eq!(
+            w.cards[0].breaker,
+            Breaker {
+                sent_back: 2,
+                more_tries: 1,
+                more_rounds: 3,
+                stopped: true
+            }
+        );
+        // A try alone is saved too.
+        w.cards[0].attempt += 1;
+        assert!(store.save(&w, &k.kept()).unwrap());
+        let back = store.load(100).unwrap().expect("a world");
+        assert_eq!(back.world.cards[0].attempt, w.cards[0].attempt);
+        assert!(!store.save(&w, &k.kept()).unwrap(), "nothing moved");
+        // A breaker that is no JSON is a file imece did not write.
+        store
+            .raw()
+            .execute_batch("UPDATE cards SET breaker = 'x';")
+            .unwrap();
+        let why = match store.load(100) {
+            Err(e) => e.to_string(),
+            Ok(_) => panic!("a file imece did not write loaded"),
+        };
+        assert!(why.contains("breaker"), "{why}");
         let _ = std::fs::remove_dir_all(&d);
     }
 

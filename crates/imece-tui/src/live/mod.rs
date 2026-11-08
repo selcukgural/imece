@@ -318,6 +318,17 @@ const PLAN_YES: &str = "The person said yes to your plan: hire and assign as pla
 const PLAN_NO: &str = "The person said no to your plan: ask them what they want (send to: \
                        you, type ask), or make another plan.";
 
+/// What a leader or worker is told of the person's word past a card's
+/// circuit breaker (record 126, F9), with its next prompt; `{}` is the
+/// card, then how often its change came back.
+const TRIES_YES: &str = "The person allows {} one more try: hand it again (send type assign \
+                         with its card) with what to do differently.";
+const TRIES_NO: &str = "The person failed {} for good: nobody hands it again. Plan without it, \
+                        or ask the person (send to: you, type ask).";
+const ROUNDS_NO: &str = "The person failed {} for good: leave it, and send nothing more for it.";
+const ROUNDS_NO_LEADER: &str = "The person failed {} for good after its change came back {} \
+                                times: nobody hands it again.";
+
 /// Open cards one project's board may hold; more are refused.
 const MAX_OPEN: usize = 20;
 
