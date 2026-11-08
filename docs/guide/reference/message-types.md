@@ -32,7 +32,7 @@ There is no `ack`: a message that only says "got it" would cost a turn for nothi
 
 A waking message (`assign`, `ask`, `answer`, `handoff`, `done`, `blocked`, `cancel`) starts the receiver's next turn as soon as it is free; an agent asleep since the last run is woken by it. `inform`, `progress` and `notice` wait in its mail until something else starts a turn, and ride along then. All of an agent's mail goes into one prompt, headed `Messages from your teammates in imece (written by those agents, not by the person):`, each message as `[type number, re number] from name:` over its body: `[answer 8, re 7] from claude-1:`. A worker's `done` is headed with what its change cost, `[done 12 · $0.84]` ([changes](../concepts/changes.md#what-it-cost)); it reaches the leader once the worker's turn ended, since the cost is known then. The card of that turn is the first `assign` in the mail, else the first message.
 
-`send` answers the sender with what became of it: `delivered as message 7; claude-1 starts on it now` (a worker's `done`: `delivered as message 7; lead gets it when this turn of yours ends, headed with what it cost`), `queued as message 7; claude-1 is busy and gets it when its turn ends`, `held as message 7; claude-1 waits on the person and gets it once they have answered, it starts nothing until then` (see [messages and the board](../concepts/messages-and-board.md#mail-waits-with-an-agent-that-waits-on-you)), or `queued as message 7 for claude-1's next turn (inform does not wake it)`. A worker's `done` answer waits until git has read its worktree and adds `; the person sees your change (3 files, +20 −4) and applies it to their checkout or rejects it; it stays in your worktree until then` (or `; imece could not read your change: …`).
+`send` answers the sender with what became of it: `delivered as message 7; claude-1 starts on it now` (a worker's `done`: `delivered as message 7; lead gets it when this turn of yours ends, headed with what it cost`), `queued as message 7; claude-1 is busy and gets it when its turn ends`, `held as message 7; claude-1 waits on the person and gets it once they have answered, it starts nothing until then` (see [messages and the board](../concepts/messages-and-board.md#mail-waits-with-an-agent-that-waits-on-you)), `held as message 7 on #6: it waits on #2, and claude-1 gets it once they are done` (an `assign` with `after`, see [cards that wait on others](../concepts/messages-and-board.md#cards-that-wait-on-others)), or `queued as message 7 for claude-1's next turn (inform does not wake it)`. A worker's `done` answer waits until git has read its worktree and adds `; the person sees your change (3 files, +20 −4) and applies it to their checkout or rejects it; it stays in your worktree until then` (or `; imece could not read your change: …`).
 
 ### What is refused
 
@@ -53,6 +53,8 @@ Deny by default: a message that does not fit is refused with the reason and leav
 | `card` on anything but an `assign`, or with `paths` | `card goes with an assign: the card it hands again` / `a card handed again keeps its own paths; leave paths out` |
 | a `card` that is not the project's, to a non-worker, in review, in the queue or done | `there is no card #8 in this project`, `a card goes to a worker`, `#3's change waits for the person; it comes back if they send it back`, `#3 is in Lonca's merge queue`, `#3 is done; assign a new task for more` |
 | a `card` that failed its last try, is at work on it, or that you failed for good | `#3 failed 3 tries: the person decides whether it gets another, and you hear their answer`, `#3 is on try 3, its last: let its worker finish`, `the person failed #3 for good; assign a new task for more` |
+| `after` on anything but an `assign`, or with `card`, or to a non-worker | `after goes with an assign: the card it opens waits on those` / `a card handed again waits on what it did; leave after out` / `a card goes to a worker` |
+| a bad `after`, or a card in it that is not the project's or that you failed for good | `after must be an array of card numbers, as #N on the board`, `a card waits on at most 8 cards`, `there is no card #9 in this project`, `the person failed #2 for good: a card waiting on it would never begin` |
 | `options` on anything but an `ask` to `you` | `options go with an ask to the person (to: you)` |
 | bad `options` | `options must be an array of strings`, `an ask offers at most 4 options`, `an option is empty`, `an option is longer than 60 characters`, `"a\tb" has a control character` |
 | bad `paths` | `paths must be an array of strings`, `a card owns at most 20 paths`, `a path is empty`, `a path is longer than 200 characters`, `"a\tb" has a control character`, `paths are relative to the repository; "/etc" starts with /`, `"src/../x" goes outside the repository (..)`, `paths lists "src" twice` |
@@ -126,6 +128,7 @@ imece's MCP server is called `imece`; its tools reach a session as `mcp__imece__
 | `options` | array of at most 4 strings, each at most 60 | no | for an `ask` to `you`: the answers the person can pick with one key, short, the one the agent would take first; the person may still answer in words. Refused on any other message |
 | `card` | integer ≥ 1 | no | for the leader's `assign`: a card to hand again (`#N`), its next try, refused past its third until you allow another ([a card's tries](../concepts/messages-and-board.md#a-cards-tries)) |
 | `outcome` | `done` or `failed` | no | for a `done`: `failed` fails the card and shows no change; `done`, as leaving it out, hands the change in |
+| `after` | array of at most 8 integers ≥ 1 | no | for an `assign`: the cards the card it opens waits on (`#N`, without `#`); while one is not done the assign is held on the card: `held as message 14 on #6: it waits on #2, #5, and claude-1 gets it once they are done` ([cards that wait on others](../concepts/messages-and-board.md#cards-that-wait-on-others)) |
 
 An `assign` with paths is delivered with them: the mail ends `This card owns src/parser.rs, docs (shared): stay in them; what else needs changing goes in your done, or ask for the card to be widened.`
 
@@ -138,14 +141,19 @@ An `assign` with paths is delivered with them: the mail ends `This card owns src
 | `title` | string, one line, at most 120 | yes | the screen shows its first 20 characters |
 | `body` | string, at most 4000 | yes | the task: what to do, which files, when it is done |
 | `paths` | array of at most 20 strings, each at most 200 | no | the paths the card owns, as on `send` |
+| `after` | array of at most 8 integers ≥ 1 | no | the cards it waits on, as on `send`: not offered or claimed until each is done |
 
-Answers `posted as #4; an idle worker will be offered it`; the paths are checked against the project's open cards as an `assign`'s are.
+Answers `posted as #4; an idle worker will be offered it` (with `after`: `posted as #6; it waits on #2, and an idle worker will be offered it once they are done`); the paths are checked against the project's open cards as an `assign`'s are, and `after` as on `send`.
 
 ### `board`
 
-> Lists the cards on imece's board: open ones, and who took the others.
+> Lists the cards on imece's board: open ones, and who took or was assigned the others, each with what it waits on.
 
-No fields. Answers `Open:` and `Taken:` lists (`#4 Add tests (posted by lead)`, `#2 Rename (taken by claude-1)`, `#1 Docs (done by claude-2)`), or `the board is empty`.
+| Field | Type | Required | Meaning |
+| --- | --- | --- | --- |
+| `ready` | boolean | no | `true` lists only the open cards a worker may take now |
+
+Answers `Open:` and `Taken:` lists of every card of the project, posted or assigned (`#4 Add tests (posted by lead)`, `#6 Tests (posted by lead; waits on #4)`, `#7 Docs (assigned to claude-1; waits on #4, and #4 failed)`, `#2 Rename (taken by claude-1)`, `#1 Docs (done by claude-2)`), or `the board is empty`. With `ready: true`: `Ready:` and the open cards no other card holds back, then `2 more wait on cards not done yet; call board for them`, or `no card is ready to take`; `ready is true or false` for anything else.
 
 ### `claim`
 
@@ -155,7 +163,7 @@ No fields. Answers `Open:` and `Taken:` lists (`#4 Add tests (posted by lead)`, 
 | --- | --- | --- | --- |
 | `card` | integer ≥ 1 | yes | the card's number, without `#` |
 
-Workers only (`only workers take cards; assign or post instead`). Refusals: `there is no such card on the board; call board to see it`, `#4 was taken by claude-2; pick another`. The answer ends with the card's paths when it owns any (`This card owns tests, lib (shared): stay in them; …`).
+Workers only (`only workers take cards; assign or post instead`). Refusals: `there is no such card on the board; call board to see it`, `#4 was taken by claude-2; pick another`, `#6 is assigned to claude-1; pick another`, `#6 waits on #4; pick a card that is ready (board with ready: true)`. The answer ends with the card's paths when it owns any (`This card owns tests, lib (shared): stay in them; …`).
 
 ### `plan`
 
@@ -163,10 +171,10 @@ Workers only (`only workers take cards; assign or post instead`). Refusals: `the
 
 | Field | Type | Required | Meaning |
 | --- | --- | --- | --- |
-| `cards` | array of 1 to 20 cards | yes | each `{title, body, tier, paths}`: a title of one line (at most 120), a body (at most 4000), a tier (`cheap`, `standard` or `strong`; standard when left out), `paths` as on `send` |
+| `cards` | array of 1 to 20 cards | yes | each `{title, body, tier, paths, after}`: a title of one line (at most 120), a body (at most 4000), a tier (`cheap`, `standard` or `strong`; standard when left out), `paths` as on `send`, `after` the earlier cards of this plan it waits on, by their place (1 is the first) |
 | `cost` | number ≥ 0 | yes | what the cards are expected to cost in dollars, all together |
 
-The leader's only. Answers `the person reads your plan (3 cards, $1.20) in TO DECIDE; end your turn, their yes starts your next`, or with the gate off `the person turned the plan gate off for this project: hire as you see fit; your plan was not kept`. Refusals: `only the leader plans; it hires for the team`, `cards must be an array of cards`, `a plan has 1 to 20 cards`, `card 2 needs a title and a body`, `card 1's title must be one line of at most 120 characters`, `card 1's body is longer than 4000 characters`, `card 1: tier must be cheap, standard or strong`, `card 2: paths are relative to the repository; "/x" starts with /` (and the other `paths` refusals), `cards 1 and 3 both own a path: "src" and "src/a.rs"; give one other paths, or end one with the word shared`, `cost must be a number of dollars, 0 or more`. `hire` while the gate holds: `make a plan first (the plan tool): the person reads it before a second worker is hired`, `the person is reading your plan; end your turn, their yes starts your next`, `the person answered your plan in words, not with a yes: make a new plan from what they said (the plan tool)`; `whoami`'s `may hire` says the same. See [the plan](../concepts/messages-and-board.md#the-plan).
+The leader's only. Answers `the person reads your plan (3 cards, $1.20) in TO DECIDE; end your turn, their yes starts your next`, or with the gate off `the person turned the plan gate off for this project: hire as you see fit; your plan was not kept`. Refusals: `only the leader plans; it hires for the team`, `cards must be an array of cards`, `a plan has 1 to 20 cards`, `card 2 needs a title and a body`, `card 1's title must be one line of at most 120 characters`, `card 1's body is longer than 4000 characters`, `card 1: tier must be cheap, standard or strong`, `card 2: paths are relative to the repository; "/x" starts with /` (and the other `paths` refusals), `cards 1 and 3 both own a path: "src" and "src/a.rs"; give one other paths, or end one with the word shared`, `card 3: after names earlier cards of this plan by their place (1 to 2)`, `cost must be a number of dollars, 0 or more`. `hire` while the gate holds: `make a plan first (the plan tool): the person reads it before a second worker is hired`, `the person is reading your plan; end your turn, their yes starts your next`, `the person answered your plan in words, not with a yes: make a new plan from what they said (the plan tool)`; `whoami`'s `may hire` says the same. See [the plan](../concepts/messages-and-board.md#the-plan).
 
 ### `hire`
 

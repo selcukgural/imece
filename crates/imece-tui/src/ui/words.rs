@@ -28,6 +28,12 @@ pub(crate) fn card_ref(c: CardId) -> String {
     format!("#{}", c + 1)
 }
 
+/// Cards as the board names them, in a row: `#2, #5`.
+pub(crate) fn card_refs(cs: &[CardId]) -> String {
+    let refs: Vec<String> = cs.iter().map(|&c| card_ref(c)).collect();
+    refs.join(", ")
+}
+
 /// A size in bytes in the largest unit that keeps it whole: `512 B`,
 /// `3 KiB`, `40 MiB`, `2 GiB`.
 pub fn size(bytes: u64) -> String {
@@ -159,6 +165,19 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
                 None => fill(t.ev_handed, &[name(w, *agent), &card, title, &n]),
             }
         }
+        Event::Held { agent, card, on } => fill(
+            t.ev_held,
+            &[
+                name(w, *agent),
+                &card_ref(*card),
+                &w.cards[*card].title,
+                &card_refs(on),
+            ],
+        ),
+        Event::Released { agent, card } => fill(
+            t.ev_released,
+            &[name(w, *agent), &card_ref(*card), &w.cards[*card].title],
+        ),
         Event::CardFailed { agent, card, why } => fill(
             t.ev_card_failed,
             &[
@@ -633,6 +652,7 @@ pub fn story(lang: Lang, w: &World, card: &Card, e: &StoryEvent) -> String {
             ),
             None => fill(t.st_handed, &[name(w, *to), &attempt.to_string()]),
         },
+        StoryEvent::Held { to, on } => fill(t.st_held, &[name(w, *to), &card_refs(on)]),
         StoryEvent::Failed(why) => fill(t.st_failed, &[why]),
         StoryEvent::LateDone { from } => fill(t.st_late_done, &[name(w, *from)]),
         StoryEvent::Capped { cap, count } => {
@@ -2179,6 +2199,45 @@ mod tests {
     }
 
     #[test]
+    fn a_card_held_and_released_is_said_in_both_languages() {
+        let mut w = crate::live::testing::team(2);
+        let c = crate::live::testing::with_card(&mut w, 1);
+        let d = crate::live::testing::with_card(&mut w, 2);
+        let say = |lang, e: Event| event(lang, &w, &e);
+        let held = Event::Held {
+            agent: 2,
+            card: d,
+            on: vec![c, d],
+        };
+        assert_eq!(
+            say(Lang::En, held.clone()),
+            "claude-2 gets #2 fix it after #1, #2"
+        );
+        assert_eq!(
+            say(Lang::Tr, held),
+            "claude-2 alacak: #2 fix it, #1, #2 bitince"
+        );
+        let released = Event::Released { agent: 2, card: d };
+        assert_eq!(
+            say(Lang::En, released.clone()),
+            "claude-2 begins #2 fix it: what it waited on is done"
+        );
+        assert_eq!(
+            say(Lang::Tr, released),
+            "claude-2 başladı: #2 fix it, beklediği bitti"
+        );
+        let st = StoryEvent::Held { to: 2, on: vec![c] };
+        assert_eq!(
+            story(Lang::En, &w, &w.cards[d], &st),
+            "for claude-2, after #1"
+        );
+        assert_eq!(
+            story(Lang::Tr, &w, &w.cards[d], &st),
+            "claude-2 için, #1 bitince"
+        );
+    }
+
+    #[test]
     fn a_card_handed_failed_or_done_late_is_said_in_both_languages() {
         let mut w = crate::live::testing::team(2);
         let c = crate::live::testing::with_card(&mut w, 1);
@@ -2446,6 +2505,7 @@ mod tests {
                         tier: "cheap".into(),
                         paths: Vec::new(),
                         body: "b".into(),
+                        after: Vec::new(),
                     };
                     2
                 ],

@@ -62,6 +62,7 @@ Bir akorun ilk tuşu ikincisini beklerken satır ikinci tuşun ne olabileceğini
 | `&`  `:goto` | bir agent'a ya da projeye git: bir ad yazın, `1`-`9` listedeki n'inci, `!` yalnız sizi bekleyenleri tutar; `&#` kartlara döner |
 | `1`-`9` | Ana ekranda ya da bir sorunun detayında, elde yanıt sunan bir soru varken birini seçer ([sorular](../concepts/approvals-and-questions.md#sorular-)); rakamlar başka bir şey yapmaz. Bir zamanlar açtıkları görünümler artık adıyla açılan pencerelerdir: `:board`, `:code`, `:timeline` ([pano ve kod haritası](board-and-code-map.md), [zaman şeridi](timeline.md)); `:salon` ve [`:home`](home.md) iki görünümdür |
 | `[`  `]` | zaman şeridinin penceresinde: bir sütun 5 sn · 30 sn · 1 dk |
+| `r` | panonun penceresinde: yalnız alınabilecek kartlar (beklediği bitmemiş kart yok), yine: hepsi ([pano](board-and-code-map.md#pano)) |
 | `↑` `↓`  `j` `k` | seç |
 | `gg`  `G`  `gd`  `gw` | ilk / son satır · ana ekranda: karar bekleyen ilk satır · çalışan ilk satır |
 | `^d` `^u` `^f` `^b` | yarım sayfa / tam sayfa |

@@ -1258,6 +1258,7 @@ mod tests {
                 finished: 0,
                 attempt: 1,
                 breaker: Default::default(),
+                after: Vec::new(),
             });
         }
         w.projects[1].closed = true;

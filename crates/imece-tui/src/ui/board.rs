@@ -20,9 +20,12 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     let waiting = column_index(Column::Waiting);
     let done = column_index(Column::Done);
     for (index, (title, rect)) in t.columns.into_iter().zip(areas).enumerate() {
+        // The ready filter leaves out what waits on other cards (record
+        // 126, F10).
         let mut cards: Vec<&Card> = w
             .shown_cards()
             .filter(|c| board_column(w, c) == index)
+            .filter(|c| !app.board_ready || !waits(w, c))
             .collect();
         if index == done || index == TO_REVIEW {
             cards.sort_by_key(|c| std::cmp::Reverse(c.finished));
@@ -52,6 +55,10 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
                 Span::styled(tries, dim()),
             ]));
             let mut spans = vec![Span::raw("    ")];
+            // A card waiting says on what, and a held one for whom.
+            if index == waiting {
+                spans.extend(waiting_spans(t, w, c));
+            }
             // The owner's state says what the card's agent does now, which
             // is the card's only while it is at work on it.
             let live = c.column == Column::Working || c.column == Column::Verifying;
@@ -91,4 +98,40 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
         }
         f.render_widget(Paragraph::new(lines), inner);
     }
+}
+
+/// Whether card `c` waits for other cards on the board (record 126, F10).
+fn waits(w: &World, c: &Card) -> bool {
+    c.column == Column::Waiting && !w.ready(c.id)
+}
+
+/// The cards the ready filter leaves out: the shown ones waiting on others.
+pub fn hidden(w: &World) -> usize {
+    w.shown_cards().filter(|c| waits(w, c)).count()
+}
+
+/// What a waiting card's second line says (record 126, F10): the card it
+/// waits on that failed, else those not done, then whom an assign holds it
+/// for; nothing for a card any worker may take.
+pub(crate) fn waiting_spans(t: &crate::i18n::Text, w: &World, c: &Card) -> Vec<Span<'static>> {
+    let mut spans = Vec::new();
+    if let Some(f) = w.blocked_on(c.id) {
+        spans.push(Span::styled(
+            fill(t.board_blocked, &[&format!("#{}", f + 1)]),
+            fg(pal().bad),
+        ));
+    } else if !w.ready(c.id) {
+        spans.push(Span::styled(
+            fill(t.board_after, &[&words::card_refs(&w.waits_on(c.id))]),
+            dim(),
+        ));
+    }
+    if let Some(o) = c.owner {
+        let gap = if spans.is_empty() { "" } else { " " };
+        spans.push(Span::styled(
+            format!("{gap}→ {}", clean(&w.agents[o].name)),
+            fg(pal().agent),
+        ));
+    }
+    spans
 }

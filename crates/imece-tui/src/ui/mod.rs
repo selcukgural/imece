@@ -3705,13 +3705,14 @@ mod tests {
             finished: 0,
             attempt: 1,
             breaker: Default::default(),
+            after: Vec::new(),
         };
         app.world.cards = vec![
             card(0, Some(w[0]), Column::Working),
             card(1, Some(w[1]), Column::Working),
-            card(2, Some(w[2]), Column::Waiting),
+            card(2, None, Column::Waiting),
             card(3, Some(w[3]), Column::Done),
-            card(5, None, Column::Waiting),
+            card(4, None, Column::Waiting),
         ];
         app.world.agents[w[1]].status = Status::Idle;
         app.world.agents[w[3]].status = Status::Working;
@@ -3735,12 +3736,12 @@ mod tests {
             "the second tone"
         );
         assert_eq!(first[(x, y + 2)].symbol(), "○", "the idle owner");
-        // A waiting card shows no owner and takes one row: the next
-        // card's title right under it.
+        // A waiting card nobody holds and that waits on nothing takes one
+        // row: the next card's title right under it.
         assert_eq!(first[(6, 4)].symbol(), "#");
         assert_eq!(first[(7, 4)].symbol(), "3");
         assert_eq!(first[(6, 5)].symbol(), "#");
-        assert_eq!(first[(7, 5)].symbol(), "6");
+        assert_eq!(first[(7, 5)].symbol(), "5");
         assert!(!first[(x, y + 2)].modifier.contains(Modifier::DIM));
         // The next beat draws the first tone, whole.
         app.drawn(app.after(ms(600)));
@@ -4635,6 +4636,7 @@ mod tests {
             finished: 0,
             attempt: 1,
             breaker: Default::default(),
+            after: Vec::new(),
         }
     }
 
@@ -6126,6 +6128,7 @@ mod tests {
             finished: 0,
             attempt: 1,
             breaker: Default::default(),
+            after: Vec::new(),
         };
         app.world.cards = vec![
             card(0, Column::Done),
@@ -9026,6 +9029,7 @@ mod tests {
                 finished: 0,
                 attempt: 1,
                 breaker: Default::default(),
+                after: Vec::new(),
             };
             app.world.cards.clear();
             app.world.cards.push(card(0, 1, Column::Done));
@@ -9321,6 +9325,7 @@ mod tests {
             finished: 0,
             attempt: 1,
             breaker: Default::default(),
+            after: Vec::new(),
         });
         let board = render(&app, 200, 40);
         for title in &theirs {
@@ -9492,7 +9497,11 @@ mod tests {
         let keys = overlay::help_keys(Lang::En, false);
         // A long text wraps under its key, so the key is what the line
         // surely carries.
-        let second: Vec<&str> = keys[keys.len() / 2..].iter().map(|k| k.0).collect();
+        // A key of one letter (r) is in every line's words: left out.
+        let second: Vec<&str> = (keys[keys.len() / 2..].iter())
+            .map(|k| k.0)
+            .filter(|k| k.chars().count() > 1)
+            .collect();
         let line = wide.lines().find(|l| l.contains("gg  G")).unwrap();
         assert!(
             second.iter().any(|o| line.contains(o)),
@@ -13125,12 +13134,14 @@ after | not a table";
                     tier: "cheap".into(),
                     paths: Vec::new(),
                     body: "one".into(),
+                    after: Vec::new(),
                 },
                 Planned {
                     title: "b".into(),
                     tier: "strong".into(),
                     paths: vec![Owned::new("x")],
                     body: "one\ntwo\nthree".into(),
+                    after: vec![1],
                 },
             ],
             cost: 0,
@@ -13146,6 +13157,7 @@ after | not a table";
                 "",
                 "2. b · strong",
                 "   owns x",
+                "   after 1 above",
                 "   one",
                 "   two",
                 "   three",
@@ -13154,6 +13166,105 @@ after | not a table";
         );
         assert_eq!(lines[0].spans[0].style, bold(pal().strong));
         assert_eq!(lines[4].spans[0].style, dim());
+        assert_eq!(lines[5].spans[0].style, dim());
+    }
+
+    #[test]
+    fn the_board_says_what_a_card_waits_on_and_r_leaves_out_what_is_not_ready() {
+        let (mut app, w, _) = calm_team();
+        app.window = Some(Window::Board);
+        let name = |app: &App, id: AgentId| app.world.agents[id].name.clone();
+        let card = |id, owner, column, after: Vec<CardId>| Card {
+            id,
+            project: 0,
+            title: format!("card {id}"),
+            owner,
+            column,
+            story: Vec::new(),
+            symbols: Vec::new(),
+            paths: Vec::new(),
+            started: 0,
+            finished: 0,
+            attempt: 1,
+            breaker: Default::default(),
+            after,
+        };
+        app.world.cards = vec![
+            card(0, Some(w[0]), Column::Working, vec![]),
+            card(1, None, Column::Waiting, vec![0]),
+            card(2, Some(w[1]), Column::Waiting, vec![0]),
+            card(3, Some(w[2]), Column::Failed, vec![]),
+            card(4, None, Column::Waiting, vec![0, 3]),
+            card(5, None, Column::Waiting, vec![]),
+            card(6, Some(w[3]), Column::Waiting, vec![]),
+        ];
+        let s = render(&app, 200, 40);
+        assert!(s.contains(" BOARD · cards: 7 · r ready only "), "{s}");
+        assert!(s.contains("⧗ after #1 "), "{s}");
+        assert!(
+            s.contains(&format!("⧗ after #1 → {}", name(&app, w[1]))),
+            "{s}"
+        );
+        assert!(s.contains("✕ #4 failed "), "{s}");
+        assert!(s.contains(&format!("    → {}", name(&app, w[3]))), "{s}");
+        assert!(s.contains("#6  card 5"), "{s}");
+        // Ready only: the three that wait are gone, and the title says so.
+        app.board_ready = true;
+        let s = render(&app, 200, 40);
+        assert!(
+            s.contains(" BOARD · cards: 7 · ready only: 3 waiting hidden · r all "),
+            "{s}"
+        );
+        for gone in ["card 1", "card 2", "card 4", "⧗", "✕ #4"] {
+            assert!(!s.contains(gone), "{gone}:\n{s}");
+        }
+        for kept in ["card 0", "card 3", "card 5", "card 6"] {
+            assert!(s.contains(kept), "{kept}:\n{s}");
+        }
+        assert_eq!(board::hidden(&app.world), 3);
+        // Their marks in colour: failed in the bad one, waiting dim.
+        let t = Lang::En.text();
+        let spans = board_waiting_spans(t, &app.world, 4);
+        assert_eq!(spans[0].style, fg(pal().bad));
+        let spans = board_waiting_spans(t, &app.world, 1);
+        assert_eq!(spans[0].style, dim());
+        assert!(board_waiting_spans(t, &app.world, 5).is_empty());
+    }
+
+    fn board_waiting_spans(t: &crate::i18n::Text, w: &World, c: CardId) -> Vec<Span<'static>> {
+        board::waiting_spans(t, w, &w.cards[c])
+    }
+
+    #[test]
+    fn a_card_s_screen_says_what_it_waits_on_done_failed_or_not_yet() {
+        let mut app = on_card_one(Lang::En);
+        let n = app.world.cards.len();
+        assert!(n >= 4, "{n}");
+        app.world.cards[1].column = Column::Done;
+        app.world.cards[2].column = Column::Failed;
+        app.world.cards[3].column = Column::Working;
+        app.world.cards[0].after = vec![1, 2, 3];
+        let s = render(&app, 140, 38);
+        assert!(s.contains("after  #2 ✓, #3 ✕, #4 ⧗"), "{s}");
+        let t = Lang::En.text();
+        let spans = card::after_spans(t, &app.world, &app.world.cards[0]);
+        let styles: Vec<Style> = spans.iter().map(|s| s.style).collect();
+        assert_eq!(
+            styles,
+            [
+                dim(),
+                Style::default(),
+                fg(pal().ok),
+                dim(),
+                Style::default(),
+                fg(pal().bad),
+                dim(),
+                Style::default(),
+                dim()
+            ]
+        );
+        app.world.cards[0].after.clear();
+        assert!(!render(&app, 140, 38).contains("after  "));
     }
 
     #[test]

@@ -1241,6 +1241,9 @@ pub struct Breaker {
     pub stopped: bool,
 }
 
+/// The most cards one card waits on (record 126, F10).
+pub const AFTER_MAX: usize = 8;
+
 /// What a worker's `done` is for (record 126).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DoneFor {
@@ -1344,6 +1347,12 @@ pub enum StoryEvent {
         to: AgentId,
         attempt: u32,
     },
+    /// An assign gave the card to `to` while it waited on the cards `on`
+    /// (record 126, F10): it goes once they are done.
+    Held {
+        to: AgentId,
+        on: Vec<CardId>,
+    },
     /// The owner's `done` said the card failed, and why: no change.
     Failed(String),
     /// A `done` came from `from` after the card was handed again: it
@@ -1383,7 +1392,8 @@ impl StoryEvent {
             | StoryEvent::WritingTests
             | StoryEvent::BlockedOn(_)
             | StoryEvent::Posted { .. }
-            | StoryEvent::Handed { .. } => StoryKind::Intent,
+            | StoryEvent::Handed { .. }
+            | StoryEvent::Held { .. } => StoryKind::Intent,
             StoryEvent::Decision(_) => StoryKind::Decision,
             StoryEvent::Asked { .. }
             | StoryEvent::Answered { .. }
@@ -1440,6 +1450,11 @@ pub struct Card {
     pub attempt: u32,
     /// Its circuit breaker (record 126, F9).
     pub breaker: Breaker,
+    /// The cards it waits on (record 126, F10): it is not offered, claimed
+    /// or begun until each of them is done. Given with the `assign` or
+    /// `post` that made it, never changed; only older cards of its
+    /// project, so no card waits on itself through others.
+    pub after: Vec<CardId>,
 }
 
 /// The part an agent had in a card, for the card's screen.
@@ -1765,6 +1780,18 @@ pub enum Event {
         card: CardId,
         from: Option<AgentId>,
         attempt: u32,
+    },
+    /// An assign gave card `card` to `agent` while it waited on the cards
+    /// `on` (record 126, F10): held until they are done.
+    Held {
+        agent: AgentId,
+        card: CardId,
+        on: Vec<CardId>,
+    },
+    /// What held card `card` waited on is done: `agent` begins it now.
+    Released {
+        agent: AgentId,
+        card: CardId,
     },
     /// Worker `agent`'s `done` said card `card` failed; `why` is its first
     /// line. No change comes of it.
@@ -2199,9 +2226,11 @@ impl Event {
             | Event::Forked { .. }
             | Event::Planned { .. }
             | Event::Left { .. } => EntryKind::Plan,
-            Event::Assign { .. } | Event::Claimed { .. } | Event::Handed { .. } => {
-                EntryKind::Assign
-            }
+            Event::Assign { .. }
+            | Event::Claimed { .. }
+            | Event::Handed { .. }
+            | Event::Held { .. }
+            | Event::Released { .. } => EntryKind::Assign,
             Event::Talk { .. }
             | Event::Replied { .. }
             | Event::Sent { .. }
@@ -2301,6 +2330,8 @@ impl Event {
             | Event::Merged { card, .. }
             | Event::Posted { card, .. }
             | Event::Handed { card, .. }
+            | Event::Held { card, .. }
+            | Event::Released { card, .. }
             | Event::CardFailed { card, .. }
             | Event::LateDone { card, .. }
             | Event::Capped { card, .. }
@@ -2371,6 +2402,8 @@ impl Event {
             | Event::CheckAnswered { agent, .. }
             | Event::Strayed { agent, .. }
             | Event::Handed { agent, .. }
+            | Event::Held { agent, .. }
+            | Event::Released { agent, .. }
             | Event::CardFailed { agent, .. }
             | Event::LateDone { agent, .. }
             | Event::Capped { agent, .. }
@@ -2850,6 +2883,10 @@ pub struct Planned {
     pub tier: String,
     pub paths: Vec<Owned>,
     pub body: String,
+    /// The cards of the same plan it waits on (record 126, F10), by their
+    /// place in it from 1, each an earlier one.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub after: Vec<usize>,
 }
 
 /// A leader's plan as the person reads it before a second worker is
@@ -4356,6 +4393,60 @@ impl World {
         });
     }
 
+    /// Whether card `c` may begin (record 126, F10): every card it waits
+    /// on is done.
+    pub fn ready(&self, c: CardId) -> bool {
+        (self.cards[c].after.iter()).all(|&d| self.cards[d].column == Column::Done)
+    }
+
+    /// The cards card `c` still waits on, oldest first.
+    pub fn waits_on(&self, c: CardId) -> Vec<CardId> {
+        (self.cards[c].after.iter().copied())
+            .filter(|&d| self.cards[d].column != Column::Done)
+            .collect()
+    }
+
+    /// The first card `c` waits on that failed: until it is handed again
+    /// and done, `c` does not begin.
+    pub fn blocked_on(&self, c: CardId) -> Option<CardId> {
+        (self.cards[c].after.iter().copied()).find(|&d| self.cards[d].column == Column::Failed)
+    }
+
+    /// The cards not through that wait on card `c`.
+    pub fn dependents(&self, c: CardId) -> Vec<CardId> {
+        (self.cards.iter())
+            .filter(|d| !d.over() && d.after.contains(&c))
+            .map(|d| d.id)
+            .collect()
+    }
+
+    /// An assign gives card `c` to `to` before what it waits on is done
+    /// (record 126, F10): the card is `to`'s, still waiting, untried; the
+    /// assign goes with it once [`ready`](World::ready).
+    pub fn hold(&mut self, c: CardId, to: AgentId) {
+        self.cards[c].owner = Some(to);
+        let on = self.waits_on(c);
+        self.story(Some(c), StoryEvent::Held { to, on: on.clone() });
+        self.note(Event::Held {
+            agent: to,
+            card: c,
+            on,
+        });
+    }
+
+    /// Agent `id` begins held card `c`, what it waited on done: its first
+    /// try (or next), at work from now.
+    pub fn begin(&mut self, c: CardId, id: AgentId) {
+        let tick = self.tick;
+        let card = &mut self.cards[c];
+        card.owner = Some(id);
+        card.column = Column::Working;
+        card.started = tick;
+        card.attempt += 1;
+        self.story(Some(c), StoryEvent::Took { agent: id });
+        self.note(Event::Released { agent: id, card: c });
+    }
+
     /// Agent `id`'s `done` said card `c` failed: through, no change; `why`
     /// is the done's first line.
     pub fn card_failed(&mut self, id: AgentId, c: CardId, why: &str) {
@@ -5639,6 +5730,7 @@ mod tests {
             finished: 0,
             attempt: 1,
             breaker: Default::default(),
+            after: Vec::new(),
         };
         for (column, held, over) in [
             (Column::Waiting, false, false),
@@ -5978,6 +6070,7 @@ mod tests {
             finished: 0,
             attempt: 1,
             breaker: Default::default(),
+            after: Vec::new(),
         };
         w.cards = vec![
             card(Column::Done),
@@ -6394,6 +6487,7 @@ mod tests {
                 finished: 0,
                 attempt: 1,
                 breaker: Default::default(),
+                after: Vec::new(),
             });
             id
         };
@@ -7101,6 +7195,7 @@ mod tests {
             finished: 0,
             attempt: 1,
             breaker: Default::default(),
+            after: Vec::new(),
         });
         w.agents[1].card = Some(0);
         w.tick = 10;
@@ -7624,6 +7719,7 @@ mod tests {
             finished: 0,
             attempt: 1,
             breaker: Default::default(),
+            after: Vec::new(),
         }
     }
 
@@ -8182,6 +8278,7 @@ mod tests {
                     tier: "standard".into(),
                     paths: Vec::new(),
                     body: "b".into(),
+                    after: Vec::new(),
                 })
                 .collect(),
             cost: 1_234,
@@ -8897,6 +8994,7 @@ mod tests {
             finished: 0,
             attempt: 1,
             breaker: Default::default(),
+            after: Vec::new(),
         };
         w.cards.push(card(0, &[]));
         w.cards.push(card(1, &["src/"]));
@@ -9108,6 +9206,7 @@ mod change_proof_tests {
             finished: 0,
             attempt: 1,
             breaker: Default::default(),
+            after: Vec::new(),
         }
     }
 

@@ -391,6 +391,7 @@ impl Live {
             };
             let paths =
                 paths::parse(&c["paths"]).map_err(|why| format!("card {}: {why}", n + 1))?;
+            let after = planned_after(&c["after"], n)?;
             for (m, other) in cards.iter().enumerate() {
                 if let Some((theirs, mine)) = paths::overlap(&other.paths, &paths) {
                     return Err(format!(
@@ -406,6 +407,7 @@ impl Live {
                 tier: tier.wire().to_string(),
                 paths,
                 body: body.to_string(),
+                after,
             });
         }
         let Some(cost) = args["cost"].as_f64().filter(|c| c.is_finite() && *c >= 0.0) else {
@@ -527,6 +529,32 @@ impl Live {
         }
         Ok(from.to_string())
     }
+}
+
+/// What card `n` (from 0) of a plan waits on (record 126, F10): the
+/// places of earlier cards of the plan, from 1, each once, oldest first.
+fn planned_after(v: &Value, n: usize) -> Result<Vec<usize>, String> {
+    if v.is_null() {
+        return Ok(Vec::new());
+    }
+    let bad = || {
+        format!(
+            "card {}: after names earlier cards of this plan by their place (1 to {n})",
+            n + 1
+        )
+    };
+    let list = v.as_array().ok_or_else(bad)?;
+    let mut out = Vec::with_capacity(list.len());
+    for item in list {
+        let at = (item.as_u64())
+            .and_then(|m| usize::try_from(m).ok())
+            .filter(|&m| (1..=n).contains(&m))
+            .ok_or_else(bad)?;
+        out.push(at);
+    }
+    out.sort_unstable();
+    out.dedup();
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -1615,12 +1643,14 @@ mod tests {
                     tier: "cheap".into(),
                     paths: vec![Owned::new("src/p.rs")],
                     body: "Fix it.".into(),
+                    after: Vec::new(),
                 },
                 Planned {
                     title: "Docs".into(),
                     tier: "standard".into(),
                     paths: Vec::new(),
                     body: "Write them.\nTwo lines.".into(),
+                    after: Vec::new(),
                 },
             ]
         );
@@ -1751,6 +1781,41 @@ mod tests {
         live.max_workers = 1;
         let err = live.hire(&mut w, 0, &json!({})).unwrap_err();
         assert!(err.starts_with("the team is full"), "{err}");
+    }
+
+    #[test]
+    fn a_plan_s_card_waits_on_earlier_cards_of_it_by_their_place() {
+        assert_eq!(planned_after(&Value::Null, 0), Ok(Vec::new()));
+        assert_eq!(planned_after(&json!([2, 1, 2]), 2), Ok(vec![1, 2]));
+        assert_eq!(planned_after(&json!([3]), 3), Ok(vec![3]));
+        let why = "card 3: after names earlier cards of this plan by their place (1 to 2)";
+        for bad in [json!([3]), json!([0]), json!(["1"]), json!(1), json!([-1])] {
+            assert_eq!(planned_after(&bad, 2), Err(why.to_string()), "{bad}");
+        }
+        assert!(
+            planned_after(&json!([1]), 0).is_err(),
+            "the first waits on none"
+        );
+        let mut w = team(1);
+        w.projects[0].plan.on = true;
+        let mut live = idle_live(2);
+        let cards = json!([
+            { "title": "Parser", "body": "Fix it." },
+            { "title": "Tests", "body": "Test it.", "after": [1] },
+            { "title": "Docs", "body": "Say it.", "after": [2, 1] },
+        ]);
+        live.plan(&mut w, 0, &plan_args(cards, json!(1))).unwrap();
+        let p = w.projects[0].plan.proposal.as_ref().expect("a plan");
+        let after: Vec<&[usize]> = p.cards.iter().map(|c| &c.after[..]).collect();
+        assert_eq!(after, [&[][..], &[1][..], &[1, 2][..]]);
+        let cards = json!([
+            { "title": "Parser", "body": "Fix it.", "after": [1] },
+        ]);
+        assert_eq!(
+            live.plan(&mut w, 0, &plan_args(cards, json!(1)))
+                .unwrap_err(),
+            "card 1: after names earlier cards of this plan by their place (1 to 0)"
+        );
     }
 
     #[test]

@@ -912,6 +912,9 @@ pub struct App {
     /// The board, the code map or the timeline in a window over the
     /// screen (`:board` `:code` `:timeline`, record 125).
     pub window: Option<Window>,
+    /// The board window shows only the cards no other card holds back
+    /// (record 126, F10): `r` there; memory only.
+    pub board_ready: bool,
     /// A checkout the person is asked to import into Lonca, in a window
     /// over everything (record 117).
     pub importing: Option<ImportAsk>,
@@ -1230,6 +1233,7 @@ impl App {
             tidy: None,
             lonca_win: None,
             window: None,
+            board_ready: false,
             importing: None,
             teardown: None,
             tidy_start: false,

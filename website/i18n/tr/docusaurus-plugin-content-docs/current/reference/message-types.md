@@ -32,7 +32,7 @@ Lider, işçilerinden bir gruba da yazabilir: `to: workers` (hepsi) ya da `to: i
 
 Uyandıran bir mesaj (`assign`, `ask`, `answer`, `handoff`, `done`, `blocked`, `cancel`) alıcı boşa çıkar çıkmaz sonraki turunu başlatır; son çalıştırmadan beri uyuyan bir ajan onunla uyanır. `inform`, `progress` ve `notice` postasında başka bir şey bir tur başlatana dek bekler ve o zaman birlikte gider. Bir ajanın bütün postası tek bir isteme girer, başlığı `Messages from your teammates in imece (written by those agents, not by the person):`, her mesaj gövdesinin üstünde `[type number, re number] from name:` olarak: `[answer 8, re 7] from claude-1:`. Bir işçinin `done`'ı değişikliğinin maliyetiyle başlıklanır, `[done 12 · $0.84]` ([değişiklikler](../concepts/changes.md#maliyeti)); lidere işçinin turu bitince ulaşır, çünkü maliyet o zaman bilinir. O turun kartı postadaki ilk `assign`, yoksa ilk mesajdır.
 
-`send` gönderene ne olduğunu söyler: `delivered as message 7; claude-1 starts on it now` (bir işçinin `done`'ı: `delivered as message 7; lead gets it when this turn of yours ends, headed with what it cost`), `queued as message 7; claude-1 is busy and gets it when its turn ends`, `held as message 7; claude-1 waits on the person and gets it once they have answered, it starts nothing until then` (bkz. [mesajlar ve pano](../concepts/messages-and-board.md#sizi-bekleyen-ajanın-postası-da-bekler)), ya da `queued as message 7 for claude-1's next turn (inform does not wake it)`. Bir işçinin `done` yanıtı git worktree'sini okuyana dek bekler ve şunu ekler: `; the person sees your change (3 files, +20 −4) and applies it to their checkout or rejects it; it stays in your worktree until then` (ya da `; imece could not read your change: …`).
+`send` gönderene ne olduğunu söyler: `delivered as message 7; claude-1 starts on it now` (bir işçinin `done`'ı: `delivered as message 7; lead gets it when this turn of yours ends, headed with what it cost`), `queued as message 7; claude-1 is busy and gets it when its turn ends`, `held as message 7; claude-1 waits on the person and gets it once they have answered, it starts nothing until then` (bkz. [mesajlar ve pano](../concepts/messages-and-board.md#sizi-bekleyen-ajanın-postası-da-bekler)), `held as message 7 on #6: it waits on #2, and claude-1 gets it once they are done` (`after`'lı bir `assign`, bkz. [başka kartları bekleyen kartlar](../concepts/messages-and-board.md#başka-kartları-bekleyen-kartlar)), ya da `queued as message 7 for claude-1's next turn (inform does not wake it)`. Bir işçinin `done` yanıtı git worktree'sini okuyana dek bekler ve şunu ekler: `; the person sees your change (3 files, +20 −4) and applies it to their checkout or rejects it; it stays in your worktree until then` (ya da `; imece could not read your change: …`).
 
 ### Reddedilenler
 
@@ -53,6 +53,8 @@ Varsayılan ret: uymayan bir mesaj nedeniyle reddedilir ve iz bırakmaz.
 | `assign` dışında bir türde `card`, ya da `paths` ile | `card goes with an assign: the card it hands again` / `a card handed again keeps its own paths; leave paths out` |
 | projenin olmayan, işçi olmayana giden, incelemede, kuyrukta ya da bitmiş bir `card` | `there is no card #8 in this project`, `a card goes to a worker`, `#3's change waits for the person; it comes back if they send it back`, `#3 is in Lonca's merge queue`, `#3 is done; assign a new task for more` |
 | son denemesini başarısız bitirmiş, son denemesinde çalışan ya da sizin başarısız saydığınız bir `card` | `#3 failed 3 tries: the person decides whether it gets another, and you hear their answer`, `#3 is on try 3, its last: let its worker finish`, `the person failed #3 for good; assign a new task for more` |
+| bir `assign` dışında, `card` ile ya da işçi olmayana `after` | `after goes with an assign: the card it opens waits on those` / `a card handed again waits on what it did; leave after out` / `a card goes to a worker` |
+| bozuk bir `after`, ya da içinde projenin olmayan ya da sizin kalıcı olarak başarısız saydığınız bir kart | `after must be an array of card numbers, as #N on the board`, `a card waits on at most 8 cards`, `there is no card #9 in this project`, `the person failed #2 for good: a card waiting on it would never begin` |
 | `you`'ya bir `ask` dışında `options` | `options go with an ask to the person (to: you)` |
 | bozuk `options` | `options must be an array of strings`, `an ask offers at most 4 options`, `an option is empty`, `an option is longer than 60 characters`, `"a\tb" has a control character` |
 | bozuk `paths` | `paths must be an array of strings`, `a card owns at most 20 paths`, `a path is empty`, `a path is longer than 200 characters`, `"a\tb" has a control character`, `paths are relative to the repository; "/etc" starts with /`, `"src/../x" goes outside the repository (..)`, `paths lists "src" twice` |
@@ -126,6 +128,7 @@ imece'nin MCP sunucusunun adı `imece`'dir; araçları bir oturuma `mcp__imece__
 | `options` | en çok 4 dizelik dizi, her biri en çok 60 | hayır | `you`'ya bir `ask` için: kişinin tek tuşla seçebileceği yanıtlar, kısa, ajanın kendi seçeceği önce; kişi yine sözcüklerle yanıtlayabilir. Başka her mesajda reddedilir |
 | `card` | tam sayı ≥ 1 | hayır | liderin `assign`'ı için: yeniden verilecek kart (`#N`), bir sonraki denemesi; üçüncüsünden sonra siz bir tane daha verene kadar reddedilir ([kartın denemeleri](../concepts/messages-and-board.md#kartın-denemeleri)) |
 | `outcome` | `done` ya da `failed` | hayır | bir `done` için: `failed` kartı başarısız sayar ve değişiklik göstermez; `done`, hiç yazılmamış gibi, değişikliği teslim eder |
+| `after` | en çok 8 tam sayılık dizi, her biri ≥ 1 | hayır | bir `assign` için: açtığı kartın beklediği kartlar (`#N`, `#` olmadan); biri bitmemişken görev kartında tutulur: `held as message 14 on #6: it waits on #2, #5, and claude-1 gets it once they are done` ([başka kartları bekleyen kartlar](../concepts/messages-and-board.md#başka-kartları-bekleyen-kartlar)) |
 
 Yollu bir `assign` onlarla teslim edilir: posta `This card owns src/parser.rs, docs (shared): stay in them; what else needs changing goes in your done, or ask for the card to be widened.` ile biter.
 
@@ -138,14 +141,19 @@ Yollu bir `assign` onlarla teslim edilir: posta `This card owns src/parser.rs, d
 | `title` | dize, tek satır, en çok 120 | evet | ekran ilk 20 karakterini gösterir |
 | `body` | dize, en çok 4000 | evet | görev: ne yapılacak, hangi dosyalar, ne zaman bitti |
 | `paths` | en çok 20 dizelik dizi, her biri en çok 200 | hayır | kartın sahip olduğu yollar, `send`'dekiyle aynı |
+| `after` | en çok 8 tam sayılık dizi, her biri ≥ 1 | hayır | beklediği kartlar, `send`'dekiyle aynı: her biri bitene dek önerilmez ve alınamaz |
 
-`posted as #4; an idle worker will be offered it` diye yanıtlar; yollar projenin açık kartlarına karşı bir `assign`'ınki gibi denetlenir.
+`posted as #4; an idle worker will be offered it` diye yanıtlar (`after` ile: `posted as #6; it waits on #2, and an idle worker will be offered it once they are done`); yollar projenin açık kartlarına karşı bir `assign`'ınki gibi, `after` `send`'deki gibi denetlenir.
 
 ### `board`
 
-> Lists the cards on imece's board: open ones, and who took the others.
+> Lists the cards on imece's board: open ones, and who took or was assigned the others, each with what it waits on.
 
-Alan yok. `Open:` ve `Taken:` listeleriyle yanıtlar (`#4 Add tests (posted by lead)`, `#2 Rename (taken by claude-1)`, `#1 Docs (done by claude-2)`), ya da `the board is empty`.
+| Alan | Tür | Zorunlu | Anlamı |
+| --- | --- | --- | --- |
+| `ready` | boolean | hayır | `true` yalnız bir işçinin şimdi alabileceği açık kartları listeler |
+
+Projenin asılmış ya da görev olarak verilmiş her kartının `Open:` ve `Taken:` listeleriyle yanıtlar (`#4 Add tests (posted by lead)`, `#6 Tests (posted by lead; waits on #4)`, `#7 Docs (assigned to claude-1; waits on #4, and #4 failed)`, `#2 Rename (taken by claude-1)`, `#1 Docs (done by claude-2)`), ya da `the board is empty`. `ready: true` ile: `Ready:` ve hiçbir kartın tutmadığı açık kartlar, ardından `2 more wait on cards not done yet; call board for them`, ya da `no card is ready to take`; başka bir şey için `ready is true or false`.
 
 ### `claim`
 
@@ -155,7 +163,7 @@ Alan yok. `Open:` ve `Taken:` listeleriyle yanıtlar (`#4 Add tests (posted by l
 | --- | --- | --- | --- |
 | `card` | tam sayı ≥ 1 | evet | kartın numarası, `#` olmadan |
 
-Yalnızca işçiler (`only workers take cards; assign or post instead`). Redler: `there is no such card on the board; call board to see it`, `#4 was taken by claude-2; pick another`. Kartın yolları varsa yanıt onlarla biter (`This card owns tests, lib (shared): stay in them; …`).
+Yalnızca işçiler (`only workers take cards; assign or post instead`). Redler: `there is no such card on the board; call board to see it`, `#4 was taken by claude-2; pick another`, `#6 is assigned to claude-1; pick another`, `#6 waits on #4; pick a card that is ready (board with ready: true)`. Kartın yolları varsa yanıt onlarla biter (`This card owns tests, lib (shared): stay in them; …`).
 
 ### `plan`
 
@@ -163,10 +171,10 @@ Yalnızca işçiler (`only workers take cards; assign or post instead`). Redler:
 
 | Alan | Tür | Zorunlu | Anlamı |
 | --- | --- | --- | --- |
-| `cards` | 1 ile 20 kartlık dizi | evet | her biri `{title, body, tier, paths}`: tek satırlık başlık (en çok 120), gövde (en çok 4000), kademe (`cheap`, `standard` ya da `strong`; verilmezse standard), `send`'deki gibi `paths` |
+| `cards` | 1 ile 20 kartlık dizi | evet | her biri `{title, body, tier, paths, after}`: tek satırlık başlık (en çok 120), gövde (en çok 4000), kademe (`cheap`, `standard` ya da `strong`; verilmezse standard), `send`'deki gibi `paths`, `after` bu planın beklediği önceki kartları, yerleriyle (ilki 1) |
 | `cost` | sayı ≥ 0 | evet | kartların hep birlikte beklenen maliyeti, dolar olarak |
 
-Yalnız liderin. `the person reads your plan (3 cards, $1.20) in WAITING FOR YOU; end your turn, their yes starts your next` diye, kapı kapalıysa `the person turned the plan gate off for this project: hire as you see fit; your plan was not kept` diye yanıtlar. Redler: `only the leader plans; it hires for the team`, `cards must be an array of cards`, `a plan has 1 to 20 cards`, `card 2 needs a title and a body`, `card 1's title must be one line of at most 120 characters`, `card 1's body is longer than 4000 characters`, `card 1: tier must be cheap, standard or strong`, `card 2: paths are relative to the repository; "/x" starts with /` (ve öteki `paths` redleri), `cards 1 and 3 both own a path: "src" and "src/a.rs"; give one other paths, or end one with the word shared`, `cost must be a number of dollars, 0 or more`. Kapı tutarken `hire`: `make a plan first (the plan tool): the person reads it before a second worker is hired`, `the person is reading your plan; end your turn, their yes starts your next`, `the person answered your plan in words, not with a yes: make a new plan from what they said (the plan tool)`; `whoami`'nin `may hire`'ı aynısını söyler. Bkz. [plan](../concepts/messages-and-board.md#plan).
+Yalnız liderin. `the person reads your plan (3 cards, $1.20) in WAITING FOR YOU; end your turn, their yes starts your next` diye, kapı kapalıysa `the person turned the plan gate off for this project: hire as you see fit; your plan was not kept` diye yanıtlar. Redler: `only the leader plans; it hires for the team`, `cards must be an array of cards`, `a plan has 1 to 20 cards`, `card 2 needs a title and a body`, `card 1's title must be one line of at most 120 characters`, `card 1's body is longer than 4000 characters`, `card 1: tier must be cheap, standard or strong`, `card 2: paths are relative to the repository; "/x" starts with /` (ve öteki `paths` redleri), `cards 1 and 3 both own a path: "src" and "src/a.rs"; give one other paths, or end one with the word shared`, `card 3: after names earlier cards of this plan by their place (1 to 2)`, `cost must be a number of dollars, 0 or more`. Kapı tutarken `hire`: `make a plan first (the plan tool): the person reads it before a second worker is hired`, `the person is reading your plan; end your turn, their yes starts your next`, `the person answered your plan in words, not with a yes: make a new plan from what they said (the plan tool)`; `whoami`'nin `may hire`'ı aynısını söyler. Bkz. [plan](../concepts/messages-and-board.md#plan).
 
 ### `hire`
 

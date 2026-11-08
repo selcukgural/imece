@@ -261,6 +261,13 @@ pub fn plan_lines(app: &App, p: &Proposal) -> Vec<Line<'static>> {
                 dim(),
             )));
         }
+        if !c.after.is_empty() {
+            let places: Vec<String> = c.after.iter().map(usize::to_string).collect();
+            lines.push(Line::from(Span::styled(
+                fill(t.plan_after, &[&places.join(", ")]),
+                dim(),
+            )));
+        }
         for line in c.body.lines() {
             lines.push(Line::raw(format!("   {}", clean(line))));
         }
@@ -366,9 +373,22 @@ pub fn view(f: &mut Frame, app: &App, win: Window) -> Rect {
     match win {
         Window::Board => {
             let t = app.lang.text();
-            let cards = app.world.shown_cards().count();
+            let w = &app.world;
+            let cards = w.shown_cards().count();
+            // The ready filter says what it hides and how to undo it
+            // (record 126, F10).
+            let filter = match app.board_ready {
+                true => {
+                    let hidden = super::board::hidden(w);
+                    fill(t.board_ready, &[&hidden.to_string()])
+                }
+                false => t.board_all.to_string(),
+            };
             let block = Block::bordered()
-                .title(fill(t.board_title, &[&cards.to_string()]))
+                .title(format!(
+                    "{}{filter}",
+                    fill(t.board_title, &[&cards.to_string()])
+                ))
                 .border_style(fg(pal().accent));
             let inner = block.inner(area);
             f.render_widget(block, area);
@@ -729,8 +749,8 @@ pub(crate) const TYPED: [usize; 5] = [4, 15, 16, 17, WRITING_KEYS];
 /// places whose help lists it, `&[]` for every place. `?` opens the help
 /// filtered to the screen it was pressed on (record 125, step 5): the
 /// rows of that place and of every place; `?` again lists them all.
-const HELP_PLACES: [&[Scope]; 56] = {
-    use Scope::{Change, Choose, Journal, Peek, Salon, Talk, Timeline};
+const HELP_PLACES: [&[Scope]; 57] = {
+    use Scope::{Board, Change, Choose, Journal, Peek, Salon, Talk, Timeline};
     const ALL: &[Scope] = &[];
     [
         ALL,                        // 0  /  i
@@ -780,15 +800,16 @@ const HELP_PLACES: [&[Scope]; 56] = {
         &[Change, Choose],          // 44 c n
         &[Change],                  // 45 x b
         &[Change],                  // 46 w R
-        ALL,                        // 47 space
-        ALL,                        // 48 + -
-        ALL,                        // 49 L :lang
-        ALL,                        // 50 T :theme
-        ALL,                        // 51 :awake :notify
-        ALL,                        // 52 :motion :away
-        ALL,                        // 53 q q :quit
-        ALL,                        // 54 q s :pending
-        ALL,                        // 55 ? :help
+        &[Board],                   // 47 r
+        ALL,                        // 48 space
+        ALL,                        // 49 + -
+        ALL,                        // 50 L :lang
+        ALL,                        // 51 T :theme
+        ALL,                        // 52 :awake :notify
+        ALL,                        // 53 :motion :away
+        ALL,                        // 54 q q :quit
+        ALL,                        // 55 q s :pending
+        ALL,                        // 56 ? :help
     ]
 };
 

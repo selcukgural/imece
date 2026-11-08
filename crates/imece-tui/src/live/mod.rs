@@ -1354,7 +1354,7 @@ impl Live {
             }
             let answer = match tool.as_str() {
                 "post" => self.post(w, from, &args),
-                "board" => Ok(self.board(w, from)),
+                "board" => self.board(w, from, &args),
                 "claim" => self.claim(w, from, &args),
                 "hire" => self.hire(w, from, &args),
                 "plan" => self.plan(w, from, &args),

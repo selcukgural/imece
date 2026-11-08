@@ -44,7 +44,8 @@ impl App {
     }
 
     /// A key while a window is open: `esc` or `q` close it, `?` opens the
-    /// help; on the timeline `j k` (the arrows), `g G` (Home, End) move
+    /// help; on the board `r` shows only the ready cards or all again; on
+    /// the timeline `j k` (the arrows), `g G` (Home, End) move
     /// over the lanes, `[ ]` change the scale, `enter` opens the selected
     /// agent's focus and `@` writes to it, both closing the window; the
     /// rest do nothing, so the screen under the window does not move.
@@ -57,6 +58,9 @@ impl App {
             KeyCode::Char('?') => self.open_help(),
             _ if win == Window::Timeline => self.timeline_key(k),
             _ if win == Window::Journal => self.journal_key(k),
+            // Only the cards a worker may take, or all again (record 126,
+            // F10).
+            KeyCode::Char('r') if win == Window::Board => self.board_ready = !self.board_ready,
             _ => {}
         }
     }
@@ -174,6 +178,22 @@ mod tests {
         app.command("timeline");
         app.on_key(key(KeyCode::Char('q')));
         assert_eq!(app.window, None, "q closes it too");
+    }
+
+    #[test]
+    fn r_on_the_board_shows_only_the_ready_cards_and_again_all() {
+        let mut app = team();
+        app.open_window(Window::Board);
+        assert!(!app.board_ready);
+        app.on_key(key(KeyCode::Char('r')));
+        assert!(app.board_ready);
+        assert_eq!(app.window, Some(Window::Board));
+        app.on_key(key(KeyCode::Char('r')));
+        assert!(!app.board_ready);
+        // Elsewhere it does nothing of the kind.
+        app.window = Some(Window::Code);
+        app.on_key(key(KeyCode::Char('r')));
+        assert!(!app.board_ready);
     }
 
     #[test]

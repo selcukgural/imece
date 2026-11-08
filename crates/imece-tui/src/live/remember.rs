@@ -582,6 +582,7 @@ mod tests {
             finished: 0,
             attempt: 1,
             breaker: Default::default(),
+            after: Vec::new(),
         });
         w.inbox.push(item(InboxKind::Reply, 1, "an old answer"));
         w.inbox.push(item(InboxKind::Change, 1, "an older change"));

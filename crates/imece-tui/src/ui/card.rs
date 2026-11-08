@@ -44,6 +44,9 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, c: CardId) {
             Span::raw(clean(&crate::paths::listed(&card.paths))),
         ]));
     }
+    if !card.after.is_empty() {
+        head.push(Line::from(after_spans(t, w, card)));
+    }
     head.push(Line::raw(""));
     head.push(Line::from(Span::styled(t.card_who, bold(pal().strong))));
     let people = w.card_people(c);
@@ -72,6 +75,25 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, c: CardId) {
         _ => vec![Line::from(Span::styled(t.card_no_story, dim()))],
     };
     tail(f, body, story);
+}
+
+/// What a card waits on (record 126, F10), on its screen: each card it
+/// waits on, `✓` done, `✕` failed, `⧗` not yet.
+pub(crate) fn after_spans(t: &crate::i18n::Text, w: &World, card: &Card) -> Vec<Span<'static>> {
+    let mut spans = vec![Span::styled(t.card_after, dim())];
+    for (i, &d) in card.after.iter().enumerate() {
+        if i > 0 {
+            spans.push(Span::styled(", ", dim()));
+        }
+        let (mark, style) = match w.cards[d].column {
+            Column::Done => ("✓", fg(pal().ok)),
+            Column::Failed => ("✕", fg(pal().bad)),
+            _ => ("⧗", dim()),
+        };
+        spans.push(Span::raw(format!("#{} ", d + 1)));
+        spans.push(Span::styled(mark, style));
+    }
+    spans
 }
 
 /// The board's column of a finished card whose change waits for the
@@ -201,6 +223,7 @@ mod tests {
             finished: 24,
             attempt: 1,
             breaker: Default::default(),
+            after: Vec::new(),
         };
         // 24 ticks of 5 s.
         assert_eq!(minutes(&w, &card), 2);

@@ -4,7 +4,7 @@ F8, F9 and F10 of backlog #59 (epic #286; the person, 2026-11-08): a Δ
 must provably come from its card's current attempt, and a card must be
 provably finished. Three pieces, one pull request each: attempts and
 outcomes (F8, below, built), a circuit breaker on tries and rounds (F9,
-below, built), dependencies between cards (F10, decided, to come).
+below, built), dependencies between cards (F10, below, built).
 
 ## Attempts and outcomes (F8)
 
@@ -119,8 +119,8 @@ taken from ends its turn with a late `done`.
 
 Gaps. A Lonca proposal a worker makes after its card was handed away
 still becomes its Δ (the proposal is the store's; imece shows it, the
-card does not move). The `board` tool still lists only posted cards;
-F10's ready filter widens it.
+card does not move). The `board` tool listed only posted cards; F10
+widened it to every card.
 
 ## A circuit breaker (F9)
 
@@ -208,10 +208,91 @@ it: its change shows and the person rejects it as any (the card stays
 failed). The git path has no automatic round: every change sent back
 there is the person's, so only the tries cap applies to it.
 
-## Dependencies (F10, to come)
+## Dependencies (F10)
 
-Decided: `after: [N]` on `assign`, `post` and `plan`. A card whose
-dependencies are not done is not offered and cannot be claimed; an
-`assign` to it waits on the card and goes when they are; one whose
-dependency failed says `✕ waits on #2`. `board` takes `ready`, and the
-board window filters to the ready ones.
+A card that needs another card's work first names it: `after` (the
+cards it waits on, by their numbers on the board) on an `assign` or a
+`post`, and on a `plan`'s cards by their place in the plan. The person's
+choice of four, as decided: no new message type, the envelope carries
+it, the body is never interpreted.
+
+`Card.after: Vec<CardId>` is set when the card opens and never changes.
+`bus::after_of` takes numbers from 1, each once, sorted, at most
+`AFTER_MAX` (8); `bus::depends` takes only cards of the project the
+person did not fail for good (a card waiting on one would never begin).
+A new card's number is past every card it can name, so no card waits on
+itself through others: a load refuses a file where one does (`card N
+waits on a later card`). `World::ready` is every card it waits on done;
+`waits_on` the ones not done; `blocked_on` the first that failed;
+`dependents` the cards not through that wait on one.
+
+- **A posted card waits on the board.** `Live::open` (what is offered)
+  takes only ready cards nobody holds, and `claim` refuses one that is
+  not (`#6 waits on #2, #5; pick a card that is ready (board with ready:
+  true)`) or that an assign holds (`#6 is assigned to claude-1`).
+- **An assign waits on its card.** With `after` the card opens when the
+  assign is sent (`Live::opens`: the worker's, `Waiting`, attempt 0,
+  titled by the first line, owning the `paths`), not at the turn it
+  starts, and the mail carries it (`Mail.card`, as a card handed again
+  does). Not ready: `World::hold` (`StoryEvent::Held`, `Event::Held`,
+  the answer `held as message 14 on #6: it waits on …`). The mail stays
+  in the worker's queue: `Live::deliver` takes the rest and leaves an
+  assign whose card is not ready (`Live::waits`); once it is, the next
+  delivery begins it (`World::begin`: at work, its first try, `started`
+  now, `StoryEvent::Took`, `Event::Released`) before the prompt is
+  written, so the heading says `[assign 14 · #6, try 1]`. A held assign
+  does not wake a sleeper. An assign naming a card that is not ready
+  (`card: 6`) holds it for the new worker instead of handing it
+  (`Live::hand`): no try counted, and whoever it was held for loses the
+  assign that waited (`the assign for it that waited for you is
+  withdrawn`).
+- **A failed card holds back what waits on it** until it is handed again
+  and done; one the person failed for good, for ever. Either way the
+  leader hears which cards wait on it with its next prompt
+  (`Live::blocks`, from a failed `done` and from the person's no at the
+  breaker).
+- **The `board` tool lists every card**, posted or assigned (it listed
+  only posted ones, the gap F8 named), the open ones apart, each with
+  what it waits on (`; waits on #2, #5`, `, and #2 failed`), a held one
+  as `assigned to claude-1`. `ready: true` lists only the open cards a
+  worker may take now and counts the rest.
+- **On screen.** The board window's TO DO marks a waiting card `⧗ after
+  #2` (dim) or `✕ #2 failed` (bad), and a held one `→ claude-1`
+  (`board::waiting_spans`); `r` there (`App.board_ready`, memory only)
+  shows only the ready cards and the title says how many it hides
+  (`board::hidden`); the help has the row, place `[board]`. A card's
+  screen lists what it waits on, `✓` `✕` `⧗` (`card::after_spans`). The
+  plan window says `after 1 above` (`Planned.after`, places from 1,
+  earlier cards only: `hiring::planned_after`). The leader's
+  instructions say to name `after` and that an assign with it waits, so
+  a whole order can be assigned at once.
+
+The demo mirrors it (record 31): a plan the person gives the leader
+posts its tests and its docs after the work itself; one card in
+`AFTER_ONE_IN` (3) the leader posts waits on the newest card not
+through; the leader takes and assigns only ready cards, and one tick in
+`HOLD_ONE_IN` (4) assigns a waiting card early, held for a free worker
+(`Sim::hold`), begun once ready and the worker free (`Taken::Released`);
+the demo's plan names the places of what its cards wait on.
+
+- **Growth**: a short JSON column a card; one story line and one
+  journal line per hold and release. Nothing that grows with time.
+- **Concurrency**: the bus answers on the main loop; a card is done and
+  a held assign delivered on the same loop, so nothing races.
+- **Read cost**: `ready` walks a card's few dependencies; the post
+  office's delivery and the offer ask it per mail or card, not per
+  frame; the board window asks it per card drawn.
+- **Ten times the scale**: at most eight dependencies a card, so the
+  same.
+- **Migration**: schema 30: `cards.waits_on` (`[]`); `Held`/`Released`
+  are new serde variants; `Planned.after` is left out of a plan's JSON
+  when empty, so a plan saved before reads as before. The column is not
+  called `after`, a word of SQLite's.
+- **Failure**: a crash while an assign is held keeps the card (held,
+  its owner) and the mail (with its card), both saved; at the start the
+  post office leaves it until the card is ready, as before.
+
+Gaps. A `cancel` does not withdraw a held assign: the leader withdraws
+it only by handing the card to another. What a card waits on is direct:
+a card waiting on one that waits on a failed card shows `⧗`, not `✕`.
+The wake briefing does not say what a card waits on.
