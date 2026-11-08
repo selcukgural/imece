@@ -38,7 +38,17 @@ environment. `--restricted` ignores settings *files*, `--settings` holds. `init`
 must show Lonca's server connected, once, and every tool of `LONCA_TOOLS`, or
 the session stops; one more tool of that server is no stop, since a newer Lonca
 may add one, it comes from the server asked for, and not being on
-`--allowedTools` it asks. imece holds no token of a worker's: it is in
+`--allowedTools` it asks. **The hook must have started** (2026-11-08): `lonca hook`
+comes by `--settings`, and a Claude Code that skips the hooks it is given would
+run the session with Lonca's server connected and nobody watching its tools.
+`--bare` does exactly that (and reads no OAuth login, so a subscription session
+fails loudly while an API-key one would not), and Claude Code's headless docs say
+`--bare` may become the default for `-p`. Its `SessionStart` hook starts before
+`init` (`system` `hook_started`, `hook_event: SessionStart`; probed on 2.1.319, at
+start and at `--resume`), so `Parser::init` stops a session on Lonca that saw none
+(`Parser.hooked`, kept across `/clear`'s new `init`). Under `open` a person's own
+`SessionStart` hook would count too; `--bare` skips those as well.
+imece holds no token of a worker's: it is in
 `.lonca/session`, and the hook and the server find it from `cwd`.
 
 **What it is told** (`prompts::lonca_note`, beside the role's text, which still
