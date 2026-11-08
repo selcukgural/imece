@@ -941,6 +941,10 @@ pub struct Status {
     pub sessions: Vec<SessionEnd>,
     /// The daemon's clock.
     pub now_ms: i64,
+    /// Why the repository is frozen, when it is: it takes no proposal and
+    /// no decision until a human unfreezes it. Anything but `null` (or no
+    /// such field, from an older daemon) is a freeze.
+    pub frozen: Option<String>,
 }
 
 /// Where a change stands in the store.
@@ -1117,6 +1121,11 @@ impl Status {
                 .collect::<Option<_>>()?,
             leases: leases_of(v)?,
             now_ms: v["now_ms"].as_i64()?,
+            frozen: match &v["frozen"] {
+                Value::Null => None,
+                Value::String(why) => Some(why.clone()),
+                other => Some(other.to_string()),
+            },
         })
     }
 
@@ -2299,6 +2308,21 @@ mod tests {
         assert_eq!(Status::of(&v), None);
         v["sessions"] = json!([{"expires_ms": 1}]);
         assert_eq!(Status::of(&v), None);
+    }
+
+    #[test]
+    fn a_frozen_repository_says_why_and_anything_but_null_is_frozen() {
+        let mut v = status(&[]);
+        assert_eq!(Status::of(&v).unwrap().frozen, None, "no field");
+        v["frozen"] = Value::Null;
+        assert_eq!(Status::of(&v).unwrap().frozen, None);
+        v["frozen"] = json!("integrity alarm");
+        assert_eq!(
+            Status::of(&v).unwrap().frozen.as_deref(),
+            Some("integrity alarm")
+        );
+        v["frozen"] = json!(true);
+        assert_eq!(Status::of(&v).unwrap().frozen.as_deref(), Some("true"));
     }
 
     #[test]

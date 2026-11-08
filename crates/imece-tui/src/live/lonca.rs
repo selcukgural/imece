@@ -524,7 +524,9 @@ fn look(place: &Place, repos: &Repos, watched: &[String], kept: &mut Kept) -> Lo
                 looked
                     .leases
                     .push((*p, repo.clone(), status.leases.clone()));
-                if kept.holds(c, repo, &status.policy) {
+                if status.frozen.is_some() {
+                    StoreSeen::Down(StoreDown::Frozen)
+                } else if kept.holds(c, repo, &status.policy) {
                     let proposals = (status.pending.iter())
                         .filter(|w| w.op == lonca::PROPOSE)
                         .cloned();
@@ -2003,6 +2005,7 @@ mod tests {
         lonca::Status {
             trunk: TRUNK.into(),
             policy: POLICY.into(),
+            frozen: None,
             leases: Vec::new(),
             next_seq: 9,
             pending: rows
@@ -2616,6 +2619,27 @@ mod tests {
         kept.diffs.insert("gone".into(), diff_of("old"));
         look(&d.place, &repos, &[], &mut kept);
         assert!(kept.diffs.contains_key("kkkk") && !kept.diffs.contains_key("gone"));
+    }
+
+    #[test]
+    fn a_frozen_repository_is_closed_and_offers_nothing() {
+        let d = Daemon::start(PROTOCOL, |asked| match asked["method"].as_str() {
+            Some("status") => {
+                let mut v = status(&[7]);
+                v["frozen"] = serde_json::json!("integrity alarm");
+                Ok(v)
+            }
+            _ => Err("not_found"),
+        });
+        d.sign_in();
+        let repos = vec![(0, "demo".to_string(), None)];
+        let looked = look(&d.place, &repos, &[], &mut Kept::default());
+        assert_eq!(looked.found[0].2, StoreSeen::Down(StoreDown::Frozen));
+        assert!(looked.offers.is_empty() && looked.pending.is_empty());
+        let asked: Vec<String> = (d.heard.lock().unwrap().iter())
+            .map(|h| h["method"].as_str().unwrap_or("").to_string())
+            .collect();
+        assert_eq!(asked, ["status"], "nothing more is read of it");
     }
 
     #[test]

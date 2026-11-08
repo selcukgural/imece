@@ -1017,13 +1017,14 @@ fn store_stopped(tick: u64) -> bool {
     tick % STORE_EVERY >= STORE_EVERY - STORE_STOPS
 }
 
-/// Why the demo's daemon stopped at `tick`: every second stop it is busy,
-/// as a real one past its limits keeps asking to be asked again.
+/// Why the demo's daemon stopped at `tick`, in turn: gone; busy, as a real
+/// one past its limits keeps asking to be asked again; its repository
+/// frozen, as an integrity alarm leaves it.
 fn store_stop(tick: u64) -> StoreDown {
-    if (tick / STORE_EVERY) % 2 == 1 {
-        StoreDown::Busy
-    } else {
-        StoreDown::NoDaemon
+    match (tick / STORE_EVERY) % 3 {
+        1 => StoreDown::Busy,
+        2 => StoreDown::Frozen,
+        _ => StoreDown::NoDaemon,
     }
 }
 
@@ -7907,9 +7908,13 @@ diff --git a/b.rs b/b.rs
         s.store_answers(&mut w);
         assert_eq!(w.store_closed(1), Some(StoreDown::Busy.why()));
         assert_eq!(store_stop(119), StoreDown::Busy);
-        assert_eq!(store_stop(120), StoreDown::NoDaemon);
-        assert_eq!(store_stop(174), StoreDown::NoDaemon);
-        assert_eq!(store_stop(180), StoreDown::Busy);
+        assert_eq!(store_stop(120), StoreDown::Frozen);
+        assert_eq!(store_stop(179), StoreDown::Frozen);
+        assert_eq!(store_stop(180), StoreDown::NoDaemon);
+        assert_eq!(store_stop(240), StoreDown::Busy);
+        w.tick = 174;
+        s.store_answers(&mut w);
+        assert_eq!(w.store_closed(1), Some(StoreDown::Frozen.why()));
     }
 
     /// Runs `job` to its end: not a tick early.

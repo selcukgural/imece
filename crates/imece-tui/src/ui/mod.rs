@@ -13154,6 +13154,7 @@ after | not a table";
             (StoreDown::NoRepo, "no such repository"),
             (StoreDown::Refused, "refused"),
             (StoreDown::Busy, "busy"),
+            (StoreDown::Frozen, "froze"),
         ];
         for (why, word) in all {
             let e = Event::StoreDown {
