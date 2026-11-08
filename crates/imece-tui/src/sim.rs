@@ -9328,6 +9328,24 @@ diff --git a/b.rs b/b.rs
     }
 
     #[test]
+    fn the_demo_s_leader_withdraws_by_the_clock_only_its_own_card_nobody_took() {
+        let (mut w, mut s) = world(2, 2, 0, 1, Lang::En);
+        let mine = s.post(&mut w, 0, "mine".into());
+        let taken = s.post(&mut w, 0, "taken".into());
+        w.cards[taken].owner = Some(w.projects[0].leader);
+        let done = s.post(&mut w, 0, "done".into());
+        w.cards[done].column = Column::Done;
+        // The newest of all, but another project's.
+        let theirs = s.post(&mut w, 1, "theirs".into());
+        w.tick = WITHDRAW_EVERY;
+        s.leader(&mut w, 0);
+        assert_eq!(w.cards[mine].column, Column::Withdrawn);
+        assert_eq!(w.cards[taken].column, Column::Waiting);
+        assert_eq!(w.cards[done].column, Column::Done);
+        assert_eq!(w.cards[theirs].column, Column::Waiting);
+    }
+
+    #[test]
     fn the_demo_s_leader_withdraws_what_waits_on_a_card_never_to_be_done() {
         let (mut w, mut s) = world(1, 2, 0, 1, Lang::En);
         let base = s.post(&mut w, 0, "base".into());

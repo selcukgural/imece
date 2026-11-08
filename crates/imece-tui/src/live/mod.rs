@@ -1605,6 +1605,17 @@ mod tests {
         assert!(got.is_ok(), "{got:?}");
         assert!(!got.unwrap().contains("there is no tool"));
         assert_eq!(w.projects[0].plan.proposal, None);
+        // The leader's withdraw reaches its tool too (record 126).
+        let c = with_card(&mut w, 1);
+        let answer = call(
+            &mut live,
+            "withdraw",
+            json!({ "card": c + 1, "why": "not needed" }),
+        );
+        live.step(&mut w);
+        let got = answer.try_recv().unwrap();
+        assert!(got.is_ok(), "{got:?}");
+        assert_eq!(w.cards[c].column, Column::Withdrawn);
         let answer = call(&mut live, "plot", json!({}));
         live.step(&mut w);
         assert_eq!(
