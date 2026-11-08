@@ -2811,6 +2811,12 @@ in p.rs",
         let got = sent(&mut live, &mut w, 1, &args).unwrap();
         assert!(got.contains("the card is marked failed"), "{got}");
         assert_eq!(live.mail[0][0].outcome, Outcome::Failed(None));
+        // A plain done of one that held no card is Ok, never failed.
+        let mut w = team(1);
+        let mut live = idle_live(2);
+        let got = sent(&mut live, &mut w, 1, &msg("lead", "done", "Parser done")).unwrap();
+        assert!(!got.contains("failed"), "{got}");
+        assert_eq!(live.mail[0][0].outcome, Outcome::Ok);
         // A plain done is Ok, and one from the leader to a worker is never
         // a worker's outcome.
         let mut w = team(1);
