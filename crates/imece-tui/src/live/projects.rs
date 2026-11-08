@@ -501,6 +501,7 @@ mod tests {
             id: 0,
             re: None,
             paths: Vec::new(),
+            checks: Vec::new(),
             card: None,
             outcome: Outcome::Ok,
         });
@@ -999,6 +1000,7 @@ mod tests {
             id: 0,
             re: None,
             paths: Vec::new(),
+            checks: Vec::new(),
             card: None,
             outcome: Outcome::Ok,
         });

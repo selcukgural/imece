@@ -92,7 +92,9 @@ use crate::recall::{Hit, Line};
 /// F10) and the `Held`/`Released` events.
 /// 31 (2026-11-08): a withdrawn card (the `Withdrawn` column, story and
 /// event, record 126).
-pub const SCHEMA_VERSION: i64 = 31;
+/// 32 (2026-11-08): the checks a card asks for (`cards.checks`, record
+/// 127), an assign's until it is delivered (`mail.checks`).
+pub const SCHEMA_VERSION: i64 = 32;
 /// Trace lines kept per agent, as the world keeps them.
 const TRACE_KEEP: usize = 200;
 /// The file's name under the state directory.
@@ -129,7 +131,8 @@ CREATE TABLE IF NOT EXISTS cards (
     id INTEGER PRIMARY KEY, project INTEGER NOT NULL, title TEXT NOT NULL,
     owner INTEGER, col TEXT NOT NULL, started INTEGER NOT NULL, finished INTEGER NOT NULL,
     paths TEXT NOT NULL DEFAULT '[]', attempt INTEGER NOT NULL DEFAULT 1,
-    breaker TEXT NOT NULL DEFAULT '{}', waits_on TEXT NOT NULL DEFAULT '[]');
+    breaker TEXT NOT NULL DEFAULT '{}', waits_on TEXT NOT NULL DEFAULT '[]',
+    checks TEXT NOT NULL DEFAULT '[]');
 -- Read whole, in key order (`load`): no index beyond the key.
 CREATE TABLE IF NOT EXISTS story (
     card INTEGER NOT NULL, seq INTEGER NOT NULL, tick INTEGER NOT NULL,
@@ -152,7 +155,7 @@ CREATE TABLE IF NOT EXISTS mail (
     agent INTEGER NOT NULL, seq INTEGER NOT NULL, sender INTEGER NOT NULL,
     kind TEXT NOT NULL, body TEXT NOT NULL, number INTEGER NOT NULL DEFAULT 0, re INTEGER,
     paths TEXT NOT NULL DEFAULT '[]', card INTEGER, outcome TEXT NOT NULL DEFAULT '\"Ok\"',
-    PRIMARY KEY (agent, seq)) WITHOUT ROWID;
+    checks TEXT NOT NULL DEFAULT '[]', PRIMARY KEY (agent, seq)) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS notes (
     agent INTEGER NOT NULL, seq INTEGER NOT NULL, text TEXT NOT NULL,
     PRIMARY KEY (agent, seq)) WITHOUT ROWID;
@@ -426,6 +429,18 @@ fn untag<T: DeserializeOwned>(s: &str) -> rusqlite::Result<T> {
         .map_err(|e| bad(format!("{s:?}: {e}")))
 }
 
+/// The checks a `checks` column holds (record 127): JSON of names, `[]`
+/// in a file from before; what Lonca would not take is refused, as these
+/// reach `lonca approve`.
+fn checks_of(s: &str) -> rusqlite::Result<Vec<String>> {
+    let checks: Vec<String> =
+        serde_json::from_str(s).map_err(|e| bad(format!("checks {s:?}: {e}")))?;
+    if !imece_agent::lonca::checks_asked(&checks) {
+        return Err(bad(format!("checks {s:?}: not checks Lonca takes")));
+    }
+    Ok(checks)
+}
+
 /// The paths a `paths` column holds: JSON of [`Owned`]s, `[]` in a file
 /// from before them.
 fn paths_of(s: &str) -> rusqlite::Result<Vec<Owned>> {
@@ -653,6 +668,13 @@ impl Store {
             // No card waited on another before.
             self.conn.execute_batch(
                 "ALTER TABLE cards ADD COLUMN waits_on TEXT NOT NULL DEFAULT '[]';",
+            )?;
+        }
+        if !self.has_column("cards", "checks")? {
+            // No card asked for a check before.
+            self.conn.execute_batch(
+                "ALTER TABLE cards ADD COLUMN checks TEXT NOT NULL DEFAULT '[]';
+                 ALTER TABLE mail ADD COLUMN checks TEXT NOT NULL DEFAULT '[]';",
             )?;
         }
         if !self.has_column("journal", "marked")? {
@@ -1037,8 +1059,8 @@ impl Store {
             let card = &w.cards[c];
             tx.execute(
                 "INSERT OR REPLACE INTO cards (id, project, title, owner, col, started, finished, \
-                 paths, attempt, breaker, waits_on) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, \
-                 ?11)",
+                 paths, attempt, breaker, waits_on, checks) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, \
+                 ?9, ?10, ?11, ?12)",
                 params![
                     n(card.id),
                     n(card.project),
@@ -1050,7 +1072,8 @@ impl Store {
                     serde_json::to_string(&card.paths).unwrap_or_default(),
                     card.attempt,
                     serde_json::to_string(&card.breaker).unwrap_or_default(),
-                    serde_json::to_string(&card.after).unwrap_or_default()
+                    serde_json::to_string(&card.after).unwrap_or_default(),
+                    serde_json::to_string(&card.checks).unwrap_or_default()
                 ],
             )?;
         }
@@ -1135,7 +1158,7 @@ impl Store {
             for (seq, m) in k.mail[id].iter().enumerate() {
                 tx.execute(
                     "INSERT INTO mail (agent, seq, sender, kind, body, number, re, paths, card, \
-                     outcome) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                     outcome, checks) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
                     params![
                         n(id),
                         n(seq),
@@ -1146,7 +1169,8 @@ impl Store {
                         m.re,
                         serde_json::to_string(&m.paths).unwrap_or_default(),
                         opt(m.card),
-                        serde_json::to_string(&m.outcome).unwrap_or_default()
+                        serde_json::to_string(&m.outcome).unwrap_or_default(),
+                        serde_json::to_string(&m.checks).unwrap_or_default()
                     ],
                 )?;
             }
@@ -1420,6 +1444,7 @@ impl Store {
                 card.attempt,
                 card.breaker,
                 &card.after,
+                &card.checks,
             ));
             if s.cards.get(c) != Some(&h) {
                 plan.cards.push(c);
@@ -1707,8 +1732,8 @@ impl Store {
         let mut traces =
             conn.prepare("SELECT line FROM trace WHERE agent = ?1 ORDER BY seq DESC LIMIT ?2")?;
         let mut mails = conn.prepare(
-            "SELECT sender, kind, body, number, re, paths, card, outcome FROM mail WHERE agent = ?1 \
-             ORDER BY seq",
+            "SELECT sender, kind, body, number, re, paths, card, outcome, checks FROM mail \
+             WHERE agent = ?1 ORDER BY seq",
         )?;
         let mut texts = [
             conn.prepare("SELECT text FROM notes WHERE agent = ?1 ORDER BY seq")?,
@@ -1729,6 +1754,7 @@ impl Store {
                     id: r.get(3)?,
                     re: r.get(4)?,
                     paths: paths_of(&r.get::<_, String>(5)?)?,
+                    checks: checks_of(&r.get::<_, String>(8)?)?,
                     card: uopt(r.get(6)?),
                     outcome: serde_json::from_str(&r.get::<_, String>(7)?)
                         .map_err(|e| bad(format!("outcome: {e}")))?,
@@ -1749,7 +1775,7 @@ impl Store {
         }
         let mut st = conn.prepare(
             "SELECT id, project, title, owner, col, started, finished, paths, attempt, breaker, \
-             waits_on FROM cards ORDER BY id",
+             waits_on, checks FROM cards ORDER BY id",
         )?;
         for row in st.query_map([], |r| {
             Ok(Card {
@@ -1761,6 +1787,7 @@ impl Store {
                 story: Vec::new(),
                 symbols: Vec::new(),
                 paths: paths_of(&r.get::<_, String>(7)?)?,
+                checks: checks_of(&r.get::<_, String>(11)?)?,
                 started: ubig(r.get(5)?),
                 finished: ubig(r.get(6)?),
                 attempt: r.get(8)?,
@@ -2289,6 +2316,7 @@ mod tests {
                     ],
                     symbols: Vec::new(),
                     paths: Vec::new(),
+                    checks: Vec::new(),
                     started: 10,
                     finished: 0,
                     attempt: 3,
@@ -2310,6 +2338,7 @@ mod tests {
                     }],
                     symbols: Vec::new(),
                     paths: Vec::new(),
+                    checks: Vec::new(),
                     started: 20,
                     finished: 0,
                     attempt: 0,
@@ -2325,6 +2354,7 @@ mod tests {
                     story: Vec::new(),
                     symbols: Vec::new(),
                     paths: Vec::new(),
+                    checks: Vec::new(),
                     started: 5,
                     finished: 9,
                     attempt: 1,
@@ -2587,6 +2617,7 @@ mod tests {
                         id: 0,
                         re: None,
                         paths: Vec::new(),
+                        checks: Vec::new(),
                         card: Some(1),
                         outcome: Outcome::Ok,
                     },
@@ -2597,6 +2628,7 @@ mod tests {
                         id: 12,
                         re: Some(11),
                         paths: Vec::new(),
+                        checks: Vec::new(),
                         card: None,
                         outcome: Outcome::Late(2),
                     },
@@ -3114,6 +3146,7 @@ mod tests {
                         }],
                         symbols: Vec::new(),
                         paths: Vec::new(),
+                        checks: Vec::new(),
                         started: 40,
                         finished: 0,
                         attempt: 1,
@@ -3179,6 +3212,7 @@ mod tests {
                         id: 0,
                         re: None,
                         paths: Vec::new(),
+                        checks: Vec::new(),
                         card: None,
                         outcome: Outcome::Ok,
                     })
@@ -4224,14 +4258,14 @@ mod tests {
                 )
                 .unwrap();
             assert_eq!(
-                version, "31",
+                version, "32",
                 "the sent table, the Fault kind, archives, restores, start points, standing yes, the \
                  recall index, forks, paid kinds, reviews, no vendor, the check on a change, what \
                  it cost, the paths a card owns, the plan gate, a project's Lonca repository, \
-                 a card's attempts, its breaker, what it waits on and a card withdrawn: an \
-                 older imece knows none"
+                 a card's attempts, its breaker, what it waits on, a card withdrawn and the \
+                 checks it asks for: an older imece knows none"
             );
-            assert_eq!(SCHEMA_VERSION, 31);
+            assert_eq!(SCHEMA_VERSION, 32);
         }
         let back = Store::open(&path)
             .unwrap()
@@ -5203,6 +5237,7 @@ mod tests {
             id: 9,
             re: None,
             paths: Vec::new(),
+            checks: Vec::new(),
             card: Some(0),
             outcome: Outcome::Failed(Some(0)),
         });
@@ -5363,6 +5398,83 @@ mod tests {
     }
 
     #[test]
+    fn a_file_of_schema_31_gets_the_checks_columns_and_keeps_them_from_then_on() {
+        let d = dir("schema31");
+        std::fs::create_dir_all(&d).unwrap();
+        let path = d.join(FILE);
+        {
+            // A whole file as schema 31 wrote it: no card asks for a check.
+            let mut store = Store::open(&path).unwrap();
+            assert!(store.save(&world(), &kept().kept()).unwrap());
+            store
+                .raw()
+                .execute_batch(
+                    "ALTER TABLE cards DROP COLUMN checks;
+                     ALTER TABLE mail DROP COLUMN checks;
+                     UPDATE meta SET value = '31' WHERE key = 'schema_version';",
+                )
+                .unwrap();
+        }
+        let mut store = Store::open(&path).unwrap();
+        let back = store.load(100).unwrap().expect("a world");
+        assert!(back.world.cards.iter().all(|c| c.checks.is_empty()));
+        assert!(
+            back.found
+                .mail
+                .iter()
+                .flatten()
+                .all(|m| m.checks.is_empty())
+        );
+        // The next save writes what the world has: a card's checks, and an
+        // assign's that waits in the mail; each is in what tells a save
+        // moved.
+        let mut k = back.found();
+        let mut w = back.world;
+        let last = w.cards.len() - 1;
+        w.cards[last].checks = vec!["api".into(), "e2e".into()];
+        assert!(store.save(&w, &k.kept()).unwrap(), "a card's checks moved");
+        k.mail[1].push(Mail {
+            from: 1,
+            kind: MsgKind::Assign,
+            body: "Check it".into(),
+            id: 9,
+            re: None,
+            paths: Vec::new(),
+            checks: vec!["api".into()],
+            card: None,
+            outcome: Outcome::Ok,
+        });
+        assert!(store.save(&w, &k.kept()).unwrap(), "the mail moved");
+        let back = store.load(100).unwrap().expect("a world");
+        assert_eq!(back.world.cards[last].checks, ["api", "e2e"]);
+        assert!(back.world.cards[0].checks.is_empty(), "only the card's own");
+        assert_eq!(back.found.mail[1].last().unwrap().checks, ["api"]);
+        assert!(!store.save(&w, &k.kept()).unwrap(), "nothing moved");
+        // What Lonca would not take, or no JSON, is a file imece did not
+        // write: these names reach `lonca approve`.
+        for (table, bad) in [
+            ("cards", "'x'"),
+            ("cards", "'[\"a,b\"]'"),
+            ("cards", "'[\"b\", \"a\"]'"),
+            ("mail", "'[\"Api\"]'"),
+        ] {
+            store
+                .raw()
+                .execute_batch(&format!(
+                    "UPDATE cards SET checks = '[]'; UPDATE mail SET checks = '[]';
+                     UPDATE {table} SET checks = {bad};"
+                ))
+                .unwrap();
+            let why = match store.load(100) {
+                Err(e) => e.to_string(),
+                Ok(_) => panic!("a file imece did not write loaded: {table} {bad}"),
+            };
+            assert!(why.contains("checks"), "{why}");
+        }
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
     fn an_agent_comes_back_at_its_cards_try() {
         let d = dir("tries");
         std::fs::create_dir_all(&d).unwrap();
@@ -5429,6 +5541,7 @@ mod tests {
             id: 9,
             re: None,
             paths: vec![crate::paths::Owned::new("src/b.rs")],
+            checks: Vec::new(),
             card: None,
             outcome: Outcome::Ok,
         });
@@ -5493,6 +5606,7 @@ mod tests {
                     title: "Parser".into(),
                     tier: "cheap".into(),
                     paths: vec![crate::paths::Owned::new("src/p.rs")],
+                    checks: Vec::new(),
                     body: "Fix it.".into(),
                     after: Vec::new(),
                 }],

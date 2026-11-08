@@ -6,6 +6,7 @@ mod app;
 mod archives;
 mod awake;
 mod away;
+mod checks;
 mod clip;
 mod complete;
 mod edit;

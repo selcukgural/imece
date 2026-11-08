@@ -110,6 +110,12 @@ An `assign` or a `post` names the paths its card owns: `paths`, at most 20 git p
 
 This is the cheap stand-in for symbol leases (see [the code map](../screen/board-and-code-map.md)): a path is what the leader can name when it plans, and what a change can be checked against without reading the files. Leases come only if paths prove not enough.
 
+## The checks a card asks for
+
+On a project on Lonca an `assign`, a `post` or a card of a plan may also name checks: `checks`, at most 32 names of checks the repository's Lonca policy defines (`verification.checks` in its `lonca.toml`, such as `api` or `e2e`). Lonca's own checks (`build`, `tests`) run anyway and are no names here. The card keeps them, sorted, between runs too; the worker's task ends with `This card asks for Lonca's checks api, e2e: once the person says yes, Lonca's merge queue runs them on your change too, and a failure comes back to you`, and a card's screen lists them (`checks`).
+
+Nothing runs them before you decide. The card's change says them on its verdict line (`after your yes Lonca runs: build, tests, api · the card also asks for api`), and your `a` asks Lonca for them (`lonca approve 5 --also=api`): only a person signs an approval, so no agent adds or drops one. Lonca keeps them for the change's later versions. A name the policy lacks stops the yes: `your word on the proposal did not reach Lonca: Lonca's policy has no api check`, and the change still waits; add the check to the policy (`lonca policy set`) or reject the change. Off Lonca nothing would run them, so `checks` is refused (`checks run in Lonca's merge queue, and this project is not on Lonca: leave checks out, and say in the body what to run`); [the repository's check](changes.md#the-repositorys-check) is what runs there. The demo's second project is on Lonca, and every third card of it asks for `api`.
+
 ## A card's tries
 
 A card follows its change, not its worker's turns. It is at work until the worker's `done`; it waits for you to review while its change (`Δ`) is in TO DECIDE; it goes back to work when you send the change back (a reject, notes, a clash), and your words to the worker go on with that card, a round more; it is done once the change is applied whole, or when the `done` left nothing to take. On Lonca it is verifying in the merge queue after your yes, done on trunk, and back at work when the queue or a reviewer says no.
@@ -139,7 +145,7 @@ The demo shows it: a plan the person gives the leader posts its tests and its do
 
 The first worker is cheap and you asked for work; before the leader hires a second one, you see what it means to do. It calls `plan(cards, cost)`: the cards it means to assign or post, each with a title, a tier, the paths it owns and a body, and what it expects them all to cost in dollars. The plan comes to TO DECIDE as one `▤` item (`lead: plans 3 cards for $1.20; enter reads it`), the journal says `lead planned 3 cards for $1.20; waits for your yes`, and the leader is told to end its turn; while the plan waits, the leader's mail waits with it ([mail waits](#mail-waits-with-an-agent-that-waits-on-you)) and `hire` answers `the person is reading your plan; end your turn, their yes starts your next`.
 
-- `enter` opens the plan whole: each card's number, title and tier, the paths it owns, the cards of the plan it waits on, its body; the expected cost beside what is left in the pot. Every word is the leader's, cleaned, never read as Markdown.
+- `enter` opens the plan whole: each card's number, title and tier, the paths it owns, the checks it asks for, the cards of the plan it waits on, its body; the expected cost beside what is left in the pot. Every word is the leader's, cleaned, never read as Markdown.
 - `a` says yes: the leader hears `The person said yes to your plan: hire and assign as planned` with its next prompt (at once when its turn is over) and may hire until its next plan; a new plan takes the yes back.
 - `r` says no: the plan is dropped and the leader hears `The person said no to your plan: ask them what they want, or make another plan`.
 - `n` writes to the leader instead: what you send closes the plan unanswered, and `hire` says so until a new plan has your yes (`the person answered your plan in words, not with a yes: make a new plan from what they said`). Any word of yours to the leader does the same.

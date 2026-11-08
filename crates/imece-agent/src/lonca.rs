@@ -83,6 +83,23 @@ pub const TRUNK_REF: &str = "refs/lonca/trunk";
 const SAID_MOST: usize = 300;
 /// The most warnings kept of an import.
 const WARNINGS_MOST: usize = 8;
+/// How many named checks one approval may ask for (Lonca's `MAX_CHECKS`).
+pub const CHECKS_MOST: usize = 32;
+/// The longest name a named check may have.
+pub const CHECK_NAME_MOST: usize = 32;
+/// The names a named check may not have: Lonca's own checks
+/// (`RESERVED_CHECKS`).
+pub const RESERVED_CHECKS: [&str; 9] = [
+    "build",
+    "test",
+    "tests",
+    "extended",
+    "syntax",
+    "scope",
+    "claim_diff",
+    "merge",
+    "test_integrity",
+];
 
 /// Why the store can not be read. Every one of them closes a project on
 /// Lonca to hires and Δ decisions, [`Down::Again`] once it goes on.
@@ -253,12 +270,23 @@ impl Place {
         self.run(checkout, &args, FETCH_WAIT).map(|_| ())
     }
 
-    /// `lonca approve`: the operation numbered `seq` of `repo` goes on.
-    /// Signed by the person, who just said so: a Secure Enclave key waits
-    /// for a finger.
-    pub fn approve(&self, repo: &str, dir: &Path, seq: u64) -> Result<(), Failed> {
+    /// `lonca approve`: the operation numbered `seq` of `repo` goes on,
+    /// and owes the named checks `also` too (`--also`, sorted, each once,
+    /// each a [check name](is_check_name), at most [`CHECKS_MOST`]; else
+    /// nothing runs). Signed by the person, who just said so: a Secure
+    /// Enclave key waits for a finger.
+    pub fn approve(&self, repo: &str, dir: &Path, seq: u64, also: &[String]) -> Result<(), Failed> {
+        if !checks_asked(also) {
+            return Err(Failed::Said(format!("not checks Lonca takes: {also:?}")));
+        }
         let (seq, named) = (seq.to_string(), format!("--repo={repo}"));
-        let args = ["approve", &seq, &named, "--json"].map(OsStr::new);
+        let mut args = vec!["approve".to_string(), seq, named];
+        if !also.is_empty() {
+            // One argument: a name never reads as an option.
+            args.push(format!("--also={}", also.join(",")));
+        }
+        args.push("--json".into());
+        let args: Vec<&OsStr> = args.iter().map(OsStr::new).collect();
         self.run(dir, &args, DECIDE_WAIT).map(|_| ())
     }
 
@@ -464,6 +492,25 @@ fn refusal(said: &str) -> String {
     let line = last.unwrap_or_default().trim();
     let line = line.strip_prefix("lonca: ").unwrap_or(line);
     line.chars().take(SAID_MOST).collect()
+}
+
+/// Whether `name` may name a check of Lonca's `verification.checks`:
+/// `[a-z0-9_-]`, 1 to [`CHECK_NAME_MOST`] of them, none of
+/// [`RESERVED_CHECKS`] (Lonca's `valid_check_name`).
+pub fn is_check_name(name: &str) -> bool {
+    (1..=CHECK_NAME_MOST).contains(&name.len())
+        && name
+            .bytes()
+            .all(|b| matches!(b, b'a'..=b'z' | b'0'..=b'9' | b'_' | b'-'))
+        && !RESERVED_CHECKS.contains(&name)
+}
+
+/// Whether `checks` is what an approval may ask for: at most
+/// [`CHECKS_MOST`] check names, sorted, each once.
+pub fn checks_asked(checks: &[String]) -> bool {
+    checks.len() <= CHECKS_MOST
+        && checks.iter().all(|c| is_check_name(c))
+        && checks.windows(2).all(|w| w[0] < w[1])
 }
 
 /// The most of `text` that fits `most` bytes, on a character's edge.
@@ -2280,7 +2327,7 @@ mod tests {
     #[test]
     fn a_decision_names_its_number_and_repository() {
         let (place, dir) = program("exit 0");
-        assert_eq!(place.approve("-demo", &dir, 5), Ok(()));
+        assert_eq!(place.approve("-demo", &dir, 5, &[]), Ok(()));
         assert!(
             seen(&dir).contains("|approve 5 --repo=-demo --json|"),
             "{}",
@@ -2296,10 +2343,70 @@ mod tests {
     }
 
     #[test]
+    fn an_approval_asks_for_named_checks_in_one_argument() {
+        let (place, dir) = program("exit 0");
+        let also = ["api".to_string(), "e2e".to_string()];
+        assert_eq!(place.approve("demo", &dir, 5, &also), Ok(()));
+        assert!(
+            seen(&dir).contains("|approve 5 --repo=demo --also=api,e2e --json|"),
+            "{}",
+            seen(&dir)
+        );
+        // What Lonca would refuse never runs.
+        fs::remove_file(dir.join("seen")).unwrap();
+        for bad in [
+            vec!["e2e".to_string(), "api".to_string()],
+            vec!["api".to_string(), "api".to_string()],
+            vec!["A".to_string()],
+            vec!["build".to_string()],
+        ] {
+            assert!(
+                matches!(place.approve("demo", &dir, 5, &bad), Err(Failed::Said(_))),
+                "{bad:?}"
+            );
+        }
+        assert!(!dir.join("seen").exists(), "the program ran");
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_check_name_is_lonca_s() {
+        // A dash may come first: the name goes in `--also=…`, never alone.
+        for good in [
+            "a",
+            "a-b_9",
+            "api",
+            &"x".repeat(32),
+            "tests2",
+            "builds",
+            "-",
+            "-x",
+        ] {
+            assert!(is_check_name(good), "{good}");
+        }
+        for bad in ["", &"x".repeat(33), "Api", "a b", "a,b", "a.b", "ç"] {
+            assert!(!is_check_name(bad), "{bad}");
+        }
+        for reserved in RESERVED_CHECKS {
+            assert!(!is_check_name(reserved), "{reserved}");
+        }
+        let names = |n: &[&str]| n.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert!(checks_asked(&[]));
+        assert!(checks_asked(&names(&["a", "b"])));
+        assert!(!checks_asked(&names(&["b", "a"])));
+        assert!(!checks_asked(&names(&["a", "a"])));
+        assert!(!checks_asked(&names(&["a", "B"])));
+        let most: Vec<String> = (0..CHECKS_MOST).map(|n| format!("c{n:02}")).collect();
+        assert!(checks_asked(&most));
+        let more: Vec<String> = (0..=CHECKS_MOST).map(|n| format!("c{n:02}")).collect();
+        assert!(!checks_asked(&more));
+    }
+
+    #[test]
     fn a_refused_decision_says_why() {
         let (place, dir) = program("echo 'lonca: denied: nothing_pending' >&2\nexit 1");
         let why = Err(Failed::Said("denied: nothing_pending".into()));
-        assert_eq!(place.approve("demo", &dir, 5), why);
+        assert_eq!(place.approve("demo", &dir, 5, &[]), why);
         assert_eq!(place.reject("demo", &dir, 5, "no"), why);
         fs::remove_dir_all(dir).unwrap();
     }
@@ -2718,7 +2825,7 @@ mod tests {
         assert_eq!(place.reject(&repo, &dir, older.seq, "replaced"), Ok(()));
         let rejected = Standing::Rejected(vec!["rejected: replaced".into()]);
         assert_eq!(standing(&mut c, &older.change), Some(rejected));
-        assert_eq!(place.approve(&repo, &dir, newer.seq), Ok(()));
+        assert_eq!(place.approve(&repo, &dir, newer.seq, &[]), Ok(()));
         let trunk = c.status(&repo).expect("status").trunk;
         assert_eq!(
             standing(&mut c, &newer.change),
@@ -2733,7 +2840,7 @@ mod tests {
             "the default runs nothing"
         );
         assert!(matches!(
-            place.approve(&repo, &dir, newer.seq),
+            place.approve(&repo, &dir, newer.seq, &[]),
             Err(Failed::Said(why)) if why.contains("nothing_pending")
         ));
     }

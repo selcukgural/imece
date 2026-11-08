@@ -389,7 +389,7 @@ fn decide(
         place.reject(repo, dir, older, &replaced)?;
     }
     match verdict {
-        Decision::Approve => place.approve(repo, dir, proposal.seq),
+        Decision::Approve(also) => place.approve(repo, dir, proposal.seq, also),
         Decision::Reject(reason) => place.reject(repo, dir, proposal.seq, reason),
     }
 }
@@ -2800,7 +2800,7 @@ mod tests {
             repo: "demo".into(),
             agent: 1,
             proposal: offer("w1", 9, "c9").proposal,
-            verdict: Decision::Approve,
+            verdict: Decision::Approve(Vec::new()),
         }));
         job_ends(&mut live, &mut w);
         assert_eq!(w.journal.len(), before, "a look says what came of it");
@@ -2814,12 +2814,13 @@ mod tests {
         let calls = |dir: &Path| std::fs::read_to_string(dir.join("all")).unwrap();
         let mut proposal = offer("w1", 9, "c9").proposal;
         proposal.older = vec![5, 7];
-        decide(&place, "demo", &dir, &proposal, &Decision::Approve).unwrap();
+        let yes = Decision::Approve(vec!["api".into(), "e2e".into()]);
+        decide(&place, "demo", &dir, &proposal, &yes).unwrap();
         assert_eq!(
             calls(&dir),
             "reject 5 --repo=demo --reason=replaced by proposal 9 --json\n\
              reject 7 --repo=demo --reason=replaced by proposal 9 --json\n\
-             approve 9 --repo=demo --json\n"
+             approve 9 --repo=demo --also=api,e2e --json\n"
         );
         std::fs::remove_file(dir.join("all")).unwrap();
         proposal.older = Vec::new();
@@ -2839,7 +2840,13 @@ mod tests {
         );
         let mut proposal = offer("w1", 9, "c9").proposal;
         proposal.older = vec![5, 7];
-        let got = decide(&place, "demo", &dir, &proposal, &Decision::Approve);
+        let got = decide(
+            &place,
+            "demo",
+            &dir,
+            &proposal,
+            &Decision::Approve(Vec::new()),
+        );
         assert_eq!(got, Err(Failed::Said("no".into())));
         let calls = std::fs::read_to_string(dir.join("all")).unwrap();
         assert_eq!(calls.lines().count(), 1, "{calls}");
@@ -3367,7 +3374,7 @@ mod tests {
         w.store_seen(0, "demo", up);
         let no_proposal = "no proposal of theirs waits".to_string();
         assert_eq!(
-            live.decide_proposal(&w, 1, Decision::Approve),
+            live.decide_proposal(&w, 1, Decision::Approve(Vec::new())),
             Err(no_proposal)
         );
         w.change_proposed(
@@ -3382,7 +3389,7 @@ mod tests {
         );
         live.applying[1] = false;
         assert_eq!(
-            live.decide_proposal(&w, 1, Decision::Approve),
+            live.decide_proposal(&w, 1, Decision::Approve(Vec::new())),
             Err("another lonca command is under way".to_string())
         );
         live.applying[1] = true;
@@ -3390,6 +3397,33 @@ mod tests {
         assert!(!live.applying[1], "free again");
         assert!(live.lonca_is_due(), "the look that says what came of it");
         assert!(w.proposal_of(1).is_some(), "the store says when it left");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_yes_asks_for_the_checks_of_the_change_s_card() {
+        let (mut live, dir) = live_with("echo \"$*\" >> \"$(dirname \"$0\")/all\"\nexit 0");
+        let mut w = team(1);
+        w.on_lonca(0, Some("demo".into()));
+        let up = StoreSeen::Up {
+            trunk: TRUNK.into(),
+            pending: 1,
+            behind: Behind::Unknown,
+        };
+        w.store_seen(0, "demo", up);
+        let c = with_card(&mut w, 1);
+        w.cards[c].checks = vec!["api".into(), "e2e".into()];
+        w.change_proposed(
+            change_of(1, &offer("w", 5, "c5")),
+            offer("w", 5, "c5").proposal,
+        );
+        assert_eq!(live.apply_change(&w, 1, Vec::new()), Ok(()));
+        job_ends(&mut live, &mut w);
+        let calls = std::fs::read_to_string(dir.join("all")).unwrap();
+        assert!(
+            calls.contains("approve 5 --repo=demo --also=api,e2e --json"),
+            "{calls}"
+        );
         std::fs::remove_dir_all(dir).unwrap();
     }
 

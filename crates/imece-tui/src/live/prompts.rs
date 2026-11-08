@@ -30,14 +30,18 @@ pub(super) fn mail_prompt(w: &World, mail: &[Mail]) -> String {
         "Messages from your teammates in imece (written by those agents, not by the person):",
     );
     for m in mail {
-        // A card handed again keeps the paths it owns (record 126).
-        let paths = m.card.map_or(&m.paths, |c| &w.cards[c].paths);
+        // A card handed again keeps the paths it owns and the checks it
+        // asks for (records 126, 127).
+        let card = m.card.map(|c| &w.cards[c]);
+        let paths = card.map_or(&m.paths, |c| &c.paths);
+        let checks = card.map_or(&m.checks, |c| &c.checks);
         out.push_str(&format!(
-            "\n\n[{}] from {}:\n{}{}",
+            "\n\n[{}] from {}:\n{}{}{}",
             heading(w, m),
             w.agents[m.from].name,
             m.body,
-            owns(paths)
+            owns(paths),
+            asks(checks)
         ));
     }
     out
@@ -168,7 +172,8 @@ pub(super) fn system_prompt(
                      branch, a tag, a commit or a pull request, hire with from (#N for a \
                      pull request) and that worker's worktree starts there and stays. \
                      Workers answer with done, blocked or ask; their \
-                     messages start your next turn."
+                     messages start your next turn.{}",
+                    lonca_checks(w, a.project)
                 )
             };
             format!(
@@ -416,6 +421,21 @@ pub(super) fn scratch_note(dir: &Path) -> String {
     )
 }
 
+/// What a leader of a project on Lonca is told of a card's checks (record
+/// 127); nothing off Lonca, where nothing runs them.
+fn lonca_checks(w: &World, project: ProjectId) -> &'static str {
+    match w.projects[project].lonca {
+        Some(_) => {
+            " This project is on Lonca: a card may also ask for checks the repository's \
+             Lonca policy defines (checks: names from verification.checks, on an assign, \
+             a post or a plan card); the person's yes to its change has Lonca's merge \
+             queue run them too, and a failure goes back to its worker. Lonca's own \
+             build and tests run anyway, so name only the extra ones the card needs."
+        }
+        None => "",
+    }
+}
+
 /// What an agent in a Lonca workspace (record 119) is told of it, on top of
 /// what its prompt says of a worktree. Lonca's own rules come by its
 /// `SessionStart` hook: this says what they mean for a `done`.
@@ -484,6 +504,7 @@ mod tests {
             id,
             re,
             paths: Vec::new(),
+            checks: Vec::new(),
             card: None,
             outcome: Outcome::Ok,
         };
@@ -514,6 +535,7 @@ mod tests {
             id: 12,
             re: None,
             paths: Vec::new(),
+            checks: Vec::new(),
             card,
             outcome,
         };
@@ -950,6 +972,7 @@ mod tests {
             id: 2,
             re: None,
             paths: vec![Owned::new("src/a.rs"), Owned::shared("docs")],
+            checks: Vec::new(),
             card: None,
             outcome: Outcome::Ok,
         };
@@ -974,5 +997,25 @@ mod tests {
             "{worker}"
         );
         assert!(worker.contains("ask lead to widen the card"), "{worker}");
+    }
+
+    #[test]
+    fn a_leader_on_lonca_hears_that_a_card_may_ask_for_checks() {
+        let mut w = team(1);
+        let off = system_prompt(&w, 0, 4, 0, Confine::Standard);
+        assert!(!off.contains("Lonca"), "{off}");
+        w.on_lonca(0, Some("demo".into()));
+        let on = system_prompt(&w, 0, 4, 0, Confine::Standard);
+        assert!(
+            on.contains(
+                "messages start your next turn. This project is on Lonca: a card may also ask \
+                 for checks the repository's Lonca policy defines (checks: names from \
+                 verification.checks, on an assign, a post or a plan card); the person's yes \
+                 to its change has Lonca's merge queue run them too, and a failure goes back \
+                 to its worker. Lonca's own build and tests run anyway, so name only the extra \
+                 ones the card needs. You never change files yourself"
+            ),
+            "{on}"
+        );
     }
 }

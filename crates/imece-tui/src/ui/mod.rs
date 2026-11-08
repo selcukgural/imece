@@ -3701,6 +3701,7 @@ mod tests {
             story: Vec::new(),
             symbols: Vec::new(),
             paths: Vec::new(),
+            checks: Vec::new(),
             started: 0,
             finished: 0,
             attempt: 1,
@@ -4632,6 +4633,7 @@ mod tests {
             story: Vec::new(),
             symbols: Vec::new(),
             paths: Vec::new(),
+            checks: Vec::new(),
             started: 0,
             finished: 0,
             attempt: 1,
@@ -6132,6 +6134,7 @@ mod tests {
             story: Vec::new(),
             symbols: Vec::new(),
             paths: Vec::new(),
+            checks: Vec::new(),
             started: 0,
             finished: 0,
             attempt: 1,
@@ -9033,6 +9036,7 @@ mod tests {
                 story: Vec::new(),
                 symbols: Vec::new(),
                 paths: Vec::new(),
+                checks: Vec::new(),
                 started: 0,
                 finished: 0,
                 attempt: 1,
@@ -9329,6 +9333,7 @@ mod tests {
             story: Vec::new(),
             symbols: Vec::new(),
             paths: Vec::new(),
+            checks: Vec::new(),
             started: 0,
             finished: 0,
             attempt: 1,
@@ -13141,6 +13146,7 @@ after | not a table";
                     title: "a".into(),
                     tier: "cheap".into(),
                     paths: Vec::new(),
+                    checks: Vec::new(),
                     body: "one".into(),
                     after: Vec::new(),
                 },
@@ -13148,6 +13154,7 @@ after | not a table";
                     title: "b".into(),
                     tier: "strong".into(),
                     paths: vec![Owned::new("x")],
+                    checks: vec!["api".into(), "e2e".into()],
                     body: "one\ntwo\nthree".into(),
                     after: vec![1],
                 },
@@ -13165,6 +13172,7 @@ after | not a table";
                 "",
                 "2. b · strong",
                 "   owns x",
+                "   checks api, e2e",
                 "   after 1 above",
                 "   one",
                 "   two",
@@ -13175,6 +13183,19 @@ after | not a table";
         assert_eq!(lines[0].spans[0].style, bold(pal().strong));
         assert_eq!(lines[4].spans[0].style, dim());
         assert_eq!(lines[5].spans[0].style, dim());
+        assert_eq!(lines[6].spans[0].style, dim());
+    }
+
+    #[test]
+    fn a_card_s_screen_says_the_checks_it_asks_for() {
+        let mut app = on_card_one(Lang::En);
+        app.world.cards[0].checks = Vec::new();
+        assert!(!render(&app, 140, 38).contains("checks "));
+        app.world.cards[0].checks = vec!["api".into(), "e2e".into()];
+        let s = render(&app, 140, 38);
+        assert!(s.contains("checks api, e2e"), "{s}");
+        app.lang = Lang::Tr;
+        assert!(render(&app, 140, 38).contains("denetim api, e2e"));
     }
 
     #[test]
@@ -13191,6 +13212,7 @@ after | not a table";
             story: Vec::new(),
             symbols: Vec::new(),
             paths: Vec::new(),
+            checks: Vec::new(),
             started: 0,
             finished: 0,
             attempt: 1,
@@ -13543,6 +13565,28 @@ after | not a table";
         assert_eq!(
             line(failed(StoreAct::Import, None)),
             "importing into Lonca failed: lonca did not answer: no such program, or it took too long"
+        );
+        // A refusal's reasons as a person says them (record 127); words
+        // that are not one stay as they came.
+        let yes = |why| line(failed(StoreAct::Decide, Some(why)));
+        assert_eq!(
+            yes("denied: unknown_check:api, invalid_checks"),
+            format!(
+                "{}: Lonca's policy has no api check, the card's checks are not a list \
+                 Lonca takes",
+                Lang::En.text().store_act_decide
+            )
+        );
+        assert_eq!(
+            yes("denied:unknown_check:api"),
+            format!(
+                "{}: denied:unknown_check:api",
+                Lang::En.text().store_act_decide
+            )
+        );
+        assert_eq!(
+            yes("no answer"),
+            format!("{}: no answer", Lang::En.text().store_act_decide)
         );
     }
 

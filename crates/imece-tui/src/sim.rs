@@ -1042,6 +1042,11 @@ pub fn world(
 const PLANNED_COST: u64 = 4_000;
 /// Every this many cards, one's worker strays once (record 114).
 const STRAY_EVERY: usize = 4;
+/// Every this many cards of a project on Lonca, one asks for the policy's
+/// check [`ASKED_CHECK`] (record 127), as a live leader names checks.
+const ASKS_EVERY: usize = 3;
+/// The check such a card asks for.
+const ASKED_CHECK: &str = "api";
 /// From this far into its work.
 const STRAY_FROM: u8 = 40;
 
@@ -1486,6 +1491,10 @@ impl Sim {
             end: end.to_string(),
             lines: lines.iter().map(|l| l.to_string()).collect(),
         };
+        // What the yes asked for runs after Lonca's own (record 127).
+        let asked: Vec<Attested> = (w.asked_checks(id).iter())
+            .map(|name| check(name, true, "exit 0, 4.2 s", &[]))
+            .collect();
         // Each fifth merges and fails its tests, as a queue finds it, and
         // so does each round of its card after, until the person allows
         // one more (record 126, F9).
@@ -1526,7 +1535,10 @@ impl Sim {
                 vec![
                     check("build", true, "exit 0, 12.4 s", &[]),
                     check("tests", true, "exit 0, 28.7 s", &[]),
-                ],
+                ]
+                .into_iter()
+                .chain(asked)
+                .collect(),
             );
             self.store_integrated(w, p);
             return self.tell_the_others(w, id);
@@ -2869,6 +2881,7 @@ impl Sim {
 
     fn new_card(&mut self, w: &mut World, project: ProjectId, title: String) -> CardId {
         let id = w.cards.len();
+        let asks = w.projects[project].lonca.is_some() && id.is_multiple_of(ASKS_EVERY);
         w.cards.push(Card {
             id,
             project,
@@ -2878,6 +2891,7 @@ impl Sim {
             story: Vec::new(),
             symbols: Vec::new(),
             paths: Vec::new(),
+            checks: (asks.then(|| ASKED_CHECK.to_string()).into_iter()).collect(),
             started: 0,
             finished: 0,
             attempt: 0,
@@ -2946,6 +2960,7 @@ impl Sim {
                     .get(i)
                     .map(|(file, _)| vec![Owned::new(file)])
                     .unwrap_or_default(),
+                checks: w.cards[c].checks.clone(),
                 after: w.cards[c].after.iter().filter_map(place).collect(),
             })
             .collect();
@@ -8879,6 +8894,40 @@ diff --git a/b.rs b/b.rs
             .filter(|l| matches!(l.event, Event::Verified { .. }))
             .count();
         assert_eq!(after, before);
+    }
+
+    #[test]
+    fn a_demo_card_on_lonca_asks_for_a_check_now_and_then_and_its_landing_runs_it() {
+        let (mut w, mut s, id) = a_proposal_waits();
+        // Each third card of a project on Lonca asks, and none off it.
+        while !w.cards.len().is_multiple_of(ASKS_EVERY) {
+            s.new_card(&mut w, 0, "x".into());
+        }
+        let c = s.new_card(&mut w, 0, "Api".into());
+        assert_eq!(w.cards[c].checks, [ASKED_CHECK]);
+        let next = s.new_card(&mut w, 0, "x".into());
+        assert!(w.cards[next].checks.is_empty());
+        // The Δ says it, and the landing has it run after Lonca's own.
+        w.agents[id].card = Some(c);
+        assert_eq!(w.verdict(id).unwrap().asks, [ASKED_CHECK]);
+        assert_eq!(w.asked_checks(id), [ASKED_CHECK]);
+        s.extras.landings = 0;
+        s.landed(&mut w, id, true);
+        let checks = (w.journal.iter().rev())
+            .find_map(|l| match &l.event {
+                Event::Verified { checks, .. } => Some(checks.clone()),
+                _ => None,
+            })
+            .unwrap();
+        let names: Vec<&str> = checks.iter().map(|c| c.check.as_str()).collect();
+        assert_eq!(names, ["build", "tests", ASKED_CHECK]);
+        assert!(checks.iter().all(|c| c.ok));
+        w.projects[0].lonca = None;
+        while !w.cards.len().is_multiple_of(ASKS_EVERY) {
+            s.new_card(&mut w, 0, "x".into());
+        }
+        let off = s.new_card(&mut w, 0, "x".into());
+        assert!(w.cards[off].checks.is_empty(), "nothing would run it");
     }
 
     #[test]

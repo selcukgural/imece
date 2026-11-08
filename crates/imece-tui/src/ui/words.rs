@@ -308,6 +308,7 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
                 StoreAct::Sync => t.store_act_sync,
                 StoreAct::Decide => t.store_act_decide,
             };
+            let why = why.as_deref().map(|w| denied_why(t, w));
             fill(
                 t.ev_store_failed,
                 &[did, why.as_deref().unwrap_or(t.store_no_answer)],
@@ -1199,6 +1200,9 @@ fn refused_why(t: &Text, why: &str) -> String {
         stale,
         frozen,
         missing,
+        unknown,
+        invalid,
+        not_a_change,
     ] = t.landed_whys;
     match (word, rest) {
         ("verification_failed", check) => fill(failed, &[check]),
@@ -1210,7 +1214,25 @@ fn refused_why(t: &Text, why: &str) -> String {
         ("conflict", symbol) => fill(clash, &[symbol]),
         ("stale_trunk" | "unknown_base", "") => stale.to_string(),
         ("frozen", why) => fill(frozen, &[why]),
+        // What an approval asking for a card's checks may be refused for
+        // (record 127).
+        ("unknown_check", check) => fill(unknown, &[check]),
+        ("invalid_checks", "") => invalid.to_string(),
+        ("checks_not_a_change", "") => not_a_change.to_string(),
         _ => why.to_string(),
+    }
+}
+
+/// What the `lonca` program said when the daemon refused (`denied:
+/// unknown_check:api, invalid_checks`): each reason as a person says it;
+/// anything else as it came.
+fn denied_why(t: &Text, said: &str) -> String {
+    match said.strip_prefix("denied: ") {
+        Some(reasons) => (reasons.split(", "))
+            .map(|r| refused_why(t, r))
+            .collect::<Vec<_>>()
+            .join(", "),
+        None => said.to_string(),
     }
 }
 
@@ -2563,6 +2585,7 @@ mod tests {
                         title: "Parser".into(),
                         tier: "cheap".into(),
                         paths: Vec::new(),
+                        checks: Vec::new(),
                         body: "b".into(),
                         after: Vec::new(),
                     };
@@ -2650,6 +2673,17 @@ mod tests {
             ("stale_trunk:x", "stale_trunk:x"),
             ("frozen:audit", "the repository is frozen: audit"),
             ("rejected: not this", "rejected: not this"),
+            ("unknown_check:api", "Lonca's policy has no api check"),
+            (
+                "invalid_checks",
+                "the card's checks are not a list Lonca takes",
+            ),
+            ("invalid_checks:x", "invalid_checks:x"),
+            (
+                "checks_not_a_change",
+                "checks go only with a proposed change",
+            ),
+            ("checks_not_a_change:x", "checks_not_a_change:x"),
         ] {
             assert_eq!(refused_why(t, word), said);
         }

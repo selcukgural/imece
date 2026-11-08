@@ -262,6 +262,9 @@ pub struct Mail {
     /// The paths an `assign` gives its card (record 114); nothing on
     /// the other types.
     pub paths: Vec<Owned>,
+    /// The checks an `assign` gives its card (record 127); nothing on the
+    /// other types.
+    pub checks: Vec<String>,
     /// The card an `assign` hands again (record 126): its receiver takes
     /// it with the turn the mail starts, instead of a new one.
     pub card: Option<CardId>,
@@ -607,7 +610,9 @@ pub enum StoreJob {
 /// What the person says of a proposal.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Decision {
-    Approve,
+    /// Yes, and the checks of the change's card Lonca runs too (record
+    /// 127, `--also`).
+    Approve(Vec<String>),
     /// No, and why: their words reach the worker through Lonca too.
     Reject(String),
 }
@@ -1447,6 +1452,10 @@ pub struct Card {
     /// The paths the card owns (record 114): given with the `assign` or
     /// `post` that made it; none means no bounds.
     pub paths: Vec<Owned>,
+    /// The checks of Lonca's policy it asks for (record 127), sorted:
+    /// given with the `assign` or `post` that made it, never changed; the
+    /// person's yes to its change asks Lonca to run them too.
+    pub checks: Vec<String>,
     pub started: u64,
     pub finished: u64,
     /// How many times the card was taken (record 126): by the turn an
@@ -2693,6 +2702,9 @@ pub struct Verdict {
     /// What Lonca runs after the person's yes (record 122); none off
     /// Lonca.
     pub verifies: Option<Runs>,
+    /// The checks its card asks for that `verifies` does not list (record
+    /// 127): the yes asks Lonca to run them too. None off Lonca.
+    pub asks: Vec<String>,
 }
 
 /// What Lonca's merge queue runs on a proposal after the person's yes, as
@@ -2917,6 +2929,9 @@ pub struct Planned {
     /// The tier's wire word: `cheap`, `standard` or `strong`.
     pub tier: String,
     pub paths: Vec<Owned>,
+    /// The checks it will ask for (record 127).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub checks: Vec<String>,
     pub body: String,
     /// The cards of the same plan it waits on (record 126, F10), by their
     /// place in it from 1, each an earlier one.
@@ -4063,6 +4078,15 @@ impl World {
             .or(self.agents[id].card)
     }
 
+    /// The checks the card of worker `id`'s waiting change asks for
+    /// (record 127): what the person's yes to it asks Lonca to run too.
+    pub fn asked_checks(&self, id: AgentId) -> &[String] {
+        match self.change_card(id).and_then(|c| self.cards.get(c)) {
+            Some(card) => &card.checks,
+            None => &[],
+        }
+    }
+
     /// The verdict on worker `id`'s waiting change (record 125): ready
     /// when it is easy (proved clean, inside its card's paths), overlaps
     /// no other change waiting in its project, fits the checkout and is
@@ -4096,6 +4120,15 @@ impl World {
             })
         }));
         let proposal = self.proposal_of(id);
+        let asked = self.asked_checks(id);
+        let asks = match proposal.map(|p| &p.verifies) {
+            Some(Runs::These(runs)) => (asked.iter())
+                .filter(|c| !runs.contains(c))
+                .cloned()
+                .collect(),
+            Some(Runs::Unsaid) => asked.to_vec(),
+            None => Vec::new(),
+        };
         let clashes = self.clashes_of(id).is_some();
         let partial = proposal.is_some_and(|p| !p.redacted.is_empty() || p.cut);
         Some(Verdict {
@@ -4110,6 +4143,7 @@ impl World {
             partial,
             stale: proposal.is_some_and(|p| !p.on_trunk),
             verifies: proposal.map(|p| p.verifies.clone()),
+            asks,
         })
     }
 
@@ -5802,6 +5836,7 @@ mod tests {
             story: Vec::new(),
             symbols: Vec::new(),
             paths: Vec::new(),
+            checks: Vec::new(),
             started: 0,
             finished: 0,
             attempt: 1,
@@ -6142,6 +6177,7 @@ mod tests {
             story: Vec::new(),
             symbols: Vec::new(),
             paths: Vec::new(),
+            checks: Vec::new(),
             started: 0,
             finished: 0,
             attempt: 1,
@@ -6559,6 +6595,7 @@ mod tests {
                 story: Vec::new(),
                 symbols: Vec::new(),
                 paths: Vec::new(),
+                checks: Vec::new(),
                 started: 0,
                 finished: 0,
                 attempt: 1,
@@ -7267,6 +7304,7 @@ mod tests {
             story: Vec::new(),
             symbols: Vec::new(),
             paths: Vec::new(),
+            checks: Vec::new(),
             started: 0,
             finished: 0,
             attempt: 1,
@@ -7791,6 +7829,7 @@ mod tests {
                 .collect(),
             symbols: Vec::new(),
             paths: Vec::new(),
+            checks: Vec::new(),
             started: 0,
             finished: 0,
             attempt: 1,
@@ -8353,6 +8392,7 @@ mod tests {
                     title: format!("c{i}"),
                     tier: "standard".into(),
                     paths: Vec::new(),
+                    checks: Vec::new(),
                     body: "b".into(),
                     after: Vec::new(),
                 })
@@ -8954,6 +8994,7 @@ mod tests {
                 partial: false,
                 stale: false,
                 verifies: None,
+                asks: Vec::new(),
             }
         );
         // Not proved clean: not ready.
@@ -9066,6 +9107,7 @@ mod tests {
             story: Vec::new(),
             symbols: Vec::new(),
             paths: crate::paths::parse(&serde_json::json!(paths)).unwrap(),
+            checks: Vec::new(),
             started: 0,
             finished: 0,
             attempt: 1,
@@ -9158,6 +9200,35 @@ mod tests {
     }
 
     #[test]
+    fn the_verdict_says_which_of_its_card_s_checks_the_yes_asks_for() {
+        let mut w = crate::live::testing::team(2);
+        let names = |n: &[&str]| n.iter().map(|s| s.to_string()).collect::<Vec<String>>();
+        let c = change(1, "T", &[("a", 1, 0)]);
+        // Off Lonca nothing asks: nothing would run them.
+        w.change_ready(c.clone());
+        assert!(w.asked_checks(1).is_empty(), "no card yet");
+        w.cards.push(card(0, Some(1), Vec::new()));
+        w.cards[0].checks = names(&["api", "e2e"]);
+        w.agents[1].card = Some(0);
+        assert_eq!(w.asked_checks(1), names(&["api", "e2e"]));
+        assert_eq!(w.asked_checks(2), Vec::<String>::new(), "another worker's");
+        assert!(w.verdict(1).unwrap().asks.is_empty());
+        // On Lonca: those its runs leave out; all of them when Lonca did
+        // not say what runs.
+        let mut p = a_store_proposal(5);
+        p.verifies = Runs::These(names(&["build", "api"]));
+        w.change_proposed(c.clone(), p.clone());
+        let v = w.verdict(1).unwrap();
+        assert_eq!(v.asks, ["e2e"]);
+        p.verifies = Runs::These(names(&["api", "e2e"]));
+        w.change_proposed(c.clone(), p.clone());
+        assert!(w.verdict(1).unwrap().asks.is_empty(), "both run anyway");
+        p.verifies = Runs::Unsaid;
+        w.change_proposed(c, p);
+        assert_eq!(w.verdict(1).unwrap().asks, ["api", "e2e"]);
+    }
+
+    #[test]
     fn what_a_proposal_cost_is_carried_until_it_is_on_trunk() {
         let spend = Spend {
             cost: 40,
@@ -9200,7 +9271,7 @@ mod tests {
             repo: "r".into(),
             agent: 1,
             proposal: a_store_proposal(5),
-            verdict: Decision::Approve,
+            verdict: Decision::Approve(Vec::new()),
         };
         assert_eq!((job.project(), job.act()), (4, StoreAct::Decide));
     }
@@ -9278,6 +9349,7 @@ mod change_proof_tests {
             symbols: Vec::new(),
             story: Vec::new(),
             paths: crate::paths::parse(&v).unwrap(),
+            checks: Vec::new(),
             started: 0,
             finished: 0,
             attempt: 1,
@@ -9347,6 +9419,7 @@ mod change_proof_tests {
             story: Vec::new(),
             symbols: Vec::new(),
             paths: Vec::new(),
+            checks: Vec::new(),
             started: 0,
             finished: 0,
             attempt: 0,
@@ -9398,6 +9471,7 @@ mod change_proof_tests {
             story: Vec::new(),
             symbols: Vec::new(),
             paths: Vec::new(),
+            checks: Vec::new(),
             started: 0,
             finished: 0,
             attempt: 1,

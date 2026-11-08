@@ -403,7 +403,8 @@ impl Live {
         hunks: Vec<usize>,
     ) -> Result<(), String> {
         if w.proposal_of(id).is_some() {
-            return self.decide_proposal(w, id, Decision::Approve);
+            let also = w.asked_checks(id).to_vec();
+            return self.decide_proposal(w, id, Decision::Approve(also));
         }
         if let Some(why) = w.store_closed(w.agents[id].project) {
             return Err(why.into());
@@ -2038,6 +2039,7 @@ mod tests {
         let opening = Opening {
             title: "Add b",
             paths: &[],
+            checks: &[],
             card: None,
         };
         live.prompt(&mut w, 1, "Add b".into(), Some(opening))

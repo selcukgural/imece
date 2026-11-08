@@ -49,6 +49,7 @@ Deny by default: a message that does not fit is refused with the reason and leav
 | `assign`, `handoff` or `cancel` to `you` | `assign is not for the person; ask them, or tell them (inform, done, blocked)` |
 | a bad `re` | see below |
 | `paths` on anything but an `assign` | `paths go with an assign: the card it opens owns them` |
+| `checks` on anything but an `assign`, with `card`, or on a project not on Lonca | `checks go with an assign: the card it opens asks for them` / `a card handed again keeps its own checks; leave checks out` / `checks run in Lonca's merge queue, and this project is not on Lonca: leave checks out, and say in the body what to run` |
 | `outcome` on anything but a `done`, or not `done`/`failed` | `outcome goes with a done` / `outcome is done or failed` |
 | `card` on anything but an `assign`, or with `paths` | `card goes with an assign: the card it hands again` / `a card handed again keeps its own paths; leave paths out` |
 | a `card` that is not the project's, to a non-worker, in review, in the queue or done | `there is no card #8 in this project`, `a card goes to a worker`, `#3's change waits for the person; it comes back if they send it back`, `#3 is in Lonca's merge queue`, `#3 is done; assign a new task for more` |
@@ -58,6 +59,7 @@ Deny by default: a message that does not fit is refused with the reason and leav
 | `options` on anything but an `ask` to `you` | `options go with an ask to the person (to: you)` |
 | bad `options` | `options must be an array of strings`, `an ask offers at most 4 options`, `an option is empty`, `an option is longer than 60 characters`, `"a\tb" has a control character` |
 | bad `paths` | `paths must be an array of strings`, `a card owns at most 20 paths`, `a path is empty`, `a path is longer than 200 characters`, `"a\tb" has a control character`, `paths are relative to the repository; "/etc" starts with /`, `"src/../x" goes outside the repository (..)`, `paths lists "src" twice` |
+| bad `checks` | `checks must be an array of strings`, `a card asks for at most 32 checks`, `"Api" is not a check's name: a-z, 0-9, _ and -, at most 32, and not one of Lonca's own (build, test, tests, extended, syntax, scope, claim_diff, merge, test_integrity), which run anyway`, `checks lists "api" twice` |
 | a path an open card of the project owns | `#3 Fix the parser owns "src/parser.rs", which "src" names too; give this card other paths, or end one with the word shared (src shared)` |
 
 The 12-turn and 10-post counters start again every time you write to any agent: agents cannot keep each other busy forever without you.
@@ -126,12 +128,13 @@ imece's MCP server is called `imece`; its tools reach a session as `mcp__imece__
 | `body` | string, at most 4000 | yes | for `assign`: the first line becomes the card's title (the screen shows its first 20 characters next to the worker, so it should start with what tells it from the other cards, not a verb every task shares); then the task, the files it touches and when it is done |
 | `re` | integer ≥ 1 | no | the number of the message this replies to |
 | `paths` | array of at most 20 strings, each at most 200 | no | for `assign`: the paths the card owns, relative to the repository, as git pathspecs (a file, a directory, or a pattern with `*`); one ending in the word `shared` is named, not owned. Refused on any other type |
+| `checks` | array of at most 32 names, each `[a-z0-9_-]`, at most 32 | no | for `assign`, on a project on Lonca: checks of the repository's Lonca policy (`verification.checks`) the card asks for; your yes asks Lonca's merge queue to run them ([the checks a card asks for](../concepts/messages-and-board.md#the-checks-a-card-asks-for)). Refused on any other type |
 | `options` | array of at most 4 strings, each at most 60 | no | for an `ask` to `you`: the answers the person can pick with one key, short, the one the agent would take first; the person may still answer in words. Refused on any other message |
 | `card` | integer ≥ 1 | no | for the leader's `assign`: a card to hand again (`#N`), its next try, refused past its third until you allow another ([a card's tries](../concepts/messages-and-board.md#a-cards-tries)) |
 | `outcome` | `done` or `failed` | no | for a `done`: `failed` fails the card and shows no change; `done`, as leaving it out, hands the change in |
 | `after` | array of at most 8 integers ≥ 1 | no | for an `assign`: the cards the card it opens waits on (`#N`, without `#`); while one is not done the assign is held on the card: `held as message 14 on #6: it waits on #2, #5, and claude-1 gets it once they are done` ([cards that wait on others](../concepts/messages-and-board.md#cards-that-wait-on-others)) |
 
-An `assign` with paths is delivered with them: the mail ends `This card owns src/parser.rs, docs (shared): stay in them; what else needs changing goes in your done, or ask for the card to be widened.`
+An `assign` with paths is delivered with them: the mail ends `This card owns src/parser.rs, docs (shared): stay in them; what else needs changing goes in your done, or ask for the card to be widened.` With checks it ends `This card asks for Lonca's checks api, e2e: once the person says yes, Lonca's merge queue runs them on your change too, and a failure comes back to you.`
 
 ### `post`
 
@@ -142,6 +145,7 @@ An `assign` with paths is delivered with them: the mail ends `This card owns src
 | `title` | string, one line, at most 120 | yes | the screen shows its first 20 characters |
 | `body` | string, at most 4000 | yes | the task: what to do, which files, when it is done |
 | `paths` | array of at most 20 strings, each at most 200 | no | the paths the card owns, as on `send` |
+| `checks` | array of at most 32 names | no | the checks the card asks for, as on `send` |
 | `after` | array of at most 8 integers ≥ 1 | no | the cards it waits on, as on `send`: not offered or claimed until each is done |
 
 Answers `posted as #4; an idle worker will be offered it` (with `after`: `posted as #6; it waits on #2, and an idle worker will be offered it once they are done`); the paths are checked against the project's open cards as an `assign`'s are, and `after` as on `send`.
@@ -164,7 +168,7 @@ Answers `Open:` and `Taken:` lists of every card of the project, posted or assig
 | --- | --- | --- | --- |
 | `card` | integer ≥ 1 | yes | the card's number, without `#` |
 
-Workers only (`only workers take cards; assign or post instead`). Refusals: `there is no such card on the board; call board to see it`, `#4 was taken by claude-2; pick another`, `#6 is assigned to claude-1; pick another`, `#6 waits on #4; pick a card that is ready (board with ready: true)`. The answer ends with the card's paths when it owns any (`This card owns tests, lib (shared): stay in them; …`).
+Workers only (`only workers take cards; assign or post instead`). Refusals: `there is no such card on the board; call board to see it`, `#4 was taken by claude-2; pick another`, `#6 is assigned to claude-1; pick another`, `#6 waits on #4; pick a card that is ready (board with ready: true)`. The answer ends with the card's paths when it owns any (`This card owns tests, lib (shared): stay in them; …`), then the checks it asks for (`This card asks for Lonca's checks api: …`).
 
 ### `withdraw`
 
@@ -183,10 +187,10 @@ The leader's only. Answers `#3 is withdrawn`, or `#3 is withdrawn; #6, #7 wait o
 
 | Field | Type | Required | Meaning |
 | --- | --- | --- | --- |
-| `cards` | array of 1 to 20 cards | yes | each `{title, body, tier, paths, after}`: a title of one line (at most 120), a body (at most 4000), a tier (`cheap`, `standard` or `strong`; standard when left out), `paths` as on `send`, `after` the earlier cards of this plan it waits on, by their place (1 is the first) |
+| `cards` | array of 1 to 20 cards | yes | each `{title, body, tier, paths, checks, after}`: a title of one line (at most 120), a body (at most 4000), a tier (`cheap`, `standard` or `strong`; standard when left out), `paths` and `checks` as on `send`, `after` the earlier cards of this plan it waits on, by their place (1 is the first) |
 | `cost` | number ≥ 0 | yes | what the cards are expected to cost in dollars, all together |
 
-The leader's only. Answers `the person reads your plan (3 cards, $1.20) in TO DECIDE; end your turn, their yes starts your next`, or with the gate off `the person turned the plan gate off for this project: hire as you see fit; your plan was not kept`. Refusals: `only the leader plans; it hires for the team`, `cards must be an array of cards`, `a plan has 1 to 20 cards`, `card 2 needs a title and a body`, `card 1's title must be one line of at most 120 characters`, `card 1's body is longer than 4000 characters`, `card 1: tier must be cheap, standard or strong`, `card 2: paths are relative to the repository; "/x" starts with /` (and the other `paths` refusals), `cards 1 and 3 both own a path: "src" and "src/a.rs"; give one other paths, or end one with the word shared`, `card 3: after names earlier cards of this plan by their place (1 to 2)`, `cost must be a number of dollars, 0 or more`. `hire` while the gate holds: `make a plan first (the plan tool): the person reads it before a second worker is hired`, `the person is reading your plan; end your turn, their yes starts your next`, `the person answered your plan in words, not with a yes: make a new plan from what they said (the plan tool)`; `whoami`'s `may hire` says the same. See [the plan](../concepts/messages-and-board.md#the-plan).
+The leader's only. Answers `the person reads your plan (3 cards, $1.20) in TO DECIDE; end your turn, their yes starts your next`, or with the gate off `the person turned the plan gate off for this project: hire as you see fit; your plan was not kept`. Refusals: `only the leader plans; it hires for the team`, `cards must be an array of cards`, `a plan has 1 to 20 cards`, `card 2 needs a title and a body`, `card 1's title must be one line of at most 120 characters`, `card 1's body is longer than 4000 characters`, `card 1: tier must be cheap, standard or strong`, `card 2: paths are relative to the repository; "/x" starts with /` (and the other `paths` refusals), `card 2: checks run in Lonca's merge queue, and this project is not on Lonca: leave checks out, and say in the body what to run` (and the other `checks` refusals), `cards 1 and 3 both own a path: "src" and "src/a.rs"; give one other paths, or end one with the word shared`, `card 3: after names earlier cards of this plan by their place (1 to 2)`, `cost must be a number of dollars, 0 or more`. `hire` while the gate holds: `make a plan first (the plan tool): the person reads it before a second worker is hired`, `the person is reading your plan; end your turn, their yes starts your next`, `the person answered your plan in words, not with a yes: make a new plan from what they said (the plan tool)`; `whoami`'s `may hire` says the same. See [the plan](../concepts/messages-and-board.md#the-plan).
 
 ### `hire`
 

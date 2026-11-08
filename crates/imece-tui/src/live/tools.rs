@@ -162,6 +162,7 @@ pub(super) fn plan_tool() -> Tool {
                             "tier": { "type": "string", "enum": tiers,
                                       "description": "The worker's tier for it; standard when left out." },
                             "paths": paths_schema(),
+                            "checks": checks_schema(),
                             "body": { "type": "string", "maxLength": MAX_BODY,
                                       "description": "The task: what to do, when it is done." },
                             "after": {
@@ -427,6 +428,7 @@ pub(super) fn post_tool() -> Tool {
                     "maxLength": MAX_BODY,
                 },
                 "paths": paths_schema(),
+                "checks": checks_schema(),
                 "after": after_schema(),
             },
             "required": ["title", "body"],
@@ -446,6 +448,24 @@ fn after_schema() -> Value {
                         (#N, without #): it is not offered or claimed, and an assign \
                         with it is held, until each of them is done. One that failed \
                         holds it until it is handed again and done.",
+    })
+}
+
+/// The `checks` of an assign or a post (record 127): the checks of
+/// Lonca's policy the card asks for.
+fn checks_schema() -> Value {
+    json!({
+        "type": "array",
+        "maxItems": imece_agent::lonca::CHECKS_MOST,
+        "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9_-]{1,32}$",
+        },
+        "description": "On a project on Lonca only: names of checks the repository's \
+                        Lonca policy defines (verification.checks, e.g. api, e2e) that \
+                        the card's change must pass too; the person's yes asks Lonca's \
+                        merge queue to run them. Lonca's own (build, tests) run anyway. \
+                        A name the policy lacks stops the yes, so name only those it has.",
     })
 }
 
@@ -579,6 +599,7 @@ pub(super) fn send_tool() -> Tool {
                                     sender.",
                 },
                 "paths": paths_schema(),
+                "checks": checks_schema(),
                 "after": after_schema(),
                 "card": {
                     "type": "integer",
@@ -586,8 +607,9 @@ pub(super) fn send_tool() -> Tool {
                     "description": "With an assign from the leader: the number of a card \
                                     to hand again (#N on the board), one that failed, \
                                     whose worker stopped, or that waits on the board; it \
-                                    is its next try, the card keeps its title and paths, \
-                                    and a done from whoever had it closes nothing now. \
+                                    is its next try, the card keeps its title, paths and \
+                                    checks, and a done from whoever had it closes \
+                                    nothing now. \
                                     Refused while its change waits for the person, once \
                                     it is done, and past its third try until the person \
                                     allows another.",
@@ -1761,6 +1783,37 @@ mod tests {
         );
         let required = tool.input["required"].as_array().unwrap();
         assert!(!required.contains(&json!("card")) && !required.contains(&json!("outcome")));
+    }
+
+    #[test]
+    fn an_assign_a_post_and_a_plan_card_take_the_checks_it_asks_for_capped() {
+        let plan = plan_tool();
+        let planned = &plan.input["properties"]["cards"]["items"]["properties"]["checks"];
+        assert_eq!(planned, &checks_schema());
+        for tool in [send_tool(), post_tool()] {
+            assert_eq!(
+                tool.input["properties"]["checks"],
+                checks_schema(),
+                "{}",
+                tool.name
+            );
+            let required = tool.input["required"].as_array().unwrap();
+            assert!(!required.contains(&json!("checks")), "{}", tool.name);
+        }
+        let checks = checks_schema();
+        assert_eq!(checks["type"], "array");
+        assert_eq!(checks["maxItems"], 32);
+        assert_eq!(checks["items"]["type"], "string");
+        assert_eq!(checks["items"]["pattern"], "^[a-z0-9_-]{1,32}$");
+        let said = checks["description"].as_str().unwrap();
+        assert!(said.starts_with("On a project on Lonca only"), "{said}");
+        assert!(claim_tool().input["properties"]["checks"].is_null());
+        assert!(
+            send_tool().input["properties"]["card"]["description"]
+                .as_str()
+                .unwrap()
+                .contains("keeps its title, paths and checks")
+        );
     }
 
     #[test]
