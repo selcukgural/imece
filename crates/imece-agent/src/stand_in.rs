@@ -44,6 +44,11 @@ pub const CONTEXT_TURN: u64 = 1_500;
 pub const TURN_COST: u64 = 10_000;
 pub const CALL_COST: u64 = 5_000;
 
+/// The model a session's background work runs on, as Claude Code's own
+/// does (record 134), and its part of what the session spent: an eighth.
+pub const BACKGROUND: &str = "claude-haiku-5-5";
+pub const BACKGROUND_PART: u64 = 8;
+
 /// The longest task a leader hands on, in characters.
 pub const TASK_MAX: usize = 200;
 
@@ -637,8 +642,27 @@ impl<W: Write> Stream<W> {
             "result": text,
             "total_cost_usd": usd,
             "permission_denials": [],
-            "modelUsage": { self.model.clone(): { "contextWindow": WINDOW } },
+            "modelUsage": self.usage(),
         }));
+    }
+
+    /// The session's cost by model, as a result's `modelUsage` says it:
+    /// its own model's and the background's part, both the session's
+    /// whole (record 134).
+    fn usage(&self) -> Value {
+        let usd = |m: u64| m as f64 / 1_000_000.0;
+        if self.model == BACKGROUND {
+            let whole = json!({ "contextWindow": WINDOW, "costUSD": usd(self.spent) });
+            return json!({ BACKGROUND: whole });
+        }
+        let background = self.spent / BACKGROUND_PART;
+        json!({
+            self.model.clone(): {
+                "contextWindow": WINDOW,
+                "costUSD": usd(self.spent - background),
+            },
+            BACKGROUND: { "contextWindow": WINDOW, "costUSD": usd(background) },
+        })
     }
 }
 
@@ -1608,6 +1632,33 @@ mod tests {
             })
             .collect();
         assert_eq!(costs, [TURN_COST, 2 * TURN_COST]);
+        // Its model and the background's, an eighth, each turn (record 134).
+        let grew: Vec<Vec<(String, u64)>> = (events.iter())
+            .filter_map(|e| match e {
+                crate::Event::Models { grew, .. } => Some(grew.clone().into_iter().collect()),
+                _ => None,
+            })
+            .collect();
+        let turn = vec![
+            (BACKGROUND.to_string(), TURN_COST / 8),
+            ("stand-in".to_string(), TURN_COST - TURN_COST / 8),
+        ];
+        assert_eq!(grew, [turn.clone(), turn]);
+    }
+
+    #[test]
+    fn a_session_on_the_background_s_model_says_its_whole_cost_as_that_model_s() {
+        let mut s = stream();
+        s.spent = 16_000;
+        let usage = s.usage();
+        assert_eq!(usage["m"]["costUSD"], json!(0.014));
+        assert_eq!(usage[BACKGROUND]["costUSD"], json!(0.002));
+        assert_eq!(usage["m"]["contextWindow"], json!(WINDOW));
+        s.model = BACKGROUND.into();
+        let usage = s.usage();
+        assert_eq!(usage.as_object().unwrap().len(), 1);
+        assert_eq!(usage[BACKGROUND]["costUSD"], json!(0.016));
+        assert_eq!(usage[BACKGROUND]["contextWindow"], json!(WINDOW));
     }
 
     fn stream() -> Stream<Vec<u8>> {

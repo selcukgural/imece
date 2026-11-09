@@ -287,11 +287,14 @@ pub enum Outcome {
 
 /// A Claude Code session an agent had, kept to go on with it after imece
 /// starts again: Claude Code's id for it, and what Claude Code had reported
-/// as the session's whole cost (millionths of a dollar) when last seen.
+/// as the session's whole cost (millionths of a dollar) when last seen,
+/// and each model's part of it (record 134; None when not known: a save
+/// older than that).
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Resumable {
     pub session: String,
     pub spent: u64,
+    pub models: Option<imece_agent::ByModel>,
 }
 
 /// A card an agent put on the board: who, and what it asks for.

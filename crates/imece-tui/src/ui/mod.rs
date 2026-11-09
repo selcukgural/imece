@@ -2933,6 +2933,84 @@ mod tests {
     }
 
     #[test]
+    fn the_ledger_says_what_each_model_spent_on_a_project_on_the_row_at_hand_and_on_a_card() {
+        use crate::ledger::{Attempt, Outcome};
+        let mut app = app_after(1, 1, 0, Lang::En);
+        let w = &mut app.world;
+        let p = w.salon_order()[0];
+        let lead = w.projects[p].leader;
+        let c = crate::live::testing::with_card(w, lead);
+        w.cards[c].project = p;
+        w.ledger = vec![
+            Attempt {
+                project: p,
+                card: Some(c),
+                attempt: 1,
+                agent: lead,
+                cost: 8_400,
+                outcome: Outcome::Failed,
+                // $0.70 of b, $0.13 of a, $0.01 said by none.
+                models: [("a".into(), 1_300), ("b".into(), 7_000)].into(),
+                ..Attempt::default()
+            },
+            Attempt {
+                project: p,
+                agent: lead,
+                cost: 299,
+                // Under a cent said by none is not said.
+                models: [("a".into(), 200)].into(),
+                ..Attempt::default()
+            },
+        ];
+        app.command("ledger");
+        let s = render(&app, 140, 30);
+        let lines: Vec<&str> = s.lines().collect();
+        let at = |word: &str| lines.iter().position(|l| l.contains(word));
+        // The project's: both rows, the most first; 100 + 99 not split.
+        let head = at("applied").unwrap();
+        assert!(
+            lines[head + 1].contains("  by model: b $0.70 · a $0.15 · not split $0.01"),
+            "{s}"
+        );
+        // The row at hand (the newest), under it, without what is not split.
+        let here = at("▶ no card").unwrap();
+        assert!(lines[here + 1].contains("    by model: a $0.02"), "{s}");
+        assert!(!lines[here + 1].contains("not split"), "{s}");
+        // The row not at hand says none.
+        let failed = at("failed").unwrap();
+        assert!(!lines[failed + 1].contains("by model"), "{s}");
+        // Down: the row at hand is the other, and says its own.
+        app.on_key(KeyEvent::from(KeyCode::Char('j')));
+        let s = render(&app, 140, 30);
+        let lines: Vec<&str> = s.lines().collect();
+        let failed = lines.iter().position(|l| l.contains("▶ #")).unwrap();
+        assert!(
+            lines[failed + 1].contains("    by model: b $0.70 · a $0.13 · not split $0.01"),
+            "{s}"
+        );
+        assert_eq!(s.matches("by model").count(), 2, "{s}");
+        // A row nothing said by model of: no line; nor a project.
+        app.world.ledger.iter_mut().for_each(|r| r.models.clear());
+        let s = render(&app, 140, 30);
+        assert!(!s.contains("by model"), "{s}");
+        // The card's screen: under each of its tries.
+        app.world.ledger[0].models = [("b".into(), 7_000)].into();
+        app.ledger_win = None;
+        app.open_card(c);
+        let s = render(&app, 140, 40);
+        let lines: Vec<&str> = s.lines().collect();
+        let tried = lines.iter().position(|l| l.contains("try 1")).unwrap();
+        assert!(
+            lines[tried + 1].contains("by model: b $0.70 · not split $0.14"),
+            "{s}"
+        );
+        // In Turkish.
+        app.lang = Lang::Tr;
+        let s = render(&app, 140, 40);
+        assert!(s.contains("modele göre: b $0.70 · ayrılmamış $0.14"), "{s}");
+    }
+
+    #[test]
     fn how_long_an_attempt_took_is_seconds_under_a_minute() {
         use crate::ui::ledger::lasted;
         assert_eq!(lasted(Lang::En, 11), "55 s");

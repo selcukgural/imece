@@ -554,6 +554,7 @@ impl Live {
         self.resuming[id].as_ref().map(|r| Resumable {
             session: r.session.clone(),
             spent: self.floor[id],
+            models: r.models.clone(),
         })
     }
 }
@@ -698,6 +699,7 @@ mod tests {
                 Some(Resumable {
                     session: "686c6d27-d50b-4ae2-ad6a-159bf2984671".into(),
                     spent: 524,
+                    models: None,
                 }),
                 None,
                 None,
@@ -1387,6 +1389,7 @@ mod tests {
         live.sessions[0] = Some(Resumable {
             session: "686c6d27-d50b-4ae2-ad6a-159bf2984671".into(),
             spent: 524,
+            models: None,
         });
         assert_eq!(live.persist(&w), Ok(true));
         let journal_before = w.journal.len();
@@ -1440,6 +1443,7 @@ mod tests {
             Some(Resumable {
                 session: "686c6d27-d50b-4ae2-ad6a-159bf2984671".into(),
                 spent: 524,
+                models: None,
             })
         );
         assert_eq!(w.budget, 20_000);
@@ -1512,6 +1516,7 @@ mod tests {
         live.sessions[1] = Some(Resumable {
             session: UUID.into(),
             spent: 524,
+            models: None,
         });
         live.remembered[1] = true;
         live.interrupted[1] = vec!["finish it".into()];
@@ -1569,6 +1574,7 @@ mod tests {
             Some(Resumable {
                 session: UUID.into(),
                 spent: 524,
+                models: None,
             })
         );
         assert_eq!(live.resume_of(0), None);
@@ -1583,6 +1589,10 @@ mod tests {
         );
         assert_eq!(restarted(&w, 1).len(), 0);
         assert_eq!(journaled(&w, &Event::Resumed { agent: 1 }), 0);
+        // What each model of it had cost goes with it (record 134).
+        let had = imece_agent::ByModel::from([("a".into(), 300)]);
+        live.resuming[1].as_mut().unwrap().models = Some(had.clone());
+        assert_eq!(live.resume_of(1).unwrap().models, Some(had.clone()));
         // The session confirms it is the old one.
         live.tx
             .send((
@@ -1604,8 +1614,21 @@ mod tests {
             Some(Resumable {
                 session: UUID.into(),
                 spent: 524,
+                models: Some(had),
             })
         );
+        // A turn's figures by model: what a resume counts from next time,
+        // and what grew for the ledger.
+        live.tx
+            .send((
+                1,
+                live.generation[1],
+                AgentEvent::Models {
+                    said: [("a".into(), 400), ("b".into(), 36)].into(),
+                    grew: [("a".into(), 100), ("b".into(), 36)].into(),
+                },
+            ))
+            .unwrap();
         // A turn's cost is what the session reports above its floor; the
         // session is remembered at its whole cost.
         live.tx
@@ -1622,7 +1645,15 @@ mod tests {
             .unwrap();
         live.step(&mut w);
         assert_eq!(live.sessions[1].as_ref().unwrap().spent, 660);
+        assert_eq!(
+            live.sessions[1].as_ref().unwrap().models,
+            Some([("a".into(), 400), ("b".into(), 36)].into())
+        );
         assert_eq!(w.agents[1].cost, 1, "136 millionths in ten-thousandths");
+        // Booked with it: a's one whole ten-thousandth on the row, the rest waits.
+        let row = w.agents[1].meter.row.unwrap();
+        assert_eq!(w.ledger[row].models, [("a".into(), 1)].into());
+        assert_eq!(w.agents[1].meter.models, [("b".into(), 36)].into());
         // Claude Code's /clear brings a new session id: that is the one to
         // go on with, from nothing; no second resume is journaled.
         live.tx
@@ -1641,6 +1672,7 @@ mod tests {
             Some(Resumable {
                 session: "s2".into(),
                 spent: 524,
+                models: Some(imece_agent::ByModel::new()),
             })
         );
         assert_eq!(journaled(&w, &Event::Resumed { agent: 1 }), 1);
@@ -1784,6 +1816,8 @@ mod tests {
             Some(Resumable {
                 session: "s7".into(),
                 spent: 0,
+                // A new session's figures by model start at nothing.
+                models: Some(imece_agent::ByModel::new()),
             })
         );
         assert_eq!(journaled(&w, &Event::Resumed { agent: 1 }), 0);
@@ -1799,6 +1833,7 @@ mod tests {
         let ok = Some(Resumable {
             session: UUID.into(),
             spent: 524,
+            models: None,
         });
         assert_eq!(live.resumable(&w, 1), ok);
         assert_eq!(live.sessions[1], ok, "still remembered");
@@ -1806,6 +1841,7 @@ mod tests {
         live.sessions[1] = Some(Resumable {
             session: "../x".into(),
             spent: 0,
+            models: None,
         });
         assert_eq!(live.resumable(&w, 1), None);
         // The leader runs in the checkout; the worker's file is not its.
@@ -1860,6 +1896,7 @@ mod tests {
         live.sessions[1] = Some(Resumable {
             session: UUID.into(),
             spent: 0,
+            models: None,
         });
         let file = transcript_of(&live, &w, 1, UUID);
         live.tx
@@ -1906,6 +1943,7 @@ mod tests {
         live.sessions[2] = Some(Resumable {
             session: UUID.into(),
             spent: 1,
+            models: None,
         });
         let transcript = transcript_of(&live, &w, 2, UUID);
         // A leader that was never a session: nothing to forget, nothing said.
@@ -1984,6 +2022,7 @@ mod tests {
         live.sessions[1] = Some(Resumable {
             session: UUID.into(),
             spent: 0,
+            models: None,
         });
         assert!(live.forget_agent(&mut w, 1).is_err());
         let home = live.claude_home.clone();
@@ -2156,10 +2195,12 @@ mod tests {
                     Some(Resumable {
                         session: UUID.into(),
                         spent: 3,
+                        models: None,
                     }),
                     Some(Resumable {
                         session: other.into(),
                         spent: 0,
+                        models: None,
                     }),
                 ],
                 ..Default::default()
@@ -2255,6 +2296,7 @@ mod tests {
                 Some(Resumable {
                     session: UUID.into(),
                     spent: 3,
+                    models: None,
                 }),
             ],
             inflight: vec![Vec::new(), vec!["cut a".into()], vec!["cut b".into()]],
@@ -2359,6 +2401,7 @@ mod tests {
         live.sessions[0] = Some(Resumable {
             session: UUID.into(),
             spent: 1,
+            models: None,
         });
         assert_eq!(live.persist(&w), Ok(true));
         drop(live);

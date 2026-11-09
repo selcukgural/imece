@@ -47,6 +47,8 @@ pub fn apply(w: &mut World, id: AgentId, e: AgentEvent, before: u64) {
         AgentEvent::Note(text) => w.agents[id].trace(t, format!("note {text}")),
         // Its `TurnDone` comes next and takes it (record 132).
         AgentEvent::Unpriced(model) => w.turn_unpriced(id, model.as_deref()),
+        // Booked with what the `TurnDone` after it says (record 134).
+        AgentEvent::Models { grew, .. } => w.models_grew(id, &grew),
         // The account's windows, not the agent's.
         AgentEvent::Limits(limits) => {
             for l in limits {
@@ -606,6 +608,7 @@ impl Live {
                     fork,
                     text: text.clone(),
                     notes: self.notes[id].clone(),
+                    models: r.models.clone(),
                 });
             } else {
                 let why = match self.refused[id].take() {
@@ -968,6 +971,7 @@ impl Live {
                                 session: r.session,
                                 spent: r.spent,
                                 fork,
+                                models: r.models,
                             }),
                         },
                         on,
@@ -2218,6 +2222,7 @@ mod tests {
         live.sessions[1] = Some(Resumable {
             session: "686c6d27-d50b-4ae2-ad6a-159bf2984671".into(),
             spent: 5,
+            models: None,
         });
         live.claude_home = trees("clear-home");
         live.settle = Duration::from_millis(400);

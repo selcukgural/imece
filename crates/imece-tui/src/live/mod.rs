@@ -576,6 +576,9 @@ struct Attempt {
     text: String,
     /// imece's notes as they waited before the wake.
     notes: Vec<String>,
+    /// What each model of the old session had cost (record 134): the
+    /// session's figures by model start there.
+    models: Option<imece_agent::ByModel>,
 }
 
 pub struct Live {
@@ -1294,6 +1297,13 @@ impl Live {
                     self.sessions[id] = Some(Resumable {
                         session: session.clone(),
                         spent: self.floor[id],
+                        // A resumed session's figures by model count on
+                        // from the old one's; a new one's (`/clear`'s
+                        // too) from nothing.
+                        models: match &self.resuming[id] {
+                            Some(a) => a.models.clone(),
+                            None => Some(imece_agent::ByModel::new()),
+                        },
                     });
                     if let Some(a) = self.resuming[id].take() {
                         self.interrupted[id].clear();
@@ -1303,6 +1313,12 @@ impl Live {
                             w.note(Event::Resumed { agent: id });
                         }
                         self.forks[id] = None;
+                    }
+                }
+                // What a resume of it counts each model's figure from.
+                AgentEvent::Models { said, .. } => {
+                    if let Some(s) = &mut self.sessions[id] {
+                        s.models = Some(said.clone());
                     }
                 }
                 AgentEvent::TurnDone { cost, .. } => {

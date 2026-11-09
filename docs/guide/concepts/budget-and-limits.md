@@ -93,7 +93,9 @@ The pot says what the team spent, a change what it cost; `:ledger` says what eac
 ```text
 ┌LEDGER · 4 attempts · API-equivalent───────────────────────────────────────────────────────┐
 │shop-api  applied ≈$1.30 · wasted ≈$0.91+? · at work ≈$0.22 · lead ≈$0.48                  │
-│▶ #4 try 1  claude-2  claude-sonnet-5-5  1 Δ  ≈$0.22  6 min  at work  2026-11-09 · 2.1.4    │
+│  by model: claude-opus-5-5 ≈$1.10 · claude-sonnet-5-5 ≈$1.06 · claude-haiku-5-5 ≈$0.27    │
+│▶ #4 try 1  claude-2  claude-sonnet-5-5  1 Δ  ≈$0.22  6 min  at work  2026-11-09 · 2.1.4   │
+│    by model: claude-sonnet-5-5 ≈$0.19 · claude-haiku-5-5 ≈$0.03                           │
 │  #3 try 2  claude-1  claude-opus-5-5  2 Δ · 1 sent back  ≈$1.30  31 min  applied  …       │
 │  #3 try 1  claude-3  claude-sonnet-5-5  0 Δ  ≈$0.84  12 min  handed on  …                 │
 │  #2 try 1  claude-2  claude-sonnet-5-5  0 Δ  ≈$0.07+?  2 min  failed  …                   │
@@ -104,12 +106,13 @@ The pot says what the team spent, a change what it cost; `:ledger` says what eac
 - **A row is an attempt**: a worker's try at a card (a card handed again is a try more), with its worker, the model Claude Code said its session runs on, the changes it put before you (`Δ`) and how many came back (sent back by you or by Lonca), what it cost (its helpers' counted in), how long it took, how it ended, the day it last spent and Claude Code's version then. A worker's work with no card (a solo, a worker you wrote to directly) is a `no card` row until a change of it is applied.
 - **How it ended**: `at work` (or its change waits), `applied` (on trunk, on Lonca), `done, no change`, `failed` (its worker said so, or you said no to one more try), `withdrawn`, `handed on` (the card went to another try while this one worked), `late done` (handed on, and its worker still sent a `done`). What a worker spends after its card failed, was withdrawn or handed on is counted on that try: it was spent for nothing.
 - **A project's line** adds its rows up by how they ended: `applied` (applied, done), `wasted` (failed, withdrawn, handed on, late), `at work`, and the leader's own spend apart, since a leader's turns are nobody's card. Every dollar of a worker or a helper is on exactly one row.
+- **By model**: under a project's line, and under the row at hand, what each model spent of it, the most first: the worker's model, its helpers' (a cheaper tier's), and the model Claude Code runs its own background work on. These are Claude Code's own figures (each model's `costUSD` in a turn's result), counted on across `/clear` and a resume as the total is. A part no model's figure said (a turn whose result did not split it, spending from before this version) is `not split` when it is a cent or more; a session resumed from before this version says by model only from its second turn on.
 - The figures read as everywhere else: `≈` on a plan (the title says `API-equivalent`), `+?` for a part that was never priced.
-- `enter` opens the row's card; a card's own screen lists its tries under **ATTEMPTS**. The ledger is kept in the store, archives too; what was spent before this version has no rows.
+- `enter` opens the row's card; a card's own screen lists its tries under **ATTEMPTS**, each with its line by model. The ledger is kept in the store, archives too; what was spent before this version has no rows.
 
 ## The demo
 
-`--demo` spends a made-up pot the same way: the header, the rate, the low-pot line, `:budget`, the usage windows (filled from spending), what each change cost and the few cents of `:commit` and `:review` all show as live does. The demo signs in through a plan, so its figures read `≈`, and every fifth change it reads ends a turn that said no cost (`+?`) until that worker's next one. `:ledger` fills as its cards are applied, fail, are handed on and withdrawn.
+`--demo` spends a made-up pot the same way: the header, the rate, the low-pot line, `:budget`, the usage windows (filled from spending), what each change cost and the few cents of `:commit` and `:review` all show as live does. The demo signs in through a plan, so its figures read `≈`, and every fifth change it reads ends a turn that said no cost (`+?`) until that worker's next one. `:ledger` fills as its cards are applied, fail, are handed on and withdrawn; each busy tick is an eighth `claude-haiku-5-5`, the background's, and the rest the session's model.
 
 ## See also
 

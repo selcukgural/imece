@@ -736,6 +736,7 @@ mod tests {
         live.sessions[solo] = Some(Resumable {
             session: "686c6d27-d50b-4ae2-ad6a-159bf2984671".into(),
             spent: 5,
+            models: None,
         });
         live.tiered[solo] = true;
         assert!(matches!(live.slots[solo], Slot::Running(_)));
@@ -991,6 +992,7 @@ mod tests {
             Some(Resumable {
                 session: s.into(),
                 spent: 7,
+                models: None,
             })
         };
         live.sessions[1] = session("s-lead");
@@ -1136,6 +1138,7 @@ mod tests {
             Some(Resumable {
                 session: s.into(),
                 spent: 7,
+                models: None,
             })
         };
         live.sessions[1] = session("s-lead");
@@ -1218,6 +1221,7 @@ mod tests {
         live.sessions[0] = Some(Resumable {
             session: "s0".into(),
             spent: 0,
+            models: None,
         });
         assert_eq!(
             live.open_project(&mut w, &repo, Some("api"), Open::Team),

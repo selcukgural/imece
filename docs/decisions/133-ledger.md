@@ -89,8 +89,9 @@ Demo (record 31): the demo books every busy tick through the same
 on, withdrawn and applied through the same calls, so the window and the
 cards' screens fill as live's do.
 
-Not done here: the per-model split of a row (`modelUsage[*].costUSD`):
-it is per session in Claude Code's result and resets with a `/clear` and
-a resume's floor as the total does, so it goes with the Claude Code
-adapter's own bookkeeping in a part three; the row says the model the
-worker's session ran on, not its helpers' or a background model's.
+The per-model split of a row (`modelUsage[*].costUSD`) is part three,
+record 134 (What each model spent): it is per session in Claude Code's
+result and resets with a `/clear` and a resume's floor as the total
+does, so it is counted in the Claude Code adapter; `model` stays the
+model the worker's session ran on, and `models` says what each model,
+its helpers' and the background's too, spent of the row.

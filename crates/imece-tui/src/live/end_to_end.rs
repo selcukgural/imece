@@ -67,6 +67,14 @@ fn a_leader_hires_a_worker_whose_change_waits_for_the_person() {
     let cost = imece_agent::stand_in::TURN_COST;
     assert!(w.agents[0].cost > 0 && w.agents[1].cost > 0);
     assert!(w.spent() * 100 >= 3 * cost, "three turns at least");
+    // The worker's row says what its model and the background's spent of
+    // it (record 134), all of it but what does not make a whole cent's
+    // ten-thousandth yet.
+    let row = &w.ledger[w.agents[1].meter.row.expect("its row")];
+    let background = row.models.get(imece_agent::stand_in::BACKGROUND).copied();
+    assert!(background.is_some_and(|b| b > 0), "{row:?}");
+    assert_eq!(row.models.len(), 2, "{row:?}");
+    assert!(row.unsplit() <= 2, "{row:?}");
     drop(live);
     let _ = std::fs::remove_dir_all(&dir);
     let _ = std::fs::remove_dir_all(&repo);

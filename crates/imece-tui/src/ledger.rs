@@ -15,7 +15,12 @@
 //! grows (a turn's end live, a busy tick in the demo), the growth goes on
 //! the row its worker spends on now ([`World::book`]); what Claude Code
 //! did not price marks the row (record 132). Nothing is counted twice:
-//! every dollar of a worker or a helper is on exactly one row.
+//! every dollar of a worker or a helper is on exactly one row. What each
+//! model's figure grew goes on the same row with it (record 134), so a
+//! row says what its worker, its helpers and Claude Code's background
+//! models spent, model by model.
+
+use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
@@ -73,9 +78,19 @@ pub struct Attempt {
     pub ended: u64,
     /// Claude Code's version when it last spent; none when not known.
     pub version: Option<String>,
+    /// What each model spent of `cost` (record 134), in ten-thousandths
+    /// of a dollar, by the name Claude Code gives it; what no model's
+    /// figure said (a turn's growth Claude Code did not split, an older
+    /// save) is not in it.
+    pub models: BTreeMap<String, u64>,
 }
 
 impl Attempt {
+    /// What of its cost no model's figure said (record 134).
+    pub fn unsplit(&self) -> u64 {
+        self.cost.saturating_sub(self.models.values().sum())
+    }
+
     /// How long it took, in ticks: until now while open.
     pub fn ticks(&self, now: u64) -> u64 {
         let end = if self.outcome == Outcome::Open {
@@ -100,6 +115,10 @@ pub struct Meter {
     /// The row its spending goes on now (a worker's; a helper's goes on
     /// its worker's).
     pub row: Option<usize>,
+    /// What each model's figure grew since last booked, in millionths of
+    /// a dollar (as Claude Code says it): booked in ten-thousandths, the
+    /// rest kept for the next booking.
+    pub models: imece_agent::ByModel,
 }
 
 /// A project's figures, as the window says them.
@@ -118,6 +137,15 @@ pub struct Totals {
 }
 
 impl World {
+    /// What each model's figure of agent `id`'s session grew in the turn
+    /// about to end (record 134): booked with the turn's figure.
+    pub fn models_grew(&mut self, id: AgentId, grew: &imece_agent::ByModel) {
+        let m = &mut self.agents[id].meter.models;
+        for (model, more) in grew {
+            *m.entry(model.clone()).or_default() += more;
+        }
+    }
+
     /// Agent `id`'s figure grew, or it left something unpriced: the growth
     /// goes on the row its worker spends on now, a new one with no card
     /// when there is none. A leader's or a researcher's spending is
@@ -132,19 +160,33 @@ impl World {
             return;
         }
         let worker = match a.role {
-            Role::Worker | Role::Solo => id,
-            Role::Helper => match a.parent {
-                Some(p) => p,
-                None => return,
-            },
-            Role::Leader | Role::Researcher => return,
+            Role::Worker | Role::Solo => Some(id),
+            Role::Helper => a.parent,
+            Role::Leader | Role::Researcher => None,
         };
+        let Some(worker) = worker else {
+            // Nobody's row: its figures by model are its own.
+            a.meter.models.clear();
+            return;
+        };
+        // Whole ten-thousandths go on the row, the rest waits.
+        let mut by_model = Vec::new();
+        for (model, more) in a.meter.models.iter_mut() {
+            if *more >= 100 {
+                by_model.push((model.clone(), *more / 100));
+                *more %= 100;
+            }
+        }
+        a.meter.models.retain(|_, more| *more > 0);
         let i = self.row_of(worker);
         let tick = self.tick;
         let model = self.agents[worker].meter.model.clone();
         let row = &mut self.ledger[i];
         row.cost += grew;
         row.unpriced |= unpriced;
+        for (model, more) in by_model {
+            *row.models.entry(model).or_default() += more;
+        }
         if !model.is_empty() {
             row.model = model;
         }
@@ -296,6 +338,20 @@ impl World {
             .collect()
     }
 
+    /// What project `p`'s rows spent by model (record 134), and what of
+    /// them no model's figure said.
+    pub fn models_of(&self, p: ProjectId) -> (BTreeMap<String, u64>, u64) {
+        let mut by = BTreeMap::new();
+        let mut unsplit = 0;
+        for r in self.ledger.iter().filter(|r| r.project == p) {
+            for (model, cost) in &r.models {
+                *by.entry(model.clone()).or_default() += cost;
+            }
+            unsplit += r.unsplit();
+        }
+        (by, unsplit)
+    }
+
     /// Project `p`'s figures: what its rows came to by how they ended,
     /// and its leaders' own.
     pub fn totals(&self, p: ProjectId) -> Totals {
@@ -408,6 +464,84 @@ mod tests {
         spend(&mut w, h, 99);
         assert_eq!(w.ledger.len(), 1);
         assert_eq!(w.ledger[0].cost, 560);
+    }
+
+    fn grew(pairs: &[(&str, u64)]) -> imece_agent::ByModel {
+        pairs.iter().map(|(m, c)| (m.to_string(), *c)).collect()
+    }
+
+    fn models(w: &World, i: usize) -> Vec<(&str, u64)> {
+        (w.ledger[i].models.iter())
+            .map(|(m, c)| (m.as_str(), *c))
+            .collect()
+    }
+
+    #[test]
+    fn what_each_model_spent_goes_on_the_row_with_the_figure_whole_ten_thousandths_at_a_time() {
+        let mut w = team(1);
+        let h = with_helper(&mut w, 1);
+        // 2.5 ten-thousandths of a and 1.2 of b: 2 and 1 go on the row,
+        // the rest waits for the next booking.
+        w.models_grew(1, &grew(&[("a", 250), ("b", 120)]));
+        w.models_grew(1, &grew(&[("a", 0)]));
+        spend(&mut w, 1, 4);
+        assert_eq!(models(&w, 0), [("a", 2), ("b", 1)]);
+        assert_eq!(w.ledger[0].unsplit(), 1);
+        assert_eq!(
+            w.agents[1].meter.models,
+            grew(&[("a", 50), ("b", 20)]),
+            "a model with nothing left is not kept"
+        );
+        // Exactly one more: 50 + 50 of a is one whole; b's 20 + 79 is not.
+        w.models_grew(1, &grew(&[("a", 50), ("b", 79)]));
+        spend(&mut w, 1, 5);
+        assert_eq!(models(&w, 0), [("a", 3), ("b", 1)]);
+        assert_eq!(w.agents[1].meter.models, grew(&[("b", 99)]));
+        // A helper's go on its worker's row, under their own names.
+        w.models_grew(h, &grew(&[("c", 300)]));
+        spend(&mut w, h, 3);
+        assert_eq!(models(&w, 0), [("a", 3), ("b", 1), ("c", 3)]);
+        assert!(w.agents[h].meter.models.is_empty());
+        assert_eq!(w.ledger[0].unsplit(), 1);
+        // Nothing grew: what waits keeps waiting.
+        w.models_grew(1, &grew(&[("b", 1)]));
+        w.book(1);
+        assert_eq!(models(&w, 0), [("a", 3), ("b", 1), ("c", 3)]);
+        assert_eq!(w.agents[1].meter.models, grew(&[("b", 100)]));
+        // A leader's are nobody's row, and not kept.
+        w.models_grew(0, &grew(&[("a", 900)]));
+        spend(&mut w, 0, 9);
+        assert!(w.agents[0].meter.models.is_empty());
+        assert_eq!(w.ledger.len(), 1);
+        // More said by model than the figure grew: nothing is not split.
+        w.ledger[0].models.insert("d".into(), 50);
+        assert_eq!(w.ledger[0].unsplit(), 0);
+    }
+
+    #[test]
+    fn a_project_s_spending_by_model_sums_its_rows_alone_and_what_was_not_split() {
+        let mut w = team(2);
+        let p = w.agents[1].project;
+        w.models_grew(1, &grew(&[("a", 300), ("b", 100)]));
+        spend(&mut w, 1, 9);
+        // Another row of the project: its own.
+        let c = with_card(&mut w, 1);
+        w.takes(1, c);
+        w.models_grew(1, &grew(&[("a", 200)]));
+        spend(&mut w, 1, 12);
+        assert_eq!(w.ledger.len(), 2);
+        // Another project's row counts not.
+        w.ledger.push(Attempt {
+            project: p + 1,
+            cost: 70,
+            models: BTreeMap::from([("a".into(), 70)]),
+            ..Attempt::default()
+        });
+        let (by, unsplit) = w.models_of(p);
+        assert_eq!(by, BTreeMap::from([("a".into(), 5), ("b".into(), 1)]));
+        // 9 - 4 on the first, 3 - 2 on the second.
+        assert_eq!(unsplit, 6);
+        assert_eq!(w.models_of(p + 1), (BTreeMap::from([("a".into(), 70)]), 0));
     }
 
     #[test]
