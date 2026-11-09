@@ -12,26 +12,28 @@ Bir değişikliğin (`Δ`) uygula ya da reddetten fazla yanıtı vardır. Satır
 ## 1. Üç dosyalı bir değişiklik
 
 ```text
- KARAR BEKLEYEN (1)
- Δ 15:02 claude-2 bitirdi: src/limit.rs içinde token kovası, lib.rs'e bağlandı, testler (3 dosya, +45 −6) · bu ağaçta çalıştırma yok
-   enter diff'i gör · a onayla · r geri gönder
+ KARAR BEKLEYEN 1 değişiklik
+ değişiklikler
+▸! #4   src/limit.rs içinde to…  hiçbir şey koşmadı · 3 dosya +45 −6   a  onayla   r  geri gönder
 ```
 
-`bu ağaçta çalıştırma yok`, işçinin tam bu ağaçta imece'nin `run` aracıyla hiçbir şey çalıştırmadığını söyler; derlendiği bilinmiyor. `W`ye (her yerden) ya da öğe üstünde `enter`a basın:
+`hiçbir şey koşmadı`, işçinin tam bu ağaçta imece'nin `run` aracıyla hiçbir şey çalıştırmadığını söyler; derlendiği bilinmiyor, bu yüzden değişiklik onaya hazır sayılmaz. `W`ye (her yerden) ya da satır üstünde `enter`a basın:
 
 ```text
- DEĞİŞİKLİK · claude-2 · 3 dosya +45 −6 · src/limit.rs içinde token kovası, lib.rs'e bağlandı, testler
- tam bu değişiklik üzerinde imece çalıştırması yok: derlenip derlenmediği, testlerinin geçip geçmediği bilinmiyor
+#4 rate limiter · shop · claude-2 · $0.62 · 3 dosya +45 −6
+diff · konuşma · log                                                     tab geçer
+! önce bak · hiçbir şey koşmadı · 3 dosya
+ maliyet · $0.62 · 18 dk
  kaynak +27 −6 (2) · testler +18 −0 (1)
  src/limit.rs +22 −6
  src/lib.rs +5 −0
  tests/limit.rs +18 −0
- diff --git a/src/limit.rs b/src/limit.rs
- @@ -1,6 +1,12 @@
- …
+src/limit.rs
+@@ -1,6 +1,12 @@
+…
 ```
 
-Yamanın üstünde: çalıştırmalar (burada yok), sonra, dosyalar birden çok türden olduğu için, tür başına satırları veren bir satır, sonra dosya listesi. Türler yalnızca yoldan anlaşılır: `tests/`, `test_*` ve test sonekleri testtir; lock dosyaları, `.min.js`, `generated/`, `dist/`, `vendor/` üretilmiştir; gerisi kaynaktır. Tek türden bir değişiklikte tür satırı yoktur; tek dosyalı bir değişiklikte dosya listesi yoktur. En çok altı dosya listelenir, gerisi sayılır (`… 2 dosya daha`). `[` `]` yamada dosyadan dosyaya atlar.
+Baş satırı değişikliğin geldiği kartı, projesini, işçisini, maliyetini ve boyunu adlandırır. Sekmelerin altındaki ilk satır hükümdür: `! önce bak` ve nedeni. Yamanın üstünde: değişikliğin maliyeti, sonra, dosyalar birden çok türden olduğu için, tür başına satırları veren bir satır, sonra dosya listesi. Türler yalnızca yoldan anlaşılır: `tests/`, `test_*` ve test sonekleri testtir; lock dosyaları, `.min.js`, `generated/`, `dist/`, `vendor/` üretilmiştir; gerisi kaynaktır. Tek türden bir değişiklikte tür satırı yoktur; tek dosyalı bir değişiklikte dosya listesi yoktur. En çok altı dosya listelenir, gerisi sayılır (`… 2 dosya daha`). `[` `]` yamada dosyadan dosyaya atlar.
 
 ## 2. İki satıra not
 
@@ -69,7 +71,7 @@ Değişiklik `r`nin geri gönderdiği gibi geri döner: günlük `geri gönderil
 
 ## 4. İşçi yanıtlar
 
-İşçi sonraki turunda notları okur ve çalışır. Veri yolundaki mesajları numaralıdır ve bir yanıt neyi yanıtladığını adlandırır. Lidere dolma dönemini sorar, lider yanıtlar; sonraki `done`u ona kartı veren göreve yanıt verir. Konuşmalarını günlükteki satırlarından birinde `enter` ile açın (bir satırda `v` o ajanın sizinle konuşmasını açar):
+İşçi sonraki turunda notları okur ve çalışır. Veri yolundaki mesajları numaralıdır ve bir yanıt neyi yanıtladığını adlandırır. Lidere dolma dönemini sorar, lider yanıtlar; sonraki `done`u ona kartı veren göreve yanıt verir. Konuşmalarını değişikliğin ayrıntısında `tab` ile (konuşma sekmesi) ya da günlük penceresinde (`J`) satırlarından birinde `enter` ile açın; bir satırda `v` o ajanın sizinle konuşmasını açar:
 
 ```text
  KONUŞMA · lead ⇄ claude-2 · 6/6
@@ -84,7 +86,7 @@ Değişiklik `r`nin geri gönderdiği gibi geri döner: günlük `geri gönderil
 Türden sonraki `↩` bir yanıtı işaretler; altındaki soluk satır yanıtladığı mesajın ilk satırıdır. `%` bir yanıttan yanıtladığı mesaja, bir mesajdan ilk yanıtına gider; `[` `]` söz sırasından söz sırasına. `done` sonraki `Δ`yı yapar:
 
 ```text
- Δ 15:31 claude-2 bitirdi: Instant tabanlı kova; dolma testi eklendi (3 dosya, +51 −9) · ✓ bu ağaçta temiz geçti: cargo test
+ ! #4   Instant tabanlı kova; …  ✓ cargo test · 3 dosya +51 −9
 ```
 
 ## 5. `x` ile iki parça seçin
@@ -112,7 +114,7 @@ Seçim bu yamanın özetine karşı tutulur; daha yeni bir `Δ` seçimsiz başla
 Worktree yalnızca o parçayla işarette commit edilir, dosyalar olduğu gibi kalır. Worktree'nin yeni HEAD'ine karşı tuttuğu şey hemen yeniden okunur ve aynı başlıkla değişiklik olarak bekler:
 
 ```text
- Δ 15:33 claude-2 bitirdi: Instant tabanlı kova; dolma testi eklendi (2 dosya, +30 −3) · bu ağaçta çalıştırma yok
+ ! #4   Instant tabanlı kova; …  hiçbir şey koşmadı · 2 dosya +30 −3
 ```
 
 İşçi sonraki isteminde şunu duyar: "The person applied part of your change (Instant tabanlı kova; dolma testi eklendi) to their checkout: 2 of its hunks. Your worktree is committed at 7c0e4b2 with only that part; your files are as you left them, and the rest is not committed and waits for the person as a change again." Oturmayan bir parça, uygulanmayan bir değişiklik gibi reddedilir ve değişiklik beklemeyi sürdürür. Bir parçanın içindeki satırlar seçilemez; birim parçadır.

@@ -63,7 +63,11 @@ imece kapalı düşer (fail closed): bir dosya, bir oturum ya da bir değişikli
 
 ### Takılmış görünen bir oturum ya da ters giden bir uyanış
 
-**Ne yapmalı.** `:forget @AD` (`:f`): çalışan oturum biter (çalıştırması öldürülür, bitmemiş istemler yarım kalmış olarak saklanır ve uyanışta anlatılır, yeniden çalıştırılmaz), transkripti kaldırılır ve ajan kendisiyle konuşulana dek uyur; sonraki mesajı tam brifingle yeni bir oturum başlatır (`Restarted`). `:` menüsü bunu `$` ile işaretler: brifing yeniden ödenir. `--fresh` başlangıçta bunu hatırlanan her ajan için yapar. Unutacak bir şeyi olmayan ya da gitmiş bir ajan için reddedilir (`claude-1 oturumunu koruyor: …`).
+**Ne görürsünüz.** Uzun süredir hiçbir şey demeyen ya da kartında boşta oturan, çalışan bir işçi; günlük bunu belki söylemiştir bile: `claude-1 10 dk'dır turunda hiçbir şey demedi`, `claude-1 10 dk'dır #3 parser üzerinde boşta, done demedi`, `claude-1 bu turda 3 kez başarısız oldu: Bash cargo test`.
+
+**Neden.** imece birkaç saniyede bir ekibe bakar ve lidere bir takılmayı, bir sessizliği ya da bir döngüyü, her birini bir kez, kimin duyduğuyla bitirerek söyler (`· lead uyarıldı`). Hiçbir şeyi durdurmaz: uzun süren bir komut ile asılı kalmış bir oturum dışarıdan aynı görünür. Dakikalar ve sayı [`:health`](reference/commands.md#health-stallidleloop-value)'ındır; bkz. [sağlık bildirimleri](concepts/team.md#sağlık-bildirimleri).
+
+**Ne yapmalı.** Önce neyin çalıştığına bakın: `:ps` her oturumun süreçlerini CPU'su ve belleğiyle listeler. Birinde (asılı kalan bir test çalıştırması, hiç bitmeyen bir sunucu) `d` ve `y` yalnız o süreci sonlandırır: `SIGTERM`, iki saniye sonra `SIGKILL`; oturum sürer, günlük de `cargo (60321) sonlandırıldı, claude-1 altında` der. Oturumun kendi süreci orada reddedilir (`bu claude-1 ajanının oturumunun kendisi: onu :forget ya da durdurmak bitirir, :ps değil`). Takılan oturumun kendisiyse `:forget @AD` (`:f`): çalışan oturum biter (çalıştırması öldürülür, bitmemiş istemler yarım kalmış olarak saklanır ve uyanışta anlatılır, yeniden çalıştırılmaz), transkripti kaldırılır ve ajan kendisiyle konuşulana dek uyur; sonraki mesajı tam brifingle yeni bir oturum başlatır (`Restarted`). `:` menüsü bunu `$` ile işaretler: brifing yeniden ödenir. `--fresh` başlangıçta bunu hatırlanan her ajan için yapar. Unutacak bir şeyi olmayan ya da gitmiş bir ajan için reddedilir (`claude-1 oturumunu koruyor: …`).
 
 ## Değişiklikler
 
@@ -79,7 +83,9 @@ imece kapalı düşer (fail closed): bir dosya, bir oturum ya da bir değişikli
 
 **Neden.** Git tek iş parçacığında, aynı anda tek iş çalışır: o işçinin daha yeni `done`'ı hâlâ okunurken `a`, ya da uygulaması sürerken `a`/`r`, yarışmak yerine reddedilir. Günlük satırını bekleyin.
 
-### Her değişiklikte `bu ağaçta çalıştırma yok`
+### Her değişiklikte `hiçbir şey koşmadı`
+
+**Ne görürsünüz.** Her değişikliğin hükmü `hiçbir şey koşmadı` ve `! önce bak` der.
 
 **Neden.** Yalnız imece'nin kendi `run` aracı kanıt sayılır, tam ağaca bağlı; Claude Code'un kendi kabuğu görünmez (imece hangi ağaçta çalıştığını görmez). İşçilere son düzenlemeden sonra `run` ile denetlemeleri söylenir. Ağacı değiştiren bir çalıştırma (bir biçimlendirici) hiçbirine sayılmaz.
 
@@ -101,11 +107,25 @@ imece kapalı düşer (fail closed): bir dosya, bir oturum ya da bir değişikli
 
 ### `claude-1: çalışma ağacı 3f9a1c2 noktasında kaldı, commit edilmemiş değişiklikleri var (HEAD 8b20d44)`
 
-**Neden.** Worktree'ler iş hiç atılmasın diye çalıştırmalar arasında saklanır. Eski bir commit'te temiz bulunan bir worktree ajanı başlarken ve turlar arasında HEAD'inize taşınır; commit edilmemiş değişiklikleri ya da kendi commit'leri olan yerinde kalır (`… kendi commit'leri var …`) ve satır eksik commit'ler için `↓N` gösterir. İşçinin `done`'ı kendi HEAD'ine göre okunur ve uygulama üç yolludur, genellikle yine uyar.
+**Neden.** Worktree'ler iş hiç atılmasın diye çalıştırmalar arasında saklanır. Eski bir commit'te temiz bulunan bir worktree ajanı başlarken ve turlar arasında HEAD'inize taşınır; commit edilmemiş değişiklikleri ya da kendi commit'leri olan yerinde kalır (`… kendi commit'leri var …`) ve kartının ekranındaki satırı eksik commit'ler için `↓N` gösterir. İşçinin `done`'ı kendi HEAD'ine göre okunur ve uygulama üç yolludur, genellikle yine uyar.
 
 **Ne yapmalı.** Genellikle hiçbir şey. Artık istemediğiniz bir artık worktree ise (kapatılmış bir projenin: `AD kapatıldı: agent'ları ayrıldı; worktree'leri diskte kaldı`), checkout'tan `git worktree remove <yol>` ile kendiniz kaldırın ya da dizini sildikten sonra `git worktree prune`; imece kendiliğinden hiçbir worktree kaldırmaz. `~/.local/state/imece/worktrees/` (ya da `$XDG_STATE_HOME/imece/worktrees/`) altında, proje başına bir dizinde dururlar. Her birinin kendi `target/` dizini var, yer tutarlar.
 
 ## Tuşlar ve terminal
+
+### `bu terminal 38×10; imece en az 40×12 ister`
+
+**Ne görürsünüz.** Ekranın ortasında yalnız bu satır; `ctrl-c` dışında hiçbir tuş bir şey yapmaz.
+
+**Neden.** 40 kolonun ya da 12 satırın altında imece başka bir şey çizmez: göremediğinize karar vermemelisiniz. Bir tuş, ona bastığınızda ekranda olana göre çalışır; ekranda yalnız bu satır varken hiçbiri çalışmaz.
+
+**Ne yapmalı.** Pencereyi büyütün ya da yazıyı küçültün; imece hemen yeniden çizer ve tuşlar geri gelir. 80 kolonun altında ana ekranın satırları alt alta durur, durum satırı da yeri adlandırmadan önce tuşlarını tutar.
+
+### Önceki bir çalışmadan kalan süreçler: `önceki bir çalışmadan kalan 2 süreç var: :ps listeler`
+
+**Neden.** Oturumlarını bitirmeden kapanan bir imece (bir çökme, kapatılan bir terminal, `kill -9`) onları başlattıklarıyla birlikte çalışır bırakır. imece her başlangıçta komut satırı kendi worktree dizinini adlandıran ve üstünde çalışan bir imece olmayan süreçleri arar ve kaç tane bulduğunu söyler.
+
+**Ne yapmalı.** `:ps` onları ÖNCEKİ BİR ÇALIŞMADAN KALAN altında, her ağacı çalıştığı yerin altında listeler. `d` birini, `a` kalanların hepsini bir `y`'den sonra sonlandırır: `SIGTERM`, süre dolunca `SIGKILL`. Hiçbir şey kendiliğinden sonlandırılmaz; şu an çalışan başka bir imece kendi oturumlarını korur.
 
 ### `⇧enter` yeni satır başlatmak yerine mesajı gönderiyor
 

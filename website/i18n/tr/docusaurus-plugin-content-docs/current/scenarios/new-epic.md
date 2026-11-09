@@ -5,7 +5,7 @@ description: "Bir işi bitirip sonrakine temiz bir ekranda başlamak: :archive, 
 
 # Yeni bir epic
 
-`kule` üzerinde bir haftalık iş bitti: issue'lar düzeldi, değişiklikler uygulandı, liderin yapacak bir şeyi kalmadı. Ekip hâlâ işi yapan iki işçiyi gösteriyor, günlük onların konuşmalarıyla, pano kartlarıyla dolu. Sıradaki iş ilgisiz ve ona eskisini atmadan temiz bir ekranda başlamak istiyorsunuz.
+`kule` üzerinde bir haftalık iş bitti: issue'lar düzeldi, değişiklikler uygulandı, liderin yapacak bir şeyi kalmadı. Ana ekran hâlâ işi yapan iki işçiyi gösteriyor, günlük onların konuşmalarıyla, pano kartlarıyla dolu. Sıradaki iş ilgisiz ve ona eskisini atmadan temiz bir ekranda başlamak istiyorsunuz.
 
 ## 1. Projeyi arşivleyin
 
@@ -37,7 +37,7 @@ Sayım bitince:
  kule “v1 fixes” adıyla arşivlendi: agent'ları her şeyiyle uyuyor; yerine yenisi açıldı
 ```
 
-Ekip yine `kule`'yi gösterir, `lead`'i tek başına ve boşta: aynı çalışma kopyasında, aynı adla, aynı iğneyle ve aynı `:copy` listesiyle yeni bir proje; lideri aynı modelde. Günlükte tek bir yeni satır vardır, `› kule projesini “v1 fixes” adıyla arşivledin; yerine yeni bir kule açıldı`; eski satırlar, panodaki ve kuyruktaki eski kartlar, KARAR BEKLEYEN'deki eski kalemler ekrandan gitmiştir. `@lead` yeni lidere ulaşır.
+Ana ekranda karar bekleyen de çalışan da yoktur: yine `kule`, `lead`'i tek başına ve boşta, aynı çalışma kopyasında, aynı adla, aynı iğneyle ve aynı `:copy` listesiyle yeni bir proje; lideri aynı modelde. Günlükte tek bir yeni satır vardır, `› kule projesini “v1 fixes” adıyla arşivledin; yerine yeni bir kule açıldı`; eski satırlar, panodaki ve kuyruktaki eski kartlar, KARAR BEKLEYEN'deki eski kalemler ekrandan gitmiştir. `@lead` yeni lidere ulaşır.
 
 Ona ilk günkü gibi yazın:
 
@@ -59,7 +59,7 @@ Hiçbiri uyanmaz, hiçbir şey harcamaz: işçilerine kart sunulmaz, onlara adla
 Geri getirmeden yeniden bakmak için `A`'ya basın ve `▸ v1 fixes` üstünde `enter`: arşiv salt okunur açılır, ekranda kaldırıldığı gibi tek başına, bütün günlüğüyle, şunun altında
 
 ```text
- ARŞİV · kule “v1 fixes” · 2026-11-02 arşivlendi · şu an seni 0 şey bekliyor · esc geri
+ ARŞİV · kule “v1 fixes” · 2026-11-02 arşivlendi · şu an 0 karar bekliyor · esc geri
 ```
 
 Konuşmaları, kartları ve değişiklikleri her yerdeki gibi açılır, `:export` birini dosyaya yazar; ajanlarına yazmak `arşiv salt okunur · :restore geri getirir · esc geri döner` der. `esc` bu arada sürmüş olan yeni `kule`'ye döner.

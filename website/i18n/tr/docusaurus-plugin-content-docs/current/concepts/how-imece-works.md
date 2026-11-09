@@ -1,6 +1,6 @@
 ---
 title: imece nasıl çalışır
-description: Bir kullanıcının karşılaştığı parçalar - ekran ve modeli, Claude Code adaptörü, ajan başına bir oturum, bus, git iş parçacığı, SQLite deposu ve bir işçinin worktree'si ile checkout'unuz arasındaki kapı.
+description: Bir kullanıcının karşılaştığı parçalar - ekran ve modeli, Claude Code adaptörü, ajan başına bir oturum, bus, git iş parçacığı, SQLite deposu, bir işçinin worktree'si ile checkout'unuz arasındaki kapı ve bir projenin altındaki Lonca.
 ---
 
 # imece nasıl çalışır
@@ -46,7 +46,27 @@ Bir worktree çalıştırmalar arasında saklanır. Eski bir commit'te temiz bul
 
 ## Δ kapısı
 
-Bir işçi `done` gönderince imece onun worktree'sini okur (izlenmeyen dosyalar dahil, özel bir index üzerinden; ajanın kendi index'ine dokunulmaz) ve diff'i KARAR BEKLEYEN panelinde bir değişiklik (`Δ`) olarak gösterir. Siz uygularsınız (`a`: checkout'unuza `git apply --index`, stage'e; düz uygulama oturmazsa üç yollu), reddedersiniz (`r`) ya da not gönderirsiniz (`n`). Siz olmadan hiçbir şey checkout'unuza ulaşmaz. Yolun tamamı [değişiklikler](../concepts/changes.md) sayfasında.
+Bir işçi `done` gönderince imece onun worktree'sini okur (izlenmeyen dosyalar dahil, özel bir index üzerinden; ajanın kendi index'ine dokunulmaz) ve diff'i KARAR BEKLEYEN'de bir değişiklik (`Δ`) olarak gösterir. Siz uygularsınız (`a`: checkout'unuza `git apply --index`, stage'e; düz uygulama oturmazsa üç yollu), reddedersiniz (`r`) ya da not gönderirsiniz (`n`). Siz olmadan hiçbir şey checkout'unuza ulaşmaz. Yolun tamamı [değişiklikler](../concepts/changes.md) sayfasında.
+
+## Ekran
+
+Ekran, üstündeki bir şey değiştiğinde modeli çizer; bir oturumu, git'i ya da depoyu asla beklemez. İki ekranı vardır:
+
+- **Ana ekran**, imece'nin açıldığı yer, tek bir listedir. Önce KARAR BEKLEYEN gelir, karar vermenin maliyetine göre gruplu: izinler (bir ajanın çalıştırmak istediği bir komut, evet denecek bir betik), sorular (bir ajanın sorusu, liderin planı, denemeleri biten bir kart), değişiklikler (okunacak bir diff, hazır olanlar önce). Altında ÇALIŞAN: her projenin işçileri ve soloları, önce takılanlar, sonra çalışanlar, sonra boştakiler, her birinin yardımcıları altında. Her satır kartıyla başlar. Bkz. [Ana ekran](../screen/home.md).
+- **Tek bir iş** bir satırda `enter` ile açılır: kartı, projeyi, ajanı, süreyi ve maliyeti söyleyen bir baş satırı ve üç sekme, `diff · konuşma · log`. Bir değişiklik hüküm satırıyla başlar, tek satırda Δ kapısı; bir soru, sorunun kendisi ve sunduğu yanıtlarla; bir ajan log'uyla, kartının hikâyesinden oturumunun ham akışına kadar.
+
+Pano, kod haritası, zaman çizelgesi, günlük, harcamalar, süreçler ve Lonca penceresi ikisinin de üstünde açılan pencerelerdir (`:board`, `:code`, `:timeline`, `J`, `:ledger`, `:ps`, `:lonca`); `esc` kapatır. Başlıkta dört şey vardır: açık projeler, `! N karar bekliyor`, kese ve saat.
+
+## Lonca'da
+
+[Lonca](https://github.com/selcukgural/lonca), bir deponun tek yazarı olan bir daemon'dır; lease'leri, bir merge kuyruğu ve imzalı bir log'u vardır. Bir proje bir depoya dayanabilir (`:lonca AD` bir depoyu adlandırır, `:lonca import` checkout'tan bir tane yapar); imece o zaman daemon'ın soketinin bir istemcisidir, asla ikinci bir yazar değil:
+
+- O andan sonra tutulan bir işçi worktree yerine bir Lonca **workspace**'inde çalışır; Claude Code'unda imece'nin bus'ının yanında Lonca'nın kancası ve araçları vardır. Düzenlediğini lease'ler ve değişikliğini önerir.
+- Onun Δ'sı, turu bitince, bekleyen en yeni önerisidir. `a` onu onaylar, `r` bir gerekçeyle reddeder; ikisini de `lonca` programı imzalar. Checkout'unuza hiçbir şey inmez.
+- Evetinizden sonra Lonca'nın merge kuyruğu deponun kontrollerini birleşmiş ağaçta çalıştırır ve değişikliği gövdeye (trunk) koyar ya da işçiye geri gönderir. Checkout'unuz gövdenin bir istemcisidir: `:sync` onu yetiştirir.
+- imece her 5 saniyede daemon'ın durumunu okur: projenin satırı (`lonca mobile-app 9d3f1c2 · 3 bekliyor`), kod haritasındaki lease'ler, `:lonca` penceresi. Daemon yanıt vermedikçe proje kapalıdır: kimse tutulmaz ve hiçbir Δ'ya karar verilmez.
+
+Ayrıntılar [projeler](projects.md#loncada) ve [değişiklikler](changes.md#loncada) sayfalarında. Hiçbir depoda olmayan bir proje yukarıdaki gibi worktree'lerle ve checkout'unuzla çalışır.
 
 ## Git iş parçacığı
 

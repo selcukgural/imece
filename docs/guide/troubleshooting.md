@@ -63,7 +63,11 @@ imece fails closed: when a file, a session or a change is not what it expects, i
 
 ### A session that seems stuck, or a wake that goes wrong
 
-**What to do.** `:forget @NAME` (`:f`): the running session ends (its run killed, unfinished prompts kept as interrupted and told at the wake, not run again), its transcript is removed, and the agent sleeps until spoken to; its next message starts a new session with the full briefing (`Restarted`). The `:` menu marks it `$`: the briefing is paid again. `--fresh` does it for every remembered agent at start. Refused for an agent with nothing to forget or one that is gone (`claude-1 keeps its session: …`).
+**What you see.** A worker at work that has said nothing for a long time, or sits idle on its card; the journal may already say so: `claude-1 has said nothing for 10 min in its turn`, `claude-1 has been idle 10 min on #3 parser without a done`, `claude-1 failed 3 times this turn on Bash cargo test`.
+
+**Why.** imece looks at the team every few seconds and tells the leader of a stall, a silence or a loop, once each, ending with who heard it (`· lead told`). It stops nothing: a command that runs long and a hung session look the same from outside. The minutes and the count are [`:health`](reference/commands.md#health-stallidleloop-value)'s; see [health notices](concepts/team.md#health-notices).
+
+**What to do.** First look at what runs: `:ps` lists each session's processes with their CPU and memory. `d` on one (a test run that hangs, a server that never ends) and `y` ends that process alone, `SIGTERM` then `SIGKILL` after two seconds; the session goes on, and the journal says `you ended cargo (60321) under claude-1`. The session's own process is refused there (`that is claude-1's session itself: :forget or a stop ends it, not :ps`). When the session itself is what is stuck, `:forget @NAME` (`:f`): the running session ends (its run killed, unfinished prompts kept as interrupted and told at the wake, not run again), its transcript is removed, and the agent sleeps until spoken to; its next message starts a new session with the full briefing (`Restarted`). The `:` menu marks it `$`: the briefing is paid again. `--fresh` does it for every remembered agent at start. Refused for an agent with nothing to forget or one that is gone (`claude-1 keeps its session: …`).
 
 ## Changes
 
@@ -79,7 +83,9 @@ imece fails closed: when a file, a session or a change is not what it expects, i
 
 **Why.** Git runs on one thread, one job at a time: `a` while that worker's newer `done` is still being read, or `a`/`r` while an apply of it is under way, is refused rather than racing. Wait for the journal line.
 
-### `no run on this tree` on every change
+### `nothing ran` on every change
+
+**What you see.** Every change's verdict says `nothing ran` and `! look first`.
 
 **Why.** Only imece's own `run` tool counts as evidence, tied to the exact tree; Claude Code's own shell does not show (imece does not see which tree it ran on). Workers are told to check with `run` after their last edit. A run that changed the tree (a formatter) counts for none.
 
@@ -101,11 +107,25 @@ imece fails closed: when a file, a session or a change is not what it expects, i
 
 ### `claude-1: worktree kept at 3f9a1c2, it has uncommitted changes (HEAD is 8b20d44)`
 
-**Why.** Worktrees are kept between runs so work is never thrown away. A worktree found clean at an older commit is moved to your HEAD when its agent starts and between turns; one with uncommitted changes or commits of its own stays where it is (`… it has commits of its own …`) and the row shows `↓N` for the commits it lacks. The worker's `done` is read against its own HEAD, and the apply is three-way, so it usually still fits.
+**Why.** Worktrees are kept between runs so work is never thrown away. A worktree found clean at an older commit is moved to your HEAD when its agent starts and between turns; one with uncommitted changes or commits of its own stays where it is (`… it has commits of its own …`) and its line on its card's screen shows `↓N` for the commits it lacks. The worker's `done` is read against its own HEAD, and the apply is three-way, so it usually still fits.
 
 **What to do.** Nothing, usually. If a worktree is a leftover you no longer want (a closed project's: `closed NAME: its agents left; their worktrees stay on disk`), remove it yourself with `git worktree remove <path>` from the checkout, or `git worktree prune` after deleting the directory; imece removes no worktree on its own. They live under `~/.local/state/imece/worktrees/` (or `$XDG_STATE_HOME/imece/worktrees/`), one directory per project. Each has its own `target/`, so they take space.
 
 ## Keys and the terminal
+
+### `this terminal is 38×10; imece needs 40×12`
+
+**What you see.** That one line in the middle of the screen, and no key does anything but `ctrl-c`.
+
+**Why.** Under 40 columns or 12 rows imece draws nothing else: what you cannot see you should not decide. A key acts on what was on the screen when you pressed it, so none acts while only this line is there.
+
+**What to do.** Make the window larger, or the font smaller; imece draws again at once and the keys come back. Under 80 columns Home's rows stand stacked, and the status line keeps its keys before it names the place.
+
+### Processes left from an earlier run: `2 processes left from an earlier run: :ps lists them`
+
+**Why.** An imece that ended without ending its sessions (a crash, a terminal closed, `kill -9`) leaves them running with what they started. At each start imece looks for processes whose command line names its worktrees directory and that no running imece is above, and says how many it found.
+
+**What to do.** `:ps` lists them under LEFT FROM AN EARLIER RUN, each tree under the place it ran in. `d` ends one and `a` all that are left over, after a `y`: `SIGTERM`, then `SIGKILL` after the grace. Nothing is ended by itself, and another imece running now keeps its own sessions.
 
 ### `⇧enter` sends the message instead of starting a new line
 

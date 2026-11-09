@@ -34,14 +34,31 @@ by hand (`imece-<target>.tar.gz`, with `SHA256SUMS`).
 - **Long-lived Claude Code sessions.** Each agent is a session of its own.
   Claude Code's own restrictions are switched on and checked, fail closed.
 - **Your checkout is never touched.** A worker's `done` shows up as a change
-  (`Δ`) in WAITING FOR YOU: read the diff, note lines, apply all or only the
+  (`Δ`) in TO DECIDE: read the diff, note lines, apply all or only the
   hunks you choose, or send it back with your reasons.
-- **What needs you, in one place.** A shell command Claude Code would have
-  asked about (`⚑`), a question from an agent, a finished change: one queue,
-  `W` opens the next from anywhere, the terminal's title counts them.
-- **One pot.** One budget for the whole team, kept between runs; the header
-  shows the burn rate, how long the pot lasts, and your plan's tightest
-  usage window.
+- **One screen to decide on.** Home lists what is to decide, grouped by
+  what deciding costs (permissions, questions, changes), each row the whole
+  ask with its keys, then who is at work, project by project. A change
+  opens with a verdict line: what proved it, whether it stayed inside its
+  card's paths, whether it overlaps another change. `W` opens the next from
+  anywhere; the terminal's title counts them.
+- **Cards that can fail.** A worker may say its card failed; the leader
+  hands it again, three tries at most before you say one more or fail it
+  for good. A card can wait on others (`after`) and be withdrawn when
+  nobody needs it.
+- **The leader hears when something is off.** A worker stalled, silent
+  mid-turn, idle with no card, or failing the same call again and again is
+  told to the leader (`:health` sets the minutes). `:ps` shows each
+  session's processes and ends a hung one.
+- **One pot.** One budget for the whole team, kept between runs; the
+  header shows the pot, how long it lasts when under half an hour is left,
+  and a usage window once it is 90% used. `:ledger` says what each try at a
+  card cost, what was applied and what was spent for nothing, model by
+  model.
+- **Lonca underneath, if you want it.** A project can sit on a
+  [Lonca](https://github.com/selcukgural/lonca) repository: workers in
+  Lonca workspaces, a change a proposal, your yes its approval, Lonca's
+  merge queue what merges and verifies it.
 - **It remembers.** Projects, cards, conversations and the journal live in
   one SQLite file; agents sleep until you write to them and wake in the
   session they had. Several checkouts at once, each with its own leader.
@@ -65,8 +82,9 @@ imece --demo                               # fake agents, to see the screen at w
 [Scenarios](https://selcukgural.github.io/imece/docs/scenarios) ·
 [Videos](https://selcukgural.github.io/imece/docs/videos)
 
-> Status: early. Researchers and symbol leases (several agents in one file)
-> are designed, shown by the demo, and not built yet.
+> Status: early. Researchers are designed, shown by the demo, and not built
+> yet; symbol leases (several agents in one file) come from Lonca, for a
+> project on it.
 
 The reasons behind each behaviour are in [`docs/decisions/`](docs/decisions);
 the site's pages are the Markdown files in `docs/guide/` (English) and

@@ -1053,6 +1053,22 @@ mod triage_tests {
     }
 
     #[test]
+    fn gc_off_home_does_nothing() {
+        let mut app = quiet();
+        let w = workers(&app);
+        app.world.inbox.push(item(InboxKind::Question, w[0]));
+        app.zoom = Zoom::Focus(w[1]);
+        keys(&mut app, "gc");
+        assert_eq!(app.zoom, Zoom::Focus(w[1]), "still on the focus");
+        assert!(
+            app.flash.is_none(),
+            "no change was looked for: {:?}",
+            app.flash
+        );
+        assert_eq!(app.at_home.at, None);
+    }
+
+    #[test]
     fn a_yes_moves_down_and_the_next_key_decides_the_next_row() {
         let mut app = quiet();
         let w = workers(&app);

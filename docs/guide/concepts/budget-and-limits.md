@@ -21,14 +21,14 @@ The budget is one pot for the whole team: once all agents together have spent it
 ## The header
 
 ```text
- imece  ● 2 working ✓ 1 done │ spent $3.10 of $20.00  14:02
+ imece  shop-api │  ! 2 to decide  │ $3.10 of $20.00  14:02
 ```
 
-The header carries the pot alone; the `:budget` menu's note carries the rest: `(spent $3.10 of $20.00 · $2.40/h, ~2 h 10 min left · claude 5h: 48% left)`.
+The header carries the open projects, what is to decide, the pot (spent of the budget) and the time; the `:budget` menu's note carries the rest: `($3.10 of $20.00 · $2.40/h, ~2 h 10 min left · claude 5h: 48% left)`.
 
 - `$/h` is what the **last ten minutes** cost per hour, not the average since the start (an idle hour would pull that down and a first turn push it up). Costs arrive at turn ends, so the rate moves in steps. Only this run counts.
-- `~… left` is how long the pot lasts at that rate. Under half an hour the header's pot turns the **attention colour** and says it, `spent $19.60 of $20.00, ~25 min left`, and the journal says once, with the rate and the minutes, that the pot runs low: `at $12.00/h the budget lasts about 25 min more; :budget USD raises it`. `:budget` makes it say so again. It is a journal line, not an item in TO DECIDE: nothing in it needs an answer, and the pot stops turns on its own.
-- Each agent's own total is on its team row; there is no rate per agent.
+- `~… left` is how long the pot lasts at that rate. Under half an hour the header's pot turns the **attention colour** and says it, `$19.60 of $20.00, ~25 min left`, and the journal says once, with the rate and the minutes, that the pot runs low: `at $12.00/h the budget lasts about 25 min more; :budget USD raises it`. `:budget` makes it say so again. It is a journal line, not an item in TO DECIDE: nothing in it needs an answer, and the pot stops turns on its own.
+- Each agent's own total is on the head line of its work (`enter` on its row); there is no rate per agent.
 
 ## Usage windows
 
@@ -50,7 +50,7 @@ Every dollar figure is Claude Code's own: it prices each turn from its own price
 
 ## `$` in the `:` menu
 
-The `:` menu shows each command's value after it, `budget (spent $3.10 of $20.00)`, and marks with `$` the commands that raise the next bill:
+The `:` menu shows each command's value after it, `budget ($3.10 of $20.00 · $2.40/h)`, and marks with `$` the commands that raise the next bill:
 
 - `:open` starts a new leader session.
 - `:forget` makes the next message start a new session that pays the whole briefing again, without the cache.

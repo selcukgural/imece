@@ -19,14 +19,17 @@ Bir kabuk komutu **rutin**dir: tek satırsa, argümanlarıyla tek bir programsa 
 
 ### Kalan her şey bekler
 
-Başka her şey KARAR BEKLEYEN'de bir `⚑` öğesidir: "claude-1 çalıştırmak istiyor: Bash: curl … | head". Her istek kendi başına bir öğedir ve seçili olan satırının altında **bütünüyle** gösterilir, satırları ` ↵ ` ile birleştirilmiş, asla markdown olarak okunmaz: izin verdiğiniz, çalışandır. Ajanın ekip satırı `⚑ çalıştırmak istiyor` okunur.
+Başka her şey KARAR BEKLEYEN'de, ana ekranda **izinler** altında bekler: istek başına bir satır, ajanının üzerinde çalıştığı kartla başlar, isteğin tamamını tek yerde söyler, `Bash: curl … | head çalışsın mı?`, kendi sütununun altına sarılır; satırları ` ↵ ` ile birleştirilir ve asla markdown olarak okunmaz: izin verdiğiniz, çalışandır. Eldeki satır tuşlarıyla biter, durum satırı da onları tam söyler:
 
 ```text
- KARAR BEKLEYEN (1)
- ⚑ 14:10 claude-1 çalıştırmak istiyor: Bash: curl -s https://example.org/schema.json | head -40
-    curl -s https://example.org/schema.json | head -40
-  a izin ver · r reddet · enter odak
+ izinler                                                                                           her biri tek tuş
+▸! #6   Toplu e-posta kuyruğu     WebFetch:                                                    a  evet   r  hayır
+                                  https://learn.microsoft.com/dotnet/api/system.text.json çalışsın mı?
+ …
+ ana ekran · shop-api · #6 Toplu…    a  bir kez izin ver   r  reddet   e  bu tur evet   ?  yardım
 ```
+
+İsteği beklerken ajan o satırın kendisidir: ÇALIŞAN altında bir daha listelenmez. Bir evet ya da hayır satırı karara bağlar ve sonrakini ele getirir; arka arkaya izinler, arka arkaya tuşlardır.
 
 - `a` izin verir; çağrı istendiği gibi çalışır ve günlük `claude-1 için izin verdin: Bash: …` der.
 - `r` reddeder; ajana "The person refused this. Do not try it another way; if you need it, ask them (send to you, type ask) and go on with what does not depend on it." denir ve günlük `… için reddettin` der. Ret bir karardır, hata değil; tur devam eder.
@@ -41,11 +44,11 @@ Bir istekte `A`, o projenin bütün ajanları için isteğin komutlarına artık
 
 ### Bu tur evet
 
-Bir istekte `e` (sizi bekleyenlerde ya da ajanının odağında) ya da `:yes [@NAME]`, o ajan turunu bitirene dek ne isterse evet der: istek sürer, diğer açık istekleri de, o ajanın turu (ya da oturumu) bitene dek sonraki her isteği de size sormadan sürer, ne olursa olsun: `$(…)` içeren ya da bir seçenekle başlayan bir komut, bir düzenleme, bir getirme. Başlattığınız bir işte çalışan tek bir ajan için, istekler çok olduğunda ve siz başındayken; artık hep evet (`A`) bir projenin hep çalıştırdığı komutlar içindir. İzi `allowed by your yes for this turn: …` der, sürdükçe satırı ve odağı `✓ tur` der, günlük de ne zaman verdiğinizi ve tur bitince kaç isteğe sormadan izin verdiğini söyler. Başka bir ajanın istekleri sizi beklemeye devam eder. Yeni bir tur yine sorar.
+Bir istekte `e` (sizi bekleyenlerde ya da ajanının log sekmesinde) ya da `:yes [@NAME]`, o ajan turunu bitirene dek ne isterse evet der: istek sürer, diğer açık istekleri de, o ajanın turu (ya da oturumu) bitene dek sonraki her isteği de size sormadan sürer, ne olursa olsun: `$(…)` içeren ya da bir seçenekle başlayan bir komut, bir düzenleme, bir getirme. Başlattığınız bir işte çalışan tek bir ajan için, istekler çok olduğunda ve siz başındayken; artık hep evet (`A`) bir projenin hep çalıştırdığı komutlar içindir. İzi `allowed by your yes for this turn: …` der, sürdükçe satırı ve odağı `✓ tur` der, günlük de ne zaman verdiğinizi ve tur bitince kaç isteğe sormadan izin verdiğini söyler. Başka bir ajanın istekleri sizi beklemeye devam eder. Yeni bir tur yine sorar.
 
 ## Sorular (`?`)
 
-Bir ajan size `send(to: "you", type: "ask", body)` ile sorar ve seçilecek yanıtları sunabilir (`options`: en çok dört, her biri kısa bir satır, kendi seçeceği önce). Bir `?` öğesi olur, "claude-2 sana soruyor: eski CLI bayrağı kalsın mı?", ve soru açıkken ajan boştaysa ekip satırı `? → you` okunur. Aynı ajandan daha yeni bir soru eskisinin yerini alır.
+Bir ajan size `send(to: "you", type: "ask", body)` ile sorar ve seçilecek yanıtları sunabilir (`options`: en çok dört, her biri kısa bir satır, kendi seçeceği önce). **Sorular** altında bir `?` öğesi olur, günlükte "claude-2 sana soruyor: eski CLI bayrağı kalsın mı?", ve soru açık kaldıkça ajan o satırın kendisidir. Aynı ajandan daha yeni bir soru eskisinin yerini alır.
 
 [Ana ekranda](../screen/home.md) satır soruyu, altında da sunulan her yanıtı onu seçen tuşla söyler:
 
@@ -65,7 +68,7 @@ Kim ne zaman sorar: lider görev ortasında size sorabilir; bir işçi önce lid
 
 ## Bekleyene ulaşmak
 
-- `W` her yerden sizi bekleyen sonraki öğeyi açar (bir değişikliğin diff'i, bir sorunun konuşması, bir onayın odağı), böylece `a`/`r` hemen yanıtlar; yine basılınca sonrakine geçer, sondan ilkine döner. Bekleyen yoksa: "Şu an senden bir şey gerekmiyor".
+- `W` her yerden sizi bekleyen sonraki öğeyi açar (bir değişikliğin diff'i, bir sorunun konuşması, bir onayın ajanı log sekmesinde), böylece `a`/`r` hemen yanıtlar; yine basılınca sonrakine geçer, sondan ilkine döner. Bekleyen yoksa: "Şu an senden bir şey gerekmiyor".
 - `S` eldeki öğeyi erteler ve sonrakini açar: ertelenenler diğerlerinin hepsinden sonra, ertelenme sırasıyla gelir, satırları `sonra ·` ile işaretli. Erteleme yalnız bu çalıştırma içindir.
 - Ana ekran sizi bekleyeni üste, KARAR BEKLEYEN'e koyar ve ÇALIŞAN'da her projenin işçilerini sizden ne beklediklerine göre sıralar: önce takılan (bloke ya da durmuş), sonra çalışan, sonra sakinler; eşitler sırasını korur. ÇALIŞAN başlığı (`takılan 2 · boşta 1`), başlık satırı (`! 2 karar bekliyor`) ve terminalin başlığı aynı şeyleri sayar.
 
@@ -90,6 +93,6 @@ Hangi kabuk komutlarının rutin olduğuna aynı politika karar verir; `standard
 ## Ayrıca bakınız
 
 - [Claude Code](../concepts/claude-code.md): confine düzeyleri.
-- [KARAR BEKLEYEN](../screen/waiting.md): panel, `W`, `S`.
+- [Ana ekran](../screen/home.md): KARAR BEKLEYEN, grupları, `W`, `S`.
 - [Mesajlar ve pano](../concepts/messages-and-board.md).
 - [Güvenlik](../concepts/security.md): son kapı sizsiniz, bir araç listesi değil.

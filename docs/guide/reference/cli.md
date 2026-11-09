@@ -35,6 +35,7 @@ imece --demo --lang tr                             # or IMECE_LANG=tr
 - `--version` (or `-V`) first prints `imece 0.1.0` on stdout and leaves with exit code 0; the installer checks the binary it put in place this way.
 - `--live` is accepted and ignored: it is what live agents were asked for with before they became the default.
 - `imece mcp-relay SOCKET` is not for you: Claude Code starts imece this way as its MCP server, and the process only carries bytes between it and imece's socket for that agent ([message types](message-types.md)).
+- `imece stand-in ARGS…` is not for you either: it plays Claude Code for imece's own tests. Run by a `claude` script on PATH that calls `imece stand-in "$@"`, it takes the flags imece gives `claude` (and `--version`, which prints `0.0.0 (imece stand-in)`, and `auth status --json`, which says it is signed in), talks to imece's bus as Claude Code's MCP client does, and streams the same events: a leader hires one worker and assigns it your last paragraph, a worker writes `stand-in/<name>.md` and sends `done`, each turn at a made-up cent. No model is asked and nothing is spent. imece's end-to-end test runs the real team on it.
 
 ## Exit codes
 

@@ -1,11 +1,11 @@
 ---
 title: Projects
-description: Several checkouts in one imece - :open, :close, :rename, a leader per project, groups in the team that fold, :pin, and the per-project :copy list of ignored paths a worker's worktree gets.
+description: Several checkouts in one imece - :open, :close, :rename, a leader per project, groups on Home that fold, :pin, the per-project :copy list of ignored paths a worker's worktree gets, and a project on Lonca.
 ---
 
 # Projects
 
-A project is one git checkout with its own leader and workers. imece starts with the checkout it runs in as the first project (leader `lead`); you open more from the screen, and each is a group in the team. One pot and one bus serve them all.
+A project is one git checkout with its own leader and workers. imece starts with the checkout it runs in as the first project (leader `lead`); you open more from the screen, and each is a group on Home. One pot and one bus serve them all.
 
 ## Opening, closing, renaming
 
@@ -28,28 +28,28 @@ A project is one git checkout with its own leader and workers. imece starts with
 
 A solo's model and effort are yours to pick, per solo.
 
-## Groups in the team
+## Groups on Home
+
+With more than one project open, Home's AT WORK has a heading for each, with its workers under it, and every row of TO DECIDE names its project before its card:
 
 ```text
- TEAM
- ▴ api        ! 1 waiting
-   ● lead-api        coordinating
-   ● claude-1        #4 auth: refresh      +12 −3
- ▸ shop       ● 2 working
- ▾ imece
-   ○ lead            idle
-   ✓ claude-2         done, not seen yet
+ AT WORK 3
+ ▾ shop-api      ░░░░░░░░ 0/6   ! 4 waiting   2 working  $0.29  ~/src/shop-api
+ ● shop-api    #3   Price list cache          Make the change · 1 min
+ ▾ mobile-app    ░░░░░░░░ 0/6   ! 3 waiting   2 working  $0.29+?  lonca mobile-app 9d3f1c2 · 3 pendi
+ ● mobile-app  #9   Order tests               Run the tests · 9 min
 ```
 
-- Each project is a group with its own leader. `h` `l` (or `←` `→`, `enter` on the header) fold and unfold a group; `za` toggles, `zM` folds every worker, `zR` unfolds all (`:fold`, `:unfold`).
-- A folded project is one line that still shows what waits for you (`! 1 waiting`) or what it does (`● 2 working`).
-- When the team is too short, calm workers fold from the bottom up into `… N agents doing fine`; the workers that need you fold last, and a pinned project last of all.
-- The journal and inbox lines carry the project's name before the agent's when several are open.
-- Plain text in the command line goes to the **selected** project's leader. The selection decides who `/` writes to.
+- A heading says the project's cards done of all, what of it waits for you, who works, what it spent and its folder (on Lonca, its repository's line instead).
+- `h` `l` (or `←` `→`) fold and unfold the project of the row at hand; `za` toggles, `zM` folds every project, `zR` unfolds all (`:fold`, `:unfold`). A folded project is its heading alone, which still says what waits and what works.
+- `enter` on a heading opens the leader's detail; `[` `]` narrow Home to one project and back to all.
+- Nothing folds by itself. `s` (`:settle`) on an agent's row or a heading hides it until it needs you; the AT WORK heading counts what is hidden (`· 2 hidden (:unsettle)`), and `:unsettle` brings it back.
+- The journal's lines carry the project's name before the agent's when several are open.
+- Plain text in the command line goes to the leader of the project at hand: the row at hand decides who `/` writes to.
 
 ## `:pin [NAME]`
 
-`:pin` pins the named project, else the one at hand, to the top of the team; `:pin` again unpins. Pinned projects come first, then the rest, each group in the order it was opened. A pinned project's header wears `▴`. The pin is yours and outlives the run (kept in the store). The `:` menu shows which project `:pin` would act on, with `▴` when it is pinned already.
+`:pin` pins the named project, else the one at hand, to the top of Home's AT WORK; `:pin` again unpins. Pinned projects come first, then the rest, each group in the order it was opened. A pinned project's header wears `▴`. The pin is yours and outlives the run (kept in the store). The `:` menu shows which project `:pin` would act on, with `▴` when it is pinned already.
 
 A colour per project is not built: the themes name colours by role and order their speaker colours differently, so a colour chosen by name would need a named palette in every theme first.
 
@@ -150,6 +150,30 @@ A worker hired on a project on Lonca works in a **workspace** of the repository,
 
 In Lonca's cooperative mode no session counts as observed, so every proposal waits for you. Each worker's session names its harness, Claude Code, as Lonca asks: a hardened install grants an observation level only to the harness a session names. A change to a critical path (`Cargo.toml`, lockfiles, `package.json`, `.github/**`, `build.rs`) is refused by Lonca's default, but a repository made with `:lonca import` makes it wait for you like any other, its reason `critical_path:Cargo.toml` on the Δ. A worker that has used the web or a command that reaches the network stays refused there, since what it read may have told it what to write: it says it is blocked, and that change is yours to make. So does a worker on a repository with Lonca's default policy. `unobserved_is_tainted = false` in `lonca.toml` would have proposals integrate with nobody looking, so imece closes a repository set that way, as it closes one that does not answer: `⌀ no lonca` and why.
 
+### The `:lonca` window
+
+Bare `:lonca` on a project on Lonca opens a window over the screen with what the last look read from the daemon:
+
+```text
+┌LONCA · mobile-app────────────────────────────────────────────────────────────────────────┐
+│mobile-app is on Lonca repository mobile-app: trunk 9d3f1c2, 3 waiting for a human        │
+│                                                                                          │
+│WAITING FOR A HUMAN · 3                                                                   │
+│▶    6  claude-2  app/net/ApiClient.kt, app/cart/CartViewModel.kt  Δ shown  based before t│
+│     8  claude-3  app/cart/CartViewModel.kt, app/test/CartViewModelTest.kt  Δ shown       │
+│     1  ayse      app/cart/CartViewModel.kt  based before trunk                           │
+│                                                                                          │
+│HELD · 0                                                                                  │
+│nothing is held                                                                           │
+│ j k  move   enter  open the change   esc  back                                           │
+└──────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+- **WAITING FOR A HUMAN** lists every proposal of the repository that waits for a yes, someone else's too: its number, who holds it (a worker's name here, else Lonca's), its paths, `Δ shown` when it is a change on Home, `based before trunk` when trunk moved since (the queue merges it after your yes).
+- **HELD** lists the leases held now, one a line: who holds it, its file and the symbol in it. The code map (`:code`) shows the same leases file by file.
+- `j` `k` move; `enter` on a proposal shown as a change opens that change; on another it says why there is none to open (nobody's of this project, or its worker's turn goes on). `esc` or `q` closes.
+- Off Lonca, `:lonca` says how the project stands, as before.
+
 Your checkout is a client of the repository, so trunk moves without it. [`:sync`](../reference/commands.md#sync) brings it up: `lonca fetch` puts trunk in `refs/lonca/trunk`, and your branch moves forward when that is a fast-forward. imece never merges, rebases or resets your branch: with commits of your own nothing moves and the journal says so, and work in the way stops it with git's words.
 
 ## The demo's copies
@@ -158,7 +182,7 @@ Your checkout is a client of the repository, so trunk moves without it. [`:sync`
 
 ## See also
 
-- [The team](../screen/salon.md): folding, the attention order, `f`.
+- [Home](../screen/home.md): the list, folding, hiding.
 - [Many projects](../scenarios/many-projects.md): a worked example.
 - [Sessions](../concepts/sessions.md): what the store keeps per project.
 - [Commands](../reference/commands.md).
