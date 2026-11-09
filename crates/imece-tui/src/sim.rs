@@ -999,6 +999,7 @@ pub fn world(
         limits: Vec::new(),
         tick: 0,
         started_at: 0,
+        demo: true,
         run_spent: 0,
         spending: Spending::default(),
         projects: Vec::new(),
@@ -2499,6 +2500,9 @@ impl Sim {
             w.note(Event::CommandsMissing { agent: id });
         } else {
             a.commands = commands_of();
+            // As live says it: how many, never which (the person's own).
+            let said = format!("commands: {}", a.commands.len());
+            a.trace(t, said);
         }
         if refused {
             let line = format!("session could not be resumed ({REFUSED})");
@@ -6760,6 +6764,10 @@ diff --git a/b.rs b/b.rs
         assert_eq!(w.agents[lead].commands, commands_of());
         s.start(&mut w, workers[0]);
         assert_eq!(w.agents[workers[0]].commands, commands_of());
+        // The trace counts them, as live's does, and names none.
+        let said = format!(" commands: {}", commands_of().len());
+        assert!((w.agents[lead].trace.iter()).any(|l| l.ends_with(&said)));
+        assert!(!(w.agents[lead].trace.iter()).any(|l| l.contains("/clear")));
         let missing = |w: &World| {
             (w.journal.iter())
                 .filter(|e| matches!(e.event, Event::CommandsMissing { .. }))

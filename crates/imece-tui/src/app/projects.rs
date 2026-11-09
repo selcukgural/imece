@@ -535,7 +535,7 @@ impl App {
     }
 
     /// `path` as the screen shows it: `~` for the home, cleaned.
-    fn shown_path(&self, path: &Path) -> String {
+    pub(crate) fn shown_path(&self, path: &Path) -> String {
         let said = match self.home.as_deref().and_then(|h| path.strip_prefix(h).ok()) {
             Some(rest) if rest.as_os_str().is_empty() => "~".to_string(),
             Some(rest) => format!("~/{}", rest.display()),

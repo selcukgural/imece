@@ -850,6 +850,7 @@ pub fn world(o: Options) -> Result<(World, Live), String> {
                 limits: Vec::new(),
                 tick: 0,
                 started_at: now,
+                demo: false,
                 run_spent: 0,
                 spending: Spending::default(),
                 projects: Vec::new(),

@@ -125,13 +125,14 @@ impl App {
         self.plan_window = Some((item, to.min(last.saturating_sub(1))));
     }
 
-    /// How many lines the plan of item `item` lists (its cards), for the
-    /// window's scroll.
+    /// How many lines the plan of item `item` lists (its cards, wrapped
+    /// as the window last drew them), for the window's scroll.
     fn plan_lines(&self, item: usize) -> usize {
         let leader = self.world.inbox[item].agent;
         let p = self.world.agents[leader].project;
-        (self.world.projects[p].plan.proposal.as_ref())
-            .map_or(0, |pr| ui::overlay::plan_lines(self, pr).len())
+        (self.world.projects[p].plan.proposal.as_ref()).map_or(0, |pr| {
+            ui::overlay::plan_lines(self, pr, self.plan_width.get()).len()
+        })
     }
 
     /// The person's answer to plan item `item` (record 114): the engine

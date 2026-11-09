@@ -3113,6 +3113,9 @@ pub struct World {
     /// world remembered from an earlier run keeps its first start, so ticks
     /// stay monotonic across runs; the simulation has none (0).
     pub started_at: u64,
+    /// The simulation's world (`--demo`, `sim.rs`): its agents go through
+    /// made-up progress phases (`Phase`); a live agent has none.
+    pub demo: bool,
     /// What was spent when this run of imece began, for the rate of this
     /// run alone.
     pub run_spent: u64,
@@ -3848,6 +3851,7 @@ impl World {
         World {
             tick: self.tick,
             started_at: self.started_at,
+            demo: self.demo,
             run_spent: self.run_spent,
             spending: self.spending.clone(),
             projects,
@@ -4067,6 +4071,14 @@ impl World {
             .filter(|(_, i)| !self.in_archive(i.agent))
             .map(|(n, _)| n)
             .collect()
+    }
+
+    /// How many open items ask the person to decide something: all but
+    /// the replies, which are read (the header's `! N to decide`).
+    pub fn open_decisions(&self) -> usize {
+        (self.open_inbox().into_iter())
+            .filter(|&i| self.inbox[i].kind != InboxKind::Reply)
+            .count()
     }
 
     /// The card agent `id` works on: its own, or for a helper its
@@ -5824,6 +5836,7 @@ mod tests {
             limits: Vec::new(),
             tick: 0,
             started_at: 0,
+            demo: false,
             run_spent: 0,
             spending: Spending::default(),
             projects: vec![Project {
@@ -6496,6 +6509,14 @@ mod tests {
             item(InboxKind::Reply, 2, true),
         ];
         assert_eq!(w.open_inbox(), [0, 2]);
+        // An open reply is read, not decided; a closed item is neither.
+        assert_eq!(w.open_decisions(), 1);
+        w.inbox[1].kind = InboxKind::Reply;
+        assert_eq!(w.open_decisions(), 1);
+        w.inbox[2].kind = InboxKind::Question;
+        assert_eq!(w.open_decisions(), 2);
+        w.inbox[1].kind = InboxKind::Sensitive;
+        w.inbox[2].kind = InboxKind::Reply;
         let card = |column| Card {
             id: 0,
             project: 0,

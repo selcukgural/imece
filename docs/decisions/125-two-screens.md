@@ -397,3 +397,46 @@ under them, a row count the person had to `j` through. `gc` (`:changes`,
 `home_go_group`) goes to the first change under the asks, beside `gd`
 and `gw`; with none waiting it flashes `no change waits for you` and
 nothing moves.
+
+**Field fixes (2026-11-09).** A real session at 120×40 (a leader, three
+workers, a small Python repository) showed twelve frictions; the screen
+ones:
+
+- **Replies are not questions.** An agent's closing words (`InboxKind::Reply`)
+  stood under `questions` and counted in `! N to decide`. They are their own
+  group, `HomeGroup::Reply` (`replies` / `yanıtlar`), after the changes and
+  before `later` (what was put off goes last whatever it is), so `W` reaches
+  them after every decision. TO DECIDE's heading counts them (`1 reply`);
+  the header's `! N to decide` counts `World::open_decisions` (open items
+  but replies), the replies stand apart, dim, `1 to read` (keep 7: they go
+  before the kept parts on a narrow screen); the terminal's title, the `:`
+  menu's `:next`/`:waiting` value and the farewell count decisions too.
+  The tab's progress (record 82) still turns `!` on a reply: it waits for
+  the person all the same.
+- **Nothing listed.** The empty line (`home_nothing`) was drawn in the list
+  and in the preview, cut in both: with no row at hand the list takes the
+  whole width and says it once, wrapped; the status line offers `/ write to
+  the lead` (`write_lead`), not `@ write to this agent` with no agent.
+- **The headings stay.** The list scrolled to keep the row at hand four lines
+  from the top even when everything fitted, so new rows above it pushed TO
+  DECIDE off the screen. `Drawn::scroll(height)`: none while the row at hand
+  shows with a line under it; past that, the row `ABOVE` (4) lines from the
+  top, the list's end never above the area's foot, a tall row still ending
+  in view.
+- **A long title takes the free width.** A one-line row (`Tail::Cut`, an
+  agent's) cut its title at its column (24, 14 beside the preview) with 30
+  cells free after its status. `title_room`: what the row leaves after its
+  status whole (and, at hand, keys that fit and `ASK_MIN` for the words) goes
+  to a title longer than its column; the status still never yields to it.
+- **The preview follows the newest trace.** It counted entries, not lines, so
+  wrapped entries pushed the newest off the bottom: `newest_trace` takes
+  whole entries from the newest back while they fit, the newest alone (its
+  first lines) when it is taller.
+- **A change's why is Markdown.** Home's preview and the change view's why
+  block (`diff::why_lines`) drew the worker's `- **Added:** …` as one
+  paragraph; both go through `ui::markdown_rows` (`markdown_src` + `wrap`).
+
+Record 101 (the mark), 114 (the plan window), 117 (the import window) and
+the trace's `commands` line (record 59's session start) carry the rest; a
+live agent at work with nothing said says `thinking…`, the demo's progress
+phases are the demo's (`World.demo`).
