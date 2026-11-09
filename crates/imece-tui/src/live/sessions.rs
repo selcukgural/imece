@@ -18,6 +18,9 @@ pub(super) struct Opening<'a> {
     /// The card an assign hands again (record 126): taken instead of a
     /// new one.
     pub card: Option<CardId>,
+    /// The person's own word: to a worker whose change waits, it goes on
+    /// with that change's card (`World::word_goes_on`).
+    pub person: bool,
 }
 
 /// Applies one event of agent `id`'s session. `before` is what its earlier
@@ -452,7 +455,7 @@ impl Live {
                         }
                     }
                 }
-                w.agents[id].trace(w.tick, format!("session in {}", cwd.display()));
+                w.agents[id].trace(w.tick, format!("session in {}", home_tilde(&cwd)));
                 self.cwds[id] = Some(cwd);
                 self.setup_done(w, id, set_up);
                 self.stand(w, id);
@@ -527,6 +530,7 @@ impl Live {
             paths: &[],
             checks: &[],
             card: None,
+            person: true,
         };
         if let Err(why) = self.prompt(w, id, prompt, Some(opening)) {
             self.mail[id] = mail;
@@ -649,6 +653,12 @@ impl Live {
         }
         self.inflight[id].push(text);
         self.turns[id] += 1;
+        // The person's word to a worker whose change waits goes on with
+        // that change's card, back at work (record 126); the briefing
+        // above said where it stood.
+        if opening.as_ref().is_some_and(|o| o.person) {
+            w.word_goes_on(id);
+        }
         let a = &w.agents[id];
         // A worker between tasks gets a card for this one; a task it has
         // not finished (its session stopped or slept under it, or it
@@ -876,8 +886,9 @@ impl Live {
             let started = (|| {
                 let scratch = match scratch {
                     Some(dir) => {
-                        let dir = make_private(&dir)
-                            .map_err(|e| format!("its scratch directory {}: {e}", dir.display()))?;
+                        let dir = make_private(&dir).map_err(|e| {
+                            format!("its scratch directory {}: {e}", home_tilde(&dir))
+                        })?;
                         system.push_str(&scratch_note(&dir));
                         Some(dir)
                     }
@@ -899,7 +910,7 @@ impl Live {
                     // Lonca's workspace in place of a worktree: the copies
                     // and the setup as ever, git having no part in them.
                     let at = (at.canonicalize())
-                        .map_err(|e| format!("its workspace {}: {e}", at.display()))?;
+                        .map_err(|e| format!("its workspace {}: {e}", home_tilde(&at)))?;
                     let copied = copy::bring(&repo, &at, &copies, COPY_BUDGET);
                     let set_up = plan.carry_out(made, &repo, &at, &running);
                     (at, None, copied, set_up)
@@ -947,7 +958,7 @@ impl Live {
                     confine,
                 );
                 let notes = write_notes(&notes, text.as_deref())
-                    .map_err(|e| format!("its notes directory {}: {e}", notes.display()))?;
+                    .map_err(|e| format!("its notes directory {}: {e}", home_tilde(&notes)))?;
                 let on = move |e| {
                     let _ = tx.send((id, generation, e));
                 };
@@ -3108,6 +3119,7 @@ mod tests {
             paths: &[],
             checks: &[],
             card: None,
+            person: false,
         };
         live.prompt(&mut w, 1, "go on".into(), Some(opening))
             .unwrap();
@@ -3126,6 +3138,7 @@ mod tests {
             paths: &[],
             checks: &[],
             card,
+            person: false,
         };
         // An assign naming a card: the worker takes it at its try now,
         // whatever it held, and no card is made.

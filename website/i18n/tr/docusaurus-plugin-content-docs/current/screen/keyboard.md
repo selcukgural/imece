@@ -159,6 +159,8 @@ Odağın `klasör` satırı ajanın nerede çalıştığını söyler: lider iç
 | `space` | `:pause` simülasyonu durdur / devam |
 | `+`  `-` | `:faster` / `:slower` simülasyon (`=` de `+` sayılır) |
 
+Canlıda `?` yardımı bunları listelemez, `:` menüsünün adlarını listelemediği gibi.
+
 ## Her yerde
 
 | Tuş | Ne yapar |

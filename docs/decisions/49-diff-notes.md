@@ -44,3 +44,8 @@ While a note is written the footer says "enter keep", not "send".
 
 Not done: notes on several changes are not listed anywhere but on
 their diff.
+
+Acceptance fixes (2026-11-09): one note sent says so in the singular
+(`note_sent`, `talk_note_sent`: `1 note went to claude-1`); the change's
+file list's ` … 1 more file` too (`more_file`). Turkish has no plural
+after a number, its lines only got their own field.

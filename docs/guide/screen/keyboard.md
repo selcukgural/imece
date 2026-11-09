@@ -159,6 +159,8 @@ The focus's `folder` line says where the agent works: the checkout for a leader,
 | `space` | `:pause` / resume the simulation |
 | `+`  `-` | `:faster` / `:slower` simulation (`=` is `+` too) |
 
+Live, the `?` help leaves these out, as the `:` menu does their names.
+
 ## Everywhere
 
 | Key | What it does |

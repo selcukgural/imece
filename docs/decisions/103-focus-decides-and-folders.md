@@ -55,3 +55,14 @@ was given (`Sim::folder_of`, kept at the open, by project), else
 
 Not done: the folder in the top header (the salon line and the focus
 seemed enough); copying the path.
+
+Acceptance fixes (2026-11-09): a path imece writes from its own knowledge
+says the home directory as `~` everywhere, not only on the focus:
+`model::tilde` (pure, the home given) and `model::home_tilde` (`$HOME`
+read once) for the trace's `session in …`, the reasons a start stops for
+(scratch, workspace, notes directories), the journal's `you opened … at`
+and `… works straight in …` (worded at draw time, the event keeps the
+whole path), the script window's file, the `:tidy` window's checkout, the
+key file named in `:keys`'s flash, `:open`'s flash and `:export`'s; the
+App's `shown_path` and the archives' checkout use `tilde` with the App's
+home. What an agent wrote is never rewritten.

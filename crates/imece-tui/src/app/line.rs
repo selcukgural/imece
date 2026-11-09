@@ -56,6 +56,9 @@ impl App {
                     self.edit(k);
                 }
             }
+            // A command's name typed whole is a command already, as a
+            // short name is: `:news` runs at once.
+            KeyCode::Enter if self.whole_command() => self.submit(),
             KeyCode::Enter => match &mut self.menu {
                 Some(m) if !m.inserted => {
                     m.insert(&mut self.input);
@@ -452,6 +455,21 @@ impl App {
     /// not a message to an agent.
     pub fn typing_command(&self) -> bool {
         self.input.starts_with(':')
+    }
+
+    /// Whether the line is `:` and a command's whole name with the menu's
+    /// highlight on that name, not yet put in: `enter` runs it rather
+    /// than taking the menu's entry (`:news`, `:commit`). A word only
+    /// begun (`:ne`), or a highlight moved to another name, takes the
+    /// entry as before.
+    fn whole_command(&self) -> bool {
+        let Some(m) = self.menu.as_ref().filter(|m| !m.inserted) else {
+            return false;
+        };
+        let Some(word) = self.input.strip_prefix(':') else {
+            return false;
+        };
+        m.start == 1 && m.items.get(m.chosen).is_some_and(|i| i == word)
     }
 
     /// Whether what is being typed names a card to open (`#323`), not a
@@ -909,6 +927,55 @@ mod tests {
         app.menu = app.suggest();
         assert!(!app.menu.as_ref().unwrap().items.is_empty());
         assert!(app.menu.as_ref().unwrap().notes.is_empty());
+    }
+
+    #[test]
+    fn a_command_s_whole_name_runs_on_the_first_enter() {
+        let mut app = App::new(1, 1, 0, 1, Lang::En);
+        let typed =
+            |app: &mut App, s: &str| s.chars().for_each(|c| app.on_key(key(KeyCode::Char(c))));
+        // A name nothing else begins with: no menu, enter runs it.
+        for line in [":news", ":commit", ":welcome", ":help"] {
+            typed(&mut app, line);
+            assert_eq!(app.menu, None, "{line}");
+            app.on_key(key(KeyCode::Esc));
+        }
+        typed(&mut app, ":help");
+        app.on_key(key(KeyCode::Enter));
+        assert!(app.help && !app.typing, "ran at once");
+        assert!(app.input.is_empty());
+        app.help = false;
+        // A name that begins a longer one: the menu is shown, the
+        // highlight on the name typed, and enter runs it.
+        typed(&mut app, ":archive");
+        assert_eq!(app.menu.as_ref().unwrap().items, ["archive", "archives"]);
+        app.on_key(key(KeyCode::Enter));
+        assert!(!app.typing && app.input.is_empty(), "ran at once");
+        assert_eq!(app.menu, None);
+        app.end_grace();
+        // A word only begun takes the entry first.
+        typed(&mut app, ":hel");
+        app.on_key(key(KeyCode::Enter));
+        assert_eq!((app.input.as_str(), app.typing), (":help ", true));
+        assert!(!app.help);
+        app.on_key(key(KeyCode::Enter));
+        assert!(app.help && !app.typing);
+        app.help = false;
+        // A name that begins a longer one: the highlight moved to the
+        // longer one takes it.
+        typed(&mut app, ":archive");
+        assert!(app.whole_command());
+        app.menu.as_mut().unwrap().chosen = 1;
+        assert!(!app.whole_command());
+        app.on_key(key(KeyCode::Enter));
+        assert_eq!((app.input.as_str(), app.typing), (":archives ", true));
+        assert!(!app.whole_command(), "put in already");
+        app.on_key(key(KeyCode::Esc));
+        app.on_key(key(KeyCode::Esc));
+        // An argument's menu is not a command's name.
+        typed(&mut app, ":lang e");
+        app.on_key(key(KeyCode::Enter));
+        assert_eq!((app.input.as_str(), app.typing), (":lang en", true));
     }
 
     #[test]

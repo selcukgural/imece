@@ -10065,7 +10065,7 @@ mod tests {
         for lang in [Lang::En, Lang::Tr] {
             for shift_enter in [true, false] {
                 let plain = overlay::help_keys(lang, shift_enter);
-                let rows = overlay::help_rows(lang, shift_enter, &none, None, false);
+                let rows = overlay::help_rows(lang, shift_enter, &none, None, false, true);
                 let want: Vec<(String, String)> = (plain.iter())
                     .map(|(k, w)| (k.to_string(), w.to_string()))
                     .collect();
@@ -10087,7 +10087,7 @@ mod tests {
             );
         }
         let keys = crate::keys::Keymap::read("^n = j\nj = G\n↑ = k\n^w = q").unwrap();
-        let rows = overlay::help_rows(Lang::En, false, &keys, None, false);
+        let rows = overlay::help_rows(Lang::En, false, &keys, None, false, true);
         let row = |k: &str| -> Vec<&str> {
             (rows.iter().filter(|r| r.1 == k))
                 .map(|r| r.0.as_str())
@@ -10117,7 +10117,7 @@ mod tests {
             row("writing: cut a word / before / after; paste"),
             ["^w ^u ^k ^y"]
         );
-        let tr = overlay::help_rows(Lang::Tr, false, &keys, None, false);
+        let tr = overlay::help_rows(Lang::Tr, false, &keys, None, false, true);
         assert_eq!(tr[0], ("^n".to_string(), "senin tuşun: j gibi".to_string()));
         assert_eq!(tr.len(), rows.len());
         // Drawn, and found by the filter.
@@ -10132,7 +10132,7 @@ mod tests {
         assert!(!found.contains("first / last line"), "{found}");
         // Keys of two, on either side.
         let two = crate::keys::Keymap::read("gt = G\nx = gg\n^t = z M").unwrap();
-        let rows = overlay::help_rows(Lang::En, false, &two, None, false);
+        let rows = overlay::help_rows(Lang::En, false, &two, None, false, true);
         let row = |k: &str| -> Vec<&str> {
             (rows.iter().filter(|r| r.1 == k))
                 .map(|r| r.0.as_str())
@@ -10152,7 +10152,7 @@ mod tests {
         );
         // A place's keys: said where, and the rows as they are there.
         let placed = crate::keys::Keymap::read("J = G\n[change]\n^n = j\nJ = gg").unwrap();
-        let rows = |lang, place| overlay::help_rows(lang, false, &placed, place, false);
+        let rows = |lang, place| overlay::help_rows(lang, false, &placed, place, false, true);
         let change = rows(Lang::En, Some(crate::keys::Scope::Change));
         assert_eq!(
             change[..3],
@@ -10177,7 +10177,7 @@ mod tests {
         let tr = rows(Lang::Tr, Some(crate::keys::Scope::Change));
         assert_eq!(tr[1].1, "senin tuşun, değişiklikte: j gibi");
         // Filtered to a screen, the file's lines of another place go.
-        let scoped = |place| overlay::help_rows(Lang::En, false, &placed, Some(place), true);
+        let scoped = |place| overlay::help_rows(Lang::En, false, &placed, Some(place), true, true);
         let salon = scoped(crate::keys::Scope::Salon);
         assert_eq!(salon[0], ("J".to_string(), "your key: as G".to_string()));
         assert!(
@@ -10577,7 +10577,7 @@ mod tests {
         // One column: the keys (a long text on two lines), a blank, the
         // legend, a blank: more lines than twenty rows less the frame and
         // the last line.
-        let rows = overlay::help_rows(Lang::En, false, &app.keys, None, false);
+        let rows = overlay::help_rows(Lang::En, false, &app.keys, None, false, true);
         let rows: Vec<_> = rows.iter().collect();
         let keys = overlay::help_columns(&rows, false, overlay::help_widths(80, false)).len();
         assert!(keys > rows.len(), "some wrap");

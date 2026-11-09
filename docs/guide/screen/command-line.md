@@ -79,7 +79,7 @@ The menu shows each command's value after it, in brackets, drawn but never inser
 
 ### Short names
 
-`b` `c` `f` `o` `q` `t` stand for `budget` `close` `forget` `open` `quit` `theme`. A short name typed whole is a command already, so the menu offers nothing and `enter` runs it: `:q` `enter` asks at once, `:b 80` raises the budget.
+`b` `c` `f` `o` `q` `t` stand for `budget` `close` `forget` `open` `quit` `theme`. A short name typed whole is a command already, so the menu offers nothing and `enter` runs it: `:q` `enter` asks at once, `:b 80` raises the budget. So is a command's whole name: `:news` `enter` opens the news, and `:archive` `enter` runs `:archive` though the menu offers `archives` too (moved to it, `enter` takes it, as for a word only begun).
 
 ### Theme preview
 

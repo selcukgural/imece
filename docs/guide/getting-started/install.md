@@ -21,7 +21,7 @@ The script downloads the prebuilt imece for your system from the [releases](http
 | `IMECE_INSTALL_DIR=DIR` | where imece goes (default `~/.local/bin`) |
 | `IMECE_NO_MODIFY_PATH=1` | no startup file is touched |
 | `IMECE_NO_ICON=1` | no icon for imece's tab (iTerm2's tables and the icon theme left alone) |
-| `IMECE_DOWNLOAD_URL=URL` | where the release files are, for a mirror |
+| `IMECE_DOWNLOAD_URL=URL` | where the release files are, for a mirror: an `https://` address, a `file://` directory or a directory's absolute path; anything else is refused |
 
 ```sh
 curl -fsSL https://selcukgural.github.io/imece/install.sh | IMECE_VERSION=0.1.0 sh

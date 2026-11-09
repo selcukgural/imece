@@ -1340,6 +1340,9 @@ impl Sim {
             a.activity = Some(String::new());
             return Ok(());
         }
+        // A word to a worker whose change waits goes on with its card, as
+        // live's does.
+        w.word_goes_on(id);
         match w.agents[id].role {
             Role::Worker if !Self::unfinished(w, id) => {
                 let title = text.lines().next().unwrap_or_default().to_string();
@@ -1758,6 +1761,12 @@ impl Sim {
 
     fn is_applying(&self, id: AgentId) -> bool {
         self.applying.iter().any(|(a, _)| *a == id)
+    }
+
+    /// Whether a change of anyone but `id` is being applied (none: of
+    /// anyone), as live's git thread would have it.
+    pub fn applying_besides(&self, id: Option<AgentId>) -> bool {
+        self.applying.iter().any(|(a, _)| Some(*a) != id)
     }
 
     /// The person rejects worker `id`'s change; not while it is being
@@ -5995,6 +6004,16 @@ diff --git a/b.rs b/b.rs
         assert_eq!(w.agents[worker].card, Some(card));
         assert_eq!(w.agents[worker].status, Status::Working);
         // Its next change is for the same card, and applying it closes it.
+        s.test(&mut w, worker);
+        s.tested(&mut w, worker, 0);
+        assert_eq!(w.cards[card].column, Column::Review);
+        // A word while that change waits goes on with the same card, back
+        // at work; the change waits on until its next one.
+        s.told(&mut w, worker, "also the help text").unwrap();
+        assert_eq!(w.cards.len(), cards, "no card of its own");
+        assert_eq!(w.agents[worker].card, Some(card));
+        assert_eq!(w.cards[card].column, Column::Working);
+        assert!(w.change_of(worker).is_some());
         s.test(&mut w, worker);
         s.tested(&mut w, worker, 0);
         assert_eq!(w.cards[card].column, Column::Review);

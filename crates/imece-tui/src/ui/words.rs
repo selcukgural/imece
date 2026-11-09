@@ -311,8 +311,14 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
             took,
             ..
         } => shell(lang, command, *ended, *took),
-        Event::Opened { leader, path } => fill(t.ev_opened, &[project(w, *leader), path]),
-        Event::NoGit { leader, path } => fill(t.ev_no_git, &[name(w, *leader), path]),
+        Event::Opened { leader, path } => {
+            let path = home_tilde(std::path::Path::new(path));
+            fill(t.ev_opened, &[project(w, *leader), &path])
+        }
+        Event::NoGit { leader, path } => {
+            let path = home_tilde(std::path::Path::new(path));
+            fill(t.ev_no_git, &[name(w, *leader), &path])
+        }
         Event::TestsFound { leader, commands } => {
             let project = &w.projects[w.agents[*leader].project].name;
             match commands.is_empty() {

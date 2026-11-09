@@ -934,11 +934,11 @@ fn file_lines(lang: Lang, files: &[ChangedFile]) -> Vec<Line<'static>> {
         })
         .collect();
     if files.len() > FILES_SHOWN {
-        let more = (files.len() - FILES_SHOWN).to_string();
-        out.push(Line::from(Span::styled(
-            fill(t.more_files, &[&more]),
-            dim(),
-        )));
+        let more = match files.len() - FILES_SHOWN {
+            1 => t.more_file.to_string(),
+            n => fill(t.more_files, &[&n.to_string()]),
+        };
+        out.push(Line::from(Span::styled(more, dim())));
     }
     out
 }
@@ -1737,6 +1737,12 @@ diff --git a/c.rs b/c.rs
         let lines = text(&eight);
         assert_eq!(lines.len(), 7);
         assert_eq!(lines[6], " … 2 more files");
+        let seven: Vec<ChangedFile> = (1..=7).map(|n| file(n, false)).collect();
+        assert_eq!(text(&seven)[6], " … 1 more file");
+        assert_eq!(
+            file_lines(Lang::Tr, &seven)[6].to_string(),
+            " … 1 dosya daha"
+        );
         assert_eq!(
             file_lines(Lang::Tr, &eight)[6].to_string(),
             " … 2 dosya daha"

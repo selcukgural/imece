@@ -1192,6 +1192,52 @@ mod tests {
     }
 
     #[test]
+    fn a_word_to_a_worker_whose_change_waits_goes_on_with_its_card() {
+        let mut w = team(1);
+        let mut live = idle_live(2);
+        let c = with_card(&mut w, 1);
+        w.change_ready(Change {
+            agent: 1,
+            title: "find by tag".into(),
+            files: Vec::new(),
+            patch: String::new(),
+            runs: Vec::new(),
+            check: Check::None,
+            spend: None,
+        });
+        w.agents[1].status = Status::Idle;
+        assert_eq!(w.cards[c].column, Column::Review);
+        live.told(&mut w, 1, "also mention tags in the help")
+            .unwrap();
+        assert_eq!(w.cards.len(), 1, "no card of its own");
+        assert_eq!(w.agents[1].card, Some(c));
+        assert_eq!(w.cards[c].column, Column::Working, "back at work");
+        assert_eq!(w.cards[c].breaker.sent_back, 0, "not a send-back");
+        assert!(w.change_of(1).is_some(), "the change still waits");
+        // Its next change takes the card to review again.
+        w.change_ready(Change {
+            agent: 1,
+            title: "find by tag, with help".into(),
+            files: Vec::new(),
+            patch: String::new(),
+            runs: Vec::new(),
+            check: Check::None,
+            spend: None,
+        });
+        assert_eq!(w.cards[c].column, Column::Review);
+        // The leader's helper or a solo has no card to go on with; a
+        // worker with nothing waiting gets one of its own.
+        assert!(w.word_goes_on(0).is_empty());
+        w.change_applied(1, "m".into(), true);
+        assert_eq!(w.cards[c].column, Column::Done);
+        assert!(w.word_goes_on(1).is_empty());
+        w.agents[1].status = Status::Idle;
+        live.turns[1] = 0;
+        live.told(&mut w, 1, "next").unwrap();
+        assert_eq!(w.cards.len(), 2);
+    }
+
+    #[test]
     fn a_sleeper_wakes_to_new_mail_and_new_cards_but_not_to_what_waited() {
         let mut w = team(2);
         let mut live = idle_live(3);

@@ -66,3 +66,16 @@ its order, both languages, a test holds the order and that none is
 missing); writing on makes the menu again with nothing put in, so it
 goes. An argument's menu, `@` and the rest have no such line. Pure
 screen logic: the demo shows it as live does.
+
+Acceptance fixes (2026-11-09). The `?` help leaves the demo's keys out
+live as the `:` menu leaves out their names: `overlay::DEMO_KEYS` (the
+rows `space` and `+ -`), `help_rows(.., demo)` from `App::demo`. A
+command's whole name with the menu's highlight on it runs on `enter`, as
+a short name does (`App::whole_command`: the menu not put in, `start` 1,
+the highlighted item equal to the word typed): `:archive` runs though
+`archives` is listed too; a highlight moved to another name, a word only
+begun or an argument's menu takes the entry as before. A name nothing
+else begins with (`:news`, `:commit`, `:welcome`) shows no menu at all
+(`complete::menu` offers none for a single item equal to the word), so
+`enter` ran it already; the acceptance run's `:news` that took the entry
+first was not reproduced by a test.

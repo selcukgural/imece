@@ -515,7 +515,10 @@ impl App {
         let name = self.world.agents[id].name.clone();
         let refs: Vec<(usize, &str)> = notes.iter().map(|(l, n)| (*l, n.as_str())).collect();
         let message = ui::notes_message(&patch, &refs);
-        let said = fill(t.notes_sent, &[&notes.len().to_string(), &name]);
+        let said = match notes.len() {
+            1 => fill(t.note_sent, &[&name]),
+            n => fill(t.notes_sent, &[&n.to_string(), &name]),
+        };
         if self.goes_back(id, &message, said) {
             self.diff_notes.retain(|n| n.agent != id);
         }
@@ -581,6 +584,9 @@ impl App {
             self.close_change(id);
             return false;
         }
+        // Git applies one change at a time: one approved while another goes
+        // in follows it, and the flash says so.
+        let after = apply && !proposed && self.applying_besides(Some(id));
         let decided = match &mut self.engine {
             Engine::Live(l) if apply => l.apply_change(&self.world, id, hunks),
             Engine::Sim(s) if apply => s.apply_change(&self.world, id, hunks),
@@ -594,6 +600,7 @@ impl App {
         let went = decided.is_ok();
         match decided {
             Ok(()) if proposed => self.flash(fill(t.approving, &[&name])),
+            Ok(()) if after => self.flash(fill(t.applying_after, &[&name])),
             Ok(()) if apply => self.flash(fill(t.applying, &[&name])),
             Err(why) if apply => self.flash(fill(t.apply_failed, &[&name, &why])),
             Ok(()) => {
@@ -606,6 +613,16 @@ impl App {
         self.close_change(id);
         self.inbox_sel = self.inbox_sel.min(open.saturating_sub(2));
         went
+    }
+
+    /// Whether a change of anyone but `id` (none: of anyone) is being
+    /// applied to the checkout now.
+    pub(super) fn applying_besides(&self, id: Option<AgentId>) -> bool {
+        match &self.engine {
+            Engine::Live(l) => l.applying_besides(&self.world, id),
+            Engine::Sim(s) => s.applying_besides(id),
+            Engine::View(_) => false,
+        }
     }
 
     /// Worker `from`'s change was decided from Home: the next change
@@ -1461,6 +1478,75 @@ mod tests {
         app.on_key(key(KeyCode::Char('x')));
         assert!(app.chosen_of(worker).is_empty());
         assert_eq!(flashed(&app).as_deref(), Some(t.no_hunk));
+    }
+
+    #[test]
+    fn a_while_a_change_goes_in_says_so() {
+        let mut app = App::new(1, 3, 0, 1, Lang::En);
+        let workers: Vec<AgentId> = (app.world.agents.iter())
+            .filter(|a| a.role == Role::Worker)
+            .map(|a| a.id)
+            .collect();
+        let [one, two] = workers[..2] else {
+            panic!("two workers")
+        };
+        for agent in [one, two] {
+            app.world.change_ready(Change {
+                agent,
+                title: "did it".into(),
+                files: Vec::new(),
+                patch: "diff --git a/x b/x\n".into(),
+                runs: Vec::new(),
+                check: Check::None,
+                spend: None,
+            });
+        }
+        let t = Lang::En.text();
+        let names = |id: AgentId| app_name(&app, id);
+        fn app_name(app: &App, id: AgentId) -> String {
+            app.world.agents[id].name.clone()
+        }
+        let (first, second) = (names(one), names(two));
+        assert!(!app.applying_besides(None));
+        app.zoom = Zoom::Diff(one);
+        app.pane = Pane::Inbox;
+        app.on_key(key(KeyCode::Char('a')));
+        assert_eq!(flashed(&app), Some(fill(t.applying, &[&first])));
+        assert!(app.applying_besides(None) && app.applying_besides(Some(two)));
+        assert!(!app.applying_besides(Some(one)), "its own is not another's");
+        // The next one while the first goes in: after it.
+        app.zoom = Zoom::Diff(two);
+        app.pane = Pane::Inbox;
+        app.on_key(key(KeyCode::Char('a')));
+        assert_eq!(flashed(&app), Some(fill(t.applying_after, &[&second])));
+        // Nothing at hand to approve meanwhile: said, not silent.
+        for item in &mut app.world.inbox {
+            item.open = false;
+        }
+        app.zoom = Zoom::None;
+        app.thread = None;
+        app.home_settle();
+        app.flash = None;
+        app.on_key(key(KeyCode::Char('a')));
+        assert_eq!(flashed(&app).as_deref(), Some(t.apply_under_way));
+    }
+
+    #[test]
+    fn one_note_sent_on_a_change_is_said_as_one() {
+        let patch = "diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1,2 +1,2 @@\n-a\n+b\n c\n";
+        let (mut app, worker) = with_change(patch);
+        let name = app.world.agents[worker].name.clone();
+        app.diff_scroll = 4;
+        app.on_key(key(KeyCode::Char('c')));
+        app.on_key(key(KeyCode::Char('y')));
+        app.on_key(key(KeyCode::Enter));
+        app.on_key(key(KeyCode::Char('n')));
+        assert_eq!(
+            flashed(&app),
+            Some(format!(
+                "1 note went to {name}; the change went back to them"
+            ))
+        );
     }
 
     #[test]
