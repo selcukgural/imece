@@ -76,6 +76,7 @@ mod tidy;
 mod tools;
 
 pub(crate) use self::bus::numbers;
+pub(crate) use self::lonca::down_of as store_down_of;
 pub(crate) use self::lonca::unheard_why;
 pub use self::projects::Open;
 pub(crate) use self::prompts::INSTRUCTIONS;

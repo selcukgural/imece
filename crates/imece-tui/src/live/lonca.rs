@@ -780,7 +780,7 @@ fn behind_of(client: &mut Client, repo: &str, checkout: Option<&Path>, trunk: &s
 }
 
 /// The screen's word for why the client can not read the store.
-fn down_of(down: Down) -> StoreDown {
+pub(crate) fn down_of(down: Down) -> StoreDown {
     match down {
         Down::NoDaemon => StoreDown::NoDaemon,
         Down::NotTheDaemon => StoreDown::NotTheDaemon,
