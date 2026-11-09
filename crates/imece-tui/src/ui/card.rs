@@ -76,6 +76,10 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, c: CardId) {
         )));
         for r in tries {
             head.push(Line::from(super::ledger::row_spans(app.lang, w, r)));
+            // What each model spent of it (record 134).
+            if let Some(said) = super::ledger::by_model(app.lang, w, &r.models, r.unsplit()) {
+                head.push(Line::from(Span::styled(format!("  {said}"), dim())));
+            }
         }
     }
     head.push(Line::raw(""));

@@ -13,8 +13,13 @@ pub mod run;
 pub mod stand_in;
 pub mod worktree;
 
+use std::collections::BTreeMap;
 use std::io;
 use std::time::Duration;
+
+/// What each model of a session cost, by the name Claude Code gives it,
+/// in millionths of a dollar (record 134).
+pub type ByModel = BTreeMap<String, u64>;
 
 /// The name imece's MCP server has in every session; its tools are named
 /// `mcp__imece__<tool>` on the screen.
@@ -576,6 +581,12 @@ pub enum Event {
     /// the session that was not priced was cleared. The
     /// [`Event::TurnDone`] follows at once, with the last total known.
     Unpriced(Option<String>),
+    /// What the turn about to end cost by model (record 134), from its
+    /// result's `modelUsage[*].costUSD`: `said` is each model's figure for
+    /// the session as Claude Code keeps it (what a resume counts from),
+    /// `grew` what each grew in this turn (a model that did not grow is
+    /// left out). The [`Event::TurnDone`] follows at once.
+    Models { said: ByModel, grew: ByModel },
     /// A turn ended. `cost` is the session's total so far, in millionths of
     /// a dollar; `denied` counts tool calls Claude Code refused.
     TurnDone {

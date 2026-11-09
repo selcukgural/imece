@@ -608,6 +608,7 @@ mod tests {
         live.sessions[1] = Some(Resumable {
             session: "s".into(),
             spent: 0,
+            models: None,
         });
         std::fs::create_dir_all(root.join("claude-1/.lonca")).unwrap();
         std::fs::write(root.join("claude-1/.lonca/workspace.json"), "{}").unwrap();
@@ -641,6 +642,7 @@ mod tests {
         live.sessions[1] = Some(Resumable {
             session: UUID.into(),
             spent: 0,
+            models: None,
         });
         live.turns[1] = 1;
         assert_eq!(
@@ -709,6 +711,7 @@ mod tests {
         live.sessions[1] = Some(Resumable {
             session: UUID.into(),
             spent: 700,
+            models: None,
         });
         transcript_of(&live, &w, 1, UUID);
         // Its change, and the person's checkout moved on since.
@@ -867,6 +870,7 @@ mod tests {
             fork: Some("7d1c3f2e-5b6a-4c8d-9e0f-1a2b3c4d5e6f".into()),
             text: "try".into(),
             notes: Vec::new(),
+            models: None,
         });
         live.floor[2] = 900;
         hear(
@@ -885,6 +889,7 @@ mod tests {
             Some(Resumable {
                 session: "7d1c3f2e-5b6a-4c8d-9e0f-1a2b3c4d5e6f".into(),
                 spent: 900,
+                models: None,
             })
         );
         assert_eq!(journaled(&w, &Event::Resumed { agent: 2 }), 0);
@@ -896,6 +901,7 @@ mod tests {
             fork: Some("7d1c3f2e-5b6a-4c8d-9e0f-1a2b3c4d5e6f".into()),
             text: "try".into(),
             notes: Vec::new(),
+            models: None,
         });
         live.slots[2] = Slot::Starting(vec!["try".into()]);
         live.ready(
@@ -938,6 +944,7 @@ mod tests {
         live.sessions[1] = Some(Resumable {
             session: UUID.into(),
             spent: 5,
+            models: None,
         });
         assert_eq!(live.resumable(&w, 2), None);
         assert_eq!(live.forks[2], None);
@@ -1318,6 +1325,7 @@ mod tests {
             live.sessions[1] = Some(Resumable {
                 session: UUID.into(),
                 spent: 0,
+                models: None,
             });
             let file = transcript_of(&live, &w, 1, UUID);
             live.tx
@@ -1361,6 +1369,7 @@ mod tests {
         live.sessions[1] = Some(Resumable {
             session: UUID.into(),
             spent: 0,
+            models: None,
         });
         let file = transcript_of(&live, &w, 1, UUID);
         live.tx

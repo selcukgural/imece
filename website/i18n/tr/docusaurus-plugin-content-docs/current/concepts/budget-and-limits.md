@@ -93,7 +93,9 @@ Bütçe takımın ne harcadığını, bir değişiklik neye mal olduğunu söyle
 ```text
 ┌HARCAMALAR · 4 deneme · API karşılığı──────────────────────────────────────────────────────┐
 │shop-api  uygulanan ≈$1.30 · boşa ≈$0.91+? · süren ≈$0.22 · lider ≈$0.48                   │
+│  modele göre: claude-opus-5-5 ≈$1.10 · claude-sonnet-5-5 ≈$1.06 · claude-haiku-5-5 ≈$0.27 │
 │▶ #4 deneme 1  claude-2  claude-sonnet-5-5  1 Δ  ≈$0.22  6 dk  sürüyor  2026-11-09 · 2.1.4 │
+│    modele göre: claude-sonnet-5-5 ≈$0.19 · claude-haiku-5-5 ≈$0.03                        │
 │  #3 deneme 2  claude-1  claude-opus-5-5  2 Δ · 1 geri döndü  ≈$1.30  31 dk  uygulandı  …  │
 │  #3 deneme 1  claude-3  claude-sonnet-5-5  0 Δ  ≈$0.84  12 dk  devredildi  …              │
 │  #2 deneme 1  claude-2  claude-sonnet-5-5  0 Δ  ≈$0.07+?  2 dk  başarısız  …              │
@@ -104,12 +106,13 @@ Bütçe takımın ne harcadığını, bir değişiklik neye mal olduğunu söyle
 - **Bir satır bir denemedir**: bir işçinin bir karta denemesi (yeniden verilen bir kart bir deneme daha demektir); işçisi, Claude Code'un oturumunun çalıştığını söylediği model, önünüze koyduğu değişiklikler (`Δ`) ve kaçının geri döndüğü (sizin ya da Lonca'nın geri göndermesiyle), neye mal olduğu (yardımcılarınınki dahil), ne kadar sürdüğü, nasıl bittiği, en son harcadığı gün ve o zamanki Claude Code sürümüyle. Bir işçinin kartsız işi (bir solo, doğrudan yazdığınız bir işçi), bir değişikliği uygulanana dek bir `kartsız` satırıdır.
 - **Nasıl bittiği**: `sürüyor` (ya da değişikliği bekliyor), `uygulandı` (Lonca'da gövdede), `bitti, değişiklik yok`, `başarısız` (işçisi öyle dedi, ya da bir deneme daha istemediniz), `geri çekildi`, `devredildi` (bu deneme çalışırken kart başka bir denemeye gitti), `geç done` (devredildi, işçisi yine de `done` gönderdi). Bir işçinin kartı başarısız olduktan, geri çekildikten ya da devredildikten sonra harcadığı o denemeye sayılır: boşa harcanmıştır.
 - **Bir projenin satırı** satırlarını nasıl bittiklerine göre toplar: `uygulanan` (uygulandı, bitti), `boşa` (başarısız, geri çekildi, devredildi, geç), `süren`, ve liderin kendi harcaması ayrı, çünkü liderin turları hiçbir kartın değildir. Bir işçinin ya da yardımcının her doları tam bir satırdadır.
+- **Modele göre**: bir projenin satırının ve üzerinde durulan satırın altında, her modelin bundan ne harcadığı, en çok harcayan önce: işçinin modeli, yardımcılarınınki (daha ucuz bir kademe) ve Claude Code'un kendi arka plan işini yürüttüğü model. Bunlar Claude Code'un kendi rakamlarıdır (bir tur sonucundaki her modelin `costUSD`'si); toplam gibi `/clear` ve bir resume boyunca sayılmaya devam eder. Hiçbir modelin rakamının söylemediği kısım (sonucu onu bölmeyen bir tur, bu sürümden önceki harcama) bir kuruş ya da daha fazlaysa `ayrılmamış` olur; bu sürümden önceki bir oturum resume edildiğinde modele göre ancak ikinci turundan itibaren söyler.
 - Rakamlar her yerdeki gibi okunur: planda `≈` (başlık `API karşılığı` der), hiç fiyatlanmamış bir kısım için `+?`.
-- `enter` satırın kartını açar; bir kartın kendi ekranı denemelerini **DENEMELER** altında listeler. Harcamalar depoda tutulur, arşivler dahil; bu sürümden önce harcananın satırı yoktur.
+- `enter` satırın kartını açar; bir kartın kendi ekranı denemelerini **DENEMELER** altında, her birini modele göre satırıyla listeler. Harcamalar depoda tutulur, arşivler dahil; bu sürümden önce harcananın satırı yoktur.
 
 ## Demo
 
-`--demo` uydurma bir bütçeyi aynı yolla harcar: başlık, hız, azalan bütçe satırı, `:budget`, kullanım pencereleri (harcamadan doldurulur), her değişikliğin maliyeti ve `:commit` ile `:review`'un birkaç kuruşu canlıdaki gibi görünür. Demo bir planla giriş yapar, bu yüzden rakamları `≈` ile okunur; okuduğu her beşinci değişiklik maliyet söylemeyen bir turla biter (`+?`), o işçinin bir sonraki turuna dek. `:ledger` kartları uygulandıkça, başarısız oldukça, devredildikçe ve geri çekildikçe dolar.
+`--demo` uydurma bir bütçeyi aynı yolla harcar: başlık, hız, azalan bütçe satırı, `:budget`, kullanım pencereleri (harcamadan doldurulur), her değişikliğin maliyeti ve `:commit` ile `:review`'un birkaç kuruşu canlıdaki gibi görünür. Demo bir planla giriş yapar, bu yüzden rakamları `≈` ile okunur; okuduğu her beşinci değişiklik maliyet söylemeyen bir turla biter (`+?`), o işçinin bir sonraki turuna dek. `:ledger` kartları uygulandıkça, başarısız oldukça, devredildikçe ve geri çekildikçe dolar; her meşgul tikin sekizde biri arka planın `claude-haiku-5-5`'i, kalanı oturumun modelidir.
 
 ## Ayrıca bakınız
 

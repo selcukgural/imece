@@ -314,11 +314,16 @@ fn loads_notes(spec: &Spec) -> bool {
 /// kept for the directory the fork runs in, and the fork reports the
 /// cost of the session it came from as well as its own, so `spent` is
 /// the floor as for a resume.
+///
+/// `models` is what each model of it had cost as last said (record 134),
+/// the floor of each model's figure; None when it was not kept (a save
+/// older than that), when the first turn's growth by model is not known.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Resume {
     pub session: String,
     pub spent: u64,
     pub fork: Option<String>,
+    pub models: Option<crate::ByModel>,
 }
 
 /// Whether `id` is a session id as Claude Code gives them (a UUID): the
@@ -604,6 +609,12 @@ pub struct Parser {
     /// it so for good (`cleared_unpriced`), see [`unpriced`].
     unpriced_last: bool,
     cleared_unpriced: bool,
+    /// Each model's figure for the session as the last result said it
+    /// (record 134), a resume's floor at first; `models_unknown` while a
+    /// resume did not say its floor, so the first result's figures are
+    /// taken as the floor and its growth by model is not known.
+    models_last: crate::ByModel,
+    models_unknown: bool,
     /// The slash commands the last `init` listed, to report a change.
     commands: Vec<String>,
     /// An `init` came without its `slash_commands` field, and it was said.
@@ -678,6 +689,10 @@ impl Parser {
             cost_last: spec.resume.as_ref().map_or(0, |r| r.spent),
             unpriced_last: false,
             cleared_unpriced: false,
+            models_last: (spec.resume.as_ref())
+                .and_then(|r| r.models.clone())
+                .unwrap_or_default(),
+            models_unknown: spec.resume.as_ref().is_some_and(|r| r.models.is_none()),
             floor: spec.resume.as_ref().map_or(0, |r| r.spent),
             resuming: spec
                 .resume
@@ -767,16 +782,19 @@ impl Parser {
         out.extend(fault(v).map(Event::Failed));
         let mut e = result(v);
         let mut gap = unpriced(v);
+        let mut models = None;
         if let Event::TurnDone { cost, .. } = &mut e {
             // No figure is no reset: the total stays the last one known.
             if let Some(said) = figure(v) {
-                if said < self.cost_last {
+                let reset = said < self.cost_last;
+                if reset {
                     self.cost_base += self.cost_last;
                     // A conversation cleared while it was not priced
                     // whole stays so: no later total covers it.
                     self.cleared_unpriced |= self.unpriced_last;
                 }
                 self.cost_last = said;
+                models = self.models(v, reset);
             }
             self.unpriced_last = gap.is_some();
             if self.cleared_unpriced {
@@ -788,8 +806,40 @@ impl Parser {
             *cost = (self.cost_last + self.cost_base).saturating_sub(self.floor);
         }
         out.extend(gap.map(Event::Unpriced));
+        out.extend(models);
         out.push(e);
         out
+    }
+
+    /// What a result says each model cost (record 134), counted on from
+    /// the last one as the total is: after a `reset` (the total went
+    /// down), or for a model whose figure went down, its whole figure is
+    /// new spending. None when the result names no model's cost.
+    fn models(&mut self, v: &Value, reset: bool) -> Option<Event> {
+        let said = by_model(v);
+        if said.is_empty() {
+            return None;
+        }
+        if reset {
+            self.models_last.clear();
+        }
+        let mut grew = crate::ByModel::new();
+        for (model, &now) in &said {
+            let before = self.models_last.get(model).copied().unwrap_or(0);
+            let more = match now < before {
+                true => now,
+                false => now - before,
+            };
+            if more > 0 && !self.models_unknown {
+                grew.insert(model.clone(), more);
+            }
+            self.models_last.insert(model.clone(), now);
+        }
+        self.models_unknown = false;
+        Some(Event::Models {
+            said: self.models_last.clone(),
+            grew,
+        })
     }
 
     fn init(&mut self, v: &Value) -> Result<Vec<Event>, String> {
@@ -1107,6 +1157,18 @@ fn result(v: &Value) -> Event {
 fn figure(v: &Value) -> Option<u64> {
     let usd = v["total_cost_usd"].as_f64()?;
     Some((usd.max(0.0) * 1_000_000.0).round() as u64)
+}
+
+/// Each model's figure a result says for the session, from
+/// `modelUsage[*].costUSD`, in millionths of a dollar; a model without a
+/// `costUSD` is left out (an older Claude Code says only the window).
+fn by_model(v: &Value) -> crate::ByModel {
+    (v["modelUsage"].as_object().into_iter().flatten())
+        .filter_map(|(name, m)| {
+            let usd = m["costUSD"].as_f64()?;
+            Some((name.clone(), (usd.max(0.0) * 1_000_000.0).round() as u64))
+        })
+        .collect()
 }
 
 /// What a result leaves unpriced (record 132): `Some(None)` when it says
@@ -3106,7 +3168,12 @@ sleep 5"#
             v["type"] = json!("result");
             v["subtype"] = json!("success");
             v["result"] = json!("");
-            match p.line(&v.to_string()).unwrap().as_slice() {
+            // What it cost by model is another test's.
+            let events = p.line(&v.to_string()).unwrap();
+            let events: Vec<&Event> = (events.iter())
+                .filter(|e| !matches!(e, Event::Models { .. }))
+                .collect();
+            match events.as_slice() {
                 [Event::TurnDone { cost, .. }] => (None, *cost),
                 [Event::Unpriced(m), Event::TurnDone { cost, .. }] => (Some(m.clone()), *cost),
                 other => panic!("{other:?}"),
@@ -3306,6 +3373,7 @@ sleep 5"#
             session: session.into(),
             spent,
             fork: None,
+            models: None,
         });
         s
     }
@@ -3361,6 +3429,127 @@ sleep 5"#
             [Event::TurnDone { cost, .. }] => *cost,
             other => panic!("{other:?}"),
         }
+    }
+
+    /// A result whose session total is `usd` and whose models cost
+    /// `models` (dollars).
+    fn by(usd: f64, models: &[(&str, f64)]) -> String {
+        let usage: serde_json::Map<String, Value> = (models.iter())
+            .map(|(m, c)| {
+                (
+                    m.to_string(),
+                    serde_json::json!({"costUSD": c, "contextWindow": 200_000}),
+                )
+            })
+            .collect();
+        serde_json::json!({"type":"result","subtype":"success","result":"","total_cost_usd":usd,"modelUsage":usage})
+            .to_string()
+    }
+
+    /// What a result says by model: what each model's figure is, what it
+    /// grew; none when it says nothing by model.
+    type Pairs = Vec<(String, u64)>;
+
+    fn split(p: &mut Parser, line: &str) -> Option<(Pairs, Pairs)> {
+        let events = p.line(line).unwrap();
+        assert!(
+            matches!(events.last(), Some(Event::TurnDone { .. })),
+            "{events:?}"
+        );
+        events.iter().find_map(|e| match e {
+            Event::Models { said, grew } => Some((
+                said.clone().into_iter().collect(),
+                grew.clone().into_iter().collect(),
+            )),
+            _ => None,
+        })
+    }
+
+    fn pairs(v: &[(&str, u64)]) -> Pairs {
+        v.iter().map(|(m, c)| (m.to_string(), *c)).collect()
+    }
+
+    #[test]
+    fn a_result_s_figures_by_model_count_on_from_the_last_as_the_total_does() {
+        let mut p = Parser::new(&spec(EDIT_TOOLS));
+        p.line(&init_as("s1")).unwrap();
+        // The first: all of each is new.
+        assert_eq!(
+            split(&mut p, &by(0.001, &[("a", 0.0008), ("b", 0.0002)])),
+            Some((
+                pairs(&[("a", 800), ("b", 200)]),
+                pairs(&[("a", 800), ("b", 200)])
+            ))
+        );
+        // A model that did not grow is left out of what grew.
+        assert_eq!(
+            split(&mut p, &by(0.0015, &[("a", 0.0013), ("b", 0.0002)])),
+            Some((pairs(&[("a", 1300), ("b", 200)]), pairs(&[("a", 500)])))
+        );
+        // One that went down with the total not: its whole is new.
+        assert_eq!(
+            split(&mut p, &by(0.0016, &[("a", 0.0015), ("b", 0.0001)])),
+            Some((
+                pairs(&[("a", 1500), ("b", 100)]),
+                pairs(&[("a", 200), ("b", 100)])
+            ))
+        );
+        // No total: nothing by model either, and the figures stay.
+        assert_eq!(split(&mut p, &by(f64::NAN, &[("a", 0.9)])), None);
+        // A result that names no model's cost says nothing by model.
+        assert_eq!(split(&mut p, &done(0.0017)), None);
+        assert_eq!(
+            split(&mut p, &by(0.0018, &[("a", 0.0016), ("b", 0.0001)])),
+            Some((pairs(&[("a", 1600), ("b", 100)]), pairs(&[("a", 100)])))
+        );
+        // A reset (`/clear`): the total went down; every model starts
+        // again, those it does not name gone from what it is.
+        p.line(&init_as("s2")).unwrap();
+        assert_eq!(
+            split(&mut p, &by(0.0003, &[("a", 0.0003)])),
+            Some((pairs(&[("a", 300)]), pairs(&[("a", 300)])))
+        );
+        // A negative figure is nothing; a part of a millionth rounds.
+        assert_eq!(
+            split(
+                &mut p,
+                &by(0.0004, &[("a", 0.0003), ("c", -0.5), ("d", 0.0000026)])
+            ),
+            Some((pairs(&[("a", 300), ("c", 0), ("d", 3)]), pairs(&[("d", 3)])))
+        );
+    }
+
+    #[test]
+    fn a_resumed_session_s_figures_by_model_count_above_what_they_were_or_start_unknown() {
+        // What each model had cost: the floor.
+        let mut known = resumed("s1", 1000);
+        known.resume.as_mut().unwrap().models =
+            Some(BTreeMap::from([("a".into(), 700), ("b".into(), 300)]));
+        let mut p = Parser::new(&known);
+        p.line(&init_as("s1")).unwrap();
+        assert_eq!(
+            split(&mut p, &by(0.0012, &[("a", 0.0009), ("b", 0.0003)])),
+            Some((pairs(&[("a", 900), ("b", 300)]), pairs(&[("a", 200)])))
+        );
+        // Not kept: the first result's figures are the floor, nothing of
+        // them said to have grown; the next counts from them.
+        let mut p = Parser::new(&resumed("s1", 1000));
+        p.line(&init_as("s1")).unwrap();
+        assert_eq!(
+            split(&mut p, &by(0.0012, &[("a", 0.0009), ("b", 0.0003)])),
+            Some((pairs(&[("a", 900), ("b", 300)]), Vec::new()))
+        );
+        assert_eq!(
+            split(&mut p, &by(0.0013, &[("a", 0.0010), ("b", 0.0003)])),
+            Some((pairs(&[("a", 1000), ("b", 300)]), pairs(&[("a", 100)])))
+        );
+        // A new session knows its floor: nothing.
+        let mut p = Parser::new(&spec(EDIT_TOOLS));
+        p.line(&init_as("s1")).unwrap();
+        assert_eq!(
+            split(&mut p, &by(0.0001, &[("a", 0.0001)])),
+            Some((pairs(&[("a", 100)]), pairs(&[("a", 100)])))
+        );
     }
 
     #[test]
@@ -3713,6 +3902,7 @@ sleep 5"#
             session: session.clone(),
             spent,
             fork: None,
+            models: None,
         });
         let second = turn(
             &spec,
@@ -3750,6 +3940,7 @@ sleep 5"#
             session: session.clone(),
             spent: had,
             fork: Some(new.clone()),
+            models: None,
         });
         let forked = turn(&fork, "Again: the word only.");
         assert!(
@@ -3782,6 +3973,7 @@ sleep 5"#
             session: "00000000-0000-4000-8000-000000000000".into(),
             spent: 0,
             fork: None,
+            models: None,
         });
         let third = turn(&spec, "hi");
         assert!(

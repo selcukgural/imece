@@ -13,6 +13,7 @@ use crate::app::App;
 use crate::i18n::Text;
 use crate::ledger::{Attempt, Outcome};
 use crate::model::{ProjectId, SECONDS_PER_TICK, World, date, day};
+use std::collections::BTreeMap;
 
 /// The rows the window lists, by project in the salon's order: each open
 /// project with its rows, newest first; a project nothing was spent in
@@ -100,6 +101,31 @@ pub fn row_spans(lang: Lang, w: &World, r: &Attempt) -> Vec<Span<'static>> {
     spans
 }
 
+/// What `models` spent, model by model (record 134), most first, and
+/// `unsplit`, what no model's figure said, when a cent or more: `by
+/// model: claude-opus-5-5 $0.70 · claude-haiku-5-5 $0.12 · not split
+/// $0.02`; none when no model's figure was said.
+pub fn by_model(
+    lang: Lang,
+    w: &World,
+    models: &BTreeMap<String, u64>,
+    unsplit: u64,
+) -> Option<String> {
+    if models.is_empty() {
+        return None;
+    }
+    let t = lang.text();
+    let mut by: Vec<(&String, &u64)> = models.iter().collect();
+    by.sort_by(|a, b| b.1.cmp(a.1).then(a.0.cmp(b.0)));
+    let mut parts: Vec<String> = (by.into_iter())
+        .map(|(model, &cost)| format!("{} {}", clean(model), w.money(cost, false)))
+        .collect();
+    if unsplit >= 100 {
+        parts.push(fill(t.ledger_unsplit, &[&w.money(unsplit, false)]));
+    }
+    Some(fill(t.ledger_by_model, &[&parts.join(" · ")]))
+}
+
 /// How long something took, `ticks` long: whole seconds under a minute,
 /// else as [`words::ago`] says it.
 pub fn lasted(lang: Lang, ticks: u64) -> String {
@@ -146,6 +172,10 @@ pub fn window(f: &mut Frame, app: &App, at: usize) -> Rect {
             Span::styled(clean(&w.projects[*p].name), bold(pal().fg)),
             Span::styled(format!("  {}", totals(app.lang, w, *p)), dim()),
         ]));
+        let (models, unsplit) = w.models_of(*p);
+        if let Some(said) = by_model(app.lang, w, &models, unsplit) {
+            lines.push(Line::from(Span::styled(format!("  {said}"), dim())));
+        }
         if rows.is_empty() {
             lines.push(Line::from(Span::styled(
                 format!("  {}", t.ledger_none),
@@ -164,6 +194,12 @@ pub fn window(f: &mut Frame, app: &App, at: usize) -> Rect {
                 true => line.style(bold(pal().fg)),
                 false => line,
             });
+            // The row at hand says what each model spent of it.
+            let r = &w.ledger[i];
+            if here && let Some(said) = by_model(app.lang, w, &r.models, r.unsplit()) {
+                at_line = lines.len();
+                lines.push(Line::from(Span::styled(format!("    {said}"), dim())));
+            }
             n += 1;
         }
     }

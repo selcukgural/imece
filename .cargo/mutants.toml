@@ -46,6 +46,11 @@
 # fails in no time), but every live test that waits for what a session's
 # event brings waits its ten seconds first, and together they outlast the
 # run's timeout (#408), so it is left out the same way.
+# `Live::start` made to do nothing (`with ()`) is caught by 25 tests (a
+# session that never starts: `a_session_starts_with_the_agent_s_model_…`,
+# the end-to-end runs; 22 s for `live::` locally, 2026-11-09), but each
+# waits its ten seconds for a session first, and together they outlast
+# the run's timeout on CI (#410), so it is left out the same way.
 # `lonca_fake` is a test double behind a feature, never in a build of
 # imece; a mutant in it fails or passes what it stands in for.
 # `lonca::read_session` joins open flags with `|` as `input::seen` does:
@@ -61,6 +66,7 @@ exclude_re = [
     "src/live/changes.rs:.*: replace Live::take_git -> bool with (false|true)$",
     "src/child.rs:.*: replace \\| with \\^$",
     "src/live/sessions.rs:.*: replace apply with \\(\\)$",
+    "src/live/sessions.rs:.*: replace Live::start with \\(\\)$",
     "src/child.rs:.*: replace exited -> io::Result<bool> with Ok\\(false\\)$",
     "src/lonca_fake.rs:.*",
     "src/stand_in.rs:.*: replace main -> i32 with ",

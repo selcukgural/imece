@@ -99,7 +99,10 @@ use crate::recall::{Hit, Line};
 /// (`agents.unpriced`, record 132).
 /// 34 (2026-11-09): the cost ledger, one row per attempt at a card
 /// (`ledger`, record 133).
-pub const SCHEMA_VERSION: i64 = 34;
+/// 35 (2026-11-09): what each model spent, on a ledger row
+/// (`ledger.models`) and in a session to resume (`agents.session_models`),
+/// record 134.
+pub const SCHEMA_VERSION: i64 = 35;
 /// Trace lines kept per agent, as the world keeps them.
 const TRACE_KEEP: usize = 200;
 /// The file's name under the state directory.
@@ -131,7 +134,7 @@ CREATE TABLE IF NOT EXISTS agents (
     changed_at INTEGER NOT NULL, traced INTEGER NOT NULL, commands TEXT NOT NULL,
     model TEXT, tiered INTEGER NOT NULL, woken INTEGER NOT NULL, posted INTEGER NOT NULL,
     session TEXT, session_spent INTEGER NOT NULL DEFAULT 0, start TEXT, fork_of INTEGER,
-    task TEXT NOT NULL DEFAULT '', unpriced INTEGER NOT NULL DEFAULT 0);
+    task TEXT NOT NULL DEFAULT '', unpriced INTEGER NOT NULL DEFAULT 0, session_models TEXT);
 CREATE TABLE IF NOT EXISTS cards (
     id INTEGER PRIMARY KEY, project INTEGER NOT NULL, title TEXT NOT NULL,
     owner INTEGER, col TEXT NOT NULL, started INTEGER NOT NULL, finished INTEGER NOT NULL,
@@ -185,7 +188,8 @@ CREATE TABLE IF NOT EXISTS ledger (
     id INTEGER PRIMARY KEY, project INTEGER NOT NULL, card INTEGER, attempt INTEGER NOT NULL,
     agent INTEGER NOT NULL, model TEXT NOT NULL, cost INTEGER NOT NULL,
     unpriced INTEGER NOT NULL, rounds INTEGER NOT NULL, sent_back INTEGER NOT NULL,
-    outcome TEXT NOT NULL, began INTEGER NOT NULL, ended INTEGER NOT NULL, version TEXT);
+    outcome TEXT NOT NULL, began INTEGER NOT NULL, ended INTEGER NOT NULL, version TEXT,
+    models TEXT NOT NULL DEFAULT '{}');
 ";
 
 /// The full-text index `:recall` searches (record 93): one row per journal
@@ -455,6 +459,13 @@ fn checks_of(s: &str) -> rusqlite::Result<Vec<String>> {
     Ok(checks)
 }
 
+/// What each model spent, as a `models` or `session_models` column holds
+/// it (record 134): JSON of names to figures; NULL is not known.
+fn by_model(s: Option<String>) -> rusqlite::Result<Option<imece_agent::ByModel>> {
+    s.map(|s| serde_json::from_str(&s).map_err(|e| bad(format!("models {s:?}: {e}"))))
+        .transpose()
+}
+
 /// The paths a `paths` column holds: JSON of [`Owned`]s, `[]` in a file
 /// from before them.
 fn paths_of(s: &str) -> rusqlite::Result<Vec<Owned>> {
@@ -688,6 +699,17 @@ impl Store {
             // Nothing was known unpriced before: a missing figure was $0.
             self.conn.execute_batch(
                 "ALTER TABLE agents ADD COLUMN unpriced INTEGER NOT NULL DEFAULT 0;",
+            )?;
+        }
+        if !self.has_column("agents", "session_models")? {
+            // A session's figures by model were not kept: NULL, not known.
+            self.conn
+                .execute_batch("ALTER TABLE agents ADD COLUMN session_models TEXT;")?;
+        }
+        if !self.has_column("ledger", "models")? {
+            // A row's spending was not split by model: none of it is.
+            self.conn.execute_batch(
+                "ALTER TABLE ledger ADD COLUMN models TEXT NOT NULL DEFAULT '{}';",
             )?;
         }
         if !self.has_column("cards", "checks")? {
@@ -1042,9 +1064,9 @@ impl Store {
             tx.execute(
                 "INSERT OR REPLACE INTO agents (id, project, name, role, parent, card, \
                  cost, taint, gone, changed_at, traced, commands, model, tiered, woken, posted, \
-                 session, session_spent, start, fork_of, task, unpriced) \
+                 session, session_spent, start, fork_of, task, unpriced, session_models) \
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, \
-                 ?17, ?18, ?19, ?20, ?21, ?22)",
+                 ?17, ?18, ?19, ?20, ?21, ?22, ?23)",
                 params![
                     n(a.id),
                     n(a.project),
@@ -1074,6 +1096,11 @@ impl Store {
                     serde_json::to_string(&a.task).unwrap_or_default(),
                     // What it never priced (record 132).
                     a.unpriced.count(),
+                    // Its session's figures by model (record 134).
+                    k.sessions
+                        .get(id)
+                        .and_then(|s| s.as_ref()?.models.as_ref())
+                        .map(|m| serde_json::to_string(m).unwrap_or_default()),
                 ],
             )?;
         }
@@ -1103,8 +1130,8 @@ impl Store {
             let r = &w.ledger[i];
             tx.execute(
                 "INSERT OR REPLACE INTO ledger (id, project, card, attempt, agent, model, cost, \
-                 unpriced, rounds, sent_back, outcome, began, ended, version) VALUES (?1, ?2, ?3, \
-                 ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+                 unpriced, rounds, sent_back, outcome, began, ended, version, models) VALUES (?1, \
+                 ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
                 params![
                     n(i),
                     n(r.project),
@@ -1120,6 +1147,7 @@ impl Store {
                     big(r.began),
                     big(r.ended),
                     r.version,
+                    serde_json::to_string(&r.models).unwrap_or_default(),
                 ],
             )?;
         }
@@ -1739,7 +1767,7 @@ impl Store {
         let mut st = conn.prepare(
             "SELECT id, project, name, role, parent, card, cost, taint, gone, \
              changed_at, traced, commands, model, tiered, woken, posted, session, session_spent, \
-             start, fork_of, task, unpriced FROM agents ORDER BY id",
+             start, fork_of, task, unpriced, session_models FROM agents ORDER BY id",
         )?;
         for row in st.query_map([], |r| {
             let id = u(r.get(0)?);
@@ -1771,10 +1799,14 @@ impl Store {
                 r.get::<_, bool>(13)?,
                 r.get::<_, u32>(14)?,
                 r.get::<_, u32>(15)?,
-                r.get::<_, Option<String>>(16)?.map(|session| Resumable {
-                    session,
-                    spent: ubig(r.get(17).unwrap_or(0)),
-                }),
+                match r.get::<_, Option<String>>(16)? {
+                    Some(session) => Some(Resumable {
+                        session,
+                        spent: ubig(r.get(17).unwrap_or(0)),
+                        models: by_model(r.get(22)?)?,
+                    }),
+                    None => None,
+                },
                 uopt(r.get(19)?),
             ))
         })? {
@@ -1878,7 +1910,7 @@ impl Store {
         }
         let mut st = conn.prepare(
             "SELECT id, project, card, attempt, agent, model, cost, unpriced, rounds, sent_back, \
-             outcome, began, ended, version FROM ledger ORDER BY id",
+             outcome, began, ended, version, models FROM ledger ORDER BY id",
         )?;
         for row in st.query_map([], |r| {
             Ok((
@@ -1897,6 +1929,7 @@ impl Store {
                     began: ubig(r.get(11)?),
                     ended: ubig(r.get(12)?),
                     version: r.get(13)?,
+                    models: by_model(Some(r.get(14)?))?.unwrap_or_default(),
                 },
             ))
         })? {
@@ -2765,11 +2798,13 @@ mod tests {
                 Some(Resumable {
                     session: "686c6d27-d50b-4ae2-ad6a-159bf2984671".into(),
                     spent: 524,
+                    models: None,
                 }),
                 None,
                 Some(Resumable {
                     session: "thread_9".into(),
                     spent: 0,
+                    models: None,
                 }),
                 None,
             ],
@@ -2957,6 +2992,11 @@ mod tests {
                 began: 11,
                 ended: 70,
                 version: Some("2.1.4 (Claude Code)".into()),
+                models: [
+                    ("claude-opus-5-5".into(), 7_000),
+                    ("claude-haiku-5-5".into(), 1_200),
+                ]
+                .into(),
             },
             Attempt {
                 project: 0,
@@ -2985,6 +3025,11 @@ mod tests {
         let back = store.load(100).unwrap().unwrap().world;
         assert_eq!(back.ledger[0].model, "x", "not written again");
         assert_eq!(back.ledger[1].cost, 650);
+        // What a model spent moves a row too.
+        w.ledger[1].models.insert("claude-opus-5-5".into(), 600);
+        assert!(store.save(&w, &k.kept()).unwrap());
+        let back = store.load(100).unwrap().unwrap().world;
+        assert_eq!(back.ledger[1].models, w.ledger[1].models);
         // A row out of order, or one naming what is not there, does not load.
         for broken in [
             "UPDATE ledger SET id = 5 WHERE id = 1".to_string(),
@@ -3893,7 +3938,7 @@ mod tests {
             .execute_batch(
                 "INSERT INTO meta VALUES ('started_at', '1'); \
                  INSERT INTO agents VALUES (0, 0, 'x', 'Clod', NULL, NULL, 0, 'Clean', \
-                 0, 0, 0, '[]', NULL, 0, 0, 0, NULL, 0, NULL, NULL, '', 0);",
+                 0, 0, 0, '[]', NULL, 0, 0, 0, NULL, 0, NULL, NULL, '', 0, NULL);",
             )
             .unwrap();
         let e = store.load(100).err().expect("refused").to_string();
@@ -4405,15 +4450,28 @@ mod tests {
         k.sessions[1] = Some(Resumable {
             session: "aaaaaaaa-0000-4000-8000-000000000000".into(),
             spent: 7,
+            models: None,
         });
         assert!(store.save(&w, &k.kept()).unwrap(), "a new session moved");
         k.sessions[0].as_mut().unwrap().spent = 600;
         assert!(store.save(&w, &k.kept()).unwrap(), "more spent moved");
         k.sessions[2] = None;
         assert!(store.save(&w, &k.kept()).unwrap(), "a forgotten one moved");
+        // What each model of it cost (record 134): none known, then some.
+        k.sessions[1].as_mut().unwrap().models = Some([("a".into(), 5), ("b".into(), 2)].into());
+        assert!(store.save(&w, &k.kept()).unwrap(), "its models moved");
         assert!(!store.save(&w, &k.kept()).unwrap());
         let back = store.load(100).unwrap().unwrap();
         assert_eq!(back.found.sessions, k.sessions);
+        assert_eq!(
+            back.found.sessions[1].as_ref().unwrap().models,
+            Some([("a".into(), 5), ("b".into(), 2)].into())
+        );
+        assert_eq!(
+            back.found.sessions[0].as_ref().unwrap().models,
+            None,
+            "not known stays so"
+        );
         assert_eq!(back.found.sessions[0].as_ref().unwrap().spent, 600);
         assert_eq!(back.found.sessions[2], None);
     }
@@ -4448,14 +4506,15 @@ mod tests {
                 )
                 .unwrap();
             assert_eq!(
-                version, "34",
+                version, "35",
                 "the sent table, the Fault kind, archives, restores, start points, standing yes, the \
                  recall index, forks, paid kinds, reviews, no vendor, the check on a change, what \
                  it cost, the paths a card owns, the plan gate, a project's Lonca repository, \
                  a card's attempts, its breaker, what it waits on, a card withdrawn and the \
-                 checks it asks for, what was never priced, the ledger: an older imece knows none"
+                 checks it asks for, what was never priced, the ledger, what each model spent: an \
+                 older imece knows none"
             );
-            assert_eq!(SCHEMA_VERSION, 34);
+            assert_eq!(SCHEMA_VERSION, 35);
         }
         let back = Store::open(&path)
             .unwrap()
@@ -4604,7 +4663,8 @@ mod tests {
                 f.sessions[2],
                 Some(Resumable {
                     session: "id-2".into(),
-                    spent: 7
+                    spent: 7,
+                    models: None,
                 })
             );
             assert_eq!(f.models[2].as_deref(), Some("gpt-5.6-terra"));
@@ -5063,6 +5123,7 @@ mod tests {
         found.sessions[0] = Some(Resumable {
             session: "686c6d27-d50b-4ae2-ad6a-159bf2984671".into(),
             spent: 524,
+            models: None,
         });
         w.agents[0].cost = 13;
         let kept = Kept {
@@ -5585,6 +5646,69 @@ mod tests {
             };
             assert!(why.contains(&says), "{why}");
         }
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn a_file_of_schema_34_gets_the_by_model_columns_and_keeps_them_from_then_on() {
+        use crate::ledger::Attempt;
+        let d = dir("schema34");
+        std::fs::create_dir_all(&d).unwrap();
+        let path = d.join(FILE);
+        let (mut w, mut k) = (world(), kept());
+        w.ledger = vec![Attempt {
+            agent: 1,
+            cost: 50,
+            ..Attempt::default()
+        }];
+        k.sessions[1] = Some(Resumable {
+            session: "aaaaaaaa-0000-4000-8000-000000000000".into(),
+            spent: 7,
+            models: None,
+        });
+        {
+            // A whole file as schema 34 wrote it: nothing split by model.
+            let mut store = Store::open(&path).unwrap();
+            assert!(store.save(&w, &k.kept()).unwrap());
+            store
+                .raw()
+                .execute_batch(
+                    "ALTER TABLE ledger DROP COLUMN models;
+                     ALTER TABLE agents DROP COLUMN session_models;
+                     UPDATE meta SET value = '34' WHERE key = 'schema_version';",
+                )
+                .unwrap();
+        }
+        let mut store = Store::open(&path).unwrap();
+        let back = store.load(100).unwrap().expect("a world");
+        assert!(
+            back.world.ledger[0].models.is_empty(),
+            "nothing of it split"
+        );
+        assert_eq!(
+            back.found.sessions[1].as_ref().unwrap().models,
+            None,
+            "not known"
+        );
+        // From then on they are written and read back.
+        let mut k = back.found();
+        let mut w = back.world;
+        w.ledger[0].models.insert("a".into(), 40);
+        k.sessions[1].as_mut().unwrap().models = Some([("a".into(), 4_000)].into());
+        assert!(store.save(&w, &k.kept()).unwrap());
+        let back = store.load(100).unwrap().expect("a world");
+        assert_eq!(back.world.ledger[0].models, w.ledger[0].models);
+        assert_eq!(back.found.sessions[1], k.sessions[1]);
+        // A column that holds no figures does not load.
+        store
+            .raw()
+            .execute_batch("UPDATE ledger SET models = '[1]' WHERE id = 0;")
+            .unwrap();
+        let why = match store.load(100) {
+            Err(e) => e.to_string(),
+            Ok(_) => panic!("a file imece did not write loaded"),
+        };
+        assert!(why.contains("models \"[1]\""), "{why}");
         let _ = std::fs::remove_dir_all(&d);
     }
 

@@ -238,6 +238,10 @@ const MAX_WORKERS: usize = 6;
 const COST_PER_TICK: u64 = 8;
 /// The models the demo's sessions say they run on, by agent (record 133).
 const DEMO_MODELS: [&str; 2] = ["claude-sonnet-5-5", "claude-opus-5-5"];
+/// The model a demo session's background work runs on (record 134), and
+/// its part of each busy tick, in millionths of a dollar: an eighth.
+const DEMO_BACKGROUND: &str = "claude-haiku-5-5";
+const BACKGROUND_PER_TICK: u64 = COST_PER_TICK * 100 / 8;
 /// Ticks an approval waits before the demo's session gives up on it.
 const APPROVAL_WAIT: u64 = 100 / SECONDS_PER_TICK;
 /// Ticks a worker that asked the person waits before it goes on with what
@@ -2280,6 +2284,13 @@ impl Sim {
                 w.agents[id].meter.model = DEMO_MODELS[id % DEMO_MODELS.len()].to_string();
             }
             w.agents[id].cost += COST_PER_TICK;
+            // What it cost by model, as live's result says it (record 134).
+            let model = w.agents[id].meter.model.clone();
+            let grew = imece_agent::ByModel::from([
+                (model, COST_PER_TICK * 100 - BACKGROUND_PER_TICK),
+                (DEMO_BACKGROUND.to_string(), BACKGROUND_PER_TICK),
+            ]);
+            w.models_grew(id, &grew);
             w.book(id);
         }
         for (id, hunks) in std::mem::take(&mut self.applying) {
@@ -4659,6 +4670,22 @@ mod tests {
     }
 
     #[test]
+    fn the_demo_s_rows_say_what_each_model_spent_its_worker_s_and_the_background_s() {
+        let (mut w, mut s) = world(1, 4, 0, 7, Lang::En);
+        run(&mut w, &mut s, 400, true);
+        let spent: Vec<_> = w.ledger.iter().filter(|r| r.cost > 0).collect();
+        assert!(!spent.is_empty());
+        for r in spent {
+            // A busy tick is 8: 7 of its worker's model, 1 of haiku's; a
+            // helper's spending on its worker's row under its own model.
+            let haiku = r.models.get("claude-haiku-5-5").copied().unwrap_or(0);
+            assert_eq!(r.unsplit(), 0, "all of it said by model: {r:?}");
+            assert_eq!(r.cost, 8 * haiku, "{r:?}");
+            assert!(r.models.contains_key(&r.model), "{r:?}");
+        }
+    }
+
+    #[test]
     fn a_seed_replays_the_same_scenario() {
         let (mut a, mut sa) = world(2, 12, 4, 7, Lang::En);
         let (mut b, mut sb) = world(2, 12, 4, 7, Lang::En);
@@ -6441,6 +6468,27 @@ diff --git a/b.rs b/b.rs
         assert_eq!(w.agents[worker].cost, 100 + per_tick, "busy and here");
         assert_eq!(w.agents[lead].cost, 20, "idle");
         assert_eq!(w.agents[gone].cost, 7, "gone");
+    }
+
+    #[test]
+    fn a_busy_tick_s_cost_splits_into_its_model_and_the_background_one() {
+        let (mut w, mut s) = world(1, 1, 1, 1, Lang::En);
+        let worker = workers_of(&w, 0)[0];
+        w.agents[worker].status = Status::Working;
+        let before = w.agents[worker].cost;
+        s.step(&mut w);
+        let spent = w.agents[worker].cost - before;
+        assert_eq!(spent, 8, "a busy tick costs eight ten-thousandths");
+        let row = (w.ledger.iter())
+            .rfind(|r| r.agent == worker)
+            .expect("its row");
+        let model = w.agents[worker].meter.model.clone();
+        // An eighth of the tick in the background model, the rest in its
+        // own: the parts add up to what it spent, nothing unsplit.
+        assert_eq!(row.models.get(DEMO_BACKGROUND), Some(&1));
+        assert_eq!(row.models.get(&model), Some(&7));
+        assert_eq!(row.models.values().sum::<u64>(), row.cost);
+        assert_eq!(row.unsplit(), 0);
     }
 
     #[test]
