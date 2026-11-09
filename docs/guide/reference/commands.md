@@ -36,6 +36,7 @@ A line that starts with `:` is a command to imece, not a message to an agent. Yo
 | `:copy [PATH]` | — | | | | the list, when there is one |
 | `:defer` | `S` | | | | |
 | `:digest` | — | | | | |
+| `:doctor` | — | | | | |
 | `:edit [TEXT]` | `^x^e` (writing) | | | | the editor that opens |
 | `:effort LEVEL` | — | | | | the solo at hand's effort, or `default` |
 | `:export [PATH]` | — | | | | `the conversation` or `#12` |
@@ -170,6 +171,10 @@ Puts the item at hand in TO DECIDE off and opens the next one, as `S`. See [wait
 ### `:digest`
 
 Opens WHILE YOU WERE AWAY now: what happened since you last left the terminal's window this run, or since the run began. With nothing new: `nothing new since you last left`. Any key closes it, as when it opens by itself.
+
+### `:doctor`
+
+What a start needs, in a window over the screen: the report of [`imece doctor`](../getting-started/doctor.md) for the project at hand. Each category is a line marked `[✓]`, `[!]` or `[✗]` by its worst finding; one with an issue lists its findings, with what to do under each that is not right. imece asks Claude Code, git and Lonca on a thread of its own, so the screen goes on meanwhile and the window says `asking Claude Code, git and Lonca…` until the answers come; nothing is spent. `j` `k` scroll (`^d` `^u` half a window, `g` `G` the ends), `v` lists every finding or only what has an issue, `r` looks again, `esc` or `q` closes. The welcome window names it when Claude Code is not there or not signed in. Not in an archive's view. The demo shows a made-up machine with one thing to mend.
 
 ### `:edit [TEXT]`
 

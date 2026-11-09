@@ -48,7 +48,7 @@ pub enum Mark {
 }
 
 impl Mark {
-    fn glyph(self) -> &'static str {
+    pub(crate) fn glyph(self) -> &'static str {
         match self {
             Mark::Ok => "✓",
             Mark::Note => "•",
@@ -399,7 +399,7 @@ pub struct Repo {
 }
 
 /// What the terminal said of itself.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Terminal {
     pub who: Option<Who>,
     pub keys: bool,
@@ -1151,6 +1151,30 @@ fn gather_lonca(repo: Option<String>) -> Option<Lonca> {
     })
 }
 
+/// The terminal's size now; a pty nobody gave one says 0 by 0, which is
+/// not known.
+fn size_now() -> Option<(u16, u16)> {
+    (ratatui::crossterm::terminal::size().ok()).filter(|&(c, r)| c > 0 && r > 0)
+}
+
+/// What the start's probe `said` of the terminal, with the environment
+/// `var`; its size is read when a report is asked for.
+pub fn terminal_of(
+    said: &crate::probe::Said,
+    var: impl Fn(&str) -> Option<String> + Copy,
+) -> Terminal {
+    Terminal {
+        keys: said.keys,
+        truecolor: theme::truecolor(var("COLORTERM").as_deref()),
+        progress: screen::shows_progress(said.who.as_ref(), var),
+        notify: Style::of(said.who.as_ref(), var),
+        tmux: screen::in_tmux(said.who.as_ref(), &var),
+        ssh: crate::motion::over_ssh(var),
+        size: None,
+        who: said.who.clone(),
+    }
+}
+
 /// What the terminal on stdin and stdout says of itself, asked as a
 /// start asks it; none when they are not a terminal.
 pub fn gather_terminal() -> Option<Terminal> {
@@ -1160,18 +1184,9 @@ pub fn gather_terminal() -> Option<Terminal> {
         return None;
     }
     let said = crate::probe::terminal();
-    let var = |k: &str| std::env::var(k).ok();
-    Some(Terminal {
-        keys: said.keys,
-        truecolor: theme::truecolor(var("COLORTERM").as_deref()),
-        progress: screen::shows_progress(said.who.as_ref(), var),
-        notify: Style::of(said.who.as_ref(), var),
-        tmux: screen::in_tmux(said.who.as_ref(), &var),
-        ssh: crate::motion::over_ssh(var),
-        // A pty nobody gave a size says 0 by 0: not known.
-        size: (ratatui::crossterm::terminal::size().ok()).filter(|&(c, r)| c > 0 && r > 0),
-        who: said.who,
-    })
+    let mut terminal = terminal_of(&said, |k| std::env::var(k).ok());
+    terminal.size = size_now();
+    Some(terminal)
 }
 
 fn gather_files() -> Files {
@@ -1237,6 +1252,112 @@ pub fn gather(repo: &Path, state: &Path, own: bool, terminal: Option<Terminal>) 
         lonca: gather_lonca(on_lonca),
         terminal,
         files: gather_files(),
+    }
+}
+
+/// What a look from the screen is asked about (`:doctor`).
+#[derive(Debug)]
+pub struct Ask {
+    /// The checkout of the project at hand.
+    pub repo: PathBuf,
+    /// imece's state directory.
+    pub state: PathBuf,
+    /// What the start's probe found of the terminal; the screen has it
+    /// now, so it is not asked again.
+    pub terminal: Option<Terminal>,
+}
+
+/// The facts of a look, when they come.
+pub type Answers = std::sync::mpsc::Receiver<Facts>;
+
+/// How the screen asks ([`look`] live, a fake in tests).
+pub type Look = fn(Ask) -> Answers;
+
+/// [`gather`] on a thread of its own, for the imece that holds the store:
+/// the screen goes on while Claude Code and Lonca answer.
+pub fn look(ask: Ask) -> Answers {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let terminal = ask.terminal.map(|t| Terminal {
+            size: size_now(),
+            ..t
+        });
+        let _ = tx.send(gather(&ask.repo, &ask.state, true, terminal));
+    });
+    rx
+}
+
+/// What the demo's `:doctor` finds: a made-up machine (record 31), with
+/// the demo's own word on Claude Code (`seen`), its project's folder and
+/// Lonca repository, a terminal of the size the screens are designed at,
+/// and one thing to mend so the window shows how that reads: little
+/// space left.
+pub fn demo(seen: Seen, checkout: String, repo: Option<String>) -> Facts {
+    let state = "~/.local/state/imece".to_string();
+    Facts {
+        imece: Imece {
+            version: crate::welcome::VERSION.to_string(),
+            file: format!("{state}/{}", store::FILE),
+            state,
+            dir: Dir::There,
+            free: Some(800 << 20),
+            store: Kept::At(store::SCHEMA_VERSION),
+            lock: Lock::Own,
+            trees: 0,
+        },
+        claude: Claude {
+            seen,
+            flags: Some(Vec::new()),
+        },
+        git: Git {
+            version: Some("git version 2.47.0".to_string()),
+            checkout: Checkout::Here {
+                top: checkout.clone(),
+                branch: Some("main".to_string()),
+                include: None,
+            },
+        },
+        tests: Some(Ok(vec!["cargo test …".to_string()])),
+        lonca: Some(Lonca {
+            version: Some(format!("lonca {}", lonca::least())),
+            hardened: Some(false),
+            reach: Ok(repo.as_ref().map(|_| {
+                Ok(Repo {
+                    frozen: false,
+                    guarded: Some(true),
+                    checks: Some(2),
+                })
+            })),
+            repo,
+        }),
+        terminal: Some(Terminal {
+            who: None,
+            keys: true,
+            truecolor: true,
+            progress: false,
+            notify: Style::Osc9,
+            tmux: false,
+            ssh: false,
+            size: Some(DESIGNED),
+        }),
+        files: Files {
+            instructions: Some((
+                "~/.config/imece/instructions.md".to_string(),
+                Plain::Missing,
+            )),
+            keys: None,
+            push: (
+                "~/.config/imece/push".to_string(),
+                Err(push::Why::NoFile(String::new())),
+            ),
+            editor: Editor {
+                name: editor::FALLBACK.to_string(),
+                set: false,
+                found: true,
+            },
+            awake: None,
+        },
+        checkout,
     }
 }
 
@@ -2159,6 +2280,71 @@ mod tests {
             parse(&["--fix"], None).unwrap_err(),
             format!("unknown option --fix\n\n{usage}")
         );
+    }
+
+    #[test]
+    fn the_demo_s_machine_has_one_thing_to_mend_and_says_the_demo_s_own() {
+        let seen = Seen::Here {
+            version: "9.9 (demo)".into(),
+            login: Login::Yes { subscription: true },
+        };
+        let facts = demo(seen.clone(), "~/src/shop-api".into(), Some("shop".into()));
+        let report = report(Lang::En, &facts);
+        assert_eq!((report.issues(), report.failed()), (1, false));
+        assert_eq!(found(&facts, "imece.space").mark, Mark::Warn);
+        assert_eq!(found(&facts, "imece.lock").text, EN.doctor.lock_own);
+        assert_eq!(
+            found(&facts, "claude.program").text,
+            "claude --version: 9.9 (demo)"
+        );
+        assert_eq!(
+            found(&facts, "git.checkout").text,
+            "~/src/shop-api on branch main"
+        );
+        assert_eq!(found(&facts, "lonca.repo").text, "repository shop");
+        assert_eq!(found(&facts, "terminal.size").text, "100×40");
+        assert!(
+            report.head.ends_with("checkout ~/src/shop-api)"),
+            "{}",
+            report.head
+        );
+        // A project off Lonca, and what the demo says of a Claude Code
+        // that is not signed in.
+        let out = Seen::Here {
+            version: "9.9".into(),
+            login: Login::No,
+        };
+        let facts = demo(out, "~/src/x".into(), None);
+        assert_eq!(found(&facts, "lonca.repo").mark, Mark::Note);
+        assert_eq!(found(&facts, "claude.login").mark, Mark::Fail);
+        assert!(super::report(Lang::En, &facts).failed());
+    }
+
+    #[test]
+    fn what_the_start_s_probe_said_is_the_terminal_s_facts() {
+        let said = crate::probe::Said {
+            back: Default::default(),
+            keys: true,
+            who: Who::parse("ghostty 1.2.0"),
+        };
+        let env = |pairs: &'static [(&'static str, &'static str)]| {
+            move |k: &str| pairs.iter().find(|p| p.0 == k).map(|p| p.1.to_string())
+        };
+        let seen = terminal_of(
+            &said,
+            env(&[("COLORTERM", "truecolor"), ("SSH_TTY", "/dev/x")]),
+        );
+        assert!(seen.keys && seen.truecolor && seen.progress && seen.ssh && !seen.tmux);
+        assert_eq!((seen.notify, seen.size), (Style::Osc777, None));
+        assert_eq!(seen.who, said.who);
+        let plain = crate::probe::Said {
+            back: Default::default(),
+            keys: false,
+            who: None,
+        };
+        let seen = terminal_of(&plain, env(&[("TMUX", "/tmp/tmux")]));
+        assert!(!seen.keys && !seen.truecolor && !seen.ssh && seen.tmux);
+        assert_eq!((seen.notify, seen.who), (Style::Tmux, None));
     }
 
     #[test]

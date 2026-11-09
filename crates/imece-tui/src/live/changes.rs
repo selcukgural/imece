@@ -2063,6 +2063,10 @@ mod tests {
             err.starts_with("false is not on PATH; install Claude Code"),
             "{err}"
         );
+        assert!(
+            err.ends_with("`imece doctor` says what else a start needs"),
+            "{err}"
+        );
         // Outside a checkout there is nothing to run from: the error names it.
         let outside = std::env::temp_dir().join("imece-probe-nowhere");
         let err = probe(&outside, "true").unwrap_err();

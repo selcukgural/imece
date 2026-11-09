@@ -137,6 +137,9 @@ pub fn draw(f: &mut Frame, app: &App) {
     if let Some(at) = app.ledger_win {
         over.push(ledger::window(f, app, at));
     }
+    if let Some(win) = app.doctor {
+        over.push(overlay::doctor(f, app, win));
+    }
     if let Some(win) = app.window {
         over.push(overlay::view(f, app, win));
     }
@@ -2441,6 +2444,121 @@ mod tests {
             app.step();
         }
         app
+    }
+
+    #[test]
+    fn the_doctor_window_shows_the_report_and_says_while_it_looks() {
+        use crate::app::DoctorWin;
+        let mut app = App::new(1, 1, 0, 1, Lang::En);
+        app.command("doctor");
+        let s = render(&app, 120, 40);
+        let p = app.current_project();
+        let folder = app.project_folder(p).unwrap();
+        assert!(s.contains(&format!(" DOCTOR · {folder} ")), "{s}");
+        // The category with an issue is open, what to do under its finding;
+        // the others are a line each.
+        for want in [
+            " [!] imece",
+            "     ✓ this imece holds the store",
+            "     ! 800 MB free where the state is; a worker's worktree is a copy of the",
+            "       free some space; :tidy in imece removes worktrees no agent owns",
+            " [✓] Claude Code: ",
+            " [✓] Lonca: ",
+            " [✓] Terminal: 100×40",
+            " ! Doctor found issues in 1 category.",
+            " j k  scroll   v  every finding   r  look again   esc  back",
+        ] {
+            assert!(s.contains(want), "{want} missing:\n{s}");
+        }
+        assert!(!s.contains("Doctor summary"), "the title says it: {s}");
+        assert!(
+            !s.contains("24-bit colour"),
+            "a category with no issue is one line"
+        );
+        assert_eq!(
+            app.doctor_room.get().1,
+            33,
+            "40 rows less the frame and the keys"
+        );
+        // Every finding.
+        app.doctor = Some(DoctorWin {
+            top: 0,
+            verbose: true,
+        });
+        let s = render(&app, 120, 40);
+        assert!(s.contains("     ✓ 24-bit colour"), "{s}");
+        assert!(s.contains("     • no ~/.config/imece/push: "), "{s}");
+        let (lines, room) = app.doctor_room.get();
+        assert!(lines > 25 && room == 33, "{lines} {room}");
+        // A short screen shows from the line it is at, never past the end.
+        let short = |app: &App| render(app, 120, 16);
+        let s = short(&app);
+        assert!(
+            s.contains("[!] imece") && !s.contains("Doctor found issues"),
+            "{s}"
+        );
+        let (lines, room) = app.doctor_room.get();
+        assert_eq!(room, 9);
+        app.doctor = Some(DoctorWin {
+            top: 3,
+            verbose: true,
+        });
+        assert!(!short(&app).contains("[!] imece"), "scrolled away");
+        app.doctor = Some(DoctorWin {
+            top: lines + 50,
+            verbose: true,
+        });
+        let s = short(&app);
+        assert!(
+            s.contains("Doctor found issues in 1 category."),
+            "the end stays: {s}"
+        );
+        // A narrow window wraps a long finding under its own words.
+        app.doctor = Some(DoctorWin::default());
+        let s = render(&app, 60, 40);
+        assert!(
+            s.contains("     ! 800 MB free where the state is; a worker's"),
+            "{s}"
+        );
+        assert!(
+            s.contains("       worktree is a copy of the checkout's files"),
+            "{s}"
+        );
+        // In Turkish, from the same facts.
+        app.lang = Lang::Tr;
+        let s = render(&app, 120, 40);
+        assert!(
+            s.contains(" DOKTOR · ") && s.contains("Doktor 1 başlıkta sorun buldu."),
+            "{s}"
+        );
+        assert!(
+            s.contains(" j k  kaydır   v  her bulgu   r  yeniden bak   esc  geri"),
+            "{s}"
+        );
+        app.lang = Lang::En;
+        // Nothing known yet: it says whom it asks; a newer look is said at
+        // the keys, what was found staying.
+        app.doctor_facts = None;
+        let s = render(&app, 120, 40);
+        assert!(s.contains(" DOCTOR · … "), "{s}");
+        assert!(s.contains(" asking Claude Code, git and Lonca…"), "{s}");
+        assert_eq!(app.doctor_room.get(), (1, 33));
+    }
+
+    #[test]
+    fn a_program_s_words_on_the_doctor_window_can_not_drive_the_terminal() {
+        let mut app = App::new(1, 1, 0, 1, Lang::En);
+        app.command("doctor");
+        let facts = app.doctor_facts.as_mut().unwrap();
+        facts.checkout = "~/x\u{1b}]0;owned\u{7}".into();
+        facts.git.version = Some("git \u{1b}[2Jversion 2.47.0".into());
+        app.doctor = Some(crate::app::DoctorWin {
+            top: 0,
+            verbose: true,
+        });
+        let s = render(&app, 120, 40);
+        assert!(!s.contains('\u{1b}') && !s.contains('\u{7}'), "{s:?}");
+        assert!(s.contains("version 2.47.0"), "{s}");
     }
 
     #[test]
@@ -11183,6 +11301,9 @@ mod tests {
         ] {
             assert!(screen.contains(want), "{want} missing:\n{screen}");
         }
+        // Signed in: nothing more to look for.
+        let doctor = ":doctor (imece doctor in a shell) says what else a start needs";
+        assert!(!screen.contains(doctor), "{screen}");
         // An API key's figures are what it pays.
         app.seen = here(
             "2.1.3 (Claude Code)",
@@ -11202,24 +11323,35 @@ mod tests {
                 && screen.contains("red · not signed in: run claude auth login"),
             "{screen}"
         );
+        assert!(
+            screen.contains(doctor),
+            "not signed in points at it: {screen}"
+        );
         app.seen = here("0.65.0", Login::Unknown);
         let screen = render(&app, 120, 40);
         assert!(
             screen.contains("? claude  0.65.0 · its sign-in is checked when it first starts"),
             "{screen}"
         );
+        assert!(screen.contains(doctor), "{screen}");
         // Before the answer, and not there.
         app.seen = Seen::Checking;
         let screen = render(&app, 120, 40);
         assert!(screen.contains("… claude  checking…"), "{screen}");
+        assert!(!screen.contains(doctor), "not known yet: {screen}");
         app.seen = Seen::Missing;
         let screen = render(&app, 120, 40);
         assert!(screen.contains("· claude  not on PATH"), "{screen}");
+        assert!(screen.contains(doctor), "{screen}");
         // In Turkish.
         app.lang = Lang::Tr;
         let screen = render(&app, 120, 40);
         assert!(screen.contains("Bu makinedeki Claude Code:"), "{screen}");
         assert!(screen.contains("PATH'te yok"), "{screen}");
+        assert!(
+            screen.contains(":doctor (kabukta imece doctor)"),
+            "{screen}"
+        );
     }
 
     #[test]

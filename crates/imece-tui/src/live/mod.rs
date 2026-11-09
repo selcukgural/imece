@@ -821,7 +821,8 @@ pub fn probe(repo: &Path, program: &str) -> Result<(), String> {
     }
     Err(format!(
         "{program} is not on PATH; install Claude Code \
-         (https://claude.com/claude-code) and log in"
+         (https://claude.com/claude-code) and log in; \
+         `imece doctor` says what else a start needs"
     ))
 }
 
@@ -988,6 +989,11 @@ fn now() -> u64 {
 
 impl Live {
     /// The checkout of project `p`.
+    /// Where the store and the worktrees live.
+    pub fn state(&self) -> &Path {
+        &self.state
+    }
+
     pub fn repo_of(&self, p: ProjectId) -> &Path {
         &self.places[p].repo
     }

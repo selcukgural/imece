@@ -486,6 +486,8 @@ fn main() -> std::io::Result<()> {
                 let first = live.left_off().is_none();
                 let mut app = app::App::with(world, app::Engine::Live(Box::new(live)), args.lang);
                 app.look = Some(|| live::look(imece_agent::claude::PROGRAM));
+                app.doctor_look = Some(doctor::look);
+                app.terminal = Some(doctor::terminal_of(&said, var));
                 app.start_welcome(first);
                 // What is new since the version that started last, once.
                 let versions: Vec<&str> = app.lang.text().news.iter().map(|n| n.0).collect();
@@ -602,6 +604,7 @@ fn run(
     let mut guard = input::Guard::default();
     while !app.quit && !SIGNALLED.load(Ordering::SeqCst) {
         app.looked();
+        app.doctored();
         // Drawn when something changed; in another window, less often.
         let now = Instant::now();
         if app.draw_due(now) {

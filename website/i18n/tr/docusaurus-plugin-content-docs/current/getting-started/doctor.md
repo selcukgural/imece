@@ -94,6 +94,10 @@ Commit'i olan bir git checkout'u yoksa testlere bakılmaz. Çıktı bir boruya y
 
 Bir bulgunun `id`'si her dilde aynıdır; `status`'u `ok`, `note`, `warn` ya da `fail` olur, bir başlığınki en kötüsüdür (yalnızca notları varsa `ok`). `text` ve `fix` raporun dilindedir.
 
+## Ekranda: `:doctor`
+
+imece çalışırken `:doctor` aynı raporu, eldeki proje için, ekranın üstünde bir pencerede açar. imece ayrı bir iş parçacığında sorar, ajanlar çalışmaya devam eder; `v` her bulguyu listeler, `r` yeniden bakar, `esc` kapatır ([komutlar](../reference/commands.md#doctor)). Claude Code PATH'te değilse ya da giriş yapılmamışsa hoş geldin penceresi onu gösterir.
+
 ## Ne yapmaz
 
 - Hiçbir modeli çağırmaz, hiçbir şey harcamaz.

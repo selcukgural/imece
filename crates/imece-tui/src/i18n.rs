@@ -523,6 +523,10 @@ words! {
         file_no_awake,
         file_awake_os,
         usage,
+        win_title,
+        win_looking,
+        win_again,
+        welcome,
     }
 }
 
@@ -954,6 +958,8 @@ pub struct Text {
     pub ledger_unsplit: &'static str,
     pub ledger_outcomes: [&'static str; 7],
     pub ledger_hints: [(&'static str, &'static str); 3],
+    /// The `:doctor` window's keys.
+    pub doctor_hints: [(&'static str, &'static str); 4],
     pub card_attempts: &'static str,
     pub card_parts: [&'static str; 4],
     pub card_no_story: &'static str,
@@ -1708,7 +1714,7 @@ pub struct Text {
     pub help_keys: [(&'static str, &'static str); 57],
     /// What each `:` command does, in a line, in `complete::COMMANDS`'
     /// order: shown after the menu's keys once `tab` put one on the line.
-    pub command_hints: [(&'static str, &'static str); 72],
+    pub command_hints: [(&'static str, &'static str); 73],
     /// The completion menu's mark for the items after the window, and
     /// where the highlighted one is among them all.
     pub menu_more: &'static str,
@@ -1946,6 +1952,10 @@ pub const EN: Text = Text {
         ("copy", "copy a path git ignores (.env) into new worktrees"),
         ("defer", "put this waiting item off, open the next (S)"),
         ("digest", "what happened while you were away, now"),
+        (
+            "doctor",
+            "what a start needs, and what to do about what is wrong",
+        ),
         ("edit", "write the line in your $EDITOR (^x ^e)"),
         (
             "effort",
@@ -2246,6 +2256,12 @@ pub const EN: Text = Text {
         "late done",
     ],
     ledger_hints: [("j k", "move"), ("enter", "open the card"), ("esc", "back")],
+    doctor_hints: [
+        ("j k", "scroll"),
+        ("v", "every finding"),
+        ("r", "look again"),
+        ("esc", "back"),
+    ],
     card_attempts: "ATTEMPTS",
     card_parts: ["posted", "owner", "helper", "talked"],
     card_no_story: "No story yet.",
@@ -3277,6 +3293,10 @@ pub const EN: Text = Text {
         file_no_awake: "{} is not on PATH: :awake can not hold the machine's sleep",
         file_awake_os: ":awake has no tool on this system",
         usage: "usage: imece doctor [--repo DIR] [--verbose] [--json] [--lang en|tr]",
+        win_title: " DOCTOR · {} ",
+        win_looking: "asking Claude Code, git and Lonca…",
+        win_again: "looking again… ",
+        welcome: ":doctor (imece doctor in a shell) says what else a start needs",
     },
 };
 
@@ -3450,6 +3470,10 @@ pub const TR: Text = Text {
         ),
         ("defer", "bu bekleyeni ertele, sonrakini aç (S)"),
         ("digest", "sen yokken olanlar, şimdi"),
+        (
+            "doctor",
+            "bir açılışın ihtiyacı olanlar, yanlış olan için ne yapılacağı",
+        ),
         ("edit", "satırı $EDITOR'da yaz (^x ^e)"),
         (
             "effort",
@@ -3762,6 +3786,12 @@ pub const TR: Text = Text {
         "geç done",
     ],
     ledger_hints: [("j k", "gez"), ("enter", "kartı aç"), ("esc", "geri")],
+    doctor_hints: [
+        ("j k", "kaydır"),
+        ("v", "her bulgu"),
+        ("r", "yeniden bak"),
+        ("esc", "geri"),
+    ],
     card_attempts: "DENEMELER",
     card_parts: ["astı", "sahibi", "yardımcı", "konuştu"],
     card_no_story: "Henüz hikâye yok.",
@@ -4808,6 +4838,10 @@ pub const TR: Text = Text {
         file_no_awake: "{} PATH'te değil: :awake makinenin uykusunu tutamaz",
         file_awake_os: ":awake için bu sistemde araç yok",
         usage: "kullanım: imece doctor [--repo DIR] [--verbose] [--json] [--lang en|tr]",
+        win_title: " DOKTOR · {} ",
+        win_looking: "Claude Code'a, git'e ve Lonca'ya soruluyor…",
+        win_again: "yeniden bakılıyor… ",
+        welcome: ":doctor (kabukta imece doctor) bir açılışın başka neye ihtiyacı olduğunu söyler",
     },
 };
 
