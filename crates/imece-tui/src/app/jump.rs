@@ -301,18 +301,14 @@ impl App {
         self.after = 0;
     }
 
-    /// The salon with agent `id`'s row selected: its project unfolded, its
-    /// worker's helpers too when it is one, and everyone shown again when
-    /// `f` would hide it.
+    /// Home with agent `id`'s row at hand: its project unfolded, and its
+    /// row (or its worker's, for a helper) no longer settled away.
     pub(super) fn go_agent(&mut self, id: AgentId) {
         self.go_home();
         self.thread = None;
         let a = &self.world.agents[id];
         self.collapsed[a.project] = false;
         self.settled_projects.remove(&a.project);
-        if let Some(p) = a.parent {
-            self.folded_workers.remove(&p);
-        }
         // Its own row, or the worker's row it hangs under.
         let rows: Vec<AgentId> = (self.settled.iter().copied())
             .filter(|&s| self.row_group(s).contains(&id))

@@ -2650,7 +2650,7 @@ pub const EN: Text = Text {
     ],
     help_legend: [
         " ! needs you  ● working  ○ idle  ✓ done, not seen  ■ stuck",
-        " ⇄ conversation  ▾ ▸ project / helpers / message  ▴ pinned",
+        " ⇄ conversation  ▾ ▸ project / message  ▴ pinned",
         " ≈ tainted (reads the outside world)  ◔ 72% of its context window used (from 70%)",
         " ⎇ branch  ↑ own commits  ↓ the checkout's new commits  +N −M lines not yet handed over",
         " ↗ a local address the worker wrote (localhost), a link the terminal opens  ≡ 3/7 its to-do steps done, ▸ the one in progress",
@@ -4039,7 +4039,7 @@ pub const TR: Text = Text {
     ],
     help_legend: [
         " ! seni bekliyor  ● çalışıyor  ○ boşta  ✓ bitti, bakılmadı  ■ takıldı",
-        " ⇄ konuşma  ▾ ▸ proje / yardımcılar / mesaj  ▴ sabit",
+        " ⇄ konuşma  ▾ ▸ proje / mesaj  ▴ sabit",
         " ≈ kirli (dış dünyayı okuyor)  ◔ %72 bağlam penceresi dolu (%70'ten)",
         " ⎇ dal  ↑ kendi commit'leri  ↓ checkout'un yeni commit'leri  +N −M henüz verilmemiş satırlar",
         " ↗ worker'ın yazdığı yerel adres (localhost), terminalin açtığı bir bağlantı  ≡ 3/7 yapılacaklarından biten, ▸ şu an yaptığı",

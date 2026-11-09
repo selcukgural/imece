@@ -168,18 +168,10 @@ impl App {
         self.home_go_heading(Heading::Work);
     }
 
-    /// Folds or unfolds every project and every worker's helpers.
+    /// Folds or unfolds every project.
     pub(super) fn fold_all(&mut self, fold: bool) {
         self.collapsed.iter_mut().for_each(|c| *c = fold);
-        self.folded_workers.clear();
         if fold {
-            let workers = self
-                .world
-                .agents
-                .iter()
-                .filter(|a| a.role == Role::Worker && self.world.helpers_of(a.id).next().is_some())
-                .map(|a| a.id);
-            self.folded_workers.extend(workers);
             self.selected = Sel::Project(self.current_project());
         }
     }
@@ -920,7 +912,6 @@ mod tests {
         }
         app.on_key(key(KeyCode::Char('M')));
         assert_eq!(app.collapsed, [false]);
-        assert!(app.folded_workers.is_empty());
         let owner = app.world.cards[0].owner.unwrap();
         assert_eq!(
             (app.zoom, app.card),

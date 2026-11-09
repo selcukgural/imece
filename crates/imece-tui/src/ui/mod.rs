@@ -11820,38 +11820,41 @@ mod tests {
         a.local = Some("http://localhost:5173/".into());
         a.plan = steps(3, 1);
         told(a, Party::Person, true, "parser fixed");
-        // The 113 of the row without the mark, and the mark's 7.
+        // The 111 of the row without the mark, and the mark's 7.
         let whole = row(&app, worker, 200);
-        assert_eq!(whole.chars().count(), 120, "{whole}");
+        assert_eq!(whole.chars().count(), 118, "{whole}");
         assert!(
             whole.contains(
-                "idle → you \"parser fixed\" · 3 min  ≡ 1/3  ▾ 2 helpers  ↗ localhost:5173/"
+                "idle → you \"parser fixed\" · 3 min  ≡ 1/3  2 helpers  ↗ localhost:5173/"
             ),
             "{whole}"
         );
-        assert_eq!(row(&app, worker, 120), whole, "fits exactly");
+        assert_eq!(row(&app, worker, 118), whole, "fits exactly");
         // One short: the quote shrinks first.
-        let r = row(&app, worker, 119);
-        assert!(r.contains("\"parser fix…\" · 3 min  ≡ 1/3  ▾"), "{r}");
+        let r = row(&app, worker, 117);
+        assert!(
+            r.contains("\"parser fix…\" · 3 min  ≡ 1/3  2 helpers"),
+            "{r}"
+        );
         // Then the quote goes, then the time; the mark stays longest.
-        let r = row(&app, worker, 100);
-        assert!(r.contains("idle · 3 min  ≡ 1/3  ▾ 2 helpers"), "{r}");
-        // The time needs its eight after the mark: at 99 exactly, at 98 not.
-        let r = row(&app, worker, 99);
-        assert!(r.contains("idle · 3 min  ≡ 1/3  ▾ 2 helpers"), "{r}");
         let r = row(&app, worker, 98);
+        assert!(r.contains("idle · 3 min  ≡ 1/3  2 helpers"), "{r}");
+        // The time needs its eight after the mark: at 97 exactly, at 96 not.
+        let r = row(&app, worker, 97);
+        assert!(r.contains("idle · 3 min  ≡ 1/3  2 helpers"), "{r}");
+        let r = row(&app, worker, 96);
         assert!(
-            r.contains("idle  ≡ 1/3  ▾ 2 helpers") && !r.contains("min"),
+            r.contains("idle  ≡ 1/3  2 helpers") && !r.contains("min"),
             "{r}"
         );
-        // The mark needs its seven: at 91 exactly, at 90 not.
-        let r = row(&app, worker, 91);
+        // The mark needs its seven: at 89 exactly, at 88 not.
+        let r = row(&app, worker, 89);
         assert!(
-            r.contains("idle  ≡ 1/3  ▾ 2 helpers") && !r.contains("min"),
+            r.contains("idle  ≡ 1/3  2 helpers") && !r.contains("min"),
             "{r}"
         );
-        let r = row(&app, worker, 90);
-        assert!(r.contains("idle  ▾ 2 helpers") && !r.contains('≡'), "{r}");
+        let r = row(&app, worker, 88);
+        assert!(r.contains("idle  2 helpers") && !r.contains('≡'), "{r}");
     }
 
     #[test]
@@ -11880,7 +11883,7 @@ mod tests {
         }
         let whole = row(&app, worker, 200);
         assert!(
-            whole.contains("idle → you \"parser fixed\"  ▂▁▁▁▄ · 3 min  ≡ 1/3  ▾"),
+            whole.contains("idle → you \"parser fixed\"  ▂▁▁▁▄ · 3 min  ≡ 1/3  2 helpers"),
             "{whole}"
         );
         // The bar's seven: at the row's width exactly it stays.
@@ -12048,30 +12051,33 @@ mod tests {
             size: Some(200_000),
         });
         told(a, Party::Person, true, "parser fixed");
-        // The 120 of the row with the mark, and the warning's 7.
+        // The 118 of the row with the mark, and the warning's 7.
         let whole = row(&app, worker, 200);
-        assert_eq!(whole.chars().count(), 127, "{whole}");
+        assert_eq!(whole.chars().count(), 125, "{whole}");
         assert!(
-            whole.contains("\"parser fixed\" · 3 min  ≡ 1/3  ◔ 75%  ▾ 2 helpers"),
+            whole.contains("\"parser fixed\" · 3 min  ≡ 1/3  ◔ 75%  2 helpers"),
             "{whole}"
         );
         // Head 52, tail 32: the warning needs its seven, the mark seven
         // more, the time eight more.
-        let r = row(&app, worker, 106);
-        assert!(r.contains("idle · 3 min  ≡ 1/3  ◔ 75%  ▾"), "{r}");
-        let r = row(&app, worker, 105);
+        let r = row(&app, worker, 104);
+        assert!(r.contains("idle · 3 min  ≡ 1/3  ◔ 75%  2 helpers"), "{r}");
+        let r = row(&app, worker, 103);
         assert!(
-            r.contains("idle  ≡ 1/3  ◔ 75%  ▾") && !r.contains("min"),
+            r.contains("idle  ≡ 1/3  ◔ 75%  2 helpers") && !r.contains("min"),
             "{r}"
         );
-        let r = row(&app, worker, 98);
-        assert!(r.contains("idle  ≡ 1/3  ◔ 75%  ▾"), "{r}");
-        let r = row(&app, worker, 97);
-        assert!(r.contains("idle  ◔ 75%  ▾") && !r.contains('≡'), "{r}");
-        let r = row(&app, worker, 91);
-        assert!(r.contains("idle  ◔ 75%  ▾"), "{r}");
-        let r = row(&app, worker, 90);
-        assert!(r.contains("idle  ▾ 2 helpers") && !r.contains('◔'), "{r}");
+        let r = row(&app, worker, 96);
+        assert!(r.contains("idle  ≡ 1/3  ◔ 75%  2 helpers"), "{r}");
+        let r = row(&app, worker, 95);
+        assert!(
+            r.contains("idle  ◔ 75%  2 helpers") && !r.contains('≡'),
+            "{r}"
+        );
+        let r = row(&app, worker, 89);
+        assert!(r.contains("idle  ◔ 75%  2 helpers"), "{r}");
+        let r = row(&app, worker, 88);
+        assert!(r.contains("idle  2 helpers") && !r.contains('◔'), "{r}");
     }
 
     #[test]
@@ -12110,7 +12116,6 @@ mod tests {
         let helper = app.world.agents[h1].name.clone();
         app.world.agents[h1].status = Status::Idle;
         app.world.agents[h1].activity = None;
-        app.folded_workers.insert(worker);
         app.collapsed[0] = true;
         app.zoom = Zoom::Focus(worker);
         key(&mut app, KeyCode::Char('&'));
@@ -12125,10 +12130,6 @@ mod tests {
         key(&mut app, KeyCode::Enter);
         assert_eq!(app.selected, Sel::Agent(h1));
         assert!(!app.collapsed[0], "the project unfolded");
-        assert!(
-            !app.folded_workers.contains(&worker),
-            "its worker's helpers unfolded"
-        );
         assert_eq!((app.zoom, app.pane), (Zoom::None, Pane::Salon));
         assert_eq!(app.at_home.at, Some(crate::app::HomeRow::Agent(h1)));
         let s = render(&app, 160, 40);
@@ -12191,32 +12192,32 @@ mod tests {
         a.local = Some("http://localhost:5173/".into());
         a.plan.clear();
         told(a, Party::Person, true, "parser fixed");
-        let tail = "  ▾ 2 helpers  ↗ localhost:5173/";
+        let tail = "  2 helpers  ↗ localhost:5173/";
         // Glyph, mark, name, taint, card and `idle` take 52; the quote 21,
         // the time 8, the tail 32: 113 in all.
         let whole = row(&app, worker, 200);
-        assert_eq!(whole.chars().count(), 113, "{whole}");
+        assert_eq!(whole.chars().count(), 111, "{whole}");
         assert!(
             whole.contains("idle → you \"parser fixed\" · 3 min") && whole.ends_with(tail),
             "{whole}"
         );
-        assert_eq!(row(&app, worker, 113), whole, "fits exactly");
+        assert_eq!(row(&app, worker, 111), whole, "fits exactly");
         // One short: the quote shrinks first, to what is left.
-        let r = row(&app, worker, 112);
+        let r = row(&app, worker, 110);
         assert!(r.contains("idle → you \"parser fix…\" · 3 min"), "{r}");
         assert!(r.ends_with(tail) && r.chars().count() <= 112, "{r}");
         // The shortest quote needs 15 free after the time: 107 shows one,
         // 106 keeps the time alone.
-        let r = row(&app, worker, 107);
+        let r = row(&app, worker, 105);
         assert!(r.contains("\"parse…\" · 3 min"), "{r}");
-        let r = row(&app, worker, 106);
+        let r = row(&app, worker, 104);
         assert!(r.contains("idle · 3 min") && !r.contains('"'), "{r}");
         assert!(r.ends_with(tail) && r.chars().count() <= 106, "{r}");
         // Eight columns free take the time, seven do not: the fixed parts
         // alone.
-        let r = row(&app, worker, 92);
+        let r = row(&app, worker, 90);
         assert!(r.contains("idle · 3 min") && r.ends_with(tail), "{r}");
-        let r = row(&app, worker, 91);
+        let r = row(&app, worker, 89);
         assert!(!r.contains(" · ") && !r.contains('"'), "{r}");
         assert!(r.ends_with(tail) && r.chars().count() <= 91, "{r}");
     }

@@ -867,8 +867,6 @@ pub struct App {
     pub selected: Sel,
     /// Folded projects show only their header line.
     pub collapsed: Vec<bool>,
-    /// Workers whose helpers are folded away.
-    pub folded_workers: BTreeSet<AgentId>,
     /// The side panel tells the story in the journal's place (`J`,
     /// `:story`; record 99). Off in `App::new`; `main` sets the saved one,
     /// on by default.
@@ -1249,7 +1247,6 @@ impl App {
             pane: Pane::Salon,
             selected,
             collapsed,
-            folded_workers: BTreeSet::new(),
             settled: BTreeSet::new(),
             settled_projects: BTreeSet::new(),
             peek: None,

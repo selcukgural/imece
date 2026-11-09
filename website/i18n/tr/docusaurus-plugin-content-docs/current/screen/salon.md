@@ -69,7 +69,7 @@ Oturumu kalkarken (süreç, ilk worktree'nin checkout'u) `başlıyor…`, `düş
 Bir [kartın ekranı](cards.md), kartta payı olanları uzun satırla listeler; bir agent'ın her rakamı tek satırda:
 
 ```text
-sahibi    ● ▎claude-1  #3   Parse the manifest  ▸ Write the tests  Edit tests/parse.rs · 2 dk  $1.10  ⎇ fix-parser ↑2 ↓1 +12 −3  ▾ 1 yardımcı  ↗ localhost:5173/
+sahibi    ● ▎claude-1  #3   Parse the manifest  ▸ Write the tests  Edit tests/parse.rs · 2 dk  $1.10  ⎇ fix-parser ↑2 ↓1 +12 −3  1 yardımcı  ↗ localhost:5173/
 ```
 
 - Durum işareti: agent'ın [durum merdivenindeki](#durum-merdiveni) yeri. Yine beş işaret, iki anlam daha ile: bir şeyi sizi beklerken, o sırada ne yapıyorsa yapsın `!`, ve bir turu bitirmiş ama henüz açmadığınız bir işçi için `✓`.
@@ -83,7 +83,7 @@ sahibi    ● ▎claude-1  #3   Parse the manifest  ▸ Write the tests  Edit te
 - `≡ 3/7`: kendi yapılacaklar listesinin neresinde olduğu, biten adımlar ve hepsi; planlama aracı bir liste tutuyorsa (Claude Code'un görevleri). Devam eden adım satırın durumudur (`▸`); odak hepsini listeler. Satır darsa işaret alıntıdan ve süreden sonra yer verir. Oturumla birlikte gider.
 - `◔ %72`: bağlam penceresinin ne kadar dolu olduğu, %70'ten itibaren, %90'dan itibaren dikkat renginde, Claude Code'un son söylediğince (mesaj kullanımı ve sonucun adlandırdığı pencere). Odak rakamı her hâlde gösterir, `bağlam: %22 · 45k / 200k`, ya da pencerenin boyutu söylenmiyorsa yalnız token sayısını. Dar bir satırda yapılacaklar işaretinden daha uzun kalır. Oturumla birlikte gider.
 - Bir işçinin worktree durumu, `⎇ fix-parser ↑2 ↓1 +12 −3`: agent'ın açtığı dal (worktree imece'nin bıraktığı gibi detached iken yok; bir başlangıç noktasından işe alınan işçi onun yerine o noktayı gösterir, `⎇ #41`), checkout'ta olmayan kendi commit'leri (imece'nin uygulanan değişiklik işaretleri sayılmaz), kendisinde olmayan checkout commit'leri ve kendi HEAD'ine göre eklenen ve silinen satırlar, izlenmeyen dosyalar dahil: bir sonraki `done`'un size vereceği şey. Her parça yalnız söyleyecek bir şey varken görünür. imece'nin git iş parçacığında okunur: oturum başlarken, bir tur bitince, bir uygulamadan sonra ve işçi ya da bir yardımcısı tur ortasındayken her 15 saniyede; çalıştırmalar arasında saklanmaz.
-- `▾ 1 yardımcı` ya da `▸ 1 yardımcı  ● claude-1.1`: bir işçinin yardımcıları, listelenmiş ya da katlanmış; katlıyken en yüksekleriyle.
+- `1 yardımcı`: işçinin kaç yardımcısı olduğu; ana ekran onları altında (`└`) listeler.
 - `↗ localhost:5173/`: işçi ya da yardımcının kendi metninde yazdığı en yeni yerel adres, terminalin açtığı bir bağlantı olarak (OSC 8). Yalnız `localhost`, `127.0.0.1` ya da `[::1]` üzerinde `http`/`https` sayılır, sorgu ve parça atılır, 60 karakteri aşan bir adres hiç gösterilmez. Oturumla birlikte gider.
 
 Süre, alıntı ve etkinlik çubuğu yalnız satırda maliyet, worktree durumu, yardımcılar ve bağlantıdan arta kalan yeri alır; dar bir ekran önce çubuğu, sonra alıntıyı, en son süreyi düşürür.
@@ -104,7 +104,7 @@ Her agent tek bir basamakta durur, en yüksekten: takıldı (bloke ya da oturumu
 | `✓` | bitti, bakılmadı: bir turu bitirdi, o zamandan beri açmadınız |
 | `■` | takıldı: bloke (durumu `BLOKE`) ya da oturumu bitti (`■ durdu`; ona yazmak yeni bir oturum başlatır); bir proje başlığında takılan agent sayısı da |
 | `⇄` | bir konuşma satırı |
-| `▾` `▸` | bir proje ya da bir işçinin yardımcıları, açık ya da katlı |
+| `▾` `▸` | bir proje, açık ya da katlı |
 | `▴` | sabitlenmiş proje |
 | `~` | hafif kirli: bir araştırma raporu okudu (yalnız demoda) |
 | `≈` | kirli: dış dünyayı okuyor (yalnız demoda) |
