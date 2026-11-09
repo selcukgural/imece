@@ -1,6 +1,6 @@
 ---
 title: How imece works
-description: The parts of imece a user meets - the screen and its model, the Claude Code adapter, one session per agent, the bus, the git thread, the SQLite store, and the gate between a worker's worktree and your checkout.
+description: The parts of imece a user meets - the screen and its model, the Claude Code adapter, one session per agent, the bus, the git thread, the SQLite store, the gate between a worker's worktree and your checkout, and Lonca underneath a project.
 ---
 
 # How imece works
@@ -47,6 +47,26 @@ A worktree is kept between runs. One found clean at an older commit is moved to 
 ## The Δ gate
 
 When a worker sends `done`, imece reads its worktree (untracked files included, through a private index, the agent's own index untouched) and shows the diff as a change (`Δ`) in TO DECIDE. You apply it (`a`: `git apply --index` into your checkout, staged, three-way when a plain apply does not fit), reject it (`r`) or send notes (`n`). Nothing reaches your checkout without you. The whole path is on [changes](../concepts/changes.md).
+
+## The screen
+
+The screen draws the model when something on it changed, and never waits on a session, git or the store. It has two screens:
+
+- **Home**, where imece opens, is one list. TO DECIDE comes first, grouped by what deciding costs: permissions (a command an agent asks to run, a script to say yes to), questions (an agent's question, the leader's plan, a card out of tries), changes (a diff to read, ready ones first). AT WORK comes under it: the workers and solos of each project, stuck first, then at work, then idle, each with its helpers under it. Every row leads with its card. See [Home](../screen/home.md).
+- **One piece of work** opens with `enter` on a row: a head line with the card, the project, the agent, the time and the cost, and three tabs, `diff · talk · log`. A change starts with its verdict line, the Δ gate in one line; a question with its ask and the answers it offers; an agent with its log, from its card's story to the raw stream of its session.
+
+The board, the code map, the timeline, the journal, the ledger, the processes and the Lonca window are windows over either (`:board`, `:code`, `:timeline`, `J`, `:ledger`, `:ps`, `:lonca`), and `esc` closes them. The header has four things: the open projects, `! N to decide`, the pot and the time.
+
+## On Lonca
+
+[Lonca](https://github.com/selcukgural/lonca) is a daemon that is the only writer of a repository, with leases, a merge queue and a signed log. A project can stand on one (`:lonca NAME` names a repository, `:lonca import` makes one of the checkout); imece is then a client of the daemon's socket, never a second writer:
+
+- A worker hired from then on works in a Lonca **workspace** instead of a worktree, with Lonca's hook and tools in its Claude Code beside imece's bus. It leases what it edits and proposes its change.
+- Its Δ is its newest pending proposal, once its turn is over. `a` approves it and `r` rejects it with a reason, both signed by the `lonca` program; nothing lands in your checkout.
+- After your yes Lonca's merge queue runs the repository's checks on the merged tree and puts the change on trunk, or sends it back to the worker. Your checkout is a client of trunk: `:sync` brings it up.
+- Every 5 seconds imece reads the daemon's state: the project's line (`lonca mobile-app 9d3f1c2 · 3 pending`), the leases on the code map, the `:lonca` window. While the daemon does not answer, the project is closed: nobody is hired and no Δ is decided.
+
+The details are on [projects](projects.md#on-lonca) and [changes](changes.md#on-lonca). A project on no repository works with worktrees and your checkout as above.
 
 ## The git thread
 

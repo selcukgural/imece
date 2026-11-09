@@ -65,7 +65,7 @@ Ekranda bir yanıt türünden sonra `↩` taşır: günlük satırında, kartın
 
 Bus size `you` olarak ulaşır: `send(to: "you", type, body)`.
 
-- Size bir `ask`, KARAR BEKLEYEN panelinde bir soru olur (`?`, "claude-1 sana soruyor: …"). Soru açıkken ve ajan boştayken ekip satırı `? → you` okunur. Aynı ajandan daha yeni bir soru eskisinin yerini alır. Ajana yazarak yanıt verirsiniz (`@claude-1 …`, ya da öğede `a`/`r`, ikisi de yazma satırını açar) ve bu onun sonraki turunu başlatır.
+- Size bir `ask`, KARAR BEKLEYEN'de bir soru olur (`?`, "claude-1 sana soruyor: …"). Soru açıkken ajan o satırın kendisidir ve ÇALIŞAN altında listelenmez. Aynı ajandan daha yeni bir soru eskisinin yerini alır. Ajana yazarak yanıt verirsiniz (`@claude-1 …`, ya da öğede `a`/`r`, ikisi de yazma satırını açar) ve bu onun sonraki turunu başlatır.
 - Size `inform`, `progress`, `notice`, `done`, `blocked` ve `answer` yalnız bilgilendirir: konuşmada ve hikâyede bir satır, öğe yok, kimse uyanmaz. Bir işçinin size `done`'ı değişikliğini her `done` gibi gösterir.
 - Size `assign`, `handoff` ve `cancel` reddedilir.
 - Size mesajlar numara ve `re` almaz; sizin mesajlarınızın da numarası yoktur. Size giden hiçbir şey posta sınırlarına ya da bütçeye sayılmaz.
@@ -82,7 +82,7 @@ KARAR BEKLEYEN'de iki şey hiçbir şeyi tutmaz: okunmayı bekleyen bir yanıt v
 
 ## Bus'ta siz
 
-Komut satırındaki düz metin seçili projenin liderine gider; `@ad mesaj` tek bir ajana. Boşta bir işçiye mesaj bir kart açar; değişikliği onu kapatır ([kartın denemeleri](#kartın-denemeleri)). Mesajlarınızın numarası yoktur. Bir ajanın size yanıtı KARAR BEKLEYEN'de bekler ("claude-1 yanıt verdi: …"); açarsınız (`enter`), kapatırsınız (`r`) ya da doğrudan yanıt yazarsınız.
+Komut satırındaki düz metin eldeki projenin liderine gider; `@ad mesaj` tek bir ajana. Boşta bir işçiye mesaj bir kart açar; değişikliği onu kapatır ([kartın denemeleri](#kartın-denemeleri)). Mesajlarınızın numarası yoktur. Bir ajanın size yanıtı KARAR BEKLEYEN'de bekler ("claude-1 yanıt verdi: …"); açarsınız (`enter`), kapatırsınız (`r`) ya da doğrudan yanıt yazarsınız.
 
 ## Pano
 

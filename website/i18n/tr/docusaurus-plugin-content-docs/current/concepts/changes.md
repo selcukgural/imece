@@ -5,7 +5,7 @@ description: Bir işçinin işi checkout'unuza nasıl ulaşır - done'ı KARAR B
 
 # Değişiklikler (Δ kapısı)
 
-Bir değişiklik (`Δ`), bir işçi `done` dediğinde worktree'sinin tuttuğu şeydir. KARAR BEKLEYEN panelinde sizi bekler ve siz uygulamadan hiçbir parçası checkout'unuza ulaşmaz. Bu, ajanlarla çalışma kopyanız arasındaki kapıdır; açan sizsiniz.
+Bir değişiklik (`Δ`), bir işçi `done` dediğinde worktree'sinin tuttuğu şeydir. KARAR BEKLEYEN'de sizi bekler ve siz uygulamadan hiçbir parçası checkout'unuza ulaşmaz. Bu, ajanlarla çalışma kopyanız arasındaki kapıdır; açan sizsiniz.
 
 ## `done`'dan Δ'ya
 
@@ -14,20 +14,27 @@ Bir değişiklik (`Δ`), bir işçi `done` dediğinde worktree'sinin tuttuğu ş
 3. Sonuç KARAR BEKLEYEN'de bir `Δ` öğesidir, ayrıntısı `done`'ın ilk satırı; günlük `claude-1 bitirdi: değişiklik hazır · 3 dosya +34 −8` der. Aynı işçiden daha yeni bir `done` eskisinin yerine geçer.
 4. İşçinin `send` yanıtı okumayı bekler ve değişikliği gördüğünüzü söyler.
 
+Ana ekranda bir değişiklik **değişiklikler** altında, kartıyla başlayan bir satırdır ve hükmünü başı olmadan söyler: onu neyin kanıtladığını, kartının sahip olduğu yollara göre dosyalarını ve bekleyen hangi başka değişiklikle çakıştığını. Onaya hazır olanlar önce gelir, grubun satırı onları sayar:
+
 ```text
- KARAR BEKLEYEN (2)
- Δ 14:02 claude-1 bitirdi: parser tokens (3 dosya, +34 −8) · ✓ bu ağaçta temiz geçti: cargo test -p parser · $0.84 · 12 dk
- ? 14:05 claude-2 sana soruyor: eski CLI bayrağı kalsın mı?
-  enter diff'i gör · a onayla · r geri gönder
+ değişiklikler                                                                                        2 onaya hazır
+ ! #1   Kargo ücret hesabı        ✓ dotnet build · ✓ dotnet test · 3 dosya +6 −3, hepsi #1 içinde ·
+                                  başka değişiklikle çakışmıyor
+ ! #3   Fiyat listesi önbelleği   ✓ dotnet build · ✓ dotnet test · 2 dosya +4 −2, ikisi de #3 içinde ·
+                                  başka değişiklikle çakışmıyor
+ ! #2   Ürün aramasında sayfala…  ✓ dotnet build · ✓ dotnet test · 2 dosya +6 −3 ·
+                                  1 kartın dışında (#2): src/Orders/OrderService.cs · başka değişiklikle çakışmıyor
 ```
+
+Eldeki satır `a onayla  r geri gönder` ile biter; `enter` diff'i açar.
 
 ### Satırdaki kanıt
 
-İşçinin ya da bir yardımcının imece'nin `run` aracıyla yaptığı bir çalıştırma, üzerinde koştuğu ağaca bağlanır (worktree öncesinde ve sonrasında okunur; ağacı değiştiren bir çalıştırma hiçbirine sayılmaz). Bir `done` okununca, tam o ağaçtaki çalıştırmalar onunla gelir: `Δ` satırı `✓ bu ağaçta temiz geçti: …`, `✗ bu ağaçta başarısız: …` ya da `bu ağaçta çalıştırma yok` ile biter ve diff'in üstündeki hüküm satırı her çalıştırmayı nasıl bittiğiyle adlandırır. Gösterilir, asla kapı değildir: çalıştırması olmayan bir değişiklik yine uygulanabilir; karar sizin. Claude Code'un kendi kabuğu sayılmaz; imece onun hangi ağaçta koştuğunu görmez.
+İşçinin ya da bir yardımcının imece'nin `run` aracıyla yaptığı bir çalıştırma, üzerinde koştuğu ağaca bağlanır (worktree öncesinde ve sonrasında okunur; ağacı değiştiren bir çalıştırma hiçbirine sayılmaz). Bir `done` okununca, tam o ağaçtaki çalıştırmalar onunla gelir: hüküm satırı, ana ekranda değişikliğin satırında ve diff'inin üstünde, her birini nasıl bittiğiyle adlandırır (`✓ cargo test`, `✗ cargo test: exit 101`) ya da `hiçbir şey koşmadı` der; o zaman değişiklik önce bakılacak bir değişikliktir. Gösterilir, asla kapı değildir: çalıştırması olmayan bir değişiklik yine uygulanabilir; karar sizin. Claude Code'un kendi kabuğu sayılmaz; imece onun hangi ağaçta koştuğunu görmez.
 
 ### Deponun kontrolü {#deponun-kontrolü}
 
-Checkout'unuzda `.imece/check` yoluna bir betik koyun ([worktree kurulum betiği](projects.md#worktree-kurulum-betiği) gibi onaylanan bir kabuk betiği); imece onu, oradan her değişiklik okunduğunda işçinin worktree'sinde çalıştırır, **tam baytlarına evet dediğinizde**: okuduğunuz baytların özel bir kopyası üzerinde `/bin/sh`, temizlenmiş ortam ve `IMECE_REPO` ile `IMECE_WORKTREE`, kendi süreç grubunda, `run` aracının süresince (`--run-timeout`, varsayılan on dakika). Vardığı sonuç değişikliğin üstüne gider: hüküm satırında önce `✓ kontrol` ya da `✗ kontrol · exit 1, 38.7 s`, altında çıktısının son satırları, KARAR BEKLEYEN'de `Δ` satırında kanıtın önünde bir işaret (`✓ kontrol ·`, `✗ kontrol ·`, çalışırken `● kontrol ·`) ve bir günlük satırı (`claude-1: kontrol değişikliğinde başarısız, exit 1, 38.7 s · Tests: 1 failed, 211 passed`). Bir nottur, asla kapı değil: `a` kırmızı bir değişikliği de her değişiklik gibi uygular; karar sizin.
+Checkout'unuzda `.imece/check` yoluna bir betik koyun ([worktree kurulum betiği](projects.md#worktree-kurulum-betiği) gibi onaylanan bir kabuk betiği); imece onu, oradan her değişiklik okunduğunda işçinin worktree'sinde çalıştırır, **tam baytlarına evet dediğinizde**: okuduğunuz baytların özel bir kopyası üzerinde `/bin/sh`, temizlenmiş ortam ve `IMECE_REPO` ile `IMECE_WORKTREE`, kendi süreç grubunda, `run` aracının süresince (`--run-timeout`, varsayılan on dakika). Vardığı sonuç değişikliğin üstüne gider: hüküm satırında, ana ekranda ve diff'in üstünde, önce `✓ kontrol` ya da `✗ kontrol · exit 1, 38.7 s`, diff'te altında bir başarısızlığın çıktısının son satırları, ve bir günlük satırı (`claude-1: kontrol değişikliğinde başarısız, exit 1, 38.7 s · Tests: 1 failed, 211 passed`). Bir nottur, asla kapı değil: `a` kırmızı bir değişikliği de her değişiklik gibi uygular; karar sizin.
 
 - **Evetiniz:** evet demediğiniz bir kontrolü bulan ilk değişiklik KARAR BEKLEYEN'e bir soru koyar (`▶ claude-1: deponun kontrolü .imece/check değişikliklerinde çalışsın mı? enter gösterir`); değişiklik bu arada kontrolsüz bekler ve yamasının üstünde bunu söyler. `enter` baytları gösterir, `a` evet der (bekleyen her değişiklikte hemen, sonra okunan her birinde çalışır), `r` bu çalıştırma için hayır. Evet, baytların SHA-256'sına, dosyanın gerçek yoluna ve `/bin/sh`'ye bağlıdır, imece'nin deposunda saklanır; değişen bir bayt yeniden sorar. Sorular sonraki başlangıçta kapanır; sonraki değişiklik yeniden sorar.
 - **Ağaç başına bir kez:** aynı ağaçla yeniden okunan bir değişiklik (geri gönderilip olduğu gibi yeniden gönderilen) eski sonucunu alır, çalıştırma olmaz; değişen ağaç yeniden çalıştırır. imece kapanırken çalışan ya da sorulan bir kontrol sonraki başlangıçta yeniden çalışır ya da sorulur.
@@ -37,11 +44,11 @@ Checkout'unuzda `.imece/check` yoluna bir betik koyun ([worktree kurulum betiği
 
 ### Maliyeti {#maliyeti}
 
-Her değişiklik işçinin ona ne harcadığını söyler; böylece liderin işe alımını (bir yeniden adlandırmaya güçlü katmandan işçi) ya da tek satırlık bir düzeltmeye 4 $ yakan bir işçiyi değerlendirebilirsiniz: KARAR BEKLEYEN'de `Δ` satırında `$0.84 · 12 dk`, diff'in üstünde `maliyet · $0.84 · 12 dk`, günlükte (`claude-1 değişikliği $0.84 · 12 dk tuttu`) ve dolayısıyla kartın ekranında ve `:why`'da. Rakam işçinin, yardımcıları dahil, son değişikliğinden sonraki ilk isteminden bu `done`'a harcadığı ve çalıştığı süredir (değişikliğin sizi beklediği süre değil); `done` tur ortasında gelir, bu yüzden rakam bir an sonra, turun maliyeti bilinince görünür. Geri gönderilip (`r`, `n`, `b`) yeniden gönderilen bir değişiklik toplanır: `$1.20 · 25 dk · 3 tur`; eski bir değişikliğin yerine geçen daha yeni bir `done` onun maliyetini de taşır, kısmen uyguladığınız bir değişikliğin kalanı da. Bir değişiklik bütünüyle uygulanınca sonraki sıfırdan başlar. Lider bunu işçinin `done`'unda duyar; onu işçinin turu bitince, `[done 12 · $0.84]` başlığıyla alır, böylece katmanlarının neye mal olduğunu öğrenir. Bir solonun her tur sonundaki değişikliği aynısını söyler. Aboneliklerin API fiyatıyla neye geleceği ve bir projede uygulanan değişiklik başına fiyat burada yok.
+Her değişiklik işçinin ona ne harcadığını söyler; böylece liderin işe alımını (bir yeniden adlandırmaya güçlü katmandan işçi) ya da tek satırlık bir düzeltmeye 4 $ yakan bir işçiyi değerlendirebilirsiniz: diff'in üstünde ve ana ekranda değişikliğin ön izlemesinde `maliyet · $0.84 · 12 dk`, günlükte (`claude-1 değişikliği $0.84 · 12 dk tuttu`) ve dolayısıyla kartın ekranında ve `:why`'da. Rakam işçinin, yardımcıları dahil, son değişikliğinden sonraki ilk isteminden bu `done`'a harcadığı ve çalıştığı süredir (değişikliğin sizi beklediği süre değil); `done` tur ortasında gelir, bu yüzden rakam bir an sonra, turun maliyeti bilinince görünür. Geri gönderilip (`r`, `n`, `b`) yeniden gönderilen bir değişiklik toplanır: `$1.20 · 25 dk · 3 tur`; eski bir değişikliğin yerine geçen daha yeni bir `done` onun maliyetini de taşır, kısmen uyguladığınız bir değişikliğin kalanı da. Bir değişiklik bütünüyle uygulanınca sonraki sıfırdan başlar. Lider bunu işçinin `done`'unda duyar; onu işçinin turu bitince, `[done 12 · $0.84]` başlığıyla alır, böylece katmanlarının neye mal olduğunu öğrenir. Bir solonun her tur sonundaki değişikliği aynısını söyler. Bir planla girişte her rakam turların API fiyatıyla neye geleceğidir ve `≈` ile işaretlidir; kimsenin fiyatlamadığı harcama `+?` okunur ([bir rakam ne der](budget-and-limits.md#bir-rakam-ne-der)); bir karta yapılan her denemenin neye mal olduğu ve bir projenin harcamasının ne kadarının uygulandığı ya da boşa gittiği [`:ledger`](budget-and-limits.md#harcamalar)'dadır.
 
 ## Okumak
 
-`enter` diff'in tamamını açar: `j k` kaydırır, `^d ^u ^f ^b` sayfalar, `gg G`, `[ ]` dosyadan dosyaya. Her satır çizilmeden önce temizlenir. Yamanın üstünde:
+`enter` diff'in tamamını, değişikliğin ayrıntısının diff sekmesi olarak açar: kartı, projeyi, işçiyi, süreyi ve maliyeti, dosyaları ve satırları, bir de bekleyen değişiklikler arasındaki yerini (`değişiklik 1 / 3`) söyleyen bir baş satırı; `tab` konuşmasına ve log'una geçer. `j k` kaydırır, `^d ^u ^f ^b` sayfalar, `gg G`, `[ ]` dosyadan dosyaya. Her satır çizilmeden önce temizlenir. Yamanın üstünde:
 
 - hüküm satırı: `✓ onaya hazır` ya da `! önce bak`, sonra neyin kanıtladığı (çalıştıysa deponun [kontrolü](#deponun-kontrolü), ağacındaki çalıştırmalar ya da hiçbir şeyin koşmadığı), kartının sahip olduğu yollara göre dosyaları, bekleyen hangi başka değişiklikle çakıştığı, reddedilen bir uygulama, Lonca'nın bütün göstermediği bir yama ve onayından sonra Lonca'nın ne çalıştıracağı ([değişiklik görünümü](../screen/changes.md#yamanın-üstündekiler));
 - kontrolün durumu, henüz bitmediyse: çalıştığı ya da onayınızı beklediği;
@@ -105,9 +112,18 @@ Bir değişiklikte `>`, işçisine bir mesaj başlatır: imleç ardında `@claud
 
 Seçim yamanın hash'ine karşı yalnız bu çalıştırma için tutulur. Bir parçanın içinden tek satırlar seçilemez.
 
+## Bir değişikliğin ardındaki kart
+
+Kart değişikliğini izler ([kartın denemeleri](messages-and-board.md#kartın-denemeleri)). Değişiklik sizi beklerken kart panoda (`:board`) İNCELENECEK'te durur; geri gönderilince bir tur daha ÜZERİNDE'dir; bütünüyle uygulanınca BİTTİ. Lonca'da evetinizden sonra merge kuyruğunda DOĞRULANIYOR'dur, gövdeye girince BİTTİ. Ondan başka gördükleriniz:
+
+- **Bir deneme.** Yeniden alınan bir kart bir deneme daha demektir: panoda ve ekranında ` · 2. deneme`, `:ledger`'daki satırında `deneme 2`.
+- **Başarısız bir kart ya da geç bir `done`** değişiklik göstermez: işçi kartı yapamadığını söylemiştir (panoda `✕`), ya da bu arada kartı başka bir denemeye geçmiş ya da geri çekilmiştir. Hangisi olduğunu günlük söyler.
+- **Devre kesici.** Üçüncü denemesinde başarısız olan ya da değişikliği Lonca'nın kuyruğundan üçüncü kez geri dönen bir kart, ana ekranda **sorular** altında sizi bekler: `3 denemede başarısız: bir deneme daha, ya da kart başarısız sayılır`, `değişikliği 3 kez geri döndü: bir tur daha, ya da kart başarısız sayılır`. `a` bir tane daha verir, `r` kartı kesin başarısız sayar. Sizin geri göndermeniz (bir ret, notlar, bir çakışma) her zaman geçer: zaten karar veriyorsunuz.
+- **Geri çekilmiş.** Liderin geri çektiği bir kart bitmiştir (panoda `–`); onun için gelen bir `done` değişiklik göstermez.
+
 ## Bu sırada worktree
 
-- Bir işçinin satırı worktree'sinin nerede durduğunu söyler: `⎇ fix-parser ↑2 ↓1 +12 −3`. `⎇ ad` ajanın açtığı bir daldır (detached iken yok), `↑N` HEAD'inizde olmayan kendi commit'leri (imece'nin işaretleri sayılmaz), `↓N` onda olmayan HEAD commit'leriniz, `+N −M` sonraki `done`'ının size vereceği satırlar, izlenmeyen dosyalar dahil. Her parça yalnız söyleyecek bir şey varken gösterilir; oturum başlarken, bir tur bitince, bir uygulamadan ve bir taşımadan sonra ve tur ortasında her 15 saniyede okunur. Çalıştırmalar arasında saklanmaz.
+- Bir işçinin kartının ekranındaki satırı (`#N`, ayrıntısının log sekmesi) worktree'sinin nerede durduğunu söyler: `⎇ fix-parser ↑2 ↓1 +12 −3`. `⎇ ad` ajanın açtığı bir daldır (detached iken yok), `↑N` HEAD'inizde olmayan kendi commit'leri (imece'nin işaretleri sayılmaz), `↓N` onda olmayan HEAD commit'leriniz, `+N −M` sonraki `done`'ının size vereceği satırlar, izlenmeyen dosyalar dahil. Her parça yalnız söyleyecek bir şey varken gösterilir; oturum başlarken, bir tur bitince, bir uygulamadan ve bir taşımadan sonra ve tur ortasında her 15 saniyede okunur. Çalıştırmalar arasında saklanmaz.
 - **HEAD'i izlemek:** kendi commit'lerinin hepsi imece'nin olan temiz bir worktree, turlar arasındaki bir işçinin her isteminden önce HEAD'inize taşınır (yardımcılar da), günlüğe `çalışma ağacı … yerine HEAD … oldu` yazılır. Commit edilmemiş değişiklikleri ya da kendi commit'leri olan yerinde kalır ve günlük söyler. Böylece uyguladığınızı commit edince işçiler yeni HEAD'inizden devam eder. Kendi başlangıç noktasından işe alınan bir işçi (`hire`'ın `from`'u: bir dal, bir etiket, bir commit, bir pull request için `#N`) izlemez: worktree'si başladığı yerde kalır, değişikliği o noktaya göredir ve uygulaması aynı üç yollu uygulamadır ([takım](team.md)).
 - Elle silinmiş ama git'in hâlâ listelediği bir worktree, kaybolanla ve `git worktree prune` ile reddedilir; ajan o nedenle durur.
 
@@ -142,6 +158,6 @@ Bir kart politikanın adlandırılmış denetimlerinden fazlasını isteyebilir 
 ## Ayrıca bakınız
 
 - [Değişiklikler ekranı](../screen/changes.md): diff görünümündeki her tuş.
-- [KARAR BEKLEYEN](../screen/waiting.md): `W`, `S`, öğelerin sırası.
+- [Ana ekran](../screen/home.md): `W`, `S`, karar bekleyenlerin sırası.
 - [Tek düzeltme](../scenarios/one-fix.md) ve [notlarla inceleme](../scenarios/review-with-notes.md).
 - [Güvenlik](../concepts/security.md): kapı neden sizin.

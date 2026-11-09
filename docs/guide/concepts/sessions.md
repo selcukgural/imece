@@ -39,7 +39,7 @@ Claude Code tries a failed API call again by itself first, up to ten times (thre
 | Claude Code says | imece |
 | --- | --- |
 | overloaded, a server error (5xx), a lost connection, a rate limit | a passing error: the journal says `claude-1 hit a API error: … · imece tries again in 30 s (1/3)`, the row counts down `↻ 1/3 in 25 s`, and when the time comes the session is told to carry on where it stopped. The second try is 2 min after the next failure, the third 8 min after that. After the third, it waits for you. |
-| signed out, a refused key, a used-up quota, a bill, a plan's usage limit | the account's: it waits for you at once, as `■` in [TO DECIDE](../screen/waiting.md). |
+| signed out, a refused key, a used-up quota, a bill, a plan's usage limit | the account's: it waits for you at once, in TO DECIDE on [Home](../screen/home.md). |
 | anything else (a refused request, a full context) | the journal says the turn stopped, as before. |
 
 The session lives on through a failed turn, and Claude Code keeps the failed prompt in it, so a try sends a short "carry on", never the prompt again. A good turn, your message, or mail to the agent starts the count again; a session that ends takes a waiting try with it. In the demo, every third thing you tell an agent fails on an overloaded API and is tried again, every seventh on a refused key.
@@ -80,7 +80,7 @@ A start that remembers an earlier run opens one window before anything moves, WH
  WHERE YOU LEFT OFF · 3 h 20 min ago
  $12.40 of $50.00 spent; every agent sleeps until spoken to
  imece: 4 agents, 2 open cards
- 2 wait for you:
+ ! 2 to decide:
    Δ claude-1 finished: parser tokens (3 files, +34 −8)
    ? claude-2 asks you: keep the old CLI flag?
  turns cut short when imece closed: claude-3

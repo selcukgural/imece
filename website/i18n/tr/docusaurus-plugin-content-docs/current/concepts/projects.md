@@ -1,11 +1,11 @@
 ---
 title: Projeler
-description: Tek imece'de birkaç checkout - :open, :close, :rename, proje başına bir lider, ekipte katlanan gruplar, :pin ve bir işçinin worktree'sine kopyalanan yok sayılan yolların proje başına :copy listesi.
+description: Tek imece'de birkaç checkout - :open, :close, :rename, proje başına bir lider, ana ekranda katlanan gruplar, :pin, bir işçinin worktree'sine kopyalanan yok sayılan yolların proje başına :copy listesi ve Lonca'daki bir proje.
 ---
 
 # Projeler
 
-Bir proje, kendi lideri ve işçileri olan bir git checkout'udur. imece, içinde çalıştığı checkout'la ilk proje olarak başlar (lider `lead`); daha fazlasını ekrandan açarsınız ve her biri ekipte bir gruptur. Tek bütçe ve tek bus hepsine hizmet eder.
+Bir proje, kendi lideri ve işçileri olan bir git checkout'udur. imece, içinde çalıştığı checkout'la ilk proje olarak başlar (lider `lead`); daha fazlasını ekrandan açarsınız ve her biri ana ekranda bir gruptur. Tek bütçe ve tek bus hepsine hizmet eder.
 
 ## Açmak, kapatmak, yeniden adlandırmak
 
@@ -28,28 +28,28 @@ Bir proje, kendi lideri ve işçileri olan bir git checkout'udur. imece, içinde
 
 Bir solonun modeli ve çabası solo başına sizin seçiminizdir.
 
-## Ekipte gruplar
+## Ana ekranda gruplar
+
+Birden çok proje açıkken ana ekranın ÇALIŞAN kısmında her birinin bir başlığı, altında da işçileri vardır; KARAR BEKLEYEN'in her satırı kartından önce projesini adlandırır:
 
 ```text
- EKİP
- ▴ api        ! 1 bekliyor
-   ● lead-api        koordine ediyor
-   ● claude-1        #4 auth: refresh      +12 −3
- ▸ shop       2 çalışıyor
- ▾ imece
-   ○ lead            boşta
-   ✓ claude-2         bitti, henüz bakılmadı
+ ÇALIŞAN 3
+ ▾ shop-api      ░░░░░░░░ 0/6   ! 4 bekliyor   2 çalışıyor  $0.29  ~/src/shop-api
+ ● shop-api    #3   Fiyat listesi önbelleği   Değişikliği yap · 1 dk
+ ▾ mobile-app    ░░░░░░░░ 0/6   ! 3 bekliyor   2 çalışıyor  $0.29+?  lonca mobile-app 9d3f1c2 · 3 be
+ ● mobile-app  #9   Sipariş testleri          Testleri çalıştır · 9 dk
 ```
 
-- Her proje kendi lideri olan bir gruptur. `h` `l` (ya da `←` `→`, başlıkta `enter`) bir grubu katlar ve açar; `za` değiştirir, `zM` her işçiyi katlar, `zR` hepsini açar (`:fold`, `:unfold`).
-- Katlanmış bir proje tek satırdır ve o satır yine sizi bekleyeni (`! 1 bekliyor`) ya da ne yaptığını (`2 çalışıyor`) gösterir.
-- Ekip kısa kalınca sakin işçiler alttan yukarı `… N agent yolunda` içine katlanır; sizi bekleyen işçiler en son, sabitlenmiş bir proje hepsinden sonra katlanır.
-- Birkaç proje açıkken günlük ve gelen kutusu satırları ajanın adının önünde projenin adını taşır.
-- Komut satırındaki düz metin **seçili** projenin liderine gider. Seçim, `/`'nin kime yazdığına karar verir.
+- Bir başlık projenin bitmiş kartlarını tümüne oranla, ondan sizi bekleyeni, kimin çalıştığını, ne harcadığını ve klasörünü söyler (Lonca'daysa onun yerine deposunun satırını).
+- `h` `l` (ya da `←` `→`) eldeki satırın projesini katlar ve açar; `za` değiştirir, `zM` her projeyi katlar, `zR` hepsini açar (`:fold`, `:unfold`). Katlanmış bir proje yalnız başlığıdır ve o başlık yine neyin beklediğini ve kimin çalıştığını söyler.
+- Bir başlıkta `enter` liderin ayrıntısını açar; `[` `]` ana ekranı tek projeye daraltır ve yine hepsine açar.
+- Hiçbir şey kendiliğinden katlanmaz. Bir ajanın satırında ya da bir başlıkta `s` (`:settle`) onu size ihtiyacı olana dek gizler; ÇALIŞAN başlığı gizlenenleri sayar (`· 2 gizli (:unsettle)`), `:unsettle` geri getirir.
+- Birkaç proje açıkken günlük satırları ajanın adının önünde projenin adını taşır.
+- Komut satırındaki düz metin eldeki projenin liderine gider: `/`'nin kime yazdığına eldeki satır karar verir.
 
 ## `:pin [AD]`
 
-`:pin` adı verilen projeyi, yoksa eldekini ekibin en üstüne sabitler; `:pin` yine sabitlemeyi kaldırır. Sabitlenmiş projeler önce, sonra kalanı gelir; her grup açılış sırasıyla. Sabitlenmiş bir projenin başlığı `▴` taşır. Sabitleme sizindir ve çalıştırmayı aşar (depoda saklanır). `:` menüsü `:pin`'in hangi projeye etki edeceğini gösterir, zaten sabitse `▴` ile.
+`:pin` adı verilen projeyi, yoksa eldekini ana ekranın ÇALIŞAN kısmının en üstüne sabitler; `:pin` yine sabitlemeyi kaldırır. Sabitlenmiş projeler önce, sonra kalanı gelir; her grup açılış sırasıyla. Sabitlenmiş bir projenin başlığı `▴` taşır. Sabitleme sizindir ve çalıştırmayı aşar (depoda saklanır). `:` menüsü `:pin`'in hangi projeye etki edeceğini gösterir, zaten sabitse `▴` ile.
 
 Proje başına bir renk yapılmadı: temalar renkleri role göre adlandırır ve konuşmacı renklerini farklı sıralar; adıyla seçilen bir renk önce her temada adlandırılmış bir palet gerektirirdi.
 
@@ -150,6 +150,30 @@ Lonca'daki bir projede işe alınan işçi, worktree'de değil deponun bir **wor
 
 Lonca'nın işbirlikçi kipinde hiçbir oturum gözlenmiş sayılmaz, bu yüzden her öneri seni bekler. Her işçinin oturumu, Lonca'nın istediği gibi harness'ını, yani Claude Code'u adlandırır: sertleştirilmiş bir kurulum gözlem seviyesini yalnızca oturumun adlandırdığı harness'a tanır. Kritik bir yoldaki değişikliği (`Cargo.toml`, kilit dosyaları, `package.json`, `.github/**`, `build.rs`) Lonca'nın varsayılanı reddeder, ama `:lonca import` ile oluşturulan depoda o da diğerleri gibi seni bekler, Δ'da gerekçesi `critical_path:Cargo.toml` olur. Web'i ya da ağa çıkan bir komutu kullanmış işçi orada reddedilmeye devam eder, çünkü okuduğu şey ona ne yazacağını söylemiş olabilir: takıldığını söyler, o değişikliği sen yaparsın. Lonca'nın varsayılan politikasındaki bir depoda da öyle. `lonca.toml`'daki `unobserved_is_tainted = false` önerileri kimse bakmadan birleştirirdi, bu yüzden imece öyle ayarlanmış bir depoyu, yanıt vermeyen depo gibi kapatır: `⌀ lonca yok` ve nedeni.
 
+### `:lonca` penceresi
+
+Lonca'daki bir projede yalın `:lonca`, son bakışın daemon'dan okuduğunu ekranın üstünde bir pencerede açar:
+
+```text
+┌LONCA · mobile-app────────────────────────────────────────────────────────────────────────┐
+│mobile-app mobile-app Lonca deposunda: trunk 9d3f1c2, insan bekleyen 3                    │
+│                                                                                          │
+│İNSAN BEKLEYEN · 3                                                                        │
+│▶    6  claude-2  app/net/ApiClient.kt, app/cart/CartViewModel.kt  Δ gösteriliyor  temeli │
+│     8  claude-3  app/cart/CartViewModel.kt, app/test/CartViewModelTest.kt  Δ gösteriliyor│
+│     1  ayse      app/cart/CartViewModel.kt  temeli gövdenin gerisinde                    │
+│                                                                                          │
+│TUTULAN · 0                                                                               │
+│tutulan yok                                                                               │
+│ j k  gezin   enter  değişikliği aç   esc  geri                                           │
+└──────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+- **İNSAN BEKLEYEN** deponun evet bekleyen her önerisini listeler, başkasınınkileri de: numarası, kimin tuttuğu (burada bir işçinin adı, yoksa Lonca'daki adı), yolları, ana ekranda bir değişiklik olarak duruyorsa `Δ gösteriliyor`, o zamandan beri gövde ilerlediyse `temeli gövdenin gerisinde` (kuyruk onu evetinizden sonra birleştirir).
+- **TUTULAN** şu an tutulan lease'leri satır satır listeler: kimin tuttuğu, dosyası ve içindeki sembol. Kod haritası (`:code`) aynı lease'leri dosya dosya gösterir.
+- `j` `k` gezinir; değişiklik olarak gösterilen bir öneride `enter` o değişikliği açar; başka birinde açılacak bir değişiklik olmadığını ve nedenini söyler (bu projenin kimsesinin değil, ya da işçisinin turu sürüyor). `esc` ya da `q` kapatır.
+- Lonca dışında `:lonca` projenin nasıl durduğunu eskisi gibi söyler.
+
 Çalışma kopyan deponun bir istemcisidir, bu yüzden trunk onsuz ilerler. [`:sync`](../reference/commands.md#sync) onu getirir: `lonca fetch` trunk'ı `refs/lonca/trunk`'a koyar, dalın da fast-forward olabiliyorsa ilerler. imece dalını asla merge, rebase ya da reset etmez: kendi commit'lerin varsa hiçbir şey kımıldamaz ve günlük bunu söyler, yoldaki iş ise git'in kendi sözleriyle durdurur.
 
 ## Demonun kopyaları
@@ -158,7 +182,7 @@ Lonca'nın işbirlikçi kipinde hiçbir oturum gözlenmiş sayılmaz, bu yüzden
 
 ## Ayrıca bakınız
 
-- [Ekip](../screen/salon.md): katlama, dikkat sırası, `f`.
+- [Ana ekran](../screen/home.md): liste, katlama, gizleme.
 - [Birçok proje](../scenarios/many-projects.md): işlenmiş bir örnek.
 - [Oturumlar](../concepts/sessions.md): deponun proje başına tuttuğu.
 - [Komutlar](../reference/commands.md).

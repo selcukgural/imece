@@ -37,13 +37,13 @@ On the first start ever (the store remembers no earlier run), a window opens bef
 │ Keys to start with:                                                              │
 │   /  i            write to the leader: say what you want built                   │
 │   @name text      write to one agent                                             │
-│   W               the next thing waiting for you: a change, a question           │
+│   W               the next thing to decide: a change, a question                 │
 │   …                                                                              │
 │ any key: close · :welcome shows this again                                       │
 └──────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-At the top is imece's mark, five hands round one job, beside its version, what it is and the project at hand with who heads it. Where it comes on the screen its dots come one a beat, the job last (under two seconds); any key shows it whole at once, and so do [`:motion off`](../reference/commands.md#motion-offcalmfull), another window and SSH. On a screen too narrow for it the words stand alone, and on one too short the window goes without them. The team shows the same mark in its free rows while no project has a worker yet. The terminal's title carries the mark too, `⁙ imece`, while all is calm.
+At the top is imece's mark, five hands round one job, beside its version, what it is and the project at hand with who heads it. Where it comes on the screen its dots come one a beat, the job last (under two seconds); any key shows it whole at once, and so do [`:motion off`](../reference/commands.md#motion-offcalmfull), another window and SSH. On a screen too narrow for it the words stand alone, and on one too short the window goes without them. Home shows the same mark in its free rows while no project has a worker yet. The terminal's title carries the mark too, `⁙ imece`, while all is calm.
 
 The line says Claude Code's version and whether it is signed in, or how to sign in: `claude auth login`. Signed in through a claude.ai plan it says `signed in, a plan · ≈ API prices`: the dollars imece shows are what the turns would cost at API prices, marked `≈` ([what a figure means](../concepts/budget-and-limits.md#what-a-figure-means)). imece asks it itself (`claude auth status`), on a thread of its own, without the network and without spending; it says `checking…` until its answer comes, `not on PATH` when the program is not there.
 
@@ -72,7 +72,7 @@ The first time there is nothing to show. On a later start that remembers an earl
 ┌ WHERE YOU LEFT OFF · 2 h 10 min ago ────────────────────┐
 │ $3.10 of $50.00 spent; every agent sleeps until spoken to │
 │ imece: 3 agents, 1 open cards                             │
-│ 1 wait for you:                                           │
+│ ! 1 to decide:                                            │
 │ Δ 11:42 claude-1 finished: parser: accept trailing commas │
 │ the last lines before:                                    │
 │ 11:42 claude-1 finished: change ready · 2 files +31 −4  │
@@ -85,19 +85,18 @@ It lists the pot, one line per open project, the oldest items still waiting for 
 
 ## Home
 
-What opens is [Home](../screen/home.md): what is your turn on top, what is at work under it, whatever row is at hand read beside it. With nothing yet it says so.
+What opens is [Home](../screen/home.md): what is yours to decide on top (TO DECIDE), who is at work under it (AT WORK), and from 120 columns the row at hand read beside the list. With nothing yet it says so, and imece's mark stands in the free rows:
 
 ```text
- imece   all idle │ spent $0.00 of $50.00  10:02
- all   imece                                   / writes to lead
- Nothing needs you and nobody is at work. / writes to the lead.
+ imece  your-checkout │ $0.00 of $50.00  10:02
+Nothing needs you and nobody is at work. / writes to the lead.
 
- enter  open   @  write to this agent   j k  move   [ ]  project   /  write to the lead   ?  help
+ home · your-checkout    enter  open   s  hide   @  write to this agent   ?  help
 ```
 
-The team is one command away, `:salon`: the guild on the left, TO DECIDE and the JOURNAL on the right.
+The header has four things: the open projects, what is to decide (nothing yet), the pot (spent of the budget) and the time. The bottom line is the status line: where you are, then at most three keys for what is at hand; `?` lists the keys of the screen you are on, `?` again every key.
 
-The team is the leader alone (`○ lead`, idle until you write). The journal's first line, on the team, says, once per start that is not `--confine strict`, that isolation is not imece's.
+The team is the leader alone, idle until you write; an idle leader is not listed. The journal (`J` opens it over the screen, `esc` closes it) says on its first line, once per start that is not `--confine strict`, that isolation is not imece's.
 
 ## Write to the leader
 
@@ -110,63 +109,66 @@ Press `/` (or `i`). The footer becomes the composer, ` › to lead: `. Type what
 
 A line longer than the screen goes on in the next row. Before you type, the footer says `enter send · ⇧enter new line · esc cancel`.
 
-Plain text goes to the leader of the selected project. `@claude-1 text` would go to one agent. A line that starts with `/` after the prompt is the agent's own command (`/cost`, `/compact`, `/clear`), not a message. `⇧enter` (or `\` `enter`) starts a new line in a longer request; the footer says which works in your terminal. `tab` completes names after `@` and commands after `:`.
+Plain text goes to the leader of the project at hand. `@claude-1 text` would go to one agent. A line that starts with `/` after the prompt is the agent's own command (`/cost`, `/compact`, `/clear`), not a message. `⇧enter` (or `\` `enter`) starts a new line in a longer request; the footer says which works in your terminal. `tab` completes names after `@` and commands after `:`.
 
 ## What the leader does
 
 The leader reads the checkout (it has read tools, the web, and read-only commands; it cannot write: it works in your checkout, where a write would skip the review). It splits the request into cards, posts them, and **hires** a worker with its `hire` tool when a card needs hands. It picks a **tier**, not a model: `cheap` for small mechanical work, `standard` (the default) for ordinary fixes, `strong` for cross-cutting design; they stand for haiku, Claude Code's default and opus. Up to `--agents` workers (default 4).
 
 ```text
-   ● lead      coordinating                                         $0.08
-   ● claude-1  #1   accept a trailing comma   thinking…
+ AT WORK 1
+ ● #1   accept a trailing comma   Read the code around it
 ```
 
-The journal says `lead posted #1 accept a trailing comma`, `lead hired claude-1 (default model)`, `⇄ lead → claude-1 [assign]: #1 …`. The leader's closing text comes to you as a reply (`»`) in TO DECIDE: `enter` reads it whole, `r` dismisses it, or you just write back.
+The journal says `lead posted #1 accept a trailing comma`, `lead hired claude-1 (default model)`, `⇄ lead → claude-1 [assign]: #1 …`. The leader's closing text comes to you as a reply in TO DECIDE, under questions (`answered: …`): `enter` reads it whole, `r` dismisses it, or you just write back.
 
 A tier model your account does not have fails its first turn; imece then restarts that worker on the standard model and the journal says `claude-1: model opus is not available here, using the default`.
 
 ## A worker's row
 
 ```text
-   ● claude-1  #1   accept a trailing comma   editing src/csv.rs   $0.41  +18 −3
+ ● #1   accept a trailing comma   Make the change · 4 min
 ```
 
-From left to right: the glyph (`●` working, `○` idle, `!` something of its waits for you, `✓` done and not seen yet, `■` stuck: blocked or its session stopped), the name, its card, what it does now, what it has spent, and where its worktree stands: `+18 −3` are the lines its next `done` would hand you, `⎇ name` a branch it made, `↑N` its own commits, `↓N` your checkout's newer commits. A worker with an open permission ask shows `⚑ asks to run`, and the ask is an item in TO DECIDE: `a` allows it, `r` refuses it (routine commands, the build, the tests, git's reading commands, run on their own).
+The row is the task, not the agent. From left to right: the glyph (`●` working, `○` idle, `!` it needs you, `✓` done, `■` stuck: blocked or its session ended), its card and title, the step of its to-do list it is on (or what it does now), and since when. A worker that asks for your yes leaves AT WORK while it waits: its ask is a row of its own in TO DECIDE, under permissions (`run Bash: …?`), where `a` allows it and `r` refuses it (routine commands, the build, the tests, git's reading commands run on their own).
 
-`enter` on the row opens the worker's focus: its card's story (intent, assumptions, decisions, talk, evidence, changes). `enter` again (or `t`) opens the trace, the raw stream of its session. `esc` goes back.
+`enter` on the row opens the worker's work on its log tab: its card's story (intent, assumptions, decisions, talk, evidence, changes) and its to-do list; `t` opens the trace, the raw stream of its session. The head line names its card, project, the agent, its time and cost; `tab` goes to the next tab, `esc` goes back.
 
 ## The change (Δ)
 
-When the worker sends its `done`, imece reads its worktree as one patch and puts it in TO DECIDE. The journal says `claude-1 finished: change ready · 2 files +31 −4`, the header says `! 1 waiting for you`, the terminal's title becomes `! imece · 1 waiting`.
+When the worker sends its `done`, imece reads its worktree as one patch and puts it in TO DECIDE. The journal says `claude-1 finished: change ready · 2 files +31 −4`, the header says `! 1 to decide`, the terminal's title becomes `! imece · 1 to decide`. On Home the change is a row under changes:
 
 ```text
- TO DECIDE (1) ───────────────────────────────────────────────────
- Δ 10:19 claude-1 finished: parser: accept a trailing comma (2 files, +31 −4) · ✓ ran clean on this tree: cargo test
-   enter see the diff · a approve · r send back
+ TO DECIDE 1 change
+ changes                                                                                 1 ready to approve
+▸! #1   accept a trailing comma   ✓ cargo test · 2 files +31 −4, both inside #1     a  approve   r  send back
 ```
 
-The end of the line is the evidence: the runs imece's `run` tool saw on exactly this tree. `✓ ran clean on this tree: cargo test` (green), `✗ failed on this tree: …` (red), or `no run on this tree` (a warning). It is shown, never a gate: you decide.
+The row is the change's verdict: the runs imece's `run` tool saw on exactly this tree (`✓ cargo test`, `✗ cargo test: exit 101`, or `nothing ran`), its files against the paths its card owns, and any other waiting change it overlaps. One proved clean, inside its card's paths and overlapping nothing is ready to approve, and the ready ones come first. It is shown, never a gate: you decide.
 
-- `w` goes straight to TO DECIDE; `tab` steps between the panels.
-- `W` opens the next waiting item from anywhere (a card's screen, a diff, the board); again, the one after. `S` puts the item at hand off till later and opens the next.
-- `enter` on the change opens the whole diff:
+- `W` opens the next thing to decide from anywhere (a card's screen, a diff, a window); again, the one after. `S` puts the item at hand off till later and opens the next.
+- `enter` on the change opens it on its diff tab:
 
 ```text
- CHANGE · claude-1 · 2 files +31 −4 · accept a trailing comma ─────────────
- ✓ cargo test
- source +24 −4 (1) · tests +7 −0 (1)
- src/csv.rs +24 −4
- tests/csv.rs +7 −0
- --- a/src/csv.rs
- +++ b/src/csv.rs
- @@ -41,7 +41,9 @@ fn fields(line: &str) -> Vec<&str> {
- -    line.split(',').collect()
- +    let line = line.strip_suffix(',').unwrap_or(line);
- +    line.split(',').collect()
- j k scroll · [ ] file · a approve · r send back · c note · n send notes · x choose hunk · > quote · w wrap
+#1 accept a trailing comma · your-checkout · claude-1 · 6 min · $0.41 · 2 files +31 −4       change 1 of 1
+
+diff · talk · log                                                                             tab switches
+┌────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│✓ ready to approve · ✓ cargo test · 2 files, both inside #1                                             │
+│ cost · $0.41 · 6 min                                                                                   │
+│ source +24 −4 (1) · tests +7 −0 (1)                                                                    │
+│ src/csv.rs +24 −4                                                                                      │
+│ tests/csv.rs +7 −0                                                                                     │
+│src/csv.rs                                                                                              │
+│@@ -41,7 +41,9 @@ fn fields(line: &str) -> Vec<&str> {                                                  │
+│-    line.split(',').collect()                                                                          │
+│+    let line = line.strip_suffix(',').unwrap_or(line);                                                 │
+│+    line.split(',').collect()                                                                          │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+ change · your-checkout · #1 accept a trail…    a  approve   r  send back   c  note   esc  back   ?  help
 ```
 
-`j` `k` scroll, `^d` `^u` half a page, `gg` `G` the ends, `[` `]` jump file to file, `w` wraps long lines. Several files are listed above the patch (six at most), and when they are of more than one kind, the lines by kind first.
+The head line names the card, the project, the worker, its time and cost, the files and lines, and where the change stands among those waiting. The diff starts with the verdict line, `✓ ready to approve` or `! look first` and why, then what the change cost, its lines by kind when there are several kinds, and its files (six at most). `j` `k` scroll, `^d` `^u` half a page, `gg` `G` the ends, `[` `]` jump file to file, `w` wraps long lines, `tab` goes to the talk and the log.
 
 ### `a`: approve
 
@@ -191,7 +193,7 @@ Then commit as you always do: `!git commit` runs in your own shell with the scre
 Once the screen is gone, imece leaves one line in your terminal, what waits for you first:
 
 ```text
-⁙ imece · 1 waiting for you · 3 agents asleep · $2.40 spent this run · resume: imece
+⁙ imece · 1 to decide · 3 agents asleep · $2.40 spent this run · resume: imece
 ```
 
 A part with nothing to say is left out; the demo's line ends `the demo keeps nothing`.
@@ -205,7 +207,7 @@ The next start in the same checkout shows the same screen, every agent asleep (`
 - [How imece works](../concepts/how-imece-works.md)
 - [Changes](../concepts/changes.md) and [the change screen](../screen/changes.md)
 - [Approvals and questions](../concepts/approvals-and-questions.md)
-- [TO DECIDE](../screen/waiting.md)
+- [Home](../screen/home.md)
 - [Sessions](../concepts/sessions.md)
 - [Keyboard](../screen/keyboard.md)
 - [Scenario: one fix](../scenarios/one-fix.md)

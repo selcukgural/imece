@@ -5,7 +5,7 @@ description: Lidersiz, kendinizin sürdüğü bir oturum - :solo ve --solo, seç
 
 # Solo oturumlar
 
-Takım, imece'nin alışılmış biçimidir: bir lider checkout'unuzu okur, işçi alır, onların değişiklikleri incelemeniz için size gelir. **Solo** öteki biçimdir: lidersiz ve takımsız, adını verdiğiniz model ve çabada, kendinizin sürdüğü tek bir ajan. imece'yi değerli kılanı (worktree, `Δ` kapısı, bütçe, ekip, depo) korur; tek bir oturumun gerek duymadığını (pano, kartlar, işçi alma) dışarıda bırakır. Takımların yanında istediğiniz kadar açın: takım, solo, takım, solo, solo; her biri ekipte bir grup.
+Takım, imece'nin alışılmış biçimidir: bir lider checkout'unuzu okur, işçi alır, onların değişiklikleri incelemeniz için size gelir. **Solo** öteki biçimdir: lidersiz ve takımsız, adını verdiğiniz model ve çabada, kendinizin sürdüğü tek bir ajan. imece'yi değerli kılanı (worktree, `Δ` kapısı, bütçe, ekip, depo) korur; tek bir oturumun gerek duymadığını (pano, kartlar, işçi alma) dışarıda bırakır. Takımların yanında istediğiniz kadar açın: takım, solo, takım, solo, solo; her biri ana ekranda bir grup.
 
 ## Açmak
 
@@ -30,7 +30,7 @@ Flaş neyin açıldığını söyler: `notes solo oturum olarak açıldı (~/src
 
 ## Solo nedir
 
-- **Kendi başına bir proje.** Ekip onu tek ajanlı bir grup olarak gösterir: `solo-AD` (imece'nin içinde başladığı projeyse `solo`). Satırı seçimi adlandırır: `○ solo-notes  opus@xhigh  idle`. `:close`, `:rename` (ajan `solo-YENİAD` olur), `:pin` ve `:copy` her projede olduğu gibi çalışır.
+- **Kendi başına bir proje.** Ana ekran onu tek ajanlı bir grup olarak gösterir: `solo-AD` (imece'nin içinde başladığı projeyse `solo`), ÇALIŞAN altında adıyla listelenir: `○ solo-notes  boşta`. `:close`, `:rename` (ajan `solo-YENİAD` olur), `:pin` ve `:copy` her projede olduğu gibi çalışır.
 - **Kendi worktree'si.** Bir işçi gibi solo da checkout'un imece'nin durum dizini altındaki bir git worktree'sinde yazar, asla checkout'unuzda değil. Bir checkout'taki iki solo ve kendi düzenlemeleriniz hiç çakışmaz. Worktree projenin kimliğiyle adlandırılır (`solo-3`), bu yüzden projeyi yeniden adlandırmak onu korur. Satırı, bir işçininki gibi worktree'nin nerede durduğunu gösterir (`⎇ dal ↑kendi ↓checkout +N −M`).
 - **İşçinin araçları.** Confine kadranı altında solo işçinin aldığını alır: `standard`'da okuma, yazma, kabuk, web arama ve getirme; `strict`'te dosya araçları ve imece'nin `run`'ı; `open`'da kendi kurulumunuz ([Claude Code](claude-code.md)). Bus'ta `send` (size ve yardımcılarına), `run` ve yardımcılar için `hire` vardır. `post`, `board` ya da `claim` yok: pano bir takımındır.
 - **Her yanıttan sonra Δ.** Solo için kimse `done` göndermez. Size bir yanıtla biten her turda imece worktree'sini okur; ağaç HEAD'inizden farklıysa değişiklik, yanıtın ilk satırıyla adlandırılmış bir `Δ` olarak SİZİ BEKLEYENLER'de durur; `a` checkout'unuza uygular, `r` reddeder, `c` ve `n` not gönderir, `x` parça seçer; tıpkı bir işçide olduğu gibi ([değişiklikler](changes.md)). Daha yeni bir yanıtın değişikliği eskisinin yerini alır. Söyleyecek bir şeyi olmayan bir tur (bir `/komut`) hiçbir şey okumaz.
@@ -40,7 +40,7 @@ Flaş neyin açıldığını söyler: `notes solo oturum olarak açıldı (~/src
 
 ## Git'siz bir klasörde
 
-Solo, git checkout'u olmayan bir klasörde ya da `git init` yapılmış ama henüz hiçbir şey commit'lenmemiş bir klasörde de çalışır: ilk dosyasından önceki yeni bir proje ya da git'siz tuttuğunuz bir klasör. Orada **doğrudan klasörde** çalışır: worktree yoktur, yani yazdığı anında dosyalarınızdadır, ve yanıtlarından sonra `Δ` gelmez (karşılaştırılacak bir taban, uygulanacak bir şey yoktur). Yardımcıları da orada çalışır. Projenin başlığı bunu uyarı renginde söyler, `▾ notes  ⌀ git yok`, ve günlük bunu açılışta ve her başlangıçta söyler: `solo-notes doğrudan ~/src/notes içinde çalışıyor: burada git yok, düzenlemeleri Δ olarak incelenmez (ilk commit'ten sonra bir sonraki açılışta kendi worktree'si olur)`. Ajana da aynısı söylenir, ve `git init` ya da commit'i yalnız siz isteyince yapması. Böyle bir klasörde git'ten hiçbir şey çalışmaz: satırında worktree durumu yok, dosya tamamlama yok, `:commit` `this folder is not a git checkout with a commit` der, `:copy`'nin kopyalayacağı bir yer yoktur. Git'in kurulu olması bile gerekmez.
+Solo, git checkout'u olmayan bir klasörde ya da `git init` yapılmış ama henüz hiçbir şey commit'lenmemiş bir klasörde de çalışır: ilk dosyasından önceki yeni bir proje ya da git'siz tuttuğunuz bir klasör. Orada **doğrudan klasörde** çalışır: worktree yoktur, yani yazdığı anında dosyalarınızdadır, ve yanıtlarından sonra `Δ` gelmez (karşılaştırılacak bir taban, uygulanacak bir şey yoktur). Yardımcıları da orada çalışır. Projenin ana ekrandaki başlığı bunu uyarı renginde söyler, `▾ notes  ⌀ git yok`, ve günlük bunu açılışta ve her başlangıçta söyler: `solo-notes doğrudan ~/src/notes içinde çalışıyor: burada git yok, düzenlemeleri Δ olarak incelenmez (ilk commit'ten sonra bir sonraki açılışta kendi worktree'si olur)`. Ajana da aynısı söylenir, ve `git init` ya da commit'i yalnız siz isteyince yapması. Böyle bir klasörde git'ten hiçbir şey çalışmaz: satırında worktree durumu yok, dosya tamamlama yok, `:commit` `this folder is not a git checkout with a commit` der, `:copy`'nin kopyalayacağı bir yer yoktur. Git'in kurulu olması bile gerekmez.
 
 Klasörün ilk commit'i olunca (ajan siz isteyince yapabilir: `git init`, sonra bir commit), bir sonraki başlangıç ya da soloyu kapatıp yeniden açmak ona her solo gibi bir worktree ve `Δ` verir.
 
@@ -59,7 +59,7 @@ Bir checkout'ta en çok bir açık **takım** (ikinci bir `:open` `that checkout
 ## Bkz.
 
 - [Takım](team.md): roller ve solonun işçiyle paylaştığı
-- [Projeler](projects.md): ekipte gruplar, `:close`, `:rename`, `:pin`
+- [Projeler](projects.md): ana ekranda gruplar, `:close`, `:rename`, `:pin`
 - [Değişiklikler](changes.md): `Δ`, uygulama, reddetme, notlar
 - [Komut satırı](../reference/cli.md): `--solo`, `--model`, `--tier`
 - [Komutlar](../reference/commands.md): `:solo`

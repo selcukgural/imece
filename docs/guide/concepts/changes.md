@@ -14,20 +14,27 @@ A change (`Δ`) is what a worker's worktree holds when the worker says `done`. I
 3. The result is a `Δ` item in TO DECIDE, its detail the `done`'s first line, and the journal says `claude-1 finished: change ready · 3 files +34 −8`. A newer `done` from the same worker supersedes the older change.
 4. The worker's `send` answer waits for the read, and tells it that you see the change.
 
+On Home a change is a row under **changes**, led by its card, saying its verdict without the head: what proved it, its files against the paths its card owns, and what other waiting change it overlaps. The ones ready to approve come first, and the group's line counts them:
+
 ```text
- TO DECIDE (2)
- Δ 14:02 claude-1 finished: parser tokens (3 files, +34 −8) · ✓ ran clean on this tree: cargo test -p parser · $0.84 · 12 min
- ? 14:05 claude-2 asks you: keep the old CLI flag?
-  enter see the diff · a approve · r send back
+ changes                                                                                         2 ready to approve
+ ! #1   Shipping cost             ✓ dotnet build · ✓ dotnet test · 3 files +6 −3, all inside #1 ·
+                                  no overlap with other changes
+ ! #3   Price list cache          ✓ dotnet build · ✓ dotnet test · 2 files +4 −2, both inside #3 ·
+                                  no overlap with other changes
+ ! #2   Paging in product search  ✓ dotnet build · ✓ dotnet test · 2 files +6 −3 ·
+                                  1 outside #2: src/Orders/OrderService.cs · no overlap with other changes
 ```
+
+The row at hand ends with `a approve  r send back`; `enter` opens the diff.
 
 ### Evidence on the line
 
-A run of the worker or a helper through imece's `run` tool is tied to the tree it ran on (the worktree is read before and after; a run that changed the tree counts for none). When a `done` is read, the runs on exactly its tree go with it: the `Δ` line ends with `✓ ran clean on this tree: …`, `✗ failed on this tree: …` or `no run on this tree`, and the verdict line above the diff names each run with how it ended. It is shown, never a gate: a change with no run can still be applied; you decide. Claude Code's own shell does not count, since imece does not see what tree it ran on.
+A run of the worker or a helper through imece's `run` tool is tied to the tree it ran on (the worktree is read before and after; a run that changed the tree counts for none). When a `done` is read, the runs on exactly its tree go with it: the verdict line, on the change's row on Home and above its diff, names each with how it ended (`✓ cargo test`, `✗ cargo test: exit 101`), or says `nothing ran`, and then the change is one to look at first. It is shown, never a gate: a change with no run can still be applied; you decide. Claude Code's own shell does not count, since imece does not see what tree it ran on.
 
 ### The repository's check
 
-Put a script at `.imece/check` in your checkout (a shell script, approved like the [worktree setup script](projects.md#a-worktree-setup-script)) and imece runs it in the worker's worktree every time a change is read from it, **once you said yes to its exact bytes**: `/bin/sh` on a private copy of the bytes you read, with the cleared environment plus `IMECE_REPO` and `IMECE_WORKTREE`, in its own process group, for the `run` tool's deadline (`--run-timeout`, ten minutes by default). What it came to goes on the change: `✓ check` or `✗ check · exit 1, 38.7 s` first in its verdict line, with the last lines of its output under it, a mark before the evidence on the `Δ` row in TO DECIDE (`✓ check ·`, `✗ check ·`, `● check ·` while it runs), and a journal line (`claude-1: check failed on its change, exit 1, 38.7 s · Tests: 1 failed, 211 passed`). It is a note, never a gate: `a` applies a red change as it applies any other; you decide.
+Put a script at `.imece/check` in your checkout (a shell script, approved like the [worktree setup script](projects.md#a-worktree-setup-script)) and imece runs it in the worker's worktree every time a change is read from it, **once you said yes to its exact bytes**: `/bin/sh` on a private copy of the bytes you read, with the cleared environment plus `IMECE_REPO` and `IMECE_WORKTREE`, in its own process group, for the `run` tool's deadline (`--run-timeout`, ten minutes by default). What it came to goes on the change: `✓ check` or `✗ check · exit 1, 38.7 s` first in its verdict line, on Home and above the diff, with the last lines of a failure's output under it in the diff, and a journal line (`claude-1: check failed on its change, exit 1, 38.7 s · Tests: 1 failed, 211 passed`). It is a note, never a gate: `a` applies a red change as it applies any other; you decide.
 
 - **Your yes:** the first change that finds a check you have not said yes to puts an ask in TO DECIDE (`▶ claude-1: run the repository's check .imece/check on its changes? enter shows it`); the change waits unchecked meanwhile and says so above its patch. `enter` shows the bytes, `a` says yes (it runs at once on every change that waited, then on each one read), `r` no for this run. The yes is bound to the bytes' SHA-256, the file's real path and `/bin/sh`, kept in imece's store; a changed byte asks again. Asks close at the next start; the next change asks again.
 - **Once per tree:** a change read again with the same tree (sent back and sent again as it is) gets the result it had, without a run; a changed tree runs again. A check that was running, or asked about, when imece ended runs or asks again at the next start.
@@ -37,11 +44,11 @@ Put a script at `.imece/check` in your checkout (a shell script, approved like t
 
 ### What it cost
 
-Every change says what the worker spent on it, so you can judge the leader's hiring (a strong-tier worker on a rename) or a worker that burnt $4 on a one-line fix: `$0.84 · 12 min` on the `Δ` row in TO DECIDE, `cost · $0.84 · 12 min` above the diff, in the journal (`claude-1's change cost $0.84 · 12 min`) and so on the card's screen and in `:why`. The figure is the worker's spend, its helpers' counted in, from its first prompt after its last change to this `done`, and the time it worked (not the time the change waited for you); a `done` comes mid-turn, so the figure appears a moment later, when the turn's cost is known. A change sent back (`r`, `n`, `b`) and sent again adds up: `$1.20 · 25 min · 3 rounds`; a newer `done` that takes an older change's place carries its cost too, and so does the rest of a change you applied in part. Once a change is applied whole, the next one starts from nothing. The leader hears it in the worker's `done`, which it gets once the worker's turn ended, headed `[done 12 · $0.84]`, so it learns what its tiers cost. A solo's change at each turn's end says the same. What subscriptions would have cost at API prices, and a price per applied change across a project, are not here.
+Every change says what the worker spent on it, so you can judge the leader's hiring (a strong-tier worker on a rename) or a worker that burnt $4 on a one-line fix: `cost · $0.84 · 12 min` above the diff and in Home's preview of the change, in the journal (`claude-1's change cost $0.84 · 12 min`) and so on the card's screen and in `:why`. The figure is the worker's spend, its helpers' counted in, from its first prompt after its last change to this `done`, and the time it worked (not the time the change waited for you); a `done` comes mid-turn, so the figure appears a moment later, when the turn's cost is known. A change sent back (`r`, `n`, `b`) and sent again adds up: `$1.20 · 25 min · 3 rounds`; a newer `done` that takes an older change's place carries its cost too, and so does the rest of a change you applied in part. Once a change is applied whole, the next one starts from nothing. The leader hears it in the worker's `done`, which it gets once the worker's turn ended, headed `[done 12 · $0.84]`, so it learns what its tiers cost. A solo's change at each turn's end says the same. On a plan's login every figure is what the turns would cost at API prices, marked `≈`, and spending nobody priced reads `+?` ([what a figure means](budget-and-limits.md#what-a-figure-means)); what each attempt at a card cost, and how much of a project's spending was applied or wasted, is [`:ledger`](budget-and-limits.md#the-ledger).
 
 ## Reading it
 
-`enter` opens the whole diff: `j k` scroll, `^d ^u ^f ^b` pages, `gg G`, `[ ]` file to file. Every line is cleaned before it is drawn. Above the patch:
+`enter` opens the whole diff, as the diff tab of the change's detail: a head line with the card, the project, the worker, the time and the cost, the files and lines, and where it stands among the changes waiting (`change 1 of 3`); `tab` goes to its talk and its log. `j k` scroll, `^d ^u ^f ^b` pages, `gg G`, `[ ]` file to file. Every line is cleaned before it is drawn. Above the patch:
 
 - the verdict line: `✓ ready to approve` or `! look first`, then what proved it (the repository's [check](#the-repositorys-check) when it ran, the runs on its tree, or that nothing ran), its files against the paths its card owns, what other waiting change it overlaps, a refused apply, a patch Lonca did not show whole, and what Lonca runs after your yes ([the change view](../screen/changes.md#what-is-above-the-patch));
 - the check's state while it has not ended: that it runs, or that it waits for your yes;
@@ -105,9 +112,18 @@ Notes live in the screen's memory, keyed by the patch's hash: a newer Δ starts 
 
 The choice is kept against the patch's hash for this run only. Single lines inside a hunk cannot be chosen.
 
+## The card behind a change
+
+A card follows its change ([a card's tries](messages-and-board.md#a-cards-tries)). While the change waits for you the card stands in TO REVIEW on the board (`:board`); sent back, it is IN PROGRESS again, a round more; applied whole, it is DONE. On Lonca it is VERIFYING in the merge queue after your yes, and DONE on trunk. What else you see of it:
+
+- **A try.** A card taken again is a try more: ` · try 2` on the board and on its screen, `try 2` on its row in `:ledger`.
+- **A failed card or a late `done`** shows no change: the worker said it could not do the card (`✕` on the board), or its card went to another try or was withdrawn meanwhile. The journal says which.
+- **The breaker.** A card that failed its third try, or whose change came back a third time from Lonca's queue, waits for you under **questions** on Home: `failed 3 tries: one more, or it fails for good`, `its change came back 3 times: one more round, or it fails for good`. `a` allows one more, `r` fails it for good. Your own send-back (a reject, notes, a clash) always goes through: you are deciding already.
+- **Withdrawn.** A card the leader withdrew is through (`–` on the board); a `done` for it shows no change.
+
 ## The worktree meanwhile
 
-- A worker's row says where its worktree stands: `⎇ fix-parser ↑2 ↓1 +12 −3`. `⎇ name` is a branch the agent made (none while detached), `↑N` its own commits your HEAD lacks (imece's marks not counted), `↓N` your HEAD's commits it lacks, `+N −M` the lines its next `done` would hand you, untracked files included. Each part shows only when there is something to say; read as the session starts, when a turn ends, after an apply, after a move, and every 15 s while mid-turn. Not kept between runs.
+- A worker's line on its card's screen (`#N`, the log tab of its detail) says where its worktree stands: `⎇ fix-parser ↑2 ↓1 +12 −3`. `⎇ name` is a branch the agent made (none while detached), `↑N` its own commits your HEAD lacks (imece's marks not counted), `↓N` your HEAD's commits it lacks, `+N −M` the lines its next `done` would hand you, untracked files included. Each part shows only when there is something to say; read as the session starts, when a turn ends, after an apply, after a move, and every 15 s while mid-turn. Not kept between runs.
 - **Following HEAD:** a clean worktree whose own commits are all imece's is moved to your HEAD before every prompt of a worker that is between turns (helpers too), journaled `worktree moved from … to HEAD …`. One with uncommitted changes or commits of its own is kept, and the journal says so. So once you commit what you applied, the workers go on from your new HEAD. A worker hired from a start point of its own (`hire`'s `from`: a branch, a tag, a commit, `#N` a pull request) never follows: its worktree stays where it started, its change is against that point, and applying it is the same three-way apply ([team](team.md)).
 - A worktree removed by hand that git still lists is refused with what was lost and `git worktree prune`, and the agent stops with that reason.
 
@@ -142,6 +158,6 @@ A card may ask for more of the policy's named checks ([the checks a card asks fo
 ## See also
 
 - [The changes screen](../screen/changes.md): every key in the diff view.
-- [TO DECIDE](../screen/waiting.md): `W`, `S`, the order of items.
+- [Home](../screen/home.md): `W`, `S`, the order of what is to decide.
 - [One fix](../scenarios/one-fix.md) and [review with notes](../scenarios/review-with-notes.md).
 - [Security](../concepts/security.md): why the gate is yours.

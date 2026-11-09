@@ -44,7 +44,7 @@ The `:` menu shows the speed after the command (`faster (×2)`) and whether it i
 
 The simulation produces live's events through the same model calls live uses, so the screen is the real screen:
 
-- **The leader's work**: it posts cards (at the start too), answers your request with the cards it posted (a reply `»` in TO DECIDE), assigns a card to a free worker or lets one claim it from the board, hires a worker when two cards wait and nobody is free (up to six), and a tiered hire falls back to the default model now and then.
+- **The leader's work**: it posts cards (at the start too), answers your request with the cards it posted (a reply in TO DECIDE), assigns a card to a free worker or lets one claim it from the board, hires a worker when two cards wait and nobody is free (up to six), and a tiered hire falls back to the default model now and then.
 - **Workers**: typed messages on the bus (`assign`, `ask`, `answer`, `progress`, `done`), what they assume told to you as `inform`, what they touch shown in the card's story, a helper hired for the tests that sends its `done` and leaves.
 - **Approvals (`⚑`)**: a worker's session asks your yes for one of the project's sensitive steps; the item is held until you decide (`a` allow, `r` refuse) or given up on after 100 seconds, as Claude Code's own prompt is.
 - **Questions (`?`)**: a worker asks you something; it waits a while, then goes on with what does not depend on the answer. `enter` opens the conversation at the question; writing to the worker answers it.
@@ -52,22 +52,29 @@ The simulation produces live's events through the same model calls live uses, so
 - **Sessions**: a session starts once (with Claude Code's `/` commands; a worker's may say its worktree was moved or kept), stops now and then (`■ session ended · write to it to restart`), is forgotten with `:forget` or `/clear` and restarted when told; `/cost` and `/compact` answer as a turn.
 - **The pot and the limits**: spending per agent and per hour, the pot running low, a spent pot refusing words and commands; the usage window in the `:budget` note and, nearly full, in the header, filled from what the agents spent.
 - **Projects**: `:open PATH [NAME]` adds a fake project with a leader, two workers and three cards; `:close` sends its agents away; `:rename` as live. `:pin` too.
-- **The whole screen**: the team, folding, `f`, the board (`:board`), the code map (`:code`) with leases, cards (`#N`), conversations with turns and replies (`↩`), marks, the journal, `W` `S`, the quit question, the help, themes, both languages, the readline keys, multi-line writing and paste. `Confine` is said at the start as live says it.
+- **Cards and their tries**: a card follows its change through the board's columns; every seventh first try fails and its leader hands the card to another worker, a card that keeps failing meets the breaker at its fourth try and waits for you (`a` one more, `r` fail it), a card that has run long is taken from its worker, whose turn then ends with a late `done`, some cards wait on others (`⧗ after #2`), and now and then the leader withdraws a card nobody took.
+- **The repository's check**: every checkout of the demo has one; the first change asks for your yes to it, and it then fails on every third change.
+- **Health**: every fourth failed test run goes round, and the leader is told of the loop.
+- **Processes**: `:ps` lists made-up processes under each session (its test program while it works), ends one after your `y`, and lists two left from an earlier run.
+- **A project on Lonca**: with two projects or more, the second stands on a fake Lonca repository. Its workers propose; a stranger's proposal (`ayse`) waits beside theirs, one proposal in three is based before trunk, every fifth landing fails its tests in the queue, and every third card asks for the `api` check, which your yes asks for. Its line says how the repository stands, `:lonca` opens its window, `:sync` brings the checkout up (every third finds commits of your own), and the daemon stops answering for 6 ticks in 60.
+- **The ledger**: `:ledger` fills as cards are applied, fail, are handed on and withdrawn; every figure reads `≈`, the demo's login being a plan's.
+- **The whole screen**: Home with TO DECIDE by group and AT WORK by project, folding and hiding, the detail's tabs, the windows (`:board`, `:code` with leases, `:timeline`, `J`), cards (`#N`), conversations with turns and replies (`↩`), marks, `W` `S`, the quit question, the help, themes, both languages, the readline keys, multi-line writing and paste. `Confine` is said at the start as live says it.
 
 ## The demo mirrors live
 
-Every fix, feature or change to what live does is shown by the demo in the same change, with its test; a change that cannot fake something says so. That is a standing rule of the project, so what you see in the demo is what live does, drawn by the same code. Where the demo once had things live did not (a merge queue, trunk numbers, a verifying status), they were taken out.
+Every fix, feature or change to what live does is shown by the demo in the same change, with its test; a change that cannot fake something says so. That is a standing rule of the project, so what you see in the demo is what live does, drawn by the same code. Where the demo once had things live did not (a merge queue, trunk numbers, a verifying status), they were taken out; its project on Lonca now shows what live does on Lonca.
 
 ## What cannot be faked
 
 - **The "where you left off" window**, turns cut short by a close, and agents asleep from a start: they need a store and an earlier run, and the demo keeps none.
-- **Researchers, symbol leases and the code map's leases**: the demo shows them as a preview of what is planned; live has none of them yet. Live's code map says `no shared trunk yet: each agent works in its own worktree, so there are no leases to show`.
-- **Two parts of the screen nothing fills any more**: the team's QUEUE line and the board's VERIFYING column stayed when the merge queue left.
+- **Researchers**: the demo shows them as a preview of what is planned; live has none yet.
+- **The code map of a project in worktrees**: the demo draws leases from its cards on every project, as a preview; live has leases only on Lonca, where the map shows the daemon's, and a project in worktrees says `no shared trunk yet: each agent works in its own worktree, so there is nothing to show of who edits what`. The demo's Lonca project lists no held symbols in `:lonca`.
+- **The board's VERIFYING column**: live cards stand there while Lonca's merge queue holds their change; the demo lands a proposal at once, so its column stays empty.
 
 ## See also
 
 - [First run](first-run.md)
 - [Keyboard](../screen/keyboard.md)
-- [The team](../screen/salon.md)
+- [Home](../screen/home.md)
 - [Command line reference](../reference/cli.md)
 - [Videos](../videos.mdx)

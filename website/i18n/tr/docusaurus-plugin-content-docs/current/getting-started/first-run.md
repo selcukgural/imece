@@ -37,13 +37,13 @@ Dizin commit'i olan bir git checkout'u olmalıdır (`--repo DİZİN` başkasın�
 │ Başlamak için tuşlar:                                                            │
 │   /  i            lidere yaz: ne yapılmasını istediğini söyle                    │
 │   @ad mesaj       tek bir agent'a yaz                                            │
-│   W               seni bekleyen sıradaki şey: bir değişiklik, bir soru           │
+│   W               karar bekleyen sıradaki şey: bir değişiklik, bir soru          │
 │   …                                                                              │
 │ herhangi bir tuş: kapat · :welcome bunu yine gösterir                            │
 └──────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-En üstte imece'nin işareti durur: bir işin etrafında beş el; yanında sürümü, ne olduğu ve eldeki proje ile başında kimin olduğu. Ekrana geldiği yerde noktaları birer vuruşta gelir, iş en son (iki saniyeden kısa); herhangi bir tuş onu hemen bütün gösterir, [`:motion off`](../reference/commands.md#motion-offcalmfull), başka bir pencere ve SSH de öyle. Ona dar gelen bir ekranda yazılar tek başına kalır, fazla kısa bir ekranda pencere onlarsız açılır. Ekip da, henüz hiçbir projede işçi yokken boş satırlarında aynı işareti gösterir. Terminalin başlığı da her şey sakinken işareti taşır: `⁙ imece`.
+En üstte imece'nin işareti durur: bir işin etrafında beş el; yanında sürümü, ne olduğu ve eldeki proje ile başında kimin olduğu. Ekrana geldiği yerde noktaları birer vuruşta gelir, iş en son (iki saniyeden kısa); herhangi bir tuş onu hemen bütün gösterir, [`:motion off`](../reference/commands.md#motion-offcalmfull), başka bir pencere ve SSH de öyle. Ona dar gelen bir ekranda yazılar tek başına kalır, fazla kısa bir ekranda pencere onlarsız açılır. Ana ekran da, henüz hiçbir projede işçi yokken boş satırlarında aynı işareti gösterir. Terminalin başlığı da her şey sakinken işareti taşır: `⁙ imece`.
 
 Satır Claude Code'un sürümünü ve giriş yapılmış olup olmadığını, ya da nasıl giriş yapılacağını söyler: `claude auth login`. claude.ai planıyla giriş yapılmışsa `giriş yapılmış, plan · ≈ API fiyatı` der: imece'nin gösterdiği dolarlar turların API fiyatıyla tutacağıdır, `≈` ile işaretli ([bir rakam ne der](../concepts/budget-and-limits.md#bir-rakam-ne-der)). imece bunu ona sorar (`claude auth status`), kendi iş parçacığında, ağa çıkmadan ve para harcamadan; cevabı gelene dek `bakılıyor…`, program yoksa `PATH'te yok` yazar.
 
@@ -72,7 +72,7 @@ En son başlayan sürüm depoda tutulur (`seen`); en ilk başlangıç bunun yeri
 ┌ NEREDE KALMIŞTIN · 2 sa 10 dk önce ─────────────────────┐
 │ $3.10 harcandı, bütçe $50.00; her agent kendisiyle konuşulana dek uyur │
 │ imece: 3 agent, 1 açık kart                               │
-│ 1 şey seni bekliyor:                                      │
+│ ! 1 şey karar bekliyor:                                   │
 │ Δ 11:42 claude-1 bitirdi: parser: sondaki virgülü kabul et │
 │ kapanmadan önceki son satırlar:                           │
 │ 11:42 claude-1 bitirdi: değişiklik hazır · 2 dosya +31 −4   │
@@ -83,21 +83,20 @@ En son başlayan sürüm depoda tutulur (`seen`); en ilk başlangıç bunun yeri
 
 Keseyi, açık proje başına bir satırı, hâlâ sizi bekleyen en eski öğeleri (en çok altı), imece kapanırken yarım kalan turları ve günlüğün son satırlarını listeler. Herhangi bir tuş kapatır ve başka bir şey yapmaz.
 
-## Ana ekran {#the-salon}
+## Ana ekran {#home}
 
-Açılan [ana ekrandır](../screen/home.md): üstte sıranın sizde olduğu işler, altında çalışanlar, eldeki satır hemen yanında okunur. Henüz bir şey yoksa bunu söyler.
+Açılan [ana ekrandır](../screen/home.md): üstte karar vermeniz gerekenler (KARAR BEKLEYEN), altında çalışanlar (ÇALIŞAN), 120 kolondan itibaren de eldeki satır listenin yanında okunur. Henüz bir şey yoksa bunu söyler ve boş satırlarda imece'nin işareti durur:
 
 ```text
- imece   hepsi boşta │ $0.00 / $50.00 harcandı  10:02
- hepsi   imece                                 / lead için yazar
- Sizi bekleyen yok, çalışan da yok. / lidere yazar.
+ imece  your-checkout │ $0.00 / $50.00  10:02
+Sizi bekleyen yok, çalışan da yok. / lidere yazar.
 
- enter  aç   @  bu ajana yaz   j k  gez   [ ]  proje   /  lidere yaz   ?  yardım
+ ana ekran · your-checkout    enter  aç   s  gizle   @  bu agent'a yaz   ?  yardım
 ```
 
-Ekip bir komut uzakta, `:salon`: solda lonca, sağda KARAR BEKLEYEN ve DEFTER.
+Başlıkta dört şey vardır: açık projeler, karar bekleyenler (henüz yok), kese (bütçeden harcanan) ve saat. Alttaki satır durum satırıdır: nerede olduğunuz, sonra eldeki şey için en çok üç tuş; `?` bulunduğunuz ekranın tuşlarını, bir `?` daha bütün tuşları listeler.
 
-Takım yalnız liderdir (`○ lead`, siz yazana dek boşta). Ekipteki günlüğün ilk satırı, `--confine strict` olmayan her başlangıçta bir kez, yalıtımın imece'nin işi olmadığını söyler.
+Takım yalnız liderdir, siz yazana dek boşta; boştaki lider listelenmez. Günlük (`J` onu ekranın üstünde açar, `esc` kapatır), `--confine strict` olmayan her başlangıçta bir kez, ilk satırında yalıtımın imece'nin işi olmadığını söyler.
 
 ## Lidere yazmak
 
@@ -110,63 +109,66 @@ Takım yalnız liderdir (`○ lead`, siz yazana dek boşta). Ekipteki günlüğ�
 
 Ekrandan uzun bir satır sonraki sırada sürer. Siz yazmadan önce alt satır `enter gönder · ⇧enter yeni satır · esc vazgeç` der.
 
-Düz metin seçili projenin liderine gider. `@claude-1 metin` tek bir ajana giderdi. İstemden sonra `/` ile başlayan bir satır bir mesaj değil, ajanın kendi komutudur (`/cost`, `/compact`, `/clear`). `⇧enter` (ya da `\` `enter`) uzun bir istekte yeni satır başlatır; alt satır terminalinizde hangisinin çalıştığını söyler. `tab`, `@` sonrasında adları, `:` sonrasında komutları tamamlar.
+Düz metin eldeki projenin liderine gider. `@claude-1 metin` tek bir ajana giderdi. İstemden sonra `/` ile başlayan bir satır bir mesaj değil, ajanın kendi komutudur (`/cost`, `/compact`, `/clear`). `⇧enter` (ya da `\` `enter`) uzun bir istekte yeni satır başlatır; alt satır terminalinizde hangisinin çalıştığını söyler. `tab`, `@` sonrasında adları, `:` sonrasında komutları tamamlar.
 
 ## Lider ne yapar
 
 Lider checkout'u okur (okuma araçları, web ve salt okunur komutları vardır; yazamaz: sizin checkout'unuzda çalışır, orada bir yazma incelemeyi atlardı). İsteği kartlara böler, panoya asar ve bir kart el gerektirince `hire` aracıyla bir işçi **tutar**. Model değil **katman** seçer: küçük mekanik iş için `cheap`, sıradan düzeltmeler için `standard` (varsayılan), kesen tasarım için `strong`; bunlar haiku, Claude Code'un varsayılanı ve opus demektir. En çok `--agents` işçi (varsayılan 4).
 
 ```text
-   ● lead      koordine ediyor                                      $0.08
-   ● claude-1  #1   sondaki virgülü kabul et   düşünüyor…
+ ÇALIŞAN 1
+ ● #1   sondaki virgülü kabul et  Çevresindeki kodu oku
 ```
 
-Günlük `lead panoya astı: #1 sondaki virgülü kabul et`, `lead işe aldı: claude-1 (varsayılan model)`, `⇄ lead → claude-1 [görev]: #1 …` der. Liderin kapanış metni size KARAR BEKLEYEN'de bir yanıt (`»`) olarak gelir: `enter` tamamını okur, `r` kapatır, ya da doğrudan yanıt yazarsınız.
+Günlük `lead panoya astı: #1 sondaki virgülü kabul et`, `lead işe aldı: claude-1 (varsayılan model)`, `⇄ lead → claude-1 [görev]: #1 …` der. Liderin kapanış metni size KARAR BEKLEYEN'de, sorular altında bir yanıt olarak gelir: `enter` tamamını okur, `r` kapatır, ya da doğrudan yanıt yazarsınız.
 
 Hesabınızda olmayan bir katman modeli ilk turunda düşer; imece o işçiyi standart modelde yeniden başlatır ve günlük `claude-1: opus modeli burada yok, varsayılanla devam` der.
 
 ## Bir işçinin satırı
 
 ```text
-   ● claude-1  #1   sondaki virgülü kabul et   src/csv.rs düzenliyor   $0.41  +18 −3
+ ● #1   sondaki virgülü kabul et  Değişikliği yap · 4 dk
 ```
 
-Soldan sağa: glif (`●` çalışıyor, `○` boşta, `!` bir şeyi sizi bekliyor, `✓` bitti ve henüz bakılmadı, `■` takıldı: bloke ya da oturumu durdu), adı, kartı, şu an ne yaptığı, ne harcadığı ve worktree'sinin nerede durduğu: `+18 −3` sonraki `done` ile size vereceği satırlar, `⎇ ad` açtığı bir dal, `↑N` kendi commit'leri, `↓N` checkout'unuzun daha yeni commit'leri. Açık bir izin sorusu olan işçi `⚑ çalıştırmak istiyor` gösterir ve soru KARAR BEKLEYEN'de bir öğedir: `a` izin verir, `r` reddeder (rutin komutlar, derleme, testler, git'in okuma komutları kendiliğinden çalışır).
+Satır ajan değil, iştir. Soldan sağa: glif (`●` çalışıyor, `○` boşta, `!` sizi bekliyor, `✓` bitti, `■` takıldı: bloke ya da oturumu bitti), kartı ve başlığı, yapılacaklar listesinde bulunduğu adım (ya da şu an ne yaptığı) ve ne zamandır. Evetinizi isteyen bir işçi beklerken ÇALIŞAN'dan çıkar: isteği KARAR BEKLEYEN'de, izinler altında kendi satırıdır (`Bash: … çalışsın mı?`); orada `a` izin verir, `r` reddeder (rutin komutlar, derleme, testler, git'in okuma komutları kendiliğinden çalışır).
 
-Satırda `enter` işçinin odağını açar: kartının hikâyesi (niyet, varsayımlar, kararlar, konuşma, kanıt, değişiklikler). Bir `enter` daha (ya da `t`) izi açar, oturumunun ham akışı. `esc` geri döner.
+Satırda `enter` işçinin işini log sekmesinde açar: kartının hikâyesi (niyet, varsayımlar, kararlar, konuşma, kanıt, değişiklikler) ve yapılacaklar listesi; `t` izi açar, oturumunun ham akışı. Baş satırı kartını, projesini, ajanı, süresini ve maliyetini söyler; `tab` sonraki sekmeye geçer, `esc` geri döner.
 
 ## Değişiklik (Δ)
 
-İşçi `done` gönderince imece onun worktree'sini tek yama olarak okur ve KARAR BEKLEYEN'e koyar. Günlük `claude-1 bitirdi: değişiklik hazır · 2 dosya +31 −4` der, başlık `! 1 seni bekliyor`, terminalin başlığı `! imece · 1 seni bekliyor` olur.
+İşçi `done` gönderince imece onun worktree'sini tek yama olarak okur ve KARAR BEKLEYEN'e koyar. Günlük `claude-1 bitirdi: değişiklik hazır · 2 dosya +31 −4` der, başlık `! 1 karar bekliyor`, terminalin başlığı `! imece · 1 karar bekliyor` olur. Ana ekranda değişiklik, değişiklikler altında bir satırdır:
 
 ```text
- KARAR BEKLEYEN (1) ──────────────────────────────────────────────────────
- Δ 10:19 claude-1 bitirdi: parser: sondaki virgülü kabul et (2 dosya, +31 −4) · ✓ bu ağaçta temiz geçti: cargo test
-   enter diff'i gör · a onayla · r geri gönder
+ KARAR BEKLEYEN 1 değişiklik
+ değişiklikler                                                                               1 onaya hazır
+▸! #1   sondaki virgülü kabul et  ✓ cargo test · 2 dosya +31 −4, ikisi de #1 içinde   a  onayla   r  geri gönder
 ```
 
-Satırın sonu kanıttır: imece'nin `run` aracının tam bu ağaçta gördüğü çalıştırmalar. `✓ bu ağaçta temiz geçti: cargo test` (yeşil), `✗ bu ağaçta başarısız: …` (kırmızı) ya da `bu ağaçta çalıştırma yok` (uyarı). Gösterilir, kapı değildir: karar sizin.
+Satır değişikliğin hükmüdür: imece'nin `run` aracının tam bu ağaçta gördüğü çalıştırmalar (`✓ cargo test`, `✗ cargo test: exit 101` ya da `hiçbir şey koşmadı`), kartının sahip olduğu yollara göre dosyaları ve çakıştığı bekleyen başka bir değişiklik. Temiz kanıtlanmış, kartının yollarının içinde kalan ve hiçbir şeyle çakışmayan bir değişiklik onaya hazırdır; hazırlar önce gelir. Gösterilir, kapı değildir: karar sizin.
 
-- `w` doğrudan KARAR BEKLEYEN'e gider; `tab` paneller arasında geçer.
-- `W` her yerden (bir kartın ekranı, bir diff, pano) sıradaki bekleyen öğeyi açar; yine basılınca sonrakini. `S` eldeki öğeyi sonraya erteler ve sonrakini açar.
-- Değişiklikte `enter` diff'in tamamını açar:
+- `W` her yerden (bir kartın ekranı, bir diff, bir pencere) karar bekleyen sıradakini açar; yine basılınca sonrakini. `S` eldeki öğeyi sonraya erteler ve sonrakini açar.
+- Değişiklikte `enter` onu diff sekmesinde açar:
 
 ```text
- DEĞİŞİKLİK · claude-1 · 2 dosya +31 −4 · sondaki virgülü kabul et ─────────
- ✓ cargo test
- kaynak +24 −4 (1) · testler +7 −0 (1)
- src/csv.rs +24 −4
- tests/csv.rs +7 −0
- --- a/src/csv.rs
- +++ b/src/csv.rs
- @@ -41,7 +41,9 @@ fn fields(line: &str) -> Vec<&str> {
- -    line.split(',').collect()
- +    let line = line.strip_suffix(',').unwrap_or(line);
- +    line.split(',').collect()
- j k kaydır · [ ] dosya · a onayla · r geri gönder · c not · n notları gönder · x parça seç · > alıntıla · w sar
+#1 sondaki virgülü kabul et · your-checkout · claude-1 · 6 dk · $0.41 · 2 dosya +31 −4    değişiklik 1 / 1
+
+diff · konuşma · log                                                                             tab geçer
+┌────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│✓ onaya hazır · ✓ cargo test · 2 dosya, ikisi de #1 içinde                                              │
+│ maliyet · $0.41 · 6 dk                                                                                 │
+│ kaynak +24 −4 (1) · testler +7 −0 (1)                                                                  │
+│ src/csv.rs +24 −4                                                                                      │
+│ tests/csv.rs +7 −0                                                                                     │
+│src/csv.rs                                                                                              │
+│@@ -41,7 +41,9 @@ fn fields(line: &str) -> Vec<&str> {                                                  │
+│-    line.split(',').collect()                                                                          │
+│+    let line = line.strip_suffix(',').unwrap_or(line);                                                 │
+│+    line.split(',').collect()                                                                          │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+ değişiklik · your-checkout · #1 sondaki v…    a  onayla   r  geri gönder   c  not   esc  geri   ?  yardım
 ```
 
-`j` `k` kaydırır, `^d` `^u` yarım sayfa, `gg` `G` uçlar, `[` `]` dosyadan dosyaya atlar, `w` uzun satırları sarar. Birden çok dosya yamanın üstünde listelenir (en çok altı); türleri birden çoksa önce türe göre satırlar.
+Baş satırı kartı, projeyi, işçiyi, süresini ve maliyetini, dosyaları ve satırları, bir de değişikliğin bekleyenler arasındaki yerini söyler. Diff hüküm satırıyla başlar, `✓ onaya hazır` ya da `! önce bak` ve nedeni; sonra değişikliğin maliyeti, birden çok tür varsa türe göre satırları ve dosyaları (en çok altı). `j` `k` kaydırır, `^d` `^u` yarım sayfa, `gg` `G` uçlar, `[` `]` dosyadan dosyaya atlar, `w` uzun satırları sarar, `tab` konuşmaya ve log'a geçer.
 
 ### `a`: onayla
 
@@ -191,7 +193,7 @@ Bir `q` daha çıkar; `s` ÇIKMADAN ÖNCE penceresini açar: tur ortasındaki aj
 Ekran kapanınca imece terminalinde tek bir satır bırakır, önce seni bekleyeni:
 
 ```text
-⁙ imece · 1 seni bekliyor · 3 agent uykuda · bu oturumda $2.40 · devam: imece
+⁙ imece · 1 karar bekliyor · 3 agent uykuda · bu oturumda $2.40 · devam: imece
 ```
 
 Söyleyecek bir şeyi olmayan parça yazılmaz; demonun satırı `demo hiçbir şey saklamaz` ile biter.
@@ -205,7 +207,7 @@ Aynı checkout'ta sonraki başlangıç aynı ekranı, her ajan uykuda gösterir 
 - [imece nasıl çalışır](../concepts/how-imece-works.md)
 - [Değişiklikler](../concepts/changes.md) ve [değişiklik ekranı](../screen/changes.md)
 - [Onaylar ve sorular](../concepts/approvals-and-questions.md)
-- [KARAR BEKLEYEN](../screen/waiting.md)
+- [Ana ekran](../screen/home.md)
 - [Oturumlar](../concepts/sessions.md)
 - [Klavye](../screen/keyboard.md)
 - [Senaryo: tek düzeltme](../scenarios/one-fix.md)

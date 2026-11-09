@@ -5,7 +5,7 @@ description: A session you drive yourself, with no leader - :solo and --solo, th
 
 # Solo sessions
 
-A team is imece's usual shape: a leader reads your checkout, hires workers, and their changes come to you for review. A **solo** is the other shape: one agent you drive yourself, with no leader and no team, on the model and effort you name. It keeps what makes imece worth it (the worktree, the `Δ` gate, the pot, the team, the store), and leaves out what a single session does not need (the board, cards, hiring workers). Open as many as you like, next to teams: team, solo, team, solo, solo, each a group in the team.
+A team is imece's usual shape: a leader reads your checkout, hires workers, and their changes come to you for review. A **solo** is the other shape: one agent you drive yourself, with no leader and no team, on the model and effort you name. It keeps what makes imece worth it (the worktree, the `Δ` gate, the pot, the team, the store), and leaves out what a single session does not need (the board, cards, hiring workers). Open as many as you like, next to teams: team, solo, team, solo, solo, each a group on Home.
 
 ## Opening one
 
@@ -30,7 +30,7 @@ The flash says what opened: `opened notes at ~/src/kule as a solo session; write
 
 ## What a solo is
 
-- **A project of its own.** The team shows it as a group with one agent, `solo-NAME` (`solo` when it is the project imece started in). Its row names the choice: `○ solo-notes  opus@xhigh  idle`. `:close`, `:rename` (the agent becomes `solo-NEWNAME`), `:pin` and `:copy` work as for any project.
+- **A project of its own.** Home shows it as a group with one agent, `solo-NAME` (`solo` when it is the project imece started in), listed by its name under AT WORK: `○ solo-notes  idle`. `:close`, `:rename` (the agent becomes `solo-NEWNAME`), `:pin` and `:copy` work as for any project.
 - **Its own worktree.** Like a worker, a solo writes in a git worktree of the checkout under imece's state directory, never in your checkout. Two solos on one checkout, and your own edits, never collide. The worktree is named after the project's id (`solo-3`), so renaming the project keeps it. Its row shows where the worktree stands (`⎇ branch ↑own ↓checkout +N −M`) as a worker's does.
 - **The worker's tools.** Under the confine dial a solo gets what a worker gets: read, write, shell, web search and fetch at `standard`, file tools and imece's `run` at `strict`, your own setup at `open` ([Claude Code](claude-code.md)). On the bus it has `send` (to you, and to its helpers), `run`, and `hire` for helpers. No `post`, `board` or `claim`: the board is a team's.
 - **The Δ after every answer.** Nobody sends `done` for a solo. Every turn that ends with an answer to you has imece read its worktree; when the tree differs from your HEAD, the change waits in TO DECIDE as a `Δ` titled by the answer's first line, and `a` applies it to your checkout, `r` rejects it, `c` and `n` send notes, `x` chooses hunks, exactly as for a worker ([changes](changes.md)). A newer answer's change takes the older one's place. A turn that ends with nothing to say (a `/command`) reads nothing.
@@ -40,7 +40,7 @@ The flash says what opened: `opened notes at ~/src/kule as a solo session; write
 
 ## In a folder without git
 
-A solo also runs in a folder that is not a git checkout, or one where `git init` ran but nothing is committed yet: a new project before its first file, or a folder you keep without git. There it works **straight in the folder**: no worktree, so what it writes is in your files at once, and no `Δ` comes after its answers (there is no base to compare with, and nothing to apply). Its helpers work there too. The project's header says it in the warning colour, `▾ notes  ⌀ no git`, and the journal says it at the open and at every start: `solo-notes works straight in ~/src/notes: no git here, so its edits are not reviewed as a Δ (with a first commit, the next start gives it a worktree)`. The agent is told the same, and to run `git init` or commit only when you ask. Nothing of git runs on such a folder: no worktree stand on its row, no file completion, `:commit` says `this folder is not a git checkout with a commit`, and `:copy` has nothing to copy into. It does not need git installed at all.
+A solo also runs in a folder that is not a git checkout, or one where `git init` ran but nothing is committed yet: a new project before its first file, or a folder you keep without git. There it works **straight in the folder**: no worktree, so what it writes is in your files at once, and no `Δ` comes after its answers (there is no base to compare with, and nothing to apply). Its helpers work there too. The project's heading on Home says it in the warning colour, `▾ notes  ⌀ no git`, and the journal says it at the open and at every start: `solo-notes works straight in ~/src/notes: no git here, so its edits are not reviewed as a Δ (with a first commit, the next start gives it a worktree)`. The agent is told the same, and to run `git init` or commit only when you ask. Nothing of git runs on such a folder: no worktree stand on its row, no file completion, `:commit` says `this folder is not a git checkout with a commit`, and `:copy` has nothing to copy into. It does not need git installed at all.
 
 Once the folder has a first commit (the agent can make it when you ask: `git init`, then a commit), the next start, or closing the solo and opening it again, gives it a worktree and the `Δ` like any solo.
 
@@ -59,7 +59,7 @@ A bare `imece` opens a team on the checkout when none is open there, even when s
 ## See also
 
 - [Team](team.md): the roles, and what a solo shares with a worker
-- [Projects](projects.md): groups in the team, `:close`, `:rename`, `:pin`
+- [Projects](projects.md): groups on Home, `:close`, `:rename`, `:pin`
 - [Changes](changes.md): the `Δ`, apply, reject, notes
 - [Command line](../reference/cli.md): `--solo`, `--model`, `--tier`
 - [Commands](../reference/commands.md): `:solo`

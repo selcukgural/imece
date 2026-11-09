@@ -65,7 +65,7 @@ On the screen a reply wears `↩` after its type: on its journal line, in a card
 
 The bus reaches you as `you`: `send(to: "you", type, body)`.
 
-- An `ask` to you becomes a question in TO DECIDE (`?`, "claude-1 asks you: …"). The agent's team line reads `? → you` while it is idle with one open. A newer question from the same agent takes the older's place. You answer by writing to the agent (`@claude-1 …`, or `a`/`r` on the item, which open the composer), and that starts its next turn.
+- An `ask` to you becomes a question in TO DECIDE (`?`, "claude-1 asks you: …"). While it is open the agent is that row, and is not listed under AT WORK. A newer question from the same agent takes the older's place. You answer by writing to the agent (`@claude-1 …`, or `a`/`r` on the item, which open the composer), and that starts its next turn.
 - `inform`, `progress`, `notice`, `done`, `blocked` and `answer` to you only inform: a line in the conversation and the story, no item, nothing wakes. A worker's `done` to you shows its change like any `done`.
 - `assign`, `handoff` and `cancel` to you are refused.
 - Messages to you take no number and no `re`; your own messages have none. Nothing to you counts against the mail caps or the pot.
@@ -82,7 +82,7 @@ Two things in TO DECIDE hold nothing: an answer waiting to be read, and a worker
 
 ## You on the bus
 
-Plain text in the command line goes to the selected project's leader; `@name text` goes to one agent. A message to an idle worker opens a card; its change closes it ([a card's tries](#a-cards-tries)). Your messages have no number. An agent's answer to you waits in TO DECIDE ("claude-1 answered you: …") until you open it (`enter`), dismiss it (`r`) or just write back.
+Plain text in the command line goes to the leader of the project at hand; `@name text` goes to one agent. A message to an idle worker opens a card; its change closes it ([a card's tries](#a-cards-tries)). Your messages have no number. An agent's answer to you waits in TO DECIDE ("claude-1 answered you: …") until you open it (`enter`), dismiss it (`r`) or just write back.
 
 ## The board
 
