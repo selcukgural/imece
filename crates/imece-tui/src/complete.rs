@@ -14,15 +14,15 @@ use crate::ui::fold;
 
 /// The commands imece itself takes after `:`: its own, and a name for
 /// every key that acts (not the ones that move).
-pub const COMMANDS: [&str; 72] = [
+pub const COMMANDS: [&str; 73] = [
     "allow", "archive", "archives", "awake", "away", "board", "budget", "changes", "checks",
-    "clear", "close", "code", "commit", "copy", "defer", "digest", "edit", "effort", "export",
-    "faster", "fold", "forget", "fork", "goto", "health", "help", "history", "home", "journal",
-    "keys", "lang", "ledger", "lonca", "mark", "model", "motion", "news", "next", "notify", "now",
-    "open", "output", "pause", "peek", "pending", "pin", "plan", "ps", "quit", "recall", "rename",
-    "restore", "review", "salon", "settle", "slower", "solo", "story", "sync", "talk", "theme",
-    "tidy", "timeline", "trace", "unclear", "undo", "unfold", "unsettle", "waiting", "welcome",
-    "why", "yes",
+    "clear", "close", "code", "commit", "copy", "defer", "digest", "doctor", "edit", "effort",
+    "export", "faster", "fold", "forget", "fork", "goto", "health", "help", "history", "home",
+    "journal", "keys", "lang", "ledger", "lonca", "mark", "model", "motion", "news", "next",
+    "notify", "now", "open", "output", "pause", "peek", "pending", "pin", "plan", "ps", "quit",
+    "recall", "rename", "restore", "review", "salon", "settle", "slower", "solo", "story", "sync",
+    "talk", "theme", "tidy", "timeline", "trace", "unclear", "undo", "unfold", "unsettle",
+    "waiting", "welcome", "why", "yes",
 ];
 
 /// The word for Claude Code's own model or effort after `:model`, `:effort`

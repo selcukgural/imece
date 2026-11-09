@@ -39,6 +39,108 @@ fn window(f: &mut Frame, title: String, lines: Vec<Line<'static>>, width: u16) -
     area
 }
 
+/// The style of a doctor's mark: the theme's own for fine, for a warning
+/// and for what does not work; a note is dim.
+fn doctor_mark(mark: crate::doctor::Mark) -> Style {
+    use crate::doctor::Mark;
+    match mark {
+        Mark::Ok => fg(pal().ok),
+        Mark::Note => dim(),
+        Mark::Warn => bold(pal().warn),
+        Mark::Fail => bold(pal().bad),
+    }
+}
+
+/// A report's lines as the window draws them, `width` cells wide: a mark
+/// in its colour, a category's line bold, what to do dim under its
+/// finding; a long line goes on under its own first word. The words were
+/// cleaned when the report was worded.
+pub(crate) fn doctor_lines(
+    report: &crate::doctor::Report,
+    verbose: bool,
+    width: usize,
+) -> Vec<Line<'static>> {
+    let mut out = Vec::new();
+    for l in report.lines(verbose) {
+        let indent = match l.depth {
+            0 => 1,
+            1 => 5,
+            _ => 7,
+        };
+        let mark = l.mark.map(|m| {
+            let glyph = match l.heading {
+                true => format!("[{}] ", m.glyph()),
+                false => format!("{} ", m.glyph()),
+            };
+            Span::styled(glyph, doctor_mark(m))
+        });
+        let lead = mark.as_ref().map_or(0, Span::width);
+        let style = match (l.heading, l.depth) {
+            (true, _) => bold(pal().strong),
+            (false, 2) => dim(),
+            _ => Style::new(),
+        };
+        let room = width.saturating_sub(indent + lead);
+        let mut mark = mark;
+        for text in wrap_words(&l.text, room) {
+            let mut spans = vec![Span::raw(" ".repeat(indent))];
+            // The mark once, then as many blanks under it.
+            spans.push(mark.take().unwrap_or_else(|| Span::raw(" ".repeat(lead))));
+            spans.push(Span::styled(text, style));
+            out.push(Line::from(spans));
+        }
+    }
+    out
+}
+
+/// `:doctor` (record 138): the report of the last look over the shaded
+/// screen, from line `win.top` on (kept within what there is), its title
+/// naming the checkout; `asking…` until the first facts come, and at the
+/// keys while a newer look is under way.
+pub fn doctor(f: &mut Frame, app: &App, win: crate::app::DoctorWin) -> Rect {
+    let t = app.lang.text();
+    let full = f.area();
+    let area = centered(
+        full,
+        full.width.saturating_sub(8).min(110),
+        full.height.saturating_sub(4),
+    );
+    shade(f, area);
+    clear(f, area);
+    let checkout = app.doctor_facts.as_ref().map(|f| f.checkout.as_str());
+    let title = fill(t.doctor.win_title, &[checkout.unwrap_or("…")]);
+    let block = Block::bordered()
+        .title(title)
+        .border_style(fg(pal().accent));
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    let [body, keys] = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(inner);
+    let lines = match &app.doctor_facts {
+        Some(facts) => {
+            let report = crate::doctor::report(app.lang, facts);
+            // Its first line is the title's.
+            let mut lines = doctor_lines(&report, win.verbose, usize::from(body.width));
+            lines.drain(..2.min(lines.len()));
+            lines
+        }
+        None => vec![Line::from(Span::styled(
+            format!(" {}", t.doctor.win_looking),
+            dim(),
+        ))],
+    };
+    let room = usize::from(body.height).max(1);
+    app.doctor_room.set((lines.len(), room));
+    let top = win.top.min(lines.len().saturating_sub(room));
+    f.render_widget(Paragraph::new(lines).scroll((top as u16, 0)), body);
+    let mut hints = Vec::new();
+    if app.doctor_looking() && app.doctor_facts.is_some() {
+        hints.push(Span::styled(format!(" {}", t.doctor.win_again), dim()));
+    }
+    hints.extend(hint_spans(&t.doctor_hints));
+    f.render_widget(Paragraph::new(Line::from(hints)), keys);
+    area
+}
+
 /// `K`: agent `id`'s focus in a window over the screen, a little smaller
 /// than it so the view under it, which does not move, shows around it.
 pub fn peek(f: &mut Frame, app: &App, id: AgentId) -> Rect {
@@ -1419,6 +1521,21 @@ pub fn welcome(f: &mut Frame, app: &App) {
         bold(pal().strong),
     )));
     lines.push(seen_line(app));
+    // Not there, or not signed in: one place says what else is missing.
+    let fine = matches!(
+        app.seen,
+        Seen::Checking
+            | Seen::Here {
+                login: Login::Yes { .. },
+                ..
+            }
+    );
+    if !fine {
+        lines.push(Line::from(Span::styled(
+            format!("     {}", t.doctor.welcome),
+            dim(),
+        )));
+    }
     lines.push(Line::raw(""));
     lines.push(Line::from(Span::styled(
         format!(" {}", t.welcome_keys_title),

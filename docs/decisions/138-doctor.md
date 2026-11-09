@@ -106,10 +106,39 @@ through the `words!` macro, which lists every word so one test holds
 the two languages to the same placeholders without a list kept by
 hand). `--lang` or `IMECE_LANG` chooses.
 
+**On the screen** (`:doctor`, `app/doctor.rs`, `overlay::doctor`): the
+same report in a window, for the project at hand. `App.doctor:
+DoctorWin { top, verbose }`; the facts are kept (`App.doctor_facts`) and
+worded when drawn, so the window follows `:lang`. A live run looks on a
+thread (`doctor::look` through `App.doctor_look`, as the welcome's look
+is; `Ask` = the project's checkout, `Live::state`, and what the start's
+probe said of the terminal, `App.terminal` from `doctor::terminal_of`,
+since the screen has the terminal now and it can not be asked again;
+only its size is read anew); `App::doctored` in the main loop takes the
+answer and asks for a drawing. One look at a time; what the last one
+found stays while `r` looks again, said at the keys. Until the first
+answer the window says whom it asks. `j k ^d ^u g G` scroll within
+`doctor_room` (lines and rows, as drawn), `v` every finding, `esc` `q`
+close, every other key taken. The report's first line is the window's
+title; a long finding wraps under its own words (`doctor_lines`). The
+lock is `Own`: the imece that asks holds the store. Refused in an
+archive's view (not in `VIEW_COMMANDS`).
+
+The demo (`doctor::demo`) has a machine of its own: what its welcome
+says of Claude Code, its project's folder and Lonca repository, a
+terminal of the designed size, and one thing to mend (800 MB free), so
+the window shows how an issue reads. `--demo-live` looks at the real
+machine, as live.
+
+The welcome window says `:doctor (imece doctor in a shell)` under Claude
+Code's line when it is not there, not signed in, or did not say; the
+start's refusal for a `claude` not on PATH ends with `imece doctor`.
+
 ## The points
 
-- **Growth**: nothing is kept. The report is as long as its findings,
-  about thirty.
+- **Growth**: nothing is kept between runs. The report is as long as
+  its findings, about thirty; the screen keeps the last look's facts,
+  one set.
 - **Concurrency**: beside a running imece the store is read through
   SQLite's own read lock, with a 1 s busy timeout; the lock file is
   held shared for the length of one call, and a start that meets it
@@ -127,9 +156,8 @@ hand). `--lang` or `IMECE_LANG` chooses.
 
 ## Gaps
 
-- `:doctor` on the screen (the same report in a window, the welcome
-  window pointing at it, the demo's own facts) is the next change.
-- The worktrees no agent owns are counted only inside imece (`:tidy`).
+- The worktrees no agent owns are counted only inside imece (`:tidy`);
+  `:doctor` does not join the two yet.
 - OSC 8 links are not probed: no terminal says whether it shows them.
 - The programs `--run` names are a start's flags; the doctor does not
   take them.

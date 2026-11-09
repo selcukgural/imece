@@ -381,6 +381,10 @@ impl App {
             self.ledger_key(at, k);
             return;
         }
+        if let Some(win) = self.doctor {
+            self.doctor_key(win, k);
+            return;
+        }
         if let Some(win) = self.window {
             self.window_key(win, k);
             return;

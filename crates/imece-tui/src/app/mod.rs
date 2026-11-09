@@ -34,6 +34,7 @@ mod change;
 mod copy;
 mod detail;
 mod dispatch;
+mod doctor;
 mod focus;
 mod frames;
 mod grace;
@@ -52,6 +53,7 @@ mod waiting;
 mod windows;
 
 pub use detail::Tab;
+pub use doctor::DoctorWin;
 pub use home::{Heading, Home, HomeGroup, HomeRow};
 
 /// What drives the agents.
@@ -930,6 +932,22 @@ pub struct App {
     /// The cost ledger in a window over the screen (`:ledger`, record
     /// 133): the row at hand among `ui::ledger::rows`.
     pub ledger_win: Option<usize>,
+    /// `imece doctor`'s report in a window over the screen (`:doctor`,
+    /// record 138).
+    pub doctor: Option<DoctorWin>,
+    /// What the last look found, worded when drawn.
+    pub doctor_facts: Option<crate::doctor::Facts>,
+    /// How a live run looks at the machine ([`crate::doctor::look`]);
+    /// none in the demo, which has a machine of its own.
+    pub doctor_look: Option<crate::doctor::Look>,
+    /// The facts still to come.
+    doctor_looking: Option<crate::doctor::Answers>,
+    /// What the start's probe found of the terminal; none in a test and
+    /// in the demo.
+    pub terminal: Option<crate::doctor::Terminal>,
+    /// The doctor window as last drawn: its lines, and the rows it has
+    /// for them.
+    pub doctor_room: Cell<(usize, usize)>,
     /// The board, the code map or the timeline in a window over the
     /// screen (`:board` `:code` `:timeline`, record 125).
     pub window: Option<Window>,
@@ -1267,6 +1285,12 @@ impl App {
             ps_start: false,
             lonca_win: None,
             ledger_win: None,
+            doctor: None,
+            doctor_facts: None,
+            doctor_look: None,
+            doctor_looking: None,
+            terminal: None,
+            doctor_room: Cell::new((0, 1)),
             window: None,
             board_ready: false,
             importing: None,

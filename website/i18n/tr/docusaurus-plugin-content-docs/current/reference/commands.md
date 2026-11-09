@@ -36,6 +36,7 @@ description: imece'nin aldığı her `:` komutu; argümanları, karşılığı o
 | `:copy [PATH]` | — | | | | liste, varsa |
 | `:defer` | `S` | | | | |
 | `:digest` | — | | | | |
+| `:doctor` | — | | | | |
 | `:edit [TEXT]` | `^x^e` (yazarken) | | | | açılacak editör |
 | `:effort LEVEL` | — | | | | eldeki solonun çabası ya da `default` |
 | `:export [PATH]` | — | | | | `konuşma` ya da `#12` |
@@ -170,6 +171,10 @@ KARAR BEKLEYEN'deki eldeki kalemi erteler ve sonrakini açar, `S` gibi. Bkz. [se
 ### `:digest`
 
 SEN YOKKEN penceresini şimdi açar: bu çalıştırmada terminalin penceresinden son ayrıldığınızdan, ya da çalıştırma başladığından beri olanlar. Yeni bir şey yoksa: `son ayrılışından beri yeni bir şey yok`. Kendiliğinden açıldığındaki gibi herhangi bir tuş kapatır.
+
+### `:doctor`
+
+Bir açılışın neye ihtiyacı olduğu, ekranın üstünde bir pencerede: eldeki proje için [`imece doctor`](../getting-started/doctor.md) raporu. Her başlık, en kötü bulgusuna göre `[✓]`, `[!]` ya da `[✗]` ile işaretli bir satırdır; sorunu olan başlık bulgularını listeler, doğru olmayan her birinin altında ne yapılacağı yazar. imece Claude Code'a, git'e ve Lonca'ya ayrı bir iş parçacığında sorar; ekran bu arada çalışmaya devam eder ve cevaplar gelene kadar pencere `Claude Code'a, git'e ve Lonca'ya soruluyor…` der; hiçbir şey harcanmaz. `j` `k` kaydırır (`^d` `^u` yarım pencere, `g` `G` uçlar), `v` her bulguyu ya da yalnızca sorunu olanları listeler, `r` yeniden bakar, `esc` ya da `q` kapatır. Claude Code yoksa ya da giriş yapılmamışsa hoş geldin penceresi onu anar. Bir arşivin görünümünde yoktur. Demo, düzeltilecek tek bir şeyi olan uydurma bir makine gösterir.
 
 ### `:edit [TEXT]`
 

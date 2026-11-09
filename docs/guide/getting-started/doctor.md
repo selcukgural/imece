@@ -94,6 +94,10 @@ The marks are in colour on a terminal; `NO_COLOR` turns that off.
 
 A finding's `id` is the same in every language; its `status` is `ok`, `note`, `warn` or `fail`, and a category's is its worst (`ok` when it has only notes). `text` and `fix` are in the report's language.
 
+## On the screen: `:doctor`
+
+While imece runs, `:doctor` opens the same report in a window over the screen, for the project at hand. imece asks on a thread of its own, so agents go on working; `v` lists every finding, `r` looks again, `esc` closes ([commands](../reference/commands.md#doctor)). The welcome window points at it when Claude Code is not on PATH or not signed in.
+
 ## What it does not do
 
 - It calls no model and spends nothing.
