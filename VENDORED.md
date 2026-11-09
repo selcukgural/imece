@@ -21,7 +21,10 @@ Built against, not copied: `crates/imece-agent/src/lonca.rs` speaks Lonca's
 daemon protocol **number 1** as `docs/protocol.md` of lonca `v0.2.1`
 (`d802fd6`, 2026-11-09; a daemon older than 0.2.1 is refused; with `session start --continue` and `--harness`, `change.diff`, `reject`, `git` in a workspace, a clean end kept in `status.sessions[].unproposed` and the reasons `unhooked_session`, `unhooked_critical_path` and `verification_missing`, a newer proposal's `replaces:` and `status.policy_checks`) writes it; a daemon of another
 number is refused. The protocol
-says a client copies nothing from its crates, so none of them is here.
+says a client copies nothing from its crates, so none of them is here: the
+socket, its peer, the framing and the session file come from Lonca's
+published `lonca-client` crate (`=0.2.1`, a dependency of `imece-agent`,
+record 116), not a copy.
 
 The site's pages (`docs/guide`, `website/i18n`) and the video scenarios
 (`website/video/scenarios`) are imece's own.

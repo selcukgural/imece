@@ -1,10 +1,12 @@
 //! A client of Lonca's daemon (record 116), written against its
 //! `docs/protocol.md`, protocol number [`PROTOCOL`]: one JSON object a line
-//! over a Unix socket. imece reads through it and never writes to the store
+//! over a Unix socket. The socket, its peer, the framing and the person's
+//! session file are Lonca's own `lonca-client`; what the answers mean is
+//! read here. imece reads through it and never writes to the store
 //! (record 115: the daemon is the only writer). Everything here fails
-//! closed: a socket that is not the person's, a daemon of another protocol
-//! number, an answer that does not fit, and no token leaves before the
-//! daemon was checked. Its words are data: what comes from the store reaches
+//! closed: a socket that is not the daemon the machine's install names, a
+//! daemon of another protocol number or older than [`LEAST`], an answer
+//! that does not fit, and no token leaves before the daemon was checked. Its words are data: what comes from the store reaches
 //! the screen only through `clean`.
 //!
 //! What must be signed with the person's key is not done here: the `lonca`
@@ -13,15 +15,15 @@
 //! a repository made just now (record 121).
 
 use std::ffi::{OsStr, OsString};
-use std::fs::{self, DirBuilder, OpenOptions};
-use std::io::{self, BufRead, BufReader, Read, Write};
-use std::os::unix::fs::{DirBuilderExt, FileTypeExt, MetadataExt, OpenOptionsExt};
-use std::os::unix::net::UnixStream;
+use std::fs::{self, DirBuilder};
+use std::io::{self, Read};
+use std::os::unix::fs::DirBuilderExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use serde_json::{Map, Value, json};
+use lonca_client::{ErrorKind, Trust, session};
+use serde_json::{Value, json};
 
 use crate::child;
 
@@ -33,15 +35,11 @@ pub const PROTOCOL: u64 = 1;
 /// newer one's reasons (`replaces:`), and its `status` lists the policy's
 /// checks. A daemon that says an older version, or none, is refused.
 pub const LEAST: [u64; 3] = [0, 2, 1];
-/// The longest line read: the daemon's own `MAX_LINE`.
-const MAX_LINE: u64 = 96 << 20;
 /// How long the daemon gets to answer. Its calls take a millisecond; one
 /// that hangs must not hang who asked.
 const TIMEOUT: Duration = Duration::from_secs(5);
 /// The longest `wait_ms` the daemon holds a `log` request.
 pub const LOG_WAIT_MOST: u64 = 30_000;
-/// A session file is a token and a time; anything longer is not one.
-const SESSION_MOST: u64 = 4096;
 /// What a `lonca` child sees of our environment besides [`child::BASE_ENV`]:
 /// where the daemon is and who the person is, the same as this client.
 const CLI_ENV: &[&str] = &[
@@ -112,13 +110,20 @@ pub const RESERVED_CHECKS: [&str; 9] = [
 pub enum Down {
     /// Nothing answers on the socket.
     NoDaemon,
-    /// Something is there, but not a daemon of the person's: not a socket,
-    /// or another user's.
+    /// Something is there, but not the daemon the machine's install names
+    /// (the person in cooperative mode, `daemon.toml`'s uid in hardened):
+    /// not a socket, another user's, or a file of the install that is not
+    /// what the installer left.
     NotTheDaemon,
     /// It answered outside the protocol, or with another protocol number.
     Protocol,
     /// A daemon of the protocol, but older than [`LEAST`].
     Old,
+    /// This machine's Lonca is a hardened install. Its sessions can count
+    /// as observed and a change of theirs integrate with no person's yes,
+    /// which imece's Δ gate does not yet look at (record 120): refused
+    /// before connecting.
+    Hardened,
     /// No human identity, no session, or an ended one: `lonca human login`.
     SignedOut,
     /// A session the repository does not take: the person is not enrolled
@@ -166,15 +171,18 @@ pub struct Place {
     pub human: Option<String>,
     /// The `lonca` program, found on `PATH`.
     pub program: String,
+    /// Who must be on the socket, as the machine's install says it; none
+    /// when its file is not what the installer left: nothing is trusted.
+    pub trust: Option<Trust>,
 }
 
 impl Place {
     /// From this process's environment.
     pub fn here() -> Place {
-        Place::of(|key| std::env::var_os(key))
+        Place::of(|key| std::env::var_os(key), Trust::load().ok())
     }
 
-    fn of(get: impl Fn(&str) -> Option<OsString>) -> Place {
+    fn of(get: impl Fn(&str) -> Option<OsString>, trust: Option<Trust>) -> Place {
         let path = |key: &str| get(key).map(PathBuf::from);
         let home = path("HOME").unwrap_or_else(|| PathBuf::from("."));
         let lonca = path("LONCA_HOME").unwrap_or_else(|| home.join(".lonca"));
@@ -183,6 +191,7 @@ impl Place {
             humans: path("LONCA_HUMANS").unwrap_or_else(|| home.join(".config/lonca/humans")),
             human: get("LONCA_HUMAN").and_then(|h| h.into_string().ok()),
             program: "lonca".to_string(),
+            trust,
         }
     }
 
@@ -418,19 +427,24 @@ impl Place {
                 read.trim().to_string()
             }
         };
-        valid_human(&name).then_some(name)
+        session::valid_name(&name).then_some(name)
     }
 
-    /// A client of the daemon: the socket checked, the protocol's number
-    /// read with nothing sent, then the person's session on every call.
+    /// A client of the daemon: the socket and its peer checked against
+    /// [`Place::trust`], the protocol's number and version read with
+    /// nothing sent, then the person's session on every call.
     pub fn open(&self) -> Result<Client, Down> {
-        // SAFETY: `geteuid` takes nothing and can not fail.
-        let me = unsafe { libc::geteuid() };
-        let mut client = Client::of(connect(&self.socket, me)?);
+        let trust = self.trust.ok_or(Down::NotTheDaemon)?;
+        if trust.is_hardened() {
+            return Err(Down::Hardened);
+        }
+        let conn = lonca_client::Client::connect_to(&self.socket, &trust).map_err(unreached)?;
+        let mut client = Client { conn };
+        client.timed(TIMEOUT)?;
         client.check_protocol()?;
         let human = self.who().ok_or(Down::SignedOut)?;
-        let file = self.humans.join(format!("{human}.session"));
-        client.token = Some(read_session(&file, me, now_ms()).ok_or(Down::SignedOut)?);
+        let file = session::session_path(&self.humans, &human).map_err(|_| Down::SignedOut)?;
+        client.conn.token = Some(token_of(&file, now_ms()).ok_or(Down::SignedOut)?);
         Ok(client)
     }
 }
@@ -544,106 +558,40 @@ fn warnings(said: &str) -> Vec<String> {
         .collect()
 }
 
-/// Whether `name` is a name that stays in its directory.
-fn valid_human(name: &str) -> bool {
-    !name.is_empty()
-        && !name.starts_with('.')
-        && (name.chars()).all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
-}
-
 fn now_ms() -> i64 {
     let since = SystemTime::now().duration_since(UNIX_EPOCH);
     since.map_or(0, |d| i64::try_from(d.as_millis()).unwrap_or(i64::MAX))
 }
 
-/// The token of the session file at `path`, when it is `me`'s plain file,
-/// nobody else can read it and it has not ended at `now`.
-fn read_session(path: &Path, me: u32, now: i64) -> Option<String> {
-    let file = OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
-        .open(path)
-        .ok()?;
-    let meta = file.metadata().ok()?;
-    if !meta.is_file() || meta.uid() != me || meta.mode() & 0o077 != 0 {
-        return None;
-    }
-    let mut text = String::new();
-    file.take(SESSION_MOST).read_to_string(&mut text).ok()?;
-    let session: Value = serde_json::from_str(&text).ok()?;
-    let ends = session["expires_ms"].as_i64()?;
-    (ends > now)
-        .then(|| session["token"].as_str().map(str::to_string))
-        .flatten()
+/// The token of the session file at `path`, when it is what `lonca`
+/// left (the person's plain file nobody else can read) and it has not
+/// ended at `now`.
+fn token_of(path: &Path, now: i64) -> Option<String> {
+    let found = session::read_session(path).ok()??;
+    (!found.expired(now)).then_some(found.token)
 }
 
-/// The socket at `path`, when it is a socket of `me`'s and `me` is who
-/// listens on it: the token goes nowhere else.
-fn connect(path: &Path, me: u32) -> Result<UnixStream, Down> {
-    let meta = fs::symlink_metadata(path).map_err(|_| Down::NoDaemon)?;
-    if !meta.file_type().is_socket() || meta.uid() != me {
-        return Err(Down::NotTheDaemon);
+/// Why connecting did not reach the daemon: nothing there, or something
+/// that is not it (the check refuses it before a byte is sent).
+fn unreached(e: io::Error) -> Down {
+    match e.kind() {
+        io::ErrorKind::PermissionDenied => Down::NotTheDaemon,
+        _ => Down::NoDaemon,
     }
-    let conn = UnixStream::connect(path).map_err(|_| Down::NoDaemon)?;
-    if peer_uid(&conn) != Some(me) {
-        return Err(Down::NotTheDaemon);
-    }
-    let timed = conn
-        .set_read_timeout(Some(TIMEOUT))
-        .and(conn.set_write_timeout(Some(TIMEOUT)));
-    timed.map_err(|_| Down::NoDaemon)?;
-    Ok(conn)
-}
-
-/// The user listening on the other end of `conn`, as the system tells it
-/// (macOS `getpeereid`, Linux `SO_PEERCRED`).
-fn peer_uid(conn: &UnixStream) -> Option<u32> {
-    use std::os::fd::AsRawFd;
-    let fd = conn.as_raw_fd();
-    #[cfg(target_os = "macos")]
-    let (got, uid) = {
-        let (mut uid, mut gid) = (0, 0);
-        // SAFETY: both pointers are to live integers of the right type.
-        let got = unsafe { libc::getpeereid(fd, &raw mut uid, &raw mut gid) };
-        (got, uid)
-    };
-    #[cfg(target_os = "linux")]
-    let (got, uid) = {
-        let mut cred = libc::ucred {
-            pid: 0,
-            uid: 0,
-            gid: 0,
-        };
-        let mut len = libc::socklen_t::try_from(size_of::<libc::ucred>()).ok()?;
-        let at = (&raw mut cred).cast();
-        // SAFETY: `cred` and `len` are live and `len` says `cred`'s size.
-        let got =
-            unsafe { libc::getsockopt(fd, libc::SOL_SOCKET, libc::SO_PEERCRED, at, &raw mut len) };
-        (got, cred.uid)
-    };
-    peer_told(got, uid)
-}
-
-/// The user the system told, when it answered `got`.
-fn peer_told(got: libc::c_int, uid: u32) -> Option<u32> {
-    (got == 0).then_some(uid)
 }
 
 /// One connection to the daemon. The token is never printed: there is no
 /// `Debug` here.
 pub struct Client {
-    conn: BufReader<UnixStream>,
-    token: Option<String>,
-    id: u64,
+    conn: lonca_client::Client,
 }
 
 impl Client {
-    fn of(conn: UnixStream) -> Client {
-        Client {
-            conn: BufReader::new(conn),
-            token: None,
-            id: 0,
-        }
+    /// How long the daemon gets to answer from now on.
+    fn timed(&mut self, wait: Duration) -> Result<(), Down> {
+        self.conn
+            .set_timeout(Some(wait))
+            .map_err(|_| Down::NoDaemon)
     }
 
     fn check_protocol(&mut self) -> Result<(), Down> {
@@ -660,27 +608,8 @@ impl Client {
     /// `method` on `repo`, with the token when there is one; what the
     /// daemon answered, or why not.
     pub fn call(&mut self, method: &str, repo: Option<&str>, params: Value) -> Result<Value, Down> {
-        self.id += 1;
-        let mut line = Map::new();
-        line.insert("id".into(), json!(self.id));
-        line.insert("method".into(), json!(method));
-        if let Some(repo) = repo {
-            line.insert("repo".into(), json!(repo));
-        }
-        if let Some(token) = &self.token {
-            line.insert("token".into(), json!(token));
-        }
-        line.insert("params".into(), params);
-        let mut bytes = Value::Object(line).to_string().into_bytes();
-        bytes.push(b'\n');
-        let conn = self.conn.get_mut();
-        conn.write_all(&bytes).map_err(|_| Down::NoDaemon)?;
-        let mut answer = Vec::new();
-        (&mut self.conn)
-            .take(MAX_LINE)
-            .read_until(b'\n', &mut answer)
-            .map_err(|_| Down::NoDaemon)?;
-        answered(&answer, self.id)
+        self.conn.repo = repo.map(str::to_string);
+        (self.conn.call(method, params)).map_err(|e| down_of(e.kind()))
     }
 
     /// The repository's state: trunk and what waits for a human.
@@ -769,11 +698,9 @@ impl Client {
     ) -> Result<Value, Down> {
         let wait_ms = wait.map(|d| log_wait(d.as_millis()));
         let params = json!({"from": from, "limit": limit, "wait_ms": wait_ms});
-        let conn = self.conn.get_ref();
-        (conn.set_read_timeout(Some(log_timeout(wait_ms)))).map_err(|_| Down::NoDaemon)?;
+        self.timed(log_timeout(wait_ms))?;
         let told = self.call("log", Some(repo), params);
-        let conn = self.conn.get_ref();
-        (conn.set_read_timeout(Some(TIMEOUT))).map_err(|_| Down::NoDaemon)?;
+        self.timed(TIMEOUT)?;
         told
     }
 }
@@ -787,29 +714,6 @@ fn log_wait(millis: u128) -> u64 {
 /// daemon's usual time on top of it.
 fn log_timeout(wait_ms: Option<u64>) -> Duration {
     TIMEOUT + Duration::from_millis(wait_ms.unwrap_or(0))
-}
-
-/// What the daemon's line `answer` to request `id` says. A line cut short
-/// (no end: the cap or the connection) was no answer.
-fn answered(answer: &[u8], id: u64) -> Result<Value, Down> {
-    let Some((b'\n', line)) = answer.split_last() else {
-        return Err(Down::NoDaemon);
-    };
-    let told: Value = serde_json::from_slice(line).map_err(|_| Down::Protocol)?;
-    let code = told["error"]["code"].as_str();
-    // A connection closed while quiet, or a line too slow, is said under
-    // id 0, whatever was asked after it.
-    let quiet = told["id"].as_u64() == Some(0)
-        && told["ok"].as_bool() == Some(false)
-        && down_of(code) == Down::Again;
-    if told["id"].as_u64() != Some(id) && !quiet {
-        return Err(Down::Protocol);
-    }
-    match told["ok"].as_bool() {
-        Some(true) => Ok(told["result"].clone()),
-        Some(false) => Err(down_of(code)),
-        None => Err(Down::Protocol),
-    }
 }
 
 /// Whether `said`, a daemon's `version`, is [`LEAST`] or later, by its
@@ -835,15 +739,20 @@ pub fn least() -> String {
     LEAST.map(|n| n.to_string()).join(".")
 }
 
-/// What an error code of the daemon's means here; no code, the protocol.
-fn down_of(code: Option<&str>) -> Down {
-    match code {
-        Some("unauthenticated") => Down::SignedOut,
-        Some("forbidden") => Down::Forbidden,
-        Some("not_found") => Down::NoRepo,
-        Some("busy" | "rate_limited" | "verifying" | "closed" | "timeout") => Down::Again,
-        Some(_) => Down::Refused,
-        None => Down::Protocol,
+/// What an error of a call means here: the daemon's code, or the client's
+/// own (`io`: the connection failed or the answer was none; `timed_out`).
+fn down_of(kind: ErrorKind) -> Down {
+    match kind {
+        ErrorKind::Unauthenticated => Down::SignedOut,
+        ErrorKind::Forbidden => Down::Forbidden,
+        ErrorKind::NotFound => Down::NoRepo,
+        ErrorKind::Busy
+        | ErrorKind::RateLimited
+        | ErrorKind::Verifying
+        | ErrorKind::Closed
+        | ErrorKind::Timeout => Down::Again,
+        ErrorKind::Io | ErrorKind::TimedOut => Down::NoDaemon,
+        _ => Down::Refused,
     }
 }
 
@@ -1341,6 +1250,8 @@ impl Pending {
 mod tests {
     use super::*;
     use crate::lonca_fake::{Daemon, POLICY, TRUNK, program, seen, status, write_session};
+    use std::os::unix::fs::MetadataExt;
+    use std::os::unix::fs::PermissionsExt;
 
     #[test]
     fn a_login_says_who_signed_in_and_never_waits_on_stdin() {
@@ -1898,8 +1809,7 @@ mod tests {
     }
 
     fn me() -> u32 {
-        // SAFETY: as in `Place::open`.
-        unsafe { libc::geteuid() }
+        lonca_client::sys::current_uid()
     }
 
     fn up() -> Daemon {
@@ -1911,16 +1821,20 @@ mod tests {
     #[test]
     fn the_place_is_found_as_lonca_finds_it() {
         let of = |vars: &'static [(&str, &str)]| {
-            Place::of(move |key| {
-                let found = vars.iter().find(|(k, _)| *k == key);
-                found.map(|(_, v)| OsString::from(v))
-            })
+            Place::of(
+                move |key| {
+                    let found = vars.iter().find(|(k, _)| *k == key);
+                    found.map(|(_, v)| OsString::from(v))
+                },
+                Some(Trust::cooperative()),
+            )
         };
         let bare = of(&[("HOME", "/h")]);
         assert_eq!(bare.socket, Path::new("/h/.lonca/lonca.sock"));
         assert_eq!(bare.humans, Path::new("/h/.config/lonca/humans"));
         assert_eq!(bare.program, "lonca");
         assert_eq!(bare.human, None);
+        assert_eq!(bare.trust, Some(Trust::cooperative()), "as it was given");
         let home = of(&[("HOME", "/h"), ("LONCA_HOME", "/l")]);
         assert_eq!(home.socket, Path::new("/l/lonca.sock"));
         let all = of(&[
@@ -1938,12 +1852,6 @@ mod tests {
 
     #[test]
     fn a_human_is_a_name_that_stays_in_its_folder() {
-        for good in ["ayse", "a.b_c-1"] {
-            assert!(valid_human(good), "{good}");
-        }
-        for bad in ["", ".hidden", "../x", "a/b", "a b"] {
-            assert!(!valid_human(bad), "{bad}");
-        }
         let d = up();
         let mut place = d.place.clone();
         place.human = Some("../ayse".into());
@@ -1968,35 +1876,35 @@ mod tests {
     }
 
     #[test]
-    fn only_a_socket_of_the_persons_gets_a_word() {
+    fn only_the_daemon_the_install_names_gets_a_word() {
         let d = up();
+        let mut place = d.place.clone();
         // A plain file there is no daemon of theirs.
         let plain = d.dir.join("plain");
         fs::write(&plain, "x").expect("plain");
-        assert_eq!(connect(&plain, me()).err(), Some(Down::NotTheDaemon));
+        place.socket = plain;
+        assert_eq!(place.open().err(), Some(Down::NotTheDaemon));
         // A link to the real one is not the socket either.
         let link = d.dir.join("link");
         std::os::unix::fs::symlink(&d.place.socket, &link).expect("link");
-        assert_eq!(connect(&link, me()).err(), Some(Down::NotTheDaemon));
-        // Another user's socket: refused before connecting.
-        let other = connect(&d.place.socket, me() + 1);
-        assert_eq!(other.err(), Some(Down::NotTheDaemon));
-        assert!(connect(&d.place.socket, me()).is_ok());
-    }
-
-    #[test]
-    fn a_peer_is_who_the_system_says_when_it_says() {
-        assert_eq!(peer_told(0, 5), Some(5));
-        assert_eq!(peer_told(-1, 5), None);
-    }
-
-    #[test]
-    fn the_peer_is_who_listens() {
-        let d = up();
-        let conn = connect(&d.place.socket, me()).expect("connects");
-        assert_eq!(peer_uid(&conn), Some(me()));
-        let (a, _b) = UnixStream::pair().expect("a pair");
-        assert_eq!(peer_uid(&a), Some(me()));
+        place.socket = link;
+        assert_eq!(place.open().err(), Some(Down::NotTheDaemon));
+        // A hardened install is refused before anything is looked at, its
+        // daemon's uid the person's or not.
+        place.socket = d.place.socket.clone();
+        for uid in [me() + 1, me()] {
+            place.trust = Some(Trust::hardened(uid));
+            assert_eq!(place.open().err(), Some(Down::Hardened), "{uid}");
+        }
+        // An install file that is not what the installer left trusts nobody.
+        place.trust = None;
+        assert_eq!(place.open().err(), Some(Down::NotTheDaemon));
+        assert!(
+            d.heard.lock().expect("heard").is_empty(),
+            "nothing was asked"
+        );
+        place.trust = Some(Trust::cooperative());
+        assert!(place.open().is_ok());
     }
 
     #[test]
@@ -2051,11 +1959,6 @@ mod tests {
     }
 
     #[test]
-    fn an_answer_with_no_result_is_nothing() {
-        assert_eq!(answered(b"{\"id\":1,\"ok\":true}\n", 1), Ok(Value::Null));
-    }
-
-    #[test]
     fn without_a_session_nothing_is_asked() {
         let d = Daemon::start(PROTOCOL, |_| Ok(status(&[])));
         assert_eq!(d.place.open().err(), Some(Down::SignedOut), "no file");
@@ -2078,87 +1981,81 @@ mod tests {
         let d = up();
         let file = d.dir.join("mine.session");
         write_session(&file, 100);
-        assert_eq!(
-            read_session(&file, me(), 99).as_deref(),
-            Some("lonca_h_secret")
-        );
-        assert_eq!(read_session(&file, me(), 100), None, "ends at its time");
-        assert_eq!(read_session(&file, me() + 1, 99), None, "someone else's");
+        assert_eq!(token_of(&file, 99).as_deref(), Some("lonca_h_secret"));
+        assert_eq!(token_of(&file, 100), None, "ends at its time");
+        assert_eq!(token_of(&file, 101), None, "and after it");
         for mode in [0o640, 0o604, 0o610, 0o601] {
             let wide = fs::Permissions::from_mode(mode);
             fs::set_permissions(&file, wide).expect("mode");
-            assert_eq!(read_session(&file, me(), 99), None, "{mode:o}");
+            assert_eq!(token_of(&file, 99), None, "{mode:o}");
         }
         fs::set_permissions(&file, fs::Permissions::from_mode(0o600)).expect("mode");
         let link = d.dir.join("link.session");
         std::os::unix::fs::symlink(&file, &link).expect("link");
-        assert_eq!(read_session(&link, me(), 99), None, "a link");
-        assert_eq!(read_session(&d.dir, me(), 99), None, "a folder");
+        assert_eq!(token_of(&link, 99), None, "a link");
+        assert_eq!(token_of(&d.dir, 99), None, "a folder");
+        assert_eq!(token_of(&d.dir.join("none.session"), 99), None, "none");
         fs::write(
             &file,
-            format!("{{\"token\":\"{}\",\"expires_ms\":100}}", "t".repeat(5000)),
+            format!(
+                "{{\"token\":\"{}\",\"expires_ms\":100}}",
+                "t".repeat(70_000)
+            ),
         )
         .expect("long");
-        assert_eq!(read_session(&file, me(), 99), None, "too long to be one");
+        assert_eq!(token_of(&file, 99), None, "too long to be one");
         fs::write(&file, "{\"expires_ms\":100}").expect("short");
-        assert_eq!(read_session(&file, me(), 99), None, "no token");
+        assert_eq!(token_of(&file, 99), None, "no token");
         fs::write(&file, "{\"token\":\"t\"}").expect("short");
-        assert_eq!(read_session(&file, me(), 99), None, "no end");
+        assert_eq!(token_of(&file, 99), None, "no end");
     }
 
-    use std::os::unix::fs::PermissionsExt;
-
     #[test]
-    fn an_answer_is_read_by_the_protocol() {
-        let line = |s: &str| format!("{s}\n").into_bytes();
-        let good = line(r#"{"id":3,"ok":true,"result":{"a":1}}"#);
-        assert_eq!(answered(&good, 3), Ok(json!({"a": 1})));
-        assert_eq!(answered(&good, 4), Err(Down::Protocol), "another's id");
-        assert_eq!(
-            answered(&good[..good.len() - 1], 3),
-            Err(Down::NoDaemon),
-            "cut"
-        );
-        assert_eq!(answered(b"", 3), Err(Down::NoDaemon), "closed");
-        assert_eq!(answered(&line("not json"), 3), Err(Down::Protocol));
-        assert_eq!(
-            answered(&line(r#"{"id":3}"#), 3),
-            Err(Down::Protocol),
-            "no ok"
-        );
+    fn every_error_keeps_its_word() {
         for (code, down) in [
             ("unauthenticated", Down::SignedOut),
             ("forbidden", Down::Forbidden),
             ("not_found", Down::NoRepo),
             ("frozen", Down::Refused),
+            ("denied", Down::Refused),
+            ("internal", Down::Refused),
             ("busy", Down::Again),
             ("rate_limited", Down::Again),
             ("verifying", Down::Again),
             ("closed", Down::Again),
             ("timeout", Down::Again),
+            ("io", Down::NoDaemon),
+            ("timed_out", Down::NoDaemon),
         ] {
-            let e = format!(r#"{{"id":3,"ok":false,"error":{{"code":"{code}"}}}}"#);
-            assert_eq!(answered(&line(&e), 3), Err(down), "{code}");
+            assert_eq!(down_of(ErrorKind::of(code)), down, "{code}");
         }
-        // Under id 0 only what asks to be asked again is an answer.
-        for (code, down) in [
-            ("closed", Down::Again),
-            ("timeout", Down::Again),
-            ("forbidden", Down::Protocol),
-        ] {
-            let e = format!(r#"{{"id":0,"ok":false,"error":{{"code":"{code}"}}}}"#);
-            assert_eq!(answered(&line(&e), 3), Err(down), "{code} under id 0");
-        }
-        let zero = line(r#"{"id":0,"ok":true,"error":{"code":"closed"}}"#);
-        assert_eq!(answered(&zero, 3), Err(Down::Protocol), "id 0 and ok");
-        let other = line(r#"{"id":2,"ok":false,"error":{"code":"closed"}}"#);
-        assert_eq!(answered(&other, 3), Err(Down::Protocol), "another id");
-        let bare = line(r#"{"id":3,"ok":false}"#);
+        let unreached = |kind| super::unreached(io::Error::from(kind));
         assert_eq!(
-            answered(&bare, 3),
-            Err(Down::Protocol),
-            "an error of no code"
+            unreached(io::ErrorKind::PermissionDenied),
+            Down::NotTheDaemon
         );
+        assert_eq!(unreached(io::ErrorKind::NotFound), Down::NoDaemon);
+        assert_eq!(unreached(io::ErrorKind::ConnectionRefused), Down::NoDaemon);
+    }
+
+    #[test]
+    fn a_call_says_what_the_daemon_said() {
+        let d = Daemon::start(PROTOCOL, |asked| match asked["method"].as_str() {
+            Some("status") => Err("forbidden"),
+            Some("tree") => Err("busy"),
+            _ => Ok(json!({"a": 1})),
+        });
+        d.sign_in();
+        let mut c = d.place.open().expect("opens");
+        assert_eq!(c.status("demo").err(), Some(Down::Forbidden));
+        assert_eq!(c.tree("demo", "c").err(), Some(Down::Again));
+        assert_eq!(c.call("x", Some("demo"), json!({})), Ok(json!({"a": 1})));
+        let heard = d.heard.lock().expect("heard");
+        assert_eq!(heard[2]["repo"], "demo");
+        drop(heard);
+        assert_eq!(c.call("x", None, json!({})), Ok(json!({"a": 1})));
+        let heard = d.heard.lock().expect("heard");
+        assert!(heard[3].get("repo").is_none(), "no repository: none named");
     }
 
     #[test]
@@ -2767,19 +2664,14 @@ mod tests {
         let mut c = d.place.open().expect("opens");
         let wait = Some(Duration::from_secs(2));
         c.log("demo", 0, None, wait).expect("log");
-        let timeout = c.conn.get_ref().read_timeout().expect("timeout");
-        assert_eq!(timeout, Some(TIMEOUT));
+        assert_eq!(c.conn.timeout(), Some(TIMEOUT));
     }
 
     #[test]
-    fn a_daemon_gone_is_said_on_the_next_call() {
+    fn a_client_waits_its_time_from_the_start() {
         let d = up();
-        let mut c = d.place.open().expect("opens");
-        c.conn
-            .get_ref()
-            .shutdown(std::net::Shutdown::Both)
-            .expect("shuts");
-        assert_eq!(c.status("demo"), Err(Down::NoDaemon));
+        let c = d.place.open().expect("opens");
+        assert_eq!(c.conn.timeout(), Some(TIMEOUT));
     }
 
     /// The real program against a real daemon, as `:lonca import`, `:lonca

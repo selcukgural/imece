@@ -142,7 +142,7 @@ Every 5 seconds the project's line says how it stands:
 | `lonca kule …` | named just now, not answered yet |
 | `⌀ no lonca` | it can not be read; the journal says why, once |
 
-The reasons: no daemon answers, what is on the socket is not your daemon, another protocol, a daemon older than Lonca 0.2.1, you are not signed in, or you are not enrolled in a repository of that name (the daemon says the same of a repository it does not have, so check the name, or make it with `:lonca import`).
+The reasons: no daemon answers, what is on the socket is not your daemon, another protocol, a daemon older than Lonca 0.2.1, a Lonca installed hardened on this machine (imece does not work with one yet), you are not signed in, or you are not enrolled in a repository of that name (the daemon says the same of a repository it does not have, so check the name, or make it with `:lonca import`).
 
 Until it answers, the project is closed: nobody is hired, `:fork` is refused, and no Δ is applied, rejected or sent back. Agents go on working, and their Δs wait. A project on no repository never touches the socket. See [`:lonca`](../reference/commands.md#lonca-nameoffloginimport).
 

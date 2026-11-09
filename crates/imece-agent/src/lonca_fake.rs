@@ -12,6 +12,7 @@ use std::thread;
 use serde_json::{Value, json};
 
 use crate::lonca::Place;
+use lonca_client::Trust;
 
 /// A `lonca` program that writes where it runs and its arguments to
 /// [`seen`], then runs the shell text `body`; the place that finds it, in
@@ -34,6 +35,7 @@ pub fn program(body: &str) -> (Place, PathBuf) {
         humans: dir.join("humans"),
         human: None,
         program: bin.display().to_string(),
+        trust: Some(Trust::cooperative()),
     };
     (place, dir)
 }
@@ -129,6 +131,8 @@ impl Daemon {
             humans: dir.clone(),
             human: Some("ayse".into()),
             program: "lonca".into(),
+            // The person's own daemon, whatever this machine's install says.
+            trust: Some(Trust::cooperative()),
         };
         Daemon { dir, place, heard }
     }

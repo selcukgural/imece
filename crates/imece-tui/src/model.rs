@@ -684,6 +684,9 @@ pub enum StoreDown {
     Protocol,
     /// A daemon older than the Lonca imece needs (`lonca::LEAST`).
     Old,
+    /// This machine's Lonca is a hardened install, which imece does not
+    /// work with yet (record 120).
+    Hardened,
     SignedOut,
     Forbidden,
     NoRepo,
@@ -708,6 +711,9 @@ impl StoreDown {
             StoreDown::NotTheDaemon => "what is on Lonca's socket is not the person's daemon",
             StoreDown::Protocol => "Lonca's daemon speaks another protocol",
             StoreDown::Old => "Lonca's daemon is older than 0.2.1, which imece needs",
+            StoreDown::Hardened => {
+                "Lonca is installed hardened here, which imece does not work with yet"
+            }
             StoreDown::SignedOut => "the person is not signed in to Lonca",
             StoreDown::Forbidden => "the person is not enrolled in a Lonca repository of that name",
             StoreDown::NoRepo => "Lonca has no such repository",
@@ -9040,6 +9046,7 @@ mod tests {
             StoreDown::NotTheDaemon,
             StoreDown::Protocol,
             StoreDown::Old,
+            StoreDown::Hardened,
             StoreDown::SignedOut,
             StoreDown::Forbidden,
             StoreDown::NoRepo,

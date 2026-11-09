@@ -13986,6 +13986,7 @@ after | not a table";
             (StoreDown::NotTheDaemon, "not your daemon"),
             (StoreDown::Protocol, "another protocol"),
             (StoreDown::Old, "brew upgrade lonca"),
+            (StoreDown::Hardened, "hardened"),
             (StoreDown::SignedOut, ":lonca login"),
             (StoreDown::Forbidden, "not enrolled"),
             (StoreDown::NoRepo, "no such repository"),

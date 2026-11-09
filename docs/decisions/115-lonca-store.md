@@ -26,8 +26,9 @@ place in imece. So:
   depends on Lonca" (the "Code from Lonca and Kule" section of
   `CLAUDE.md`) is lifted for Lonca and kept for Kule. The dependency is
   on a running `lonca` daemon and its protocol (a Unix socket, one JSON
-  line a request, the same calls `lonca-cli` makes), never on Lonca's
-  crates as libraries and never a second writer: the daemon is the
+  line a request, the same calls `lonca-cli` makes), never a second
+  writer (since 2026-11-09 through Lonca's published `lonca-client`
+  crate, record 116; no other Lonca crate): the daemon is the
   sequencer, and imece writing to the store itself would break the model
   the audit log stands on. Code imece embeds (symbol parsing for the code
   map, the client's protocol shape) is still copied with its header and
