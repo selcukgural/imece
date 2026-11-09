@@ -46,6 +46,7 @@ use crate::checks;
 use crate::i18n::{Lang, clean};
 use crate::model::*;
 use crate::paths;
+use crate::runners::{self, Runners};
 use crate::store::{self, Found, Kept, Store};
 use crate::ui::words;
 use crate::welcome::{Answers, Seen};
@@ -82,6 +83,7 @@ pub(crate) use self::review::{REVIEW_CAP, REVIEW_DAY_CALLS, REVIEW_DAY_COST};
 pub use self::sessions::apply;
 pub(crate) use self::suggest::{SUGGEST_CAP, SUGGEST_DAY_CALLS, SUGGEST_DAY_COST};
 pub use self::tidy::Refusal as TidyRefusal;
+pub(crate) use self::tools::routine;
 use self::{
     bus::*, changes::*, hiring::*, projects::*, prompts::*, sessions::*, suggest::*, tools::*,
 };
@@ -547,6 +549,9 @@ enum GitDone {
     Files {
         project: ProjectId,
         files: io::Result<(Vec<String>, bool)>,
+        /// The tests those files call for (record 136); none when they
+        /// could not be listed.
+        runners: Runners,
     },
 }
 
@@ -1812,7 +1817,13 @@ mod tests {
         live.git_back = git_back;
         let came = says(&mut live, &mut w, |_| {
             let files = Ok((vec!["a.rs".into()], false));
-            git.send(GitDone::Files { project: 0, files }).unwrap();
+            let runners = Runners::default();
+            git.send(GitDone::Files {
+                project: 0,
+                files,
+                runners,
+            })
+            .unwrap();
         });
         assert!(came, "git");
         assert_eq!(w.projects[0].files, ["a.rs"]);

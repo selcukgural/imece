@@ -90,15 +90,16 @@ pub(super) fn approve_tool() -> Tool {
 /// Whether what a session asks is routine, allowed without the person:
 /// one line that is one program with its arguments (nothing a shell would
 /// read otherwise, no second line), which the run tool would run for
-/// `role`: the build, the tests, git's reading commands, the programs
-/// the person named.
-pub(super) fn routine(role: Role, what: &Ask, programs: &[String]) -> bool {
+/// `role`: the build, the tests (cargo's and those its project's files
+/// call for, `tests`), git's reading commands, the programs the person
+/// named.
+pub(crate) fn routine(role: Role, what: &Ask, programs: &[String], tests: &Runners) -> bool {
     match what {
         Ask::Command { command, .. } => {
             let line = command.trim();
             // A shell runs each line as a command of its own.
             !line.contains(['\n', '\r'])
-                && run::split(line).is_ok_and(|argv| allowed(role, &argv, programs).is_ok())
+                && run::split(line).is_ok_and(|argv| allowed(role, &argv, programs, tests).is_ok())
         }
         Ask::Other { .. } => false,
     }
@@ -242,9 +243,15 @@ pub(super) fn no_git_in_workspace(agent: &Agent, argv: &[String]) -> Result<(), 
 
 /// Whether an agent in `role` may run `argv`: cargo without the commands
 /// that change dependencies (a leader: without the ones that change
-/// files), git's reading commands, and for workers and helpers the
+/// files), git's reading commands, the test commands the project's files
+/// call for (`tests`, record 136), and for workers and helpers the
 /// programs the person named. Nothing else.
-pub(super) fn allowed(role: Role, argv: &[String], programs: &[String]) -> Result<(), String> {
+pub(super) fn allowed(
+    role: Role,
+    argv: &[String],
+    programs: &[String],
+    tests: &Runners,
+) -> Result<(), String> {
     let program = Path::new(&argv[0])
         .file_name()
         .map(|f| f.to_string_lossy().into_owned())
@@ -301,17 +308,24 @@ pub(super) fn allowed(role: Role, argv: &[String], programs: &[String]) -> Resul
             }
         }
         _ if !leader && programs.contains(&program) => Ok(()),
-        _ => {
+        _ => tests.check(argv).unwrap_or_else(|| {
             let mut can = vec!["cargo".to_string(), "git".to_string()];
             if !leader {
                 can.extend(programs.iter().cloned());
             }
-            Err(format!(
+            let mut why = format!(
                 "{program} is not a program imece runs; these are: {} (the person adds \
                  one with --run NAME)",
                 can.join(", ")
-            ))
-        }
+            );
+            if tests.any() {
+                why.push_str(&format!(
+                    "; and this repository's tests: {}",
+                    tests.lines().join(", ")
+                ));
+            }
+            Err(why)
+        }),
     }
 }
 
@@ -327,6 +341,11 @@ pub(super) fn run_tool(role: Role, programs: &[String], timeout: Duration) -> To
     } else {
         can.extend(programs.iter().cloned());
     }
+    can.push(
+        "the tests this repository's files call for, when it is Python, JavaScript or \
+         Go (whoami names them)"
+            .to_string(),
+    );
     Tool {
         name: "run".into(),
         description: format!(
@@ -666,7 +685,8 @@ impl Live {
                 ));
             }
             let argv = run::split(line)?;
-            allowed(w.agents[from].role, &argv, &self.run_programs)?;
+            let tests = &w.projects[w.agents[from].project].runners;
+            allowed(w.agents[from].role, &argv, &self.run_programs, tests)?;
             no_git_in_workspace(&w.agents[from], &argv)?;
             let cwd = self.cwds[from]
                 .clone()
@@ -748,7 +768,8 @@ impl Live {
     /// anything else waits in the person's inbox and is answered when
     /// they decide. The trace says which.
     pub(super) fn ask(&mut self, w: &mut World, from: AgentId, what: Ask, reply: Reply) {
-        if routine(w.agents[from].role, &what, &self.run_programs) {
+        let tests = &w.projects[w.agents[from].project].runners;
+        if routine(w.agents[from].role, &what, &self.run_programs, tests) {
             w.agents[from].trace(w.tick, format!("allowed on its own: {}", what.line()));
             self.reply(reply, true);
             return;
@@ -786,11 +807,11 @@ impl Live {
             return false;
         };
         let role = w.agents[from].role;
-        let rules = &w.projects[w.agents[from].project].allowed;
+        let project = &w.projects[w.agents[from].project];
         standing::covered(
             command,
-            |argv| allowed(role, argv, &self.run_programs).is_ok(),
-            rules,
+            |argv| allowed(role, argv, &self.run_programs, &project.runners).is_ok(),
+            &project.allowed,
         )
     }
 
@@ -809,9 +830,10 @@ impl Live {
         };
         let role = w.agents[id].role;
         let p = w.agents[id].project;
+        let tests = &w.projects[p].runners;
         let rules = standing::needed(
             command,
-            |argv| allowed(role, argv, &self.run_programs).is_ok(),
+            |argv| allowed(role, argv, &self.run_programs, tests).is_ok(),
             &w.projects[p].allowed,
         )?;
         let added = w.stand(p, &rules);
@@ -900,12 +922,18 @@ mod tests {
     use super::*;
     use crate::live::testing::*;
 
+    const NO_TESTS: Runners = Runners {
+        python: false,
+        node: None,
+        go: false,
+    };
+
     #[test]
     fn what_may_run_is_cargo_git_s_reads_and_the_person_s_programs_nothing_else() {
         let extra = vec!["npm".to_string(), "make".to_string()];
         for role in [Role::Leader, Role::Worker, Role::Helper] {
-            let ok = |line: &str| allowed(role, &argv(line), &extra).unwrap();
-            let no = |line: &str| allowed(role, &argv(line), &extra).unwrap_err();
+            let ok = |line: &str| allowed(role, &argv(line), &extra, &NO_TESTS).unwrap();
+            let no = |line: &str| allowed(role, &argv(line), &extra, &NO_TESTS).unwrap_err();
             ok("cargo test --workspace");
             ok("cargo +nightly clippy -- -D warnings");
             ok("cargo fmt --all --check");
@@ -972,19 +1000,37 @@ mod tests {
             "new x",
             "init",
         ] {
-            let e = allowed(Role::Leader, &argv(&format!("cargo {writes}")), &extra).unwrap_err();
+            let e = allowed(
+                Role::Leader,
+                &argv(&format!("cargo {writes}")),
+                &extra,
+                &NO_TESTS,
+            )
+            .unwrap_err();
             assert!(e.contains("changes files"), "{e}");
-            allowed(Role::Worker, &argv(&format!("cargo {writes}")), &extra).unwrap();
-            allowed(Role::Helper, &argv(&format!("cargo {writes}")), &[]).unwrap();
+            allowed(
+                Role::Worker,
+                &argv(&format!("cargo {writes}")),
+                &extra,
+                &NO_TESTS,
+            )
+            .unwrap();
+            allowed(
+                Role::Helper,
+                &argv(&format!("cargo {writes}")),
+                &[],
+                &NO_TESTS,
+            )
+            .unwrap();
         }
         for program in ["npm test", "make check"] {
-            let e = allowed(Role::Leader, &argv(program), &extra).unwrap_err();
+            let e = allowed(Role::Leader, &argv(program), &extra, &NO_TESTS).unwrap_err();
             assert!(e.contains("these are: cargo, git ("), "{e}");
-            allowed(Role::Worker, &argv(program), &extra).unwrap();
-            let e = allowed(Role::Worker, &argv(program), &[]).unwrap_err();
+            allowed(Role::Worker, &argv(program), &extra, &NO_TESTS).unwrap();
+            let e = allowed(Role::Worker, &argv(program), &[], &NO_TESTS).unwrap_err();
             assert!(e.contains("these are: cargo, git ("), "{e}");
         }
-        let e = allowed(Role::Worker, &argv("yarn"), &extra).unwrap_err();
+        let e = allowed(Role::Worker, &argv("yarn"), &extra, &NO_TESTS).unwrap_err();
         assert!(e.contains("cargo, git, npm, make"), "{e}");
     }
 
@@ -1009,7 +1055,7 @@ mod tests {
             "git --git-dir=/x status",
             "git --no-pager log",
         ] {
-            let e = allowed(Role::Worker, &argv(before), &[]).unwrap_err();
+            let e = allowed(Role::Worker, &argv(before), &[], &NO_TESTS).unwrap_err();
             assert!(e.contains("no options before its command"), "{before}: {e}");
         }
         for runs in [
@@ -1030,17 +1076,17 @@ mod tests {
             "git diff --out /tmp/x",
             "git diff -RO/tmp/order",
         ] {
-            let e = allowed(Role::Leader, &argv(runs), &[]).unwrap_err();
+            let e = allowed(Role::Leader, &argv(runs), &[], &NO_TESTS).unwrap_err();
             assert!(
                 e.contains("a pager or an output file is not run through imece"),
                 "{runs}: {e}"
             );
         }
-        let e = allowed(Role::Worker, &argv("git diff -Oorder"), &[]).unwrap_err();
+        let e = allowed(Role::Worker, &argv("git diff -Oorder"), &[], &NO_TESTS).unwrap_err();
         assert!(e.starts_with("git diff -Oorder:"), "{e}");
         // A value with an O in it is refused with them; apart it runs.
-        assert!(allowed(Role::Leader, &argv("git log -SFOO"), &[]).is_err());
-        allowed(Role::Leader, &argv("git log -S FOO"), &[]).unwrap();
+        assert!(allowed(Role::Leader, &argv("git log -SFOO"), &[], &NO_TESTS).is_err());
+        allowed(Role::Leader, &argv("git log -S FOO"), &[], &NO_TESTS).unwrap();
         for reads in [
             "git log --oneline -5",
             "git log --no-merges --",
@@ -1051,7 +1097,7 @@ mod tests {
             "git grep -n foo",
             "git show HEAD:src/x.rs",
         ] {
-            allowed(Role::Leader, &argv(reads), &[]).unwrap();
+            allowed(Role::Leader, &argv(reads), &[], &NO_TESTS).unwrap();
         }
     }
 
@@ -1071,7 +1117,10 @@ mod tests {
             "git log --oneline -5",
             "npm test",
         ] {
-            assert!(routine(Role::Worker, &bash(yes), &extra), "{yes:?}");
+            assert!(
+                routine(Role::Worker, &bash(yes), &extra, &NO_TESTS),
+                "{yes:?}"
+            );
         }
         for no in [
             "cargo test | tail",
@@ -1088,18 +1137,128 @@ mod tests {
             "ls",
             "",
         ] {
-            assert!(!routine(Role::Worker, &bash(no), &extra), "{no:?}");
+            assert!(
+                !routine(Role::Worker, &bash(no), &extra, &NO_TESTS),
+                "{no:?}"
+            );
         }
         // The run tool's rules, role and programs included.
-        assert!(!routine(Role::Worker, &bash("npm test"), &[]));
-        assert!(routine(Role::Worker, &bash("cargo fmt"), &extra));
-        assert!(!routine(Role::Leader, &bash("cargo fmt"), &extra));
+        assert!(!routine(Role::Worker, &bash("npm test"), &[], &NO_TESTS));
+        assert!(routine(Role::Worker, &bash("cargo fmt"), &extra, &NO_TESTS));
+        assert!(!routine(
+            Role::Leader,
+            &bash("cargo fmt"),
+            &extra,
+            &NO_TESTS
+        ));
         // Only a command is ever routine.
         let other = Ask::Other {
             tool: "Bash".into(),
             detail: "cargo test".into(),
         };
-        assert!(!routine(Role::Worker, &other, &extra));
+        assert!(!routine(Role::Worker, &other, &extra, &NO_TESTS));
+    }
+
+    const PY: Runners = Runners {
+        python: true,
+        node: None,
+        go: false,
+    };
+
+    #[test]
+    fn the_tests_a_project_s_files_call_for_run_as_cargo_s_and_nothing_more() {
+        let extra = vec!["make".to_string()];
+        for role in [Role::Leader, Role::Worker, Role::Helper, Role::Solo] {
+            allowed(role, &argv("python3 -m unittest -v"), &[], &PY).unwrap();
+            allowed(role, &argv("pytest -x tests"), &extra, &PY).unwrap();
+            assert!(routine(role, &bash("python3 -m unittest"), &[], &PY));
+            assert!(!routine(role, &bash("python3 -m unittest"), &[], &NO_TESTS));
+            let e = allowed(role, &argv("python3 -m unittest"), &[], &NO_TESTS).unwrap_err();
+            assert!(
+                e.contains("not a program imece runs") && !e.contains("this repository's tests"),
+                "{e}"
+            );
+            let e = allowed(role, &argv("python3 -c x"), &[], &PY).unwrap_err();
+            assert!(e.contains("only as python3 -m pytest"), "{e}");
+            let e = allowed(role, &argv("pytest -p evil"), &[], &PY).unwrap_err();
+            assert!(e.contains("not an option imece runs"), "{e}");
+            let e = allowed(role, &argv("node x.js"), &[], &PY).unwrap_err();
+            assert!(
+                e.ends_with(
+                    "(the person adds one with --run NAME); and this repository's tests: \
+                     python3 -m pytest …, python3 -m unittest …, pytest …"
+                ),
+                "{e}"
+            );
+            // Anything more a shell reads still asks.
+            for no in [
+                "python3 -m unittest 2>&1 | tail -5",
+                "python3 -m unittest > out",
+                "pytest \"$X\"",
+                "pytest\nrm -rf x",
+            ] {
+                assert!(!routine(role, &bash(no), &[], &PY), "{no:?}");
+            }
+        }
+        // The person's program goes first: all of it, for those who run it.
+        let own = ["python3".to_string()];
+        allowed(Role::Worker, &argv("python3 x.py"), &own, &PY).unwrap();
+        let e = allowed(Role::Leader, &argv("python3 x.py"), &own, &PY).unwrap_err();
+        assert!(e.contains("only as python3 -m pytest"), "{e}");
+        // cargo and git are as they were.
+        allowed(Role::Worker, &argv("cargo test"), &[], &PY).unwrap();
+        let e = allowed(Role::Worker, &argv("git push"), &[], &PY).unwrap_err();
+        assert!(e.contains("only reads"), "{e}");
+    }
+
+    #[test]
+    fn a_project_s_tests_go_on_at_once_count_with_a_yes_and_run() {
+        let mut w = team(2);
+        let mut live = idle_live(3);
+        let before = ask_to_run(&live, 1, "python3 -m unittest -v");
+        live.step(&mut w);
+        assert!(before.try_recv().is_err(), "no tests read yet: it asks");
+        w.projects[0].runners = PY;
+        let now = ask_to_run(&live, 2, "python3 -m unittest -v");
+        live.step(&mut w);
+        assert_eq!(verdict(&now)["behavior"], "allow");
+        assert!(
+            w.agents[2]
+                .trace
+                .iter()
+                .any(|l| l.ends_with(" allowed on its own: Bash: python3 -m unittest -v"))
+        );
+        // A yes from now on needs no rule for them, and a rule's line runs
+        // them beside what it covers.
+        let item = w.open_inbox()[0];
+        assert_eq!(live.always(&mut w, item), Ok(Vec::new()), "nothing to add");
+        assert_eq!(verdict(&before)["behavior"], "allow");
+        let both = ask_to_run(&live, 1, "pytest -x && make");
+        live.step(&mut w);
+        assert!(both.try_recv().is_err());
+        let item = *w.open_inbox().last().unwrap();
+        let added = live.always(&mut w, item).unwrap();
+        assert_eq!(
+            added.iter().map(Standing::line).collect::<Vec<_>>(),
+            ["make"]
+        );
+        let again = ask_to_run(&live, 2, "make && python3 -m pytest");
+        live.step(&mut w);
+        assert_eq!(verdict(&again)["behavior"], "allow", "covered");
+        w.projects[0].runners = NO_TESTS;
+        let gone = ask_to_run(&live, 2, "make && python3 -m pytest");
+        live.step(&mut w);
+        assert!(gone.try_recv().is_err(), "the files call for none now");
+        // The run tool checks a run against them too.
+        let (tx, rx) = mpsc::channel();
+        live.run(&mut w, 1, &json!({ "command": "pytest -p evil" }), tx);
+        let e = rx.try_recv().unwrap().unwrap_err();
+        assert!(e.contains("not a program imece runs"), "{e}");
+        w.projects[0].runners = PY;
+        let (tx, rx) = mpsc::channel();
+        live.run(&mut w, 1, &json!({ "command": "pytest -p evil" }), tx);
+        let e = rx.try_recv().unwrap().unwrap_err();
+        assert!(e.contains("not an option imece runs"), "{e}");
     }
 
     /// Agent `from`'s session asks to run `command`, through the bus;
@@ -1586,10 +1745,22 @@ mod tests {
         assert_eq!(lead.input["required"], json!(["command"]));
         let worker = run_tool(Role::Worker, &extra, t);
         assert!(
-            worker.description.contains("; npm."),
+            worker.description.contains("; npm; the tests"),
             "{}",
             worker.description
         );
+        // Every role runs the tests its project's files call for, named
+        // where they are known (record 136).
+        for tool in [&lead, &worker] {
+            assert!(
+                tool.description.contains(
+                    "; the tests this repository's files call for, when it is Python, \
+                     JavaScript or Go (whoami names them). A run"
+                ),
+                "{}",
+                tool.description
+            );
+        }
         assert!(
             worker
                 .description

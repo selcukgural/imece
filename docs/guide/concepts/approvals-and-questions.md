@@ -15,7 +15,7 @@ Claude Code runs `--permission-prompts host --permission-prompt-tool mcp__imece_
 
 ### Routine commands run at once
 
-A shell command is **routine** when it is one line, one program with its arguments (nothing a shell would read otherwise: no pipes, redirections, `&&`, `$`, globs), and the `run` tool's policy would let the role run it (below). A routine command is allowed on its own, with a trace line "allowed on its own"; the build, the tests and git's reading commands never wait for you.
+A shell command is **routine** when it is one line, one program with its arguments (nothing a shell would read otherwise: no pipes, redirections, `&&`, `$`, globs), and the `run` tool's policy would let the role run it (below). A routine command is allowed on its own, with a trace line "allowed on its own"; the build, the tests and git's reading commands never wait for you. That holds for a Python, JavaScript or Go checkout's own tests too ([below](#the-tests-a-checkout-calls-for)): `python3 -m unittest -v` runs at once, `python3 -m unittest 2>&1 | tail -5` asks, as `cargo test | tail` does.
 
 ### Everything else waits
 
@@ -40,7 +40,7 @@ What an ask shows: for a shell command the command; for another tool what it tou
 
 ### A yes from now on
 
-`A` on an ask says yes from now on to its commands, for every agent of that project: `npm run build` gives `npm run …` (the program and its first argument), `make` gives `make`. The ask goes on, so does every other open ask of the project it now covers, and a later ask that only runs such commands (and routine ones) goes on without asking you; its trace says `allowed by your yes from now on: Bash: …`. A line of several commands (`&&`, `||`, `;`, `|`) goes on when each is routine or has its yes. After a yes's two words a line may hold `$NAME`, a glob or a `$(…)`, and what a `$(…)` runs needs its own yes: `A` on `gh pr view "$(git branch --show-current)"` gives `gh pr …` and `git branch …`. `2>&1` and `>/dev/null` change nothing. Those words never count for a routine command or for git, whose denied words a shell could hide (`cargo $X`, `git grep $X`). A line no such yes can hold (an option first as in `rm -rf target`, a redirection to a file, a backtick) gets a yes to that line alone, shown `` `rm -rf target` ``: only those bytes go on, `rm -rf /` still asks. A file edit or a fetch can have none: `A` says why and `a` allows it once. The list is kept with the project between runs; `:allow` shows it, `:allow npm run` adds one by name (before you step away), and `:allow npm run` again takes it out; `:allow rm -rf target` takes out the yes to that line. The journal says `shop-api: you say yes from now on to npm run …`.
+`A` on an ask says yes from now on to its commands, for every agent of that project: `npm run build` gives `npm run …` (the program and its first argument), `make` gives `make`. A Python interpreter's `-m` is read with its module: `python3 -m pip install x` gives `python3 -m pip …`, which holds for that module with any words after it and for no other module, nor for `python3` itself (`python3 -c …`, `python3 x.py` still ask). The ask goes on, so does every other open ask of the project it now covers, and a later ask that only runs such commands (and routine ones) goes on without asking you; its trace says `allowed by your yes from now on: Bash: …`. A line of several commands (`&&`, `||`, `;`, `|`) goes on when each is routine or has its yes. After a yes's two words a line may hold `$NAME`, a glob or a `$(…)`, and what a `$(…)` runs needs its own yes: `A` on `gh pr view "$(git branch --show-current)"` gives `gh pr …` and `git branch …`. `2>&1` and `>/dev/null` change nothing. Those words never count for a routine command or for git, whose denied words a shell could hide (`cargo $X`, `git grep $X`). A line no such yes can hold (an option first as in `rm -rf target`, a redirection to a file, a backtick) gets a yes to that line alone, shown `` `rm -rf target` ``: only those bytes go on, `rm -rf /` still asks. A file edit or a fetch can have none: `A` says why and `a` allows it once. The list is kept with the project between runs; `:allow` shows it, `:allow npm run` adds one by name (before you step away), and `:allow npm run` again takes it out; `:allow rm -rf target` takes out the yes to that line. The journal says `shop-api: you say yes from now on to npm run …`.
 
 ### A yes for this turn
 
@@ -80,6 +80,7 @@ Every agent has a `run` tool on the bus: one program and its arguments, no shell
 | --- | --- |
 | `cargo` | every command except the ones that change dependencies or reach outside the project: `add`, `remove`, `rm`, `install`, `uninstall`, `publish`, `login`, `logout`, `owner`, `yank`. A leader also without the ones that change files (`fmt` without `--check`, `fix`, `clean`, `init`, `new`). |
 | `git` | reading commands only: `blame`, `diff`, `grep`, `log`, `ls-files`, `rev-parse`, `show`, `status`. No option before the command (`-c`, `-C`, `--git-dir`), none that starts a pager or writes a file (`-O…`, `--open-files-in-pager…`, `--output…`), also when short options go together (`-iO…`) or a long name is cut short (`--open=…`). |
+| the checkout's tests | the test commands its files call for ([below](#the-tests-a-checkout-calls-for)), for every role, as `cargo test` is. |
 | `--run PROG[,..]` | the programs you name (`--run npm,make`), for workers and helpers only; repeatable. |
 | anything else | refused, with the list of what is allowed and how you add to it. |
 
@@ -89,6 +90,20 @@ Every agent has a `run` tool on the bus: one program and its arguments, no shell
 - `run` has no network block of its own; cargo may reach the registry when the lockfile is off.
 
 The same policy decides which shell commands are routine, so under `standard` a worker's `cargo test` runs whether it goes through `run` or Claude Code's shell; only a `run` ties its result to the tree it ran on and shows on the change ([changes](../concepts/changes.md)).
+
+### The tests a checkout calls for
+
+imece reads which tests a project has from the files of your checkout, as git lists them with its files (on its own thread, at the project's opening and again while agents work), and runs those test commands as it runs `cargo test`: routine, through `run`, so a run counts on the change's verdict. Only these shapes, never the program as a whole:
+
+| The checkout has | Runs at once |
+| --- | --- |
+| `pyproject.toml`, `setup.py`, `setup.cfg`, `tox.ini`, `pytest.ini` or a `requirements*.txt` at its top, or a `test_*.py` / `*_test.py` anywhere | `python3 -m pytest …`, `python3 -m unittest …` (or with `python`), `pytest …` |
+| `package.json` at its top | `npm test`, `npm run test`, each with words for the test script after `--`; `pnpm` for a `pnpm-lock.yaml`, `yarn` for a `yarn.lock` instead of `npm` |
+| `go.mod` at its top | `go test …` |
+
+What comes after the shape is checked too: pytest and unittest take only the options that choose, show or stop tests (`-k`, `-m`, `-x`, `-v`, `-q`, `-s`, `--lf`, `--tb`, `--maxfail`, `-n`, `discover -s -p -t`, …), and `go test` only `-run`, `-count`, `-race`, `-v`, `-timeout`, `-short`, `-cover`, `-json`, `-tags` and the like, with packages as `./…`. An option that loads a plugin, reads options or arguments from a file, writes a file or runs another program is refused (`pytest -p`, `-c`, `-o`, `@args`, `--basetemp`, `--junitxml`; `go test -exec`, `-o`, `-toolexec`, `-coverprofile`, `-args`), and so is anything of the package manager's own before `--` (`npm test --prefix …`). No word may name a path outside the agent's directory: `/…`, `~…` or a `..` part, also after `=`. `python3 -c …`, `python3 script.py`, `npm run build`, `node x.js`, `go build` still ask; a yes from now on (`A`) holds them.
+
+The journal says what a project's files call for when imece first reads it and whenever it changes (`web's files call for these tests, which now run without asking you, through the run tool too: npm test, npm run test`), `whoami` names them for an agent, and each agent's instructions name them, so it runs them as one program instead of through a pipe. These tests run the repository's code (a `conftest.py`, a test script in `package.json`), as `cargo test` runs a `build.rs`: an agent that can write the repository can already make them do anything, and the yes that counts stays yours, on the change. The commands are read from your checkout, so a worker's own new `package.json` unlocks nothing until you apply it. A folder without git reads none.
 
 ## See also
 

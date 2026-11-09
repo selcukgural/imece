@@ -313,6 +313,13 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
         } => shell(lang, command, *ended, *took),
         Event::Opened { leader, path } => fill(t.ev_opened, &[project(w, *leader), path]),
         Event::NoGit { leader, path } => fill(t.ev_no_git, &[name(w, *leader), path]),
+        Event::TestsFound { leader, commands } => {
+            let project = &w.projects[w.agents[*leader].project].name;
+            match commands.is_empty() {
+                true => fill(t.ev_tests_none, &[project]),
+                false => fill(t.ev_tests_found, &[project, &commands.join(", ")]),
+            }
+        }
         Event::StoreDown { leader, repo, why } => fill(
             t.ev_store_down,
             &[project(w, *leader), repo, store_down(t, *why)],

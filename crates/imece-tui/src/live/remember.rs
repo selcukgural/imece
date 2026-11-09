@@ -2263,6 +2263,7 @@ mod tests {
             allowed: Vec::new(),
             plan: PlanGate::default(),
             no_git: false,
+            runners: Runners::default(),
             lonca: None,
             archived: Some(Archived {
                 at: 1,

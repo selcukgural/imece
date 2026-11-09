@@ -498,6 +498,10 @@ pub struct Project {
     /// works straight in it: no worktree, no change to review. Found at
     /// each open and start, not saved.
     pub no_git: bool,
+    /// The test commands the checkout's files call for (record 136),
+    /// routine and the run tool's beside cargo's: read with its files on
+    /// the checkout's thread (live), from its kit (the demo); not saved.
+    pub runners: crate::runners::Runners,
     /// The Lonca repository the person named for this project (`:lonca`,
     /// record 116) and what its daemon said last.
     pub lonca: Option<OnLonca>,
@@ -2029,6 +2033,14 @@ pub enum Event {
         leader: AgentId,
         path: String,
     },
+    /// The test commands `leader`'s project runs without the person's
+    /// yes, beside cargo's (record 136), changed as its files were read:
+    /// `commands` as [`crate::runners::Runners::lines`] names them, none
+    /// when the files call for none any more.
+    TestsFound {
+        leader: AgentId,
+        commands: Vec<String>,
+    },
     /// The Lonca repository `repo` of `leader`'s project can not be read:
     /// said once, until it comes back.
     StoreDown {
@@ -2377,6 +2389,7 @@ impl Event {
             | Event::WorktreeMoved { .. }
             | Event::Copied { .. }
             | Event::FilesCut { .. }
+            | Event::TestsFound { .. }
             | Event::NoGit { .. }
             | Event::StoreDown { .. }
             | Event::StoreBack { .. }
@@ -2481,6 +2494,7 @@ impl Event {
         match *self {
             Event::Plan { leader, .. }
             | Event::FilesCut { leader, .. }
+            | Event::TestsFound { leader, .. }
             | Event::NoGit { leader, .. }
             | Event::StoreDown { leader, .. }
             | Event::StoreBack { leader, .. }
@@ -3543,6 +3557,7 @@ impl World {
                 allowed: Vec::new(),
                 plan: PlanGate::default(),
                 no_git: false,
+                runners: crate::runners::Runners::default(),
                 lonca: None,
                 archived: None,
             }),
@@ -3912,6 +3927,7 @@ impl World {
                         e.event,
                         Event::Opened { .. }
                             | Event::NoGit { .. }
+                            | Event::TestsFound { .. }
                             | Event::StoreDown { .. }
                             | Event::StoreBack { .. }
                             | Event::StoreSignedIn { .. }
@@ -5852,6 +5868,7 @@ mod tests {
                 allowed: Vec::new(),
                 plan: PlanGate::default(),
                 no_git: false,
+                runners: crate::runners::Runners::default(),
                 lonca: None,
                 archived: None,
             }],
@@ -6684,6 +6701,7 @@ mod tests {
             allowed: Vec::new(),
             plan: PlanGate::default(),
             no_git: false,
+            runners: crate::runners::Runners::default(),
             lonca: None,
             archived: None,
         });
@@ -8500,6 +8518,7 @@ mod tests {
             allowed: Vec::new(),
             plan: PlanGate::default(),
             no_git: false,
+            runners: crate::runners::Runners::default(),
             lonca: None,
             archived: None,
         });
@@ -8708,6 +8727,7 @@ mod tests {
                 allowed: Vec::new(),
                 plan: PlanGate::default(),
                 no_git: false,
+                runners: crate::runners::Runners::default(),
                 lonca: None,
                 archived: Some(Archived {
                     at,
@@ -8751,6 +8771,7 @@ mod tests {
             allowed: Vec::new(),
             plan: PlanGate::default(),
             no_git: false,
+            runners: crate::runners::Runners::default(),
             lonca: None,
             archived: None,
         });

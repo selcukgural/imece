@@ -160,7 +160,7 @@ imece --run npm,make
 imece --run npm --run pnpm       # yinelenebilir; yinelenenler düşer
 ```
 
-İşçilerin ve yardımcıların `run` araçlarıyla, `cargo` ve git'in okuma komutlarının yanında çalıştırabileceği programlar. Yalnızca PATH'teki adlar; bir yol reddedilir: `--run: "./bin/x" is a path; name a program on PATH`. Lider bunları hiç almaz. `standard` ve `open` altında aynı liste bir oturumun size sormadan hangi kabuk komutlarını çalıştırabileceğine de karar verir (rutin kuralı, [onaylar](../concepts/approvals-and-questions.md)).
+İşçilerin ve yardımcıların `run` araçlarıyla, `cargo`, git'in okuma komutları ve bir Python, JavaScript ya da Go checkout'unun dosyalarının istediği test komutlarının (`python3 -m pytest`, `npm test`, `go test`: bunlar `--run` istemez, bkz. [bir checkout'un istediği testler](../concepts/approvals-and-questions.md#bir-checkoutun-istediği-testler)) yanında çalıştırabileceği programlar. Burada adı verilen bir program her argümanla bütünüyle çalışır; testlerinin biçimleri yetmediğinde adlandırın. Yalnızca PATH'teki adlar; bir yol reddedilir: `--run: "./bin/x" is a path; name a program on PATH`. Lider bunları hiç almaz. `standard` ve `open` altında aynı liste bir oturumun size sormadan hangi kabuk komutlarını çalıştırabileceğine de karar verir (rutin kuralı, [onaylar](../concepts/approvals-and-questions.md)).
 
 ### `--run-timeout S`
 

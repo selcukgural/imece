@@ -43,3 +43,5 @@ feel them: no session persistence across runs, `run` has no network
 block (cargo may reach the registry if the lockfile is off), each
 worktree has its own `target/` on purpose (a shared one thrashes
 fingerprints across worktrees).
+
+Since record 136 (2026-11-09) the policy also runs the test commands a Python, JavaScript or Go checkout's files call for (`python3 -m pytest …`, `npm test`, `go test …`, each with an allow-list of its options), for every role, beside cargo's; `allowed()` takes the project's `Runners`, and a refusal names them.

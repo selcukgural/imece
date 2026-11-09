@@ -17,7 +17,9 @@ use crate::live::{
 use crate::model::*;
 use crate::procs::{Left, Proc, Refusal as ProcRefusal};
 use crate::rng::Rng;
-use imece_agent::Tier;
+use imece_agent::{Ask, Tier};
+
+use crate::runners::{Node, Runners};
 
 pub(crate) type Repo = &'static [(&'static str, &'static [&'static str])];
 
@@ -130,6 +132,9 @@ struct Kit {
     /// serves nothing.
     serves: Option<Serves>,
     asks: &'static [&'static str],
+    /// The tests its files call for (record 136), as live reads them
+    /// from a checkout's files: what its agents run without asking.
+    runners: Runners,
 }
 
 /// A dev server's address: each worker of a project runs its own copy in
@@ -166,6 +171,11 @@ const SHOP_KIT: Kit = Kit {
         "WebFetch: https://learn.microsoft.com/dotnet/api/system.text.json",
         "Edit: .github/workflows/ci.yml",
     ],
+    runners: Runners {
+        python: false,
+        node: None,
+        go: false,
+    },
 };
 
 const MOBILE_KIT: Kit = Kit {
@@ -177,6 +187,11 @@ const MOBILE_KIT: Kit = Kit {
         "Bash: ./gradlew dependencies --refresh-dependencies",
         "WebFetch: https://developer.android.com/jetpack/androidx/releases/compose",
     ],
+    runners: Runners {
+        python: false,
+        node: None,
+        go: false,
+    },
 };
 
 const WEB_KIT: Kit = Kit {
@@ -192,7 +207,13 @@ const WEB_KIT: Kit = Kit {
         "Bash: gh pr view \"$(git branch --show-current)\" 2>&1",
         "Edit: package.json",
         "WebFetch: https://react.dev/reference/react/useTransition",
+        "Bash: npm test -- tests/cart.test.ts",
     ],
+    runners: Runners {
+        python: false,
+        node: Some(Node::Npm),
+        go: false,
+    },
 };
 
 const BILLING_KIT: Kit = Kit {
@@ -207,7 +228,13 @@ const BILLING_KIT: Kit = Kit {
         "Bash: go get github.com/shopspring/decimal",
         "Edit: go.mod",
         "WebFetch: https://pkg.go.dev/github.com/shopspring/decimal",
+        "Bash: go test -run TestTotal ./internal/invoice",
     ],
+    runners: Runners {
+        python: false,
+        node: None,
+        go: true,
+    },
 };
 
 const PROJECTS: &[(&str, Repo, &Kit)] = &[
@@ -1026,7 +1053,7 @@ pub fn world(
         messages: 0,
         plans: Vec::new(),
     };
-    for (p, &(name, repo, _)) in PROJECTS.iter().take(projects).enumerate() {
+    for (p, &(name, repo, kit)) in PROJECTS.iter().take(projects).enumerate() {
         let leader = w.agents.len();
         let lead_name = if projects == 1 {
             "lead".to_string()
@@ -1055,6 +1082,7 @@ pub fn world(
             allowed: Vec::new(),
             plan: PlanGate::default(),
             no_git: false,
+            runners: kit.runners,
             lonca: None,
             archived: None,
         });
@@ -1070,6 +1098,15 @@ pub fn world(
         leader: w.projects[0].leader,
         level: "standard".into(),
     });
+    // The tests each project's files call for, said as live says them
+    // once it has read its checkout's files (record 136).
+    for p in 0..projects {
+        let (leader, runners) = (w.projects[p].leader, w.projects[p].runners);
+        if runners.any() {
+            let commands = runners.lines();
+            w.note(Event::TestsFound { leader, commands });
+        }
+    }
     for i in 0..workers {
         // Every project gets a worker first; the rest are spread at random.
         let project = if i < projects {
@@ -3936,10 +3973,24 @@ impl Sim {
     fn approval(&mut self, w: &mut World, id: AgentId) {
         let t = w.tick;
         let what = *self.rng.pick(kit(w.agents[id].project).asks);
-        let rules = &w.projects[w.agents[id].project].allowed;
-        let said = demo_command(what).is_some_and(|c| standing::covered(c, |_| false, rules));
+        let project = &w.projects[w.agents[id].project];
+        let (rules, tests) = (&project.allowed, &project.runners);
+        let said = demo_command(what)
+            .is_some_and(|c| standing::covered(c, |argv| tests.runs(argv), rules));
+        // A test its files call for runs without asking (record 136).
+        let routine = demo_command(what).is_some_and(|command| {
+            let ask = Ask::Command {
+                tool: "Bash".into(),
+                command: command.into(),
+            };
+            crate::live::routine(Role::Worker, &ask, &[], tests)
+        });
         let a = &mut w.agents[id];
         a.activity = Some(what.into());
+        if routine {
+            a.trace(t, format!("allowed on its own: {what}"));
+            return;
+        }
         if said {
             a.trace(t, format!("allowed by your yes from now on: {what}"));
             return;
@@ -3964,7 +4015,8 @@ impl Sim {
         };
         let command = demo_command(&it.detail).ok_or(standing::Why::NotACommand)?;
         let p = w.agents[it.agent].project;
-        let rules = standing::needed(command, |_| false, &w.projects[p].allowed)?;
+        let tests = &w.projects[p].runners;
+        let rules = standing::needed(command, |argv| tests.runs(argv), &w.projects[p].allowed)?;
         let added = w.stand(p, &rules);
         w.decided(item, true);
         self.go_on_allowed(w, p);
@@ -3998,9 +4050,10 @@ impl Sim {
         for other in 0..w.inbox.len() {
             // `decided` leaves alone what is not an open approval.
             let i = &w.inbox[other];
+            let q = &w.projects[p];
             let covered = w.agents[i.agent].project == p
                 && demo_command(&i.detail)
-                    .is_some_and(|c| standing::covered(c, |_| false, &w.projects[p].allowed));
+                    .is_some_and(|c| standing::covered(c, |argv| q.runners.runs(argv), &q.allowed));
             if covered {
                 w.decided(other, true);
             }
@@ -6979,6 +7032,89 @@ diff --git a/b.rs b/b.rs
         assert_eq!(s.always(&mut w, item), Ok(vec![Standing::exactly(line)]));
         assert!(!w.inbox[item].open);
         assert!(standing::covered(line, |_| false, &w.projects[p].allowed));
+    }
+
+    #[test]
+    fn a_project_s_tests_are_said_at_the_start_and_run_without_asking_as_live() {
+        let (mut w, mut s) = world(4, 4, 0, 5, Lang::En);
+        let found: Vec<(ProjectId, Vec<String>)> = (w.journal.iter())
+            .filter_map(|e| match &e.event {
+                Event::TestsFound { leader, commands } => {
+                    Some((w.agents[*leader].project, commands.clone()))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            found,
+            [
+                (2, vec!["npm test".to_string(), "npm run test".into()]),
+                (3, vec!["go test …".to_string()])
+            ],
+            "the web's and billing's, as their kits say"
+        );
+        assert_eq!(w.projects[2].runners, WEB_KIT.runners);
+        assert!(!w.projects[0].runners.any() && !w.projects[1].runners.any());
+        let said = Event::TestsFound {
+            leader: w.projects[2].leader,
+            commands: vec!["npm test".into(), "npm run test".into()],
+        };
+        assert_eq!(
+            crate::ui::words::event(Lang::En, &w, &said),
+            "web's files call for these tests, which now run without asking you, through \
+             the run tool too: npm test, npm run test"
+        );
+        assert!(
+            crate::ui::words::event(Lang::Tr, &w, &said).starts_with("web projesinin dosyaları")
+        );
+        let none = Event::TestsFound {
+            leader: w.projects[2].leader,
+            commands: Vec::new(),
+        };
+        assert_eq!(
+            crate::ui::words::event(Lang::En, &w, &none),
+            "web's files call for no tests any more: only cargo's run without asking you"
+        );
+        // A web worker's test run goes on at once; whatever else asks.
+        let worker = workers_of(&w, 2)[0];
+        let test = "Bash: npm test -- tests/cart.test.ts";
+        assert!(WEB_KIT.asks.contains(&test) && BILLING_KIT.asks.len() == 4);
+        let mut ran = 0;
+        for _ in 0..60 {
+            let asked = w.inbox.len();
+            s.approval(&mut w, worker);
+            if w.agents[worker].activity.as_deref() == Some(test) {
+                ran += 1;
+                assert_eq!(w.inbox.len(), asked, "not asked");
+                let last = w.agents[worker].trace.back().unwrap();
+                assert!(
+                    last.ends_with(&format!("allowed on its own: {test}")),
+                    "{last}"
+                );
+            } else {
+                assert_eq!(w.inbox.len(), asked + 1, "asked");
+            }
+        }
+        assert!(ran > 0, "the demo shows one");
+        // A yes from now on needs no rule for them, as live's.
+        w.asks_you(worker, "Bash: npm test && npm install zod@3");
+        let item = w.inbox.len() - 1;
+        let added: Vec<String> = (s.always(&mut w, item).unwrap().iter())
+            .map(Standing::line)
+            .collect();
+        assert_eq!(added, ["npm install …"]);
+        w.asks_you(worker, "Bash: npm install x && npm run test");
+        let item = w.inbox.len() - 1;
+        s.go_on_allowed(&mut w, 2);
+        assert!(!w.inbox[item].open, "covered: the rule and the tests");
+        // Another project's worker asks for what its files do not call for.
+        let other = workers_of(&w, 0)[0];
+        w.asks_you(other, "Bash: npm test && npm install zod@3");
+        let item = w.inbox.len() - 1;
+        let added: Vec<String> = (s.always(&mut w, item).unwrap().iter())
+            .map(Standing::line)
+            .collect();
+        assert_eq!(added, ["npm test …", "npm install …"]);
     }
 
     #[test]

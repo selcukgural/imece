@@ -1753,6 +1753,7 @@ impl Store {
                 allowed,
                 plan,
                 no_git: false,
+                runners: crate::runners::Runners::default(),
                 // Asked again: a store's state is never kept.
                 lonca: lonca.map(|repo| OnLonca {
                     repo,
@@ -2392,6 +2393,7 @@ mod tests {
                     allowed: Vec::new(),
                     plan: PlanGate::default(),
                     no_git: false,
+                    runners: crate::runners::Runners::default(),
                     lonca: None,
                     archived: None,
                 },
@@ -2408,6 +2410,7 @@ mod tests {
                     allowed: Vec::new(),
                     plan: PlanGate::default(),
                     no_git: false,
+                    runners: crate::runners::Runners::default(),
                     lonca: None,
                     archived: None,
                 },

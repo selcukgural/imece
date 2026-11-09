@@ -77,10 +77,15 @@ pub(super) fn git_thread(jobs: Receiver<GitJob>, done: Sender<GitDone>) {
                 project,
                 staged: worktree::staged_change(&repo, SUGGEST_PATCH),
             },
-            GitJob::Files { project, repo } => GitDone::Files {
-                project,
-                files: worktree::files(&repo, FILES_MAX),
-            },
+            GitJob::Files { project, repo } => {
+                let files = worktree::files(&repo, FILES_MAX);
+                let runners = (files.as_ref()).map_or(Runners::default(), |(f, _)| runners::of(f));
+                GitDone::Files {
+                    project,
+                    files,
+                    runners,
+                }
+            }
         };
         if done.send(out).is_err() {
             return;
@@ -191,7 +196,11 @@ impl Live {
                 } => self.placed(w, agent, generation, placed),
                 GitDone::Stood { agent, stand } => self.stood(w, agent, stand),
                 GitDone::Staged { project, staged } => self.take_staged(w, project, staged),
-                GitDone::Files { project, files } => self.filed(w, project, files),
+                GitDone::Files {
+                    project,
+                    files,
+                    runners,
+                } => self.filed(w, project, files, runners),
             }
         }
         done_any
@@ -238,15 +247,30 @@ impl Live {
         }
     }
 
-    /// What git listed for project `p`: the files for completion; a
+    /// What git listed for project `p`: the files for completion and the
+    /// tests they call for (`runners`, record 136: a change is said in the
+    /// journal, so what runs without the person never grows unseen); a
     /// checkout with more than it keeps is said once in the journal; a
-    /// listing that failed keeps the last one and is traced.
-    fn filed(&mut self, w: &mut World, p: ProjectId, files: io::Result<(Vec<String>, bool)>) {
+    /// listing that failed keeps the last of both and is traced.
+    fn filed(
+        &mut self,
+        w: &mut World,
+        p: ProjectId,
+        files: io::Result<(Vec<String>, bool)>,
+        runners: Runners,
+    ) {
         self.filing.remove(&p);
         let leader = w.projects[p].leader;
         match files {
             Ok((files, cut)) => {
                 w.projects[p].files = files;
+                if w.projects[p].runners != runners {
+                    w.projects[p].runners = runners;
+                    let commands = runners.lines();
+                    // An ask that came before stays the person's: its
+                    // answer would say they gave it.
+                    w.note(Event::TestsFound { leader, commands });
+                }
                 if cut && self.files_cut.insert(p) {
                     w.note(Event::FilesCut {
                         leader,
@@ -1582,6 +1606,74 @@ mod tests {
     }
 
     #[test]
+    fn a_project_s_tests_are_read_with_its_files_and_each_change_is_said() {
+        let repo = checkout("tests-repo");
+        std::fs::write(repo.join("pyproject.toml"), "").unwrap();
+        let mut w = team(1);
+        let mut live = idle_live_in(&repo, 2);
+        // An ask for them before they are read waits for the person.
+        let (tx, answer) = mpsc::channel();
+        let what = Ask::Command {
+            tool: "Bash".into(),
+            command: "python3 -m pytest -x".into(),
+        };
+        let input = json!({ "command": "python3 -m pytest -x" });
+        live.ask(&mut w, 1, what, Reply { input, to: tx });
+        assert_eq!(w.open_inbox().len(), 1);
+        live.files_due(&w, Instant::now());
+        for _ in 0..500 {
+            live.take_git(&mut w);
+            if !live.filing.contains(&0) {
+                break;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        let py = runners::of(&["pyproject.toml".to_string()]);
+        assert!(py.python);
+        assert_eq!(w.projects[0].runners, py, "read on the git thread");
+        let found = |w: &World| -> Vec<Event> {
+            (w.journal.iter())
+                .map(|e| e.event.clone())
+                .filter(|e| matches!(e, Event::TestsFound { .. }))
+                .collect()
+        };
+        let said = Event::TestsFound {
+            leader: 0,
+            commands: py.lines(),
+        };
+        assert_eq!(found(&w), std::slice::from_ref(&said));
+        // The ask that came before is still the person's; the next goes on.
+        assert_eq!(w.open_inbox().len(), 1);
+        assert!(answer.try_recv().is_err());
+        let (tx, next) = mpsc::channel();
+        let what = Ask::Command {
+            tool: "Bash".into(),
+            command: "python3 -m pytest -x".into(),
+        };
+        let input = json!({ "command": "python3 -m pytest -x" });
+        live.ask(&mut w, 1, what, Reply { input, to: tx });
+        let yes: Value = serde_json::from_str(&next.try_recv().unwrap().unwrap()).unwrap();
+        assert_eq!(yes["behavior"], "allow");
+        // The same again says nothing; none any more is said; a listing
+        // that fails keeps them.
+        let files = || Ok((vec!["pyproject.toml".to_string()], false));
+        live.filed(&mut w, 0, files(), py);
+        assert_eq!(found(&w).len(), 1);
+        live.filed(&mut w, 0, files(), Runners::default());
+        let none = Event::TestsFound {
+            leader: 0,
+            commands: Vec::new(),
+        };
+        assert_eq!(found(&w), [said, none]);
+        assert_eq!(w.projects[0].runners, Runners::default());
+        live.filed(&mut w, 0, files(), py);
+        live.filed(&mut w, 0, Err(io::Error::other("boom")), Runners::default());
+        assert_eq!(w.projects[0].runners, py);
+        assert_eq!(found(&w).len(), 3);
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    #[test]
     fn a_projects_files_are_listed_at_its_opening_then_while_busy_and_a_cut_list_is_said_once() {
         let repo = checkout("files-repo");
         let mut w = team(1);
@@ -1622,8 +1714,18 @@ mod tests {
         assert_eq!(FILES_EVERY, Duration::from_secs(60));
         // A list cut at FILES_MAX is said once in the journal; a listing
         // that fails keeps the last list and is traced on the leader.
-        live.filed(&mut w, 0, Ok((vec!["a.txt".into()], true)));
-        live.filed(&mut w, 0, Ok((vec!["a.txt".into()], true)));
+        live.filed(
+            &mut w,
+            0,
+            Ok((vec!["a.txt".into()], true)),
+            Runners::default(),
+        );
+        live.filed(
+            &mut w,
+            0,
+            Ok((vec!["a.txt".into()], true)),
+            Runners::default(),
+        );
         let cuts: Vec<&Event> = w
             .journal
             .iter()
@@ -1638,7 +1740,7 @@ mod tests {
             }]
         );
         assert_eq!(FILES_MAX, 20_000);
-        live.filed(&mut w, 0, Err(io::Error::other("boom")));
+        live.filed(&mut w, 0, Err(io::Error::other("boom")), Runners::default());
         assert_eq!(w.projects[0].files, ["a.txt"]);
         assert!(
             w.agents[0].trace.iter().any(|l| l.ends_with("files: boom")),

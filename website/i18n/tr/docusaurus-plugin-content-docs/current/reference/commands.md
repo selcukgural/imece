@@ -155,7 +155,7 @@ Para eder: her çağrı en çok 0,05 $ (çağrının kendi sert sınırı), bir 
 
 ### `:allow [PROGRAM [WORD]]`
 
-Eldeki projenin hep eveti: ajanlarının size sormadan çalıştırdığı komutlar (bkz. [onaylar](../concepts/approvals-and-questions.md#artık-hep-evet)). Tek başına `:allow` listeyi söyler (`kule: artık hep evet: make, npm run …` ya da `kule: hep evet yok; bir istekte A, ya da :allow PROGRAM [SÖZCÜK]`); `:allow npm run` bir tane ekler (projenin onu kapsayan açık istekleri sürer), aynısı yeniden onu çıkarır (`kule: artık hep evet değil: npm run …`). Bir program ve en çok bir sözcük, önce seçenek değil: `:allow rm -rf` reddedilir. KARAR BEKLEYEN'deki bir istekte `A` o isteğin çalıştırdığını ekler, böyle bir hep evet tutmuyorsa yalnız o satırı; `:allow` o satırla yazılınca onu çıkarır. Çalıştırmalar arasında projeyle saklanır.
+Eldeki projenin hep eveti: ajanlarının size sormadan çalıştırdığı komutlar (bkz. [onaylar](../concepts/approvals-and-questions.md#artık-hep-evet)). Tek başına `:allow` listeyi söyler (`kule: artık hep evet: make, npm run …` ya da `kule: hep evet yok; bir istekte A, ya da :allow PROGRAM [SÖZCÜK]`); `:allow npm run` bir tane ekler (projenin onu kapsayan açık istekleri sürer), aynısı yeniden onu çıkarır (`kule: artık hep evet değil: npm run …`). Bir program ve en çok bir sözcük, önce seçenek değil: `:allow rm -rf` reddedilir; önce seçenekle bir tane adlandıran tek şey bir Python yorumlayıcısının modülüyle `-m`'idir (`:allow python3 -m pip`). KARAR BEKLEYEN'deki bir istekte `A` o isteğin çalıştırdığını ekler, böyle bir hep evet tutmuyorsa yalnız o satırı; `:allow` o satırla yazılınca onu çıkarır. Çalıştırmalar arasında projeyle saklanır.
 
 ### `:copy [PATH]`
 
