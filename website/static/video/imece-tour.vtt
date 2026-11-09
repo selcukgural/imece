@@ -1,214 +1,254 @@
 WEBVTT
 
 1
-00:00:04.902 --> 00:00:11.688
-imece runs a team of coding agents from many vendors on one codebase, on one screen.
+00:00:04.903 --> 00:00:10.573
+imece runs a team of Claude Code agents on one codebase, on one screen.
 
 2
-00:00:11.688 --> 00:00:18.312
+00:00:10.573 --> 00:00:17.121
 A leader reads your checkout and hires workers as the work needs them; each worker
 
 3
-00:00:18.312 --> 00:00:22.755
+00:00:17.121 --> 00:00:21.514
 changes a git worktree of its own, never your checkout.
 
 4
-00:00:22.755 --> 00:00:26.633
-Claude Code, Codex and Gemini CLI, side by side.
+00:00:22.720 --> 00:00:24.721
+This is Home: one list.
 
 5
-00:00:27.835 --> 00:00:29.262
-This is the salon.
+00:00:24.721 --> 00:00:31.594
+What is to decide comes first, grouped by what deciding costs you: permissions,
 
 6
-00:00:29.262 --> 00:00:32.749
-Each project is a group with its own leader.
+00:00:31.594 --> 00:00:33.247
+questions, changes.
 
 7
-00:00:32.749 --> 00:00:39.408
-A worker's row shows its card and what it is doing right now; the mark in front says
+00:00:33.247 --> 00:00:36.727
+Then who is at work, project by project.
 
 8
-00:00:39.408 --> 00:00:44.085
-where it stands: working, starting, waiting for you, stuck.
+00:00:36.727 --> 00:00:44.035
+A worker's row is its card, the step of its own to-do list it is on, and dimmer, the
 
 9
-00:00:44.085 --> 00:00:50.743
-The small bars show how busy it was in the last half minute, the three lines how far
+00:00:44.035 --> 00:00:51.343
+tool call it is making; the mark in front says where it stands: at work, waiting for
 
 10
-00:00:50.743 --> 00:00:55.182
-it is through its own to-do list, then what it has cost.
+00:00:51.343 --> 00:00:52.822
+you, done, stuck.
 
 11
-00:00:55.182 --> 00:01:01.206
-The journal on the right keeps every message and every event, with the time.
+00:00:52.822 --> 00:00:59.956
+Capital J opens the journal in a window: what happened, card by card, and whom you
 
 12
-00:01:02.407 --> 00:01:09.956
-Enter looks deeper: an agent's screen, with how full its context is, its to-do list
+00:00:59.956 --> 00:01:00.652
+hold up.
 
 13
-00:01:09.956 --> 00:01:13.139
-step by step, and its card's story.
+00:01:01.852 --> 00:01:10.328
+Enter looks deeper: an agent's detail, with how full its context is, its to-do list
 
 14
-00:01:13.139 --> 00:01:18.505
-Enter again shows the raw stream from the vendor's own CLI.
+00:01:10.328 --> 00:01:18.397
+step by step, and its card's story; tab turns to its diff and its conversation.
 
 15
-00:01:18.505 --> 00:01:20.051
-Escape goes back.
+00:01:18.397 --> 00:01:24.218
+Enter again shows the raw stream from Claude Code itself.
 
 16
-00:01:20.051 --> 00:01:26.418
-Three depths, everywhere: the guild, one card's story, the raw stream.
+00:01:24.218 --> 00:01:25.954
+Escape goes back.
 
 17
-00:01:27.619 --> 00:01:33.979
-Agents talk to each other over a bus: they ask, answer, hand work off, report
+00:01:25.954 --> 00:01:33.103
+Three depths, everywhere: the list, one piece of work, the raw stream.
 
 18
-00:01:33.979 --> 00:01:37.283
-progress, and say when they are blocked.
+00:01:34.304 --> 00:01:40.664
+Agents talk to each other over a bus: they ask, answer, hand work off, report
 
 19
-00:01:37.283 --> 00:01:42.322
-imece reads only the envelope; the body is never interpreted.
+00:01:40.664 --> 00:01:43.969
+progress, and say when they are blocked.
 
 20
-00:01:42.322 --> 00:01:48.270
-Let us speed the simulation up, let them work for a while, and pause it.
+00:01:43.969 --> 00:01:49.008
+imece reads only the envelope; the body is never interpreted.
 
 21
-00:01:49.854 --> 00:01:54.035
-Everything that needs you lands in one place: WAITING FOR YOU.
+00:01:49.008 --> 00:01:54.955
+Let us speed the simulation up, let them work for a while, and pause it.
 
 22
-00:01:54.035 --> 00:01:59.563
-A change a worker has finished, a command or an edit a vendor would have asked you
+00:01:56.591 --> 00:02:01.041
+Everything that needs you is at the top of Home: TO DECIDE.
 
 23
-00:01:59.563 --> 00:02:01.316
-about, a question for you.
+00:02:01.041 --> 00:02:07.303
+A change a worker has finished, a command Claude Code would have asked you about, a
 
 24
-00:02:01.316 --> 00:02:06.306
-The terminal's title counts them, so a tab in the background shows it too.
+00:02:07.303 --> 00:02:08.585
+question for you.
 
 25
-00:02:09.786 --> 00:02:13.684
-Capital W opens the next item from anywhere.
+00:02:08.585 --> 00:02:14.847
+Each row says the whole ask and ends with the keys that decide it; g d jumps to the
 
 26
-00:02:13.684 --> 00:02:20.327
-This one is a change: what the worker's worktree holds since its last done.
+00:02:14.847 --> 00:02:15.299
+first.
 
 27
-00:02:20.327 --> 00:02:26.263
-The files above the patch, the lines by kind, then the diff itself.
+00:02:15.299 --> 00:02:20.882
+The terminal's title counts them, so a tab in the background shows it too.
 
 28
-00:02:26.263 --> 00:02:30.957
-j and k scroll it; the brackets go from file to file.
+00:02:22.082 --> 00:02:29.309
+g c goes to the first change waiting, under the commands and questions, and enter
 
 29
-00:02:32.159 --> 00:02:37.987
-a applies the change to your checkout, staged, for you to look over and commit.
+00:02:29.309 --> 00:02:30.112
+opens it.
 
 30
-00:02:37.987 --> 00:02:42.045
-r sends it back and opens the composer, so you say why.
+00:02:30.112 --> 00:02:37.250
+Its first line is the verdict: what ran on its tree, whether it stays inside its
 
 31
-00:02:42.045 --> 00:02:48.020
-Git does its work on a thread of its own; the journal says when the change is in.
+00:02:37.250 --> 00:02:42.067
+card's paths, whether it can be approved as it stands.
 
 32
-00:02:48.020 --> 00:02:51.930
-Your checkout is the one place an agent never writes.
+00:02:42.067 --> 00:02:49.027
+Then what the worker's worktree holds since its last done: the files above the
 
 33
-00:02:53.131 --> 00:02:55.477
-Let the simulation run again.
+00:02:49.027 --> 00:02:51.525
+patch, then the diff itself.
 
 34
-00:02:55.477 --> 00:02:59.197
-One pot for the whole team, kept between runs.
+00:02:51.525 --> 00:02:56.253
+j and k scroll it; the brackets go from file to file.
 
 35
-00:02:59.197 --> 00:03:05.749
-The header shows what was spent, what the last ten minutes cost per hour, and how
+00:02:57.454 --> 00:03:04.427
+a applies the change to your checkout, staged, for you to look over and commit, and
 
 36
-00:03:05.749 --> 00:03:08.338
-long the pot lasts at that rate.
+00:03:04.427 --> 00:03:06.947
+Home moves on to the next row.
 
 37
-00:03:08.338 --> 00:03:15.051
-Beside it, each vendor plan's usage window nearest to full, and the fleet: working,
+00:03:06.947 --> 00:03:11.568
+r sends it back and opens the composer, so you say why.
 
 38
-00:03:15.051 --> 00:03:16.022
-done, stuck.
+00:03:11.568 --> 00:03:18.373
+Git does its work on a thread of its own; the journal says when the change is in.
 
 39
-00:03:17.224 --> 00:03:24.538
-Two is the board: the cards the leaders posted, who claimed which, what is done.
+00:03:18.373 --> 00:03:22.825
+Your checkout is the one place an agent never writes.
 
 40
-00:03:24.538 --> 00:03:28.469
-An idle worker may claim a card on its own.
+00:03:24.026 --> 00:03:26.586
+Let the simulation run again.
 
 41
-00:03:28.469 --> 00:03:34.778
-Three is the code map: one row per file, and who holds which symbols.
+00:03:26.586 --> 00:03:33.822
+The header has four things: the projects, what is to decide, one pot for the whole
 
 42
-00:03:34.778 --> 00:03:37.155
-One brings the salon back.
+00:03:33.822 --> 00:03:37.176
+team, kept between runs, and the time.
 
 43
-00:03:38.355 --> 00:03:41.679
-You talk to the leader, not to thirty agents.
+00:03:37.176 --> 00:03:42.559
+The pot's rate and how long it lasts are a colon budget away.
 
 44
-00:03:41.679 --> 00:03:47.735
-Type what you want; the leader turns it into cards, and the workers take them from
+00:03:42.559 --> 00:03:47.678
+On a narrow screen, the least wanted parts give way first.
 
 45
-00:03:47.735 --> 00:03:48.474
-the board.
+00:03:48.878 --> 00:03:55.177
+The board, the code map and the timeline are windows over Home.
 
 46
-00:03:48.474 --> 00:03:52.167
-The reply comes back as something waiting for you.
+00:03:55.177 --> 00:04:03.476
+Colon board: the cards the leaders posted, who claimed which, what is done; an idle
 
 47
-00:03:53.368 --> 00:04:01.742
-q asks before quitting: how many agents are mid-turn, how many changes you have not
+00:04:03.476 --> 00:04:06.975
+worker may claim a card on its own.
 
 48
-00:04:01.742 --> 00:04:02.650
-reviewed.
+00:04:06.975 --> 00:04:12.774
+Colon code: one row per file, and who holds which symbols.
 
 49
-00:04:02.650 --> 00:04:03.961
-s lists them.
+00:04:12.774 --> 00:04:21.172
+Colon timeline: one lane per agent over the last hour, each column what it did then:
 
 50
-00:04:03.961 --> 00:04:12.335
-Everything imece knows is kept in one SQLite file; the next imece opens on the same
+00:04:21.172 --> 00:04:28.171
+writing, reading, thinking, asking a teammate, waiting for you, stuck.
 
 51
-00:04:12.335 --> 00:04:17.379
-screen, every agent asleep until you write to one.
+00:04:28.171 --> 00:04:34.870
+The brackets make a column five seconds, half a minute or a minute.
 
 52
-00:04:18.580 --> 00:04:20.253
-imece is open source.
+00:04:34.870 --> 00:04:37.169
+Escape closes a window.
 
 53
-00:04:20.253 --> 00:04:24.872
+00:04:38.370 --> 00:04:41.694
+You talk to the leader, not to thirty agents.
+
+54
+00:04:41.694 --> 00:04:47.750
+Type what you want; the leader turns it into cards, and the workers take them from
+
+55
+00:04:47.750 --> 00:04:48.489
+the board.
+
+56
+00:04:48.489 --> 00:04:52.181
+The reply comes back as something waiting for you.
+
+57
+00:04:53.382 --> 00:05:01.755
+q asks before quitting: how many agents are mid-turn, how many changes you have not
+
+58
+00:05:01.755 --> 00:05:02.663
+reviewed.
+
+59
+00:05:02.663 --> 00:05:03.975
+s lists them.
+
+60
+00:05:03.975 --> 00:05:12.348
+Everything imece knows is kept in one SQLite file; the next imece opens on the same
+
+61
+00:05:12.348 --> 00:05:17.393
+screen, every agent asleep until you write to one.
+
+62
+00:05:18.593 --> 00:05:20.265
+imece is open source.
+
+63
+00:05:20.265 --> 00:05:24.884
 Install it with one line, and try the simulation for free.
 
