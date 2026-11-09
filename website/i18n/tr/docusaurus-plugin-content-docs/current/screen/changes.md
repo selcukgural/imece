@@ -5,33 +5,37 @@ description: Bir işçinin değişikliğini (Δ) okumak - diff, dosyaları ve t�
 
 # Değişiklik görünümü
 
-Bir işçi `done` gönderdiğinde imece worktree'sini okur ve değişiklik KARAR BEKLEYEN'de `Δ` olarak sizi bekler. Onda `enter` (ya da sıradaki öge oysa `W`) değişiklik görünümünü ekibin yerinde açar: bütün diff, üstünde hükmü. Kararı burada verirsiniz: `a` checkout'unuza uygular, stage'de; `r` geri gönderir; `n` satırlarındaki notlarınızla geri gönderir; `x` ve `a` yalnız seçtiğiniz parçaları uygular; `b` checkout'unuzla çakışanı geri gönderir.
+Bir işçi `done` gönderdiğinde imece worktree'sini okur ve değişiklik KARAR BEKLEYEN'de `Δ` olarak sizi bekler. Onda `enter` (ya da sıradaki öge oysa `W`) değişikliği, [detayının](#detay) diff sekmesini açar: bütün diff, üstünde hüküm satırı. Kararı burada verirsiniz: `a` checkout'unuza uygular, stage'de; `r` geri gönderir; `n` satırlarındaki notlarınızla geri gönderir; `x` ve `a` yalnız seçtiğiniz parçaları uygular; `b` checkout'unuzla çakışanı geri gönderir.
 
 ```text
-┌ DEĞİŞİKLİK · claude-1 · 3 dosya +41 −6 · parser boş dosyada hata döndürür ─────────────────┐
-│✓ onaya hazır · ✓ cargo test · 3 dosya, hepsi #6 içinde · başka değişiklikle çakışmıyor     │
-│kaynak +23 −6 (2) · testler +18 −0 (1)                                                       │
-│  src/parser/manifest.rs  +19 −6                                                             │
-│  src/parser/mod.rs  +4 −0                                                                   │
-│  tests/manifest.rs  +18 −0                                                                  │
-│diff --git a/src/parser/manifest.rs b/src/parser/manifest.rs                                 │
-│--- a/src/parser/manifest.rs                                                                 │
-│+++ b/src/parser/manifest.rs                                                                 │
-│@@ -12,7 +12,9 @@ pub fn read(path: &Path) -> Result<Manifest>  ✓                            │
-│     let text = fs::read_to_string(path)?;                                                   │
-│-    let doc: Doc = toml::from_str(&text).unwrap();                                          │
-│+    if text.trim().is_empty() {                                                             │
-│+        return Err(Error::Empty(path.to_owned()));                                          │
-│  ✎ mesajda hangi dosya olduğunu söyle                                                       │
-│+    }                                                                                       │
-│+    let doc: Doc = toml::from_str(&text)?;                                                  │
-└─────────────────────────────────────────────────────────────────────────────────────────────┘
-  j k  w kaydır · sar  [ ] dosya  a x onayla · parça seç  r geri gönder  > ona alıntıla  c n not · notları gönder  v satır kopyala  esc geri  ? yardım
+#6 Parse the manifest · shop-api · claude-1 · 12 dk · $0.84 · 3 dosya +41 −6        değişiklik 1 / 3
+
+diff · konuşma · log                                                                       tab geçer
+┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
+│✓ onaya hazır · ✓ cargo test · 3 dosya, hepsi #6 içinde · başka değişiklikle çakışmıyor           │
+│ parser boş dosyada hata döndürür                                                                 │
+│ maliyet · $0.84 · 12 dk                                                                          │
+│ kaynak +23 −6 (2) · testler +18 −0 (1)                                                           │
+│ src/parser/manifest.rs +19 −6                                                                    │
+│ src/parser/mod.rs +4 −0                                                                          │
+│ tests/manifest.rs +18 −0                                                                         │
+│src/parser/manifest.rs                                                                            │
+│@@ -12,7 +12,9 @@ pub fn read(path: &Path) -> Result<Manifest>  ✓                                 │
+│     let text = fs::read_to_string(path)?;                                                        │
+│-    let doc: Doc = toml::from_str(&text).unwrap();                                               │
+│+    if text.trim().is_empty() {                                                                  │
+│+        return Err(Error::Empty(path.to_owned()));                                               │
+│  ✎ mesajda hangi dosya olduğunu söyle                                                            │
+│+    }                                                                                            │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+ değişiklik · shop-api · #6 Parse the manifest    a  onayla   r  geri gönder   c  not   esc  geri   ?  yardım
 ```
+
+Durum satırı değişiklik için en fazla üç tuş gösterir; bu sayfanın öbür tuşları `?`'tedir.
 
 ## Detay
 
-Bir değişiklik, bir konuşma ve bir odak, tek ekranın üç sekmesidir: bir işin detayı (kayıt 125). Sekmenin kendi çerçevesinin üstünde bir baş satırı kartı ve başlığını, projeyi, ajanı, ne zamandır böyle olduğunu ve kaça mal olduğunu söyler; diff'te dosyalar ve satırlar, birden çok değişiklik bekliyorsa sağda `değişiklik 2 / 5`. Ajanın açık bir sorusu varsa soru, sunduğu yanıtlar ve tuşlarıyla (`1`-`9` birini seçer, `/` kendinizinkini yazar) başın altında durur, hangi sekme açık olursa olsun. Sonra sekme çubuğu, `diff · konuşma · log`: açık sekme kalın, gösterecek bir şeyi olmayan (değişiklik yok, henüz bir şey söylenmemiş) soluk; `tab` ve `⇧tab` bir şeyi olan sonraki ve önceki sekmeye gider. Diff bu sayfadır; konuşma ajanla [konuşmadır](conversations.md) (varsa sizinle, yoksa bir ekip arkadaşıyla en yenisi); log odağıdır, ya da `enter` açtıysa ham akışı. `esc` sekmeyi eskisi gibi bırakır: konuşma altındakine kapanır, diff ve odak Ana ekrana ya da ekibe döner.
+Bir değişiklik, bir konuşma ve bir odak, tek ekranın üç sekmesidir: bir işin detayı (kayıt 125). Sekmenin kendi çerçevesinin üstünde bir baş satırı kartı ve başlığını, projeyi, ajanı, ne zamandır böyle olduğunu ve kaça mal olduğunu söyler; diff'te dosyalar ve satırlar, birden çok değişiklik bekliyorsa sağda `değişiklik 2 / 5`. Ajanın açık bir sorusu varsa soru, sunduğu yanıtlar ve tuşlarıyla (`1`-`9` birini seçer, `/` kendinizinkini yazar) başın altında durur, hangi sekme açık olursa olsun. Sonra sekme çubuğu, `diff · konuşma · log`: açık sekme kalın, gösterecek bir şeyi olmayan (değişiklik yok, henüz bir şey söylenmemiş) soluk; `tab` ve `⇧tab` bir şeyi olan sonraki ve önceki sekmeye gider. Diff bu sayfadır; konuşma ajanla [konuşmadır](conversations.md) (varsa sizinle, yoksa bir ekip arkadaşıyla en yenisi); log odağıdır, ya da `enter` açtıysa ham akışı. `esc` sekmeyi eskisi gibi bırakır: konuşma altındakine kapanır, diff ve odak ana ekrana döner.
 
 ```text
 #6 E-posta şablonları · shop-api · claude-9 · 6 dk · $0.06 · 3 dosya +41 −6                           değişiklik 1 / 3
@@ -58,7 +62,7 @@ diff · konuşma · log                                                         
 
 Her kanıt geçtiyse, her dosya kartın yollarının içindeyse, hiçbir şey çakışmıyorsa, uyuyorsa ve bütün gösteriliyorsa hazırdır; bunlardan biri eksikse `! önce bak`, satır da hangisi olduğunu söyler. Aynı olgular, baş olmadan, [Ana ekran](home.md)da değişikliğin satırını izler ve hazır olanlar orada önce gelir. Bir nottur, asla kapı değil: `a`, satırın önce bak dediği bir değişikliği de onaylar.
 
-Sonra, işçi `done`'ında ilk satırdan fazlasını yazdıysa söyledikleri: neden, ne kararlaştırdı, nereye bakılmalı; en çok dört satır, fazlası `…` ile kesilir. Birden çok değişiklik bekliyorsa pencerenin sağ üstü bunun hangisi olduğunu söyler: `değişiklik 2 / 5`. Onun altında:
+Sonra, işçi `done`'ında ilk satırdan fazlasını yazdıysa söyledikleri: neden, ne kararlaştırdı, nereye bakılmalı; en çok dört satır, fazlası `…` ile kesilir. Birden çok değişiklik bekliyorsa baş satırının sağ ucu bunun hangisi olduğunu söyler: `değişiklik 2 / 5`. Onun altında:
 
 1. **Kontrolün durumu**, henüz bitmediyse: çalışırken `● kontrol bu değişiklikte çalışıyor…`; sorusunu yanıtlayana dek `▶ deponun kontrolü çalışmak istiyor: KARAR BEKLEYEN'de`; ya da neden çalışamadığı. Başarısız bir kontrolün son çıktı satırları da burada durur.
 2. **Maliyeti**, işçinin turu bitince: `maliyet · $0.84 · 12 dk`, soluk; işçinin (yardımcıları dahil) son değişikliğinden sonraki ilk isteminden bu `done`'a harcadığı ve çalıştığı süre; geri gönderilip yeniden gönderilen bir değişiklik turlarını ekler (`$1.20 · 25 dk · 3 tur`). Aynı rakam KARAR BEKLEYEN'de ögenin satırını bitirir ve günlük söyler (`claude-1 değişikliği $0.84 · 12 dk tuttu`). Tur ortasında okunan bir `done` onu bir an sonra, turun maliyeti bilinince gösterir.
@@ -79,7 +83,7 @@ Yama, git'in `diff --git` yazdığı yerde dosyanın yolunu gösterir ve ilk hun
 | `w` | uzun satırları alt alta sar (küçültülmüş bir dosya, uzun bir dize); yine basılınca kenarda keser. Kaydırma yine yama satırlarını sayar, böylece `j` kaç satır kaplasa da bütün bir satır gider. Kapatılana dek her değişiklik için açık; çalıştırmalar arasında saklanmaz |
 | `R` | ikinci okuma (`:review`), dosya listesinin üstünde: ilk altı satırı ya da tamamı ([değişiklikler](../concepts/changes.md#ikinci-bir-okuma)) |
 | `v` | kopyalanacak satırları seç (aşağıda) |
-| `esc` | KARAR BEKLEYEN'e geri |
+| `esc` | değişikliğin satırının olduğu ana ekrana geri |
 
 Eklenen ve silinen satırların kendi renkleri vardır; başlıklar öne çıkar. Her satır çizilen her şeyin geçtiği temizlikten geçer.
 
@@ -101,7 +105,7 @@ Eklenen ve silinen satırların kendi renkleri vardır; başlıklar öne çıkar
 
 ### Bir çakışmayı geri göndermek
 
-Git bir değişikliği reddettiğinde imece parçalarından hangilerinin checkout'unuza uymadığını da bulur: index'inizin bir kopyası, uygulamadaki düz ve üç yönlü denemelerin aynısı, sizin hiçbir şeyinize dokunulmaz. Günlük satırı o zaman `· değişiklikte b onu geri gönderir` ile biter, değişiklik kırmızı bir satırın altında açılır ve altbilgide `b  geri gönder` görünür:
+Git bir değişikliği reddettiğinde imece parçalarından hangilerinin checkout'unuza uymadığını da bulur: index'inizin bir kopyası, uygulamadaki düz ve üç yönlü denemelerin aynısı, sizin hiçbir şeyinize dokunulmaz. Günlük satırı o zaman `· değişiklikte b onu geri gönderir` ile biter, değişiklik kırmızı bir satırın altında açılır ve durum satırında `b  geri gönder` görünür:
 
 ```text
  ✗ checkout'a (4f3a2c1) uymuyor: CHANGELOG.md · b onu claude-1 adlı ajana geri gönderir

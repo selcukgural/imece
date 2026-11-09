@@ -15,7 +15,7 @@ The conventions are vim's: `h` `j` `k` `l` move and fold, `gg` and `G` go to the
 
 ## The status line
 
-The last row, while you are not writing, is a status line: where you are (`home`, or the screen over it: `focus`, `trace`, `change`, `conversation`, `card`, `peek`), the project at hand and the card the open screen or the selected row is about (`#12 Refund flow`, a long title cut), dim; then at most three keys for the selected thing, `esc` where there is a way back, and `?`. Movement keys are never shown: they are vim's, and in this help. On a narrow screen the keys go from the end first, never `esc` or `?`; when even those do not fit beside it, the place goes. A window with a title of its own (a script, a plan, the board, the code map, the timeline, copy mode) keeps its own keys instead.
+The last row, while you are not writing, is a status line: where you are (`home`, or the screen over it: `focus` (a card's screen too), `trace`, `change`, `conversation`, `peek`), the project at hand and the card the open screen or the selected row is about (`#12 Refund flow`, a long title cut), dim; then at most three keys for the selected thing, `esc` where there is a way back, and `?`. Movement keys are never shown: they are vim's, and in this help. On a narrow screen the keys go from the end first, never `esc` or `?`; when even those do not fit beside it, the place goes. A window with a title of its own (a script, a plan, the board, the code map, the timeline, copy mode) keeps its own keys instead.
 
 While the first key of a chord waits for its second, the row lists what the second key can be and what it does, as which-key does in vim: `g…   g  first line`, `z…   a  fold · unfold   M  fold all   R  unfold all`, `q…   q  quit   s  what quitting leaves`. A pair from your [key file](#your-own-keys) whose first key is the one held is listed too, as what it acts as (`t  as G`).
 
@@ -59,16 +59,16 @@ While the first key of a chord waits for its second, the row lists what the seco
 | --- | --- |
 | `#N`  `#word`  `n` `p` | a card by number or title: its detail (the log tab: its standing, who had a part, its story); on it `n` `p`: next / previous card |
 | `&`  `:goto` | go to an agent or a project: type a name, `1`-`9` the nth on the list, `!` keeps only what needs you; `&#` turns to the cards |
-| `1`-`9` | on Home, or on a question's detail, with a question that offers answers at hand: pick one ([questions](../concepts/approvals-and-questions.md#questions-)); the digits do nothing else. The views they once opened are windows by name: `:board`, `:code`, `:timeline` ([board and code map](board-and-code-map.md), [timeline](timeline.md)); `:salon` and [`:home`](home.md) are the two views |
+| `1`-`9` | on Home, or on a question's detail, with a question that offers answers at hand: pick one ([questions](../concepts/approvals-and-questions.md#questions-)); the digits do nothing else. The views they once opened are windows by name: `:board`, `:code`, `:timeline` ([board and code map](board-and-code-map.md), [timeline](timeline.md)); [`:home`](home.md) is the one screen, `:salon` its AT WORK |
 | `[`  `]` | in the timeline's window: a column of 5 s · 30 s · 1 min |
 | `r` | in the board's window: only the cards ready to take (no card they wait on undone), again: all ([board](board-and-code-map.md#the-board)) |
 | `↑` `↓`  `j` `k` | select |
 | `gg`  `G`  `gd`  `gw` | first / last line · on Home: the first row to decide · the first at work |
 | `^d` `^u` `^f` `^b` | half a page / a page |
-| `^o` | back where you were: view, panel, focus, card (vim's jump list, fifty places; an open conversation closes first) |
+| `^o` | back where you were: a focus, a raw stream, a change, a card, the row you were on (vim's jump list, fifty places; an open conversation closes first) |
 | `enter` | look deeper: focus, then the raw stream |
 | `tab`  `⇧tab` | on a piece of work (a change, a conversation, a focus): the next / previous of its tabs, `diff · talk · log`; a tab with nothing to show is skipped ([the detail](changes.md#the-detail)) |
-| `K`  `:peek` | a peek: the focus of the agent at hand in a window over the view, which stays as it was; in it `j` `k` the next / previous agent of the team, `enter` its whole focus, `@` write to it, `esc` or `K` close |
+| `K`  `:peek` | a peek: the focus of the agent at hand in a window over the screen, which stays as it was; in it `j` `k` the next / previous agent of AT WORK, `enter` its whole focus, `@` write to it, `esc` or `K` close |
 | `t`  `:trace` | the raw stream of the agent at hand |
 | `v`  `:talk` | its conversation with you |
 | `esc` | go back |
@@ -81,8 +81,8 @@ While the first key of a chord waits for its second, the row lists what the seco
 
 | Key | What it does |
 | --- | --- |
-| `←` `→`  `h` `l` | fold / unfold a project or a worker's helpers; on Home the row at hand's project, to its heading (in a conversation: a message) |
-| `za`  `zM`  `zR` | fold: toggle · all (`:fold`) · none (`:unfold`), in the team and on Home; in a conversation its messages |
+| `←` `→`  `h` `l` | fold / unfold: on Home the row at hand's project, to its heading; in a conversation a message, in a focus an entry, in a change a file |
+| `za`  `zM`  `zR` | fold: toggle · all (`:fold`) · none (`:unfold`): on Home the projects; in a conversation its messages |
 | `s`  `:settle` | hide the row at hand's agent, or on a project's heading the project, out of AT WORK until it needs you again (an item goes to `later` instead); `:unsettle` brings everything back |
 
 ## TO DECIDE
@@ -124,7 +124,7 @@ While the first key of a chord waits for its second, the row lists what the seco
 | `enter` `esc` | the raw stream · back |
 | `a`  `e`  `A`  `r` | in a focus or the raw stream, when its agent waits for you: on its ask (the one its status quotes), allow once · yes to all it asks this turn · yes from now on · refuse; on its change, apply · reject. Never what is selected in TO DECIDE. The status line shows `a` `r` `e` while there is something to decide (`A` is in this help); with nothing, `a` and `r` say so and `A` is the archives |
 
-The focus's `folder` line says where the agent works: the checkout for a leader, its worktree for a worker, a helper or a solo (`· worktree of ~/src/kule`), the folder itself without git. Under it, a writing agent's `scratch` line names its scratch directory, where its notes and logs go instead of its change. The team's line of an open project ends with its folder too.
+The focus's `folder` line says where the agent works: the checkout for a leader, its worktree for a worker, a helper or a solo (`· worktree of ~/src/kule`), the folder itself without git. Under it, a writing agent's `scratch` line names its scratch directory, where its notes and logs go instead of its change. A project's line in AT WORK ends with its folder too, while it is open.
 
 ## A change
 
@@ -148,8 +148,8 @@ The focus's `folder` line says where the agent works: the checkout for a leader,
 | --- | --- |
 | `#N`  `#word` | open a card |
 | `n`  `p` | next / previous card |
-| `esc` | back to the team |
-| `tab`, `enter`, `a` `r`, `c`, `t`, `v`, `m`, `W` | as on the main screen |
+| `esc` | back to Home |
+| `tab`, `enter`, `a` `e` `A` `r`, `t`, `v`, `@`, `W` | as on a focus: the owner's other tabs, its raw stream, its ask, its trace and conversation, a message to it |
 
 ## Demo only
 
@@ -190,27 +190,30 @@ The focus's `folder` line says where the agent works: the checkout for a leader,
 | Command | Key |
 | --- | --- |
 | `:home` `:salon` | none: Home · Home's AT WORK (`gw`) |
+| `:waiting` | none: Home's first row to decide (`gd`) |
 | `:board` `:code` `:timeline` | none: windows over the screen; `esc` closes them |
+| `:journal` / `:story` | `J` / `J` in the journal's window |
 | `:lang` | `L` |
-| `:theme` | `T` |
+| `:theme` (`:t`) | `T` |
 | `:help` | `?` |
 | `:quit` (`:q`) | `q` `q` |
 | `:pending` | `q` `s` |
 | `:next` / `:defer` | `W` / `S` |
-| `:waiting` | none |
-| `:story` | `J` |
+| `:goto` | `&` |
 | `:settle` | `s` |
 | `:peek` | `K` |
 | `:archives` | `A` |
-| `:now` | `U` |
-| `:recall` | `H` |
+| `:undo` / `:now` | `u` / `U` |
+| `:recall` / `:history` | `H` / `^r` |
+| `:output` | `O` |
+| `:edit` | `^x` `^e` (writing) |
 | `:allow` | `A` (on an ask) |
 | `:yes` | `e` (on an ask) |
 | `:fold` / `:unfold` | `zM` / `zR` |
 | `:trace` / `:talk` | `t` / `v` |
 | `:mark` | `m` |
 | `:pause`, `:faster`, `:slower` | `space`, `+`, `-` (demo) |
-| `:budget` (`:b`), `:open` (`:o`), `:close` (`:c`), `:rename`, `:solo`, `:effort`, `:model`, `:forget` (`:f`), `:export`, `:commit`, `:copy`, `:pin`, `:archive`, `:restore`, `:awake`, `:notify`, `:motion`, `:away`, `:digest`, `:clear`, `:unclear`, `:unsettle`, `:keys` | no key: typed after `:` |
+| `:budget` (`:b`), `:open` (`:o`), `:close` (`:c`), `:rename`, `:solo`, `:effort`, `:model`, `:forget` (`:f`), `:fork`, `:export`, `:commit`, `:copy`, `:pin`, `:archive`, `:restore`, `:awake`, `:notify`, `:motion`, `:away`, `:digest`, `:clear`, `:unclear`, `:unsettle`, `:keys`, `:why`, `:review`, `:checks`, `:plan`, `:health`, `:ledger`, `:ps`, `:tidy`, `:lonca`, `:sync`, `:news`, `:welcome` | no key: typed after `:` |
 
 The full list of what each command takes is in the [commands reference](../reference/commands.md).
 
@@ -227,7 +230,7 @@ k = j
 J = G
 ```
 
-A key is written as the help writes it (`j`, `G`, `^n`, `⌥b`, `⇧tab`, `enter`, `esc`, `tab`, `space`, `↑ ↓ ← →`, `home`, `end`, `pgup`, `pgdn`) or in words (`ctrl-n`, `alt-b`, `shift-tab`, `up`, `escape`, `pageup`); `#` is `hash` on the left of the `=`, since a line starting with `#` is a comment. A line is applied once, as vim's `noremap`: `j = k` and `k = j` swap the two, and a key the file does not name stays itself. The file's keys work wherever imece reads keys (the team, a conversation, a change, peek, the windows, the pickers, the lead question at start), except where keys are text: writing, the help's `/` filter and the hint letters. `^c` always quits and cannot be given.
+A key is written as the help writes it (`j`, `G`, `^n`, `⌥b`, `⇧tab`, `enter`, `esc`, `tab`, `space`, `↑ ↓ ← →`, `home`, `end`, `pgup`, `pgdn`) or in words (`ctrl-n`, `alt-b`, `shift-tab`, `up`, `escape`, `pageup`); `#` is `hash` on the left of the `=`, since a line starting with `#` is a comment. A line is applied once, as vim's `noremap`: `j = k` and `k = j` swap the two, and a key the file does not name stays itself. The file's keys work wherever imece reads keys (Home, a conversation, a change, peek, the windows, the pickers, the lead question at start), except where keys are text: writing and the help's `/` filter. `^c` always quits and cannot be given.
 
 A side of a line can be two keys, one after the other:
 
@@ -252,7 +255,7 @@ x = j
 X = x
 ```
 
-The places are `salon` (Home too), `board`, `code` (the code map) and `timeline` (the windows `:board`, `:code` and `:timeline` open), `talk` (a conversation), `change` (a change open), `choose` (lines being chosen to copy, in a conversation or a change), `peek` and `help`. The place is where the keys go: a conversation open over a change is `talk`, choosing lines inside it is `choose`. The windows that close on any key (what's new, welcome, the away digest, where you left off), the quit question and the solo pick take only the lines that hold everywhere. A place may come again further down; a key given twice in one place is refused, and a key given alone in one place cannot start two keys in the same place or everywhere.
+The places are `salon` (Home, with a focus, a raw stream and a card's screen over it; the name is the old team's), `board`, `code` (the code map), `timeline` and `journal` (the windows `:board`, `:code`, `:timeline` and `:journal` open), `talk` (a conversation), `change` (a change open), `choose` (lines being chosen to copy, in a conversation or a change), `peek` and `help`. The place is where the keys go: a conversation open over a change is `talk`, choosing lines inside it is `choose`. The windows that close on any key (what's new, welcome, the away digest, where you left off), the quit question and the solo pick take only the lines that hold everywhere. A place may come again further down; a key given twice in one place is refused, and a key given alone in one place cannot start two keys in the same place or everywhere.
 
 imece reads the file at start, on `:keys`, and again when you save it: it looks every two seconds, and at once when you come back to its window, and says what came of it as `:keys` does. A file it cannot take whole is refused, and the keys you had stay: a line that is not `KEY = KEY` (`line 3: write it as KEY = KEY`), a name that is no key (`` `nope` is not a key ``), a key imece does nothing with on the right (`imece does nothing with d`), a key given twice (`^n is given on line 1 already`), three keys on a side, a place that is none of these (`` `[nope]` is no place ``), `^c` on either side, more than 200 keys, a file over 64 KiB or not text. The last good file is kept in the store, so a start with a file refused still has your keys and says why. A bad edit is said once and leaves the keys you had. With no file, imece's own keys are back.
 
