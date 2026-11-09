@@ -269,7 +269,32 @@ const NOT_ITS_SESSION_SAID: &str = "this socket takes calls from its own agent's
 /// process `owner` or one it started. None running (0), or a caller the
 /// system will not name, is a no.
 fn its_session(peer: Option<u32>, owner: u32) -> bool {
-    owner != 0 && peer.is_some_and(|p| imece_agent::child::descends(p, owner))
+    owner != 0 && owner != STARTING && peer.is_some_and(|p| imece_agent::child::descends(p, owner))
+}
+
+/// A socket's owner while its session is being started: the process is
+/// there, or about to be, before the main loop has taken its start. No
+/// process has this number.
+const STARTING: u32 = u32::MAX;
+
+/// How often a call on a socket whose session is starting looks again
+/// for its process, and how many times: 5 s. A session that starts
+/// quickly calls before the main loop names it (the next step does).
+const OWNER_STEP: Duration = Duration::from_millis(20);
+const OWNER_LOOKS: u32 = 250;
+
+/// The process of the session a socket answers to, waited for while it
+/// is [`STARTING`], at most `looks` looks `step` apart. None (0) is said
+/// at once; one still starting after the looks is refused as none.
+fn owner_of(owner: &AtomicU32, looks: u32, step: Duration) -> u32 {
+    for _ in 0..looks {
+        let pid = owner.load(Ordering::SeqCst);
+        if pid != STARTING {
+            return pid;
+        }
+        thread::sleep(step);
+    }
+    owner.load(Ordering::SeqCst)
 }
 
 /// and the caller must not do it again.
@@ -1136,7 +1161,7 @@ impl Live {
         let mine = Arc::clone(&owner);
         let server = Server::bind(&bus.dir.join(format!("a{id}.sock")), tools, {
             move |name, args, peer| {
-                if !its_session(peer, mine.load(Ordering::SeqCst)) {
+                if !its_session(peer, owner_of(&mine, OWNER_LOOKS, OWNER_STEP)) {
                     // Said in the trace of the agent whose socket it is.
                     let (reply, _) = mpsc::channel();
                     let said = json!({ "tool": name });
@@ -1156,7 +1181,8 @@ impl Live {
     }
 
     /// Tells each socket which process its agent's session runs in now:
-    /// a session started, ended, or started Claude Code again.
+    /// a session started, ended, or started Claude Code again; one being
+    /// started is [`STARTING`], so its first calls wait for it.
     fn own_sockets(&self) {
         let Some(bus) = &self.bus else {
             return;
@@ -1164,7 +1190,8 @@ impl Live {
         for (slot, owner) in self.slots.iter().zip(&bus.owners) {
             let pid = match slot {
                 Slot::Running(s) => s.pid().unwrap_or(0),
-                _ => 0,
+                Slot::Starting(_) => STARTING,
+                Slot::None => 0,
             };
             owner.store(pid, Ordering::SeqCst);
         }
@@ -1547,6 +1574,40 @@ pub fn today() -> u64 {
 mod tests {
     use super::*;
     use crate::live::testing::*;
+
+    #[test]
+    fn a_socket_s_owner_is_waited_for_while_its_session_starts_and_only_then() {
+        use std::sync::atomic::AtomicU32;
+        // Named already, or none: at once, not after the looks.
+        for pid in [7, 0] {
+            let named = AtomicU32::new(pid);
+            let at = Instant::now();
+            assert_eq!(owner_of(&named, 1_000, Duration::from_millis(10)), pid);
+            assert!(at.elapsed() < Duration::from_secs(1), "{:?}", at.elapsed());
+        }
+        // Named while the call waits: that one.
+        let later = Arc::new(AtomicU32::new(STARTING));
+        let namer = Arc::clone(&later);
+        let naming = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(60));
+            namer.store(9, Ordering::SeqCst);
+        });
+        assert_eq!(owner_of(&later, 500, Duration::from_millis(10)), 9);
+        naming.join().unwrap();
+        // Never named: still starting after every look, and refused.
+        let never = AtomicU32::new(STARTING);
+        let at = Instant::now();
+        assert_eq!(owner_of(&never, 5, Duration::from_millis(10)), STARTING);
+        assert!(
+            at.elapsed() >= Duration::from_millis(50),
+            "{:?}",
+            at.elapsed()
+        );
+        assert_eq!(OWNER_STEP * OWNER_LOOKS, Duration::from_secs(5));
+        let me = Some(std::process::id());
+        assert!(!its_session(me, STARTING) && !its_session(me, 0));
+        assert!(its_session(me, std::process::id()));
+    }
 
     #[test]
     fn a_bus_s_directory_is_its_process_s_its_time_s_and_its_number_s() {

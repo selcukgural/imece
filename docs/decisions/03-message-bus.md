@@ -28,6 +28,12 @@ and a trace line on the agent (`send: called on this socket from outside
 its session, refused`); nothing of it runs or reaches the journal.
 `Bus.owners` holds each socket's session pid, updated every step
 (`own_sockets`); an agent with no session yet (pid 0) takes no call.
+A session being started is `STARTING` (named at once by the prompt that
+starts it, 2026-11-09): its first calls can come before the main loop
+takes its start (imece's stand-in, record 130, did on CI), so such a
+call waits for the pid (`owner_of`, at most `OWNER_LOOKS` 250 ×
+`OWNER_STEP` 20 ms) and is then judged as any other; still starting
+after that, it is refused. A socket with no session refuses at once.
 Probe facts: Claude's and Codex's `mcp-relay` are direct children of
 the vendor process; the live Codex test passes with the check, the live
 Gemini test could not finish on a free-tier key that day (not verified
