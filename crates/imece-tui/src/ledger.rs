@@ -214,6 +214,19 @@ impl World {
         i
     }
 
+    /// Worker `id`'s open row with no card becomes its try at card `c`,
+    /// which a change of the person's own line opened (record 126): what
+    /// it spent on the line is the card's.
+    pub(crate) fn row_to_card(&mut self, id: AgentId, c: CardId) {
+        let found = (self.ledger.iter())
+            .rposition(|r| r.agent == id && r.card.is_none() && r.outcome == Outcome::Open);
+        if let Some(i) = found {
+            let row = &mut self.ledger[i];
+            row.card = Some(c);
+            row.attempt = self.cards[c].attempt;
+        }
+    }
+
     /// A new row of worker `id`'s, on card `card` at the try it is on.
     fn open_row(&mut self, id: AgentId, card: Option<CardId>) -> usize {
         let a = &self.agents[id];
@@ -516,6 +529,47 @@ mod tests {
         // More said by model than the figure grew: nothing is not split.
         w.ledger[0].models.insert("d".into(), 50);
         assert_eq!(w.ledger[0].unsplit(), 0);
+    }
+
+    #[test]
+    fn what_a_worker_spent_on_the_person_s_line_is_the_try_of_the_card_its_change_opens() {
+        let mut w = team(2);
+        // Its card failed: its row ended so, and the person's next line
+        // spends on a row with no card (record 126).
+        let c = with_card(&mut w, 1);
+        w.takes(1, c);
+        spend(&mut w, 1, 4);
+        w.card_failed(1, c, "no");
+        w.own_line(1, "fix the footer");
+        spend(&mut w, 1, 10);
+        assert_eq!(w.ledger.len(), 2);
+        assert_eq!(
+            (w.ledger[0].cost, w.ledger[0].outcome),
+            (4, Outcome::Failed)
+        );
+        assert_eq!((w.ledger[1].card, w.ledger[1].cost), (None, 6));
+        // Another worker's row with no card stays its own.
+        spend(&mut w, 2, 3);
+        // Its change opens the card: that row is the card's first try.
+        w.change_ready(crate::model::Change {
+            agent: 1,
+            title: "Footer".into(),
+            files: Vec::new(),
+            patch: String::new(),
+            runs: Vec::new(),
+            check: crate::model::Check::None,
+            spend: None,
+        });
+        let card = w.agents[1].card.unwrap();
+        assert_ne!(card, c);
+        assert_eq!(
+            (w.ledger[1].card, w.ledger[1].attempt, w.ledger[1].rounds),
+            (Some(card), 1, 1)
+        );
+        assert_eq!(w.ledger[2].card, None, "the other worker's");
+        spend(&mut w, 1, 12);
+        assert_eq!(w.ledger.len(), 3);
+        assert_eq!(w.ledger[1].cost, 8);
     }
 
     #[test]

@@ -382,6 +382,7 @@ fn card_of(w: &World, row: HomeRow) -> Option<&Card> {
 }
 
 /// What a row is called: its change's title, else its card's, else the
+/// person's line it works on with no card yet (record 126), else the
 /// agent's name; a project's heading its name.
 fn title_of(w: &World, row: HomeRow) -> String {
     if let HomeRow::Project(p) = row {
@@ -397,7 +398,11 @@ fn title_of(w: &World, row: HomeRow) -> String {
     if let Some(c) = card_of(w, row) {
         return clean(&c.title);
     }
-    clean(&w.agents[agent_of(w, row)].name)
+    let a = &w.agents[agent_of(w, row)];
+    match &a.task.own {
+        Some(own) => clean(&own.title),
+        None => clean(&a.name),
+    }
 }
 
 /// The agent a row belongs to; a project's heading its leader.
@@ -1656,6 +1661,29 @@ mod tests {
             got.contains("TO DECIDE 3 questions · 1 change · 1 reply"),
             "{got}"
         );
+    }
+
+    #[test]
+    fn a_worker_s_row_is_called_by_its_card_else_the_person_s_line_else_its_name() {
+        let mut app = home(Lang::En);
+        let a = worker(&app);
+        app.world.agents[a].card = None;
+        let name = app.world.agents[a].name.clone();
+        assert_eq!(title_of(&app.world, HomeRow::Agent(a)), name);
+        // No card for the person's line until a change shows (record
+        // 126): the row says the line.
+        app.world.agents[a].task.own = Some(crate::model::Own {
+            title: "fix the footer\u{1b}[2J".into(),
+            tick: 0,
+        });
+        assert_eq!(
+            title_of(&app.world, HomeRow::Agent(a)),
+            "fix the footer [2J",
+            "cleaned"
+        );
+        app.world.agents[a].card = Some(0);
+        let card = app.world.cards[0].title.clone();
+        assert_eq!(title_of(&app.world, HomeRow::Agent(a)), card);
     }
 
     #[test]

@@ -36,7 +36,7 @@ Başlık iki tarafı ve seçimin yerini söyler, `4/5`; kelimelerine yazılmış
 
 Konuşma açıkken `a` ve `r` hiçbir şeye karar vermez: altında seçili olan, gördüğün şey değildir. Önce `esc`, sonra değişikliği aç.
 
-Boşta bir işçiye mesaj onun için bir kart açar (ilk satır kartın başlığıdır), yanıtı kartı kapatır. Yani pencereden `@claude-2 metin` yazmak bir mesaj olduğu kadar bir karttır.
+Boşta bir işçiye mesaj kendiliğinden kart açmaz: satır işçinin kendi görevi olarak bekler ve iş bir değişikliğe varınca onun için bir kart açılır, başlığı satırın ilk satırıdır ve değişiklikle birlikte sizi bekler. Hiçbir şeye varmayan bir satır (bir soru, tek sözcüklük bir yanıt) asla kart olmaz; yanıt her zamanki gibi size gelir.
 
 ## Okumak
 

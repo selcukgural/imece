@@ -285,6 +285,10 @@ const STOPPED: &str = "the session ended: the process exited with code 1";
 /// Every this many first tries done in a run, one fails (record 126): its
 /// done says so, and no change comes of it.
 const FAIL_EVERY: u32 = 7;
+/// Every this many answers a worker gives to the person's own line, with
+/// no card (record 126), one comes with a change, which opens its card;
+/// the rest are talk and open none.
+const OWN_CHANGE_EVERY: u32 = 2;
 
 /// Every this many changes done in a run, the turn that ends with one
 /// says no figure, as a Claude Code result may (record 132): its cost
@@ -748,8 +752,6 @@ enum Taken {
     Assigned,
     /// It took the card from the board.
     Claimed,
-    /// The person told it what to do.
-    Told,
     /// The leader handed it a card that failed or ran long (record 126).
     Handed,
     /// What the card held for it waited on is done (record 126, F10): the
@@ -864,6 +866,9 @@ struct Extras {
     hard: HashSet<CardId>,
     /// No API errors: a test that counts answers.
     calm: bool,
+    /// Answers workers gave to the person's own lines with no card: each
+    /// [`OWN_CHANGE_EVERY`]th comes with a change (record 126).
+    own_answers: u32,
     /// Sessions resumed this run, refused ones included.
     resumes: u32,
     /// The workers whose worktree the setup script was run in or asked
@@ -1304,7 +1309,8 @@ impl Sim {
 
     /// The person told agent `id` something, as live's sessions take it:
     /// a leader posts cards for it and says which; a worker between cards
-    /// gets a card for it, one in the middle of one goes on (a stopped
+    /// gets none for it until its answer comes with a change (record 126),
+    /// one in the middle of one goes on (a stopped
     /// one in the session it had, a forgotten one in a new one), and
     /// answers. Refused when the pot is spent.
     pub fn told(&mut self, w: &mut World, id: AgentId, text: &str) -> Result<(), Refusal> {
@@ -1347,12 +1353,12 @@ impl Sim {
         // A word to a worker whose change waits goes on with its card, as
         // live's does.
         w.word_goes_on(id);
+        // A worker between cards gets none for the line (record 126): it
+        // waits as its own task, and a change of it opens the card.
+        if w.agents[id].role == Role::Worker && !Self::unfinished(w, id) {
+            w.own_line(id, text.lines().next().unwrap_or_default());
+        }
         match w.agents[id].role {
-            Role::Worker if !Self::unfinished(w, id) => {
-                let title = text.lines().next().unwrap_or_default().to_string();
-                let card = self.new_card(w, w.agents[id].project, title);
-                self.take(w, id, card, Taken::Told);
-            }
             Role::Worker | Role::Helper | Role::Solo => {
                 let a = &mut w.agents[id];
                 a.set_status(Status::Working, t);
@@ -2485,16 +2491,26 @@ impl Sim {
             mine: true,
             text: text.lines().next().unwrap_or_default().to_string(),
         });
-        if matches!(a.role, Role::Leader | Role::Solo) {
+        // A worker on the person's own line, with no card (record 126),
+        // ends its turn with the answer as a solo does.
+        let own = a.role == Role::Worker && a.task.own.is_some() && !Self::unfinished(w, id);
+        let a = &mut w.agents[id];
+        if matches!(a.role, Role::Leader | Role::Solo) || own {
             a.activity = None;
             a.set_status(Status::Idle, t);
         }
+        // Every second answer to the person's own line comes with its
+        // change, as live's done shows one, and the change opens its card.
+        let own_change = own && {
+            self.extras.own_answers += 1;
+            self.extras.own_answers.is_multiple_of(OWN_CHANGE_EVERY)
+        };
         // A solo's turn end shows what its worktree holds, as live reads
         // it: a change about every other answer.
-        if w.agents[id].role == Role::Solo
+        let solo_change = w.agents[id].role == Role::Solo
             && !w.projects[w.agents[id].project].no_git
-            && self.rng.one_in(2)
-        {
+            && self.rng.one_in(2);
+        if own_change || solo_change {
             let repo = w.projects[w.agents[id].project].repo;
             let (file, names) = *self.rng.pick(repo);
             let symbols: Vec<Symbol> = names
@@ -3662,7 +3678,6 @@ impl Sim {
             }
             // Its done answers no assign it knows the number of now.
             Taken::Released => self.mind(agent).assigned = None,
-            Taken::Told => {}
         }
         self.start(w, agent);
     }
@@ -6056,27 +6071,58 @@ diff --git a/b.rs b/b.rs
         s.applied(&mut w, worker, true, &[]);
         assert_eq!(w.cards[card].column, Column::Done);
         assert_eq!(w.cards[card].finished, w.tick);
-        // Told once it is done: a card for what it was told.
+        // Told once it is done: no card for the line (record 126), as
+        // live's; it waits as the worker's own task.
+        s.extras.calm = true;
+        let told_at = w.tick;
         s.told(&mut w, worker, "Keep the old rounding\nIt breaks invoices.")
             .unwrap();
-        assert_eq!(w.cards.len(), cards + 1, "a card for what it was told");
+        assert_eq!(w.cards.len(), cards, "no card for a line");
+        assert_eq!(w.agents[worker].card, None);
+        assert_eq!(w.agents[worker].status, Status::Working);
+        let answered = |w: &mut World, s: &mut Sim| {
+            let n = w.journal.len();
+            for _ in 0..8 {
+                s.step(w);
+                let replied = (w.journal[n..].iter())
+                    .any(|e| matches!(e.event, Event::Replied { agent, .. } if agent == worker));
+                if replied {
+                    return;
+                }
+            }
+            panic!("no answer");
+        };
+        // Its first answer is talk: nothing to show, no card.
+        answered(&mut w, &mut s);
+        assert_eq!(w.cards.len(), cards, "talk opens no card");
+        assert!(w.change_of(worker).is_none());
+        assert_eq!(w.agents[worker].status, Status::Idle);
+        // Told again while the line waits: part of it, no second one.
+        s.told(&mut w, worker, "and the tests").unwrap();
+        let own = w.agents[worker].task.own.clone().unwrap();
+        assert_eq!(
+            (own.title.as_str(), own.tick),
+            ("Keep the old rounding", told_at)
+        );
+        // Its next answer comes with a change: the card opens with it,
+        // titled by the first line, waiting with the change.
+        answered(&mut w, &mut s);
+        assert_eq!(w.cards.len(), cards + 1, "a card with the change");
         let c = &w.cards[cards];
         assert_eq!(c.title, "Keep the old rounding");
         assert_eq!(
-            (c.owner, c.column, c.attempt),
-            (Some(worker), Column::Working, 1)
+            (c.owner, c.column, c.attempt, c.started),
+            (Some(worker), Column::Review, 1, told_at)
         );
         assert!(matches!(c.story[0].event, StoryEvent::Took { agent } if agent == worker));
         assert_eq!(w.agents[worker].card, Some(cards));
+        assert_eq!(w.change_of(worker).unwrap().agent, worker);
         assert!(
             !w.journal
                 .iter()
                 .any(|e| matches!(e.event, Event::Claimed { card, .. } if card == cards)),
             "nobody claimed it"
         );
-        // Told again in the middle of it: no other card.
-        s.told(&mut w, worker, "and the tests").unwrap();
-        assert_eq!(w.cards.len(), cards + 1);
     }
 
     #[test]

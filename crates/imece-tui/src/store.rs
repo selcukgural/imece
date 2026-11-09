@@ -1459,7 +1459,7 @@ impl Store {
                     a.traced,
                     &a.commands,
                     &a.start,
-                    a.task,
+                    &a.task,
                     a.unpriced.count(),
                 )),
                 hash(&(
@@ -2616,6 +2616,11 @@ mod tests {
             },
             last: Some(spend()),
             gaps: 2,
+            // The person's line with no card yet stays with its round.
+            own: Some(Own {
+                title: "are you there?".into(),
+                tick: 66,
+            }),
         };
         // A session's unpriced turn stays so in the next session.
         w.agents[1].unpriced = Unpriced {
@@ -2857,7 +2862,7 @@ mod tests {
             (a.id, a.project, a.name.clone(), a.role, a.parent, a.card),
             (a.cost, a.taint, a.gone, a.changed_at, a.traced),
             (a.commands.clone(), a.trace.clone()),
-            a.task,
+            a.task.clone(),
         )
     }
 
@@ -5433,6 +5438,7 @@ mod tests {
             carried: Spend::default(),
             last: Some(spend()),
             gaps: 0,
+            own: None,
         };
         assert!(store.save(&w, &k.kept()).unwrap());
         let back = store.load(100).unwrap().expect("a world");

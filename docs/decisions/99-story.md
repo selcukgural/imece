@@ -52,7 +52,10 @@ waiting ones) by when they were finished, an open one last; the card at
 a tick is the first finished then or after, a helper's its worker's
 (`Agent.parent`). It holds because a worker takes one card after the
 other; a line at the very tick one card ends and the next begins goes
-to the one that ended.
+to the one that ended. A card the person's line opens once its change
+shows (record 126, "The person's line opens no card") is held from then
+on, so the worker's lines from the line to the change are its block's;
+a line that came to nothing has no card, and its lines go `elsewhere`.
 
 An ask (`MsgKind::Ask` with a number; one from before numbers, 0, is
 not one that waits) with no reply whose `re` is its number says `no

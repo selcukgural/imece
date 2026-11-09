@@ -70,7 +70,7 @@ Varsayılan ret: uymayan bir mesaj nedeniyle reddedilir ve iz bırakmaz.
 
 ### Kartlar ve veriyolu
 
-Boşta bir işçiye bir mesaj, ilk satırıyla adlandırılmış ve `assign`'ın `paths`'ine sahip bir kart açar (varsa bir `assign`'ın ilk satırı; [kartın sahip olduğu yollar](../concepts/messages-and-board.md#kartın-sahip-olduğu-yollar)); kart, başlattığı tur ajanın yanıtıyla bitince kapanır. Bir işçinin liderine `done`'ı liderin kartını kapatmaz: liderin kendi turu kapatır. Bir yardımcının işçisine `done`'ı ayrılacağını işaretler; o tur bitince ayrılır, böylece turun maliyeti yine bildirilir. Bkz. [mesajlar ve pano](../concepts/messages-and-board.md) ve [kartlar](../screen/cards.md).
+Bir takım arkadaşının boşta bir işçiye mesajı, ilk satırıyla adlandırılmış ve `assign`'ın `paths`'ine sahip bir kart açar (varsa bir `assign`'ın ilk satırı; [kartın sahip olduğu yollar](../concepts/messages-and-board.md#kartın-sahip-olduğu-yollar)); kart değişikliğini izler. Sizin boşta bir işçiye mesajınız, işi bir değişikliğe varana dek kart açmaz; o değişiklik kartı mesajınızın başlığıyla açar. Bir işçinin liderine `done`'ı liderin kartını kapatmaz: liderin kendi turu kapatır. Bir yardımcının işçisine `done`'ı ayrılacağını işaretler; o tur bitince ayrılır, böylece turun maliyeti yine bildirilir. Bkz. [mesajlar ve pano](../concepts/messages-and-board.md) ve [kartlar](../screen/cards.md).
 
 ## Mesaj numaraları ve yanıtlar
 

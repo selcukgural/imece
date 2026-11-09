@@ -26,7 +26,7 @@ The footer is where you write. `/` (or `i`, as in vim) opens it to the leader of
 | Line | Goes to |
 | --- | --- |
 | plain text | the leader of the selected project, which splits the request into cards |
-| `@name text` | one agent. A message to an idle worker opens a card for it; its answer closes it. `@` in a focus, a trace or a change fills the agent's name in |
+| `@name text` | one agent. A message to an idle worker opens no card until its work comes to a change; then the card opens, titled by the message. `@` in a focus, a trace or a change fills the agent's name in |
 | `/cmd`, `@name /cmd` | the agent's own command line, not a message: `/clear`, `/compact`, `/cost`, `/context`, whatever Claude Code knows. It runs as a turn and its answer comes back like a reply |
 | `:command` | imece itself; see below |
 | `!cmd` | your own shell |
@@ -34,7 +34,7 @@ The footer is where you write. `/` (or `i`, as in vim) opens it to the leader of
 
 The label at the start says where it goes: `to lead:`, `to claude-1:`, `command:`, `shell:`, `card:`, or `note on file:line ▸` while a change's note is written. The agents' names are completed, so `@cl` `tab` is `@claude-1 `.
 
-A message can run over lines; the first line of one that opens a card is the card's title. A spent pot refuses words and commands: nothing starts a turn until `:budget` raises it.
+A message can run over lines; the first line of one whose work opens a card is the card's title. A spent pot refuses words and commands: nothing starts a turn until `:budget` raises it.
 
 ## `:` commands
 

@@ -373,7 +373,12 @@ impl Live {
                 self.blocks(w, c);
                 (Outcome::Failed(Some(c)), false)
             }
-            _ if failed => (Outcome::Failed(None), false),
+            // The person's own line it had no card for came to nothing:
+            // none opens for it.
+            _ if failed => {
+                w.own_none(from);
+                (Outcome::Failed(None), false)
+            }
             _ => (Outcome::Ok, true),
         }
     }
@@ -3594,12 +3599,16 @@ in p.rs",
             ),
             1
         );
-        // One that held no card fails nothing, and is headed failed.
+        // One that held no card fails nothing, and is headed failed; the
+        // person's line it worked on opens no card ever (record 126).
         let mut w = team(1);
         let mut live = idle_live(2);
+        w.own_line(1, "try the API");
         let got = sent(&mut live, &mut w, 1, &args).unwrap();
         assert!(got.contains("the card is marked failed"), "{got}");
         assert_eq!(live.mail[0][0].outcome, Outcome::Failed(None));
+        assert_eq!(w.agents[1].task.own, None);
+        assert!(w.cards.is_empty());
         // A plain done of one that holds its card is Ok: the card is not
         // failed.
         let mut w = team(1);

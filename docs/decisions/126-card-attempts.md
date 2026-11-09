@@ -35,7 +35,9 @@ card through (`Card::over`: done or failed) has its `finished` tick. The
 person's words to a worker whose card was sent back go on with that card
 (`unfinished` is now a card at work that is still the agent's own), so
 the rounds of one card stay one card; a card done or failed makes the
-next task a card of its own, as a done one always did. A card in review
+next task a card of its own, as a done one always did (the person's own
+line opens it only once a change shows: "The person's line opens no
+card", below). A card in review
 whose change still waits (not a Lonca proposal) goes back to work with
 the person's word (`World::word_goes_on`, from `Live::prompt` when
 `Opening.person`, after the wake briefing has said where the card stood;
@@ -364,3 +366,70 @@ nobody took, and it withdraws every card waiting on one never to be done
 Gaps. A Lonca proposal of a card withdrawn while it was at work still
 shows as its worker's Δ, as one handed away does (F8's gap): the person
 rejects it.
+
+## The person's line opens no card
+
+The person's choice (2026-11-09): a line the person writes to a worker
+opens no card by itself; a card comes only when the work produces a
+change, or, as ever, from the leader's `assign`, `post` and plan and the
+board. A real run had written `@claude-4 are you there? Answer in one
+word.` and imece opened card #12 "are you there? Answ…": on the board,
+in the story, in every count of cards. imece never reads the line to
+decide (the body is never interpreted): it waits for what the work
+shows.
+
+- The line to a worker with no card at work (none, or one that is through
+  or handed on) is the worker's own task, `Task.own: Option<Own>` (its
+  first line and the tick), set by `World::own_line` from `Live::prompt`
+  (`Opening.person`) and `Sim::told`. The card it last had is not its own
+  now: `Agent.card` goes, and its spending goes on a ledger row with no
+  card again (record 133). A line while one waits is part of it: the
+  first line's title stays. A worker with a card at work (or whose change
+  waits, which the word takes back to work, above) goes on with that card,
+  as before.
+- When a change of that worker shows the person (`World::change_ready`:
+  the git path's `done` read by `changes::read`, a Lonca proposal through
+  `change_proposed`), the card opens then (`World::own_card`): titled by
+  the line, the worker's, its first try, `started` the line's tick, a
+  `Took` in its story, and straight into `Review` with the change. What
+  the worker spent with no card (its open row with no card,
+  `World::row_to_card`) is that try's row, and its round (record 113)
+  opened at the line, so the Δ's cost counts from there. A card of its
+  own at work already holds a change; the line is part of it then, and
+  no other card opens. A card taken (`World::takes`: an assign, a claim,
+  a card handed) takes the line in too.
+- A turn that ends with nothing to show opens no card: the answer goes to
+  the person as ever (TO DECIDE's replies). A `done` with nothing in the
+  worktree (`change_none`) or one that says it failed with no card
+  (`DoneFor::Nothing`, `Outcome::Failed(None)`) ends the line: no card
+  ever. A `done` from such a worker is for nothing (`DoneFor::Nothing`),
+  never a late one, since its old card is not its own any more.
+- Solos never had cards (record 59): neither a line nor its Δ opens one;
+  `own_line` passes over every role but a worker.
+- Home's row of a worker with no card is called by the line (`ui::home`
+  `title_of`: change, card, the line, the name).
+- Restart: `Own` lives in `Task`, which the store keeps whole in
+  `agents.task` (JSON, record 113), with the round it opened: a run
+  that ends between the line and the change opens the card at the next
+  run's change, titled and costed alike. No schema change: an older
+  `task` reads with no line (`serde(default)`).
+
+The demo mirrors it: `Sim::told` keeps the line, the worker answers and
+goes idle as a solo does, and every `OWN_CHANGE_EVERY` (2)th answer to a
+line comes with a change, which opens its card.
+
+- **Growth**: one `Own` a worker at most, gone when a card opens or the
+  line ends.
+- **Concurrency**: on the main loop, as every tool.
+- **Migration**: `Task` gains a field skipped when empty; nothing else.
+
+Gaps. The first line names the card even when it was talk and the work
+came at a later line before any change showed (`are you there?` and then
+`fix the footer` opens `are you there?` once the footer's change shows):
+the line goes only at a `done` with nothing, a card taken, or the card it
+opens; a turn's end alone does not end it, since a Lonca proposal shows
+after the turn and a git read may come after it too. On Lonca a `done`
+with nothing to propose leaves the line until the next proposal. Mail
+from another agent (not an assign) to a worker between cards still opens
+a card titled by it, as before. A worker woken after a restart with a
+line and no card is briefed `You had no task in hand`.

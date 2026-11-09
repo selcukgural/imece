@@ -5,7 +5,7 @@ description: Bir kartın her şeyi tek ekranda - nerede durduğu, kim çalışt�
 
 # Bir kartın ekranı
 
-Bir kart tek bir iş birimidir: lider asar (ya da boşta bir işçiye mesajınız açar), bir işçi alır, bir `done` ile biter. Numarası, `#3`, ana ekranda işçisinin satırında, panoda ve günlükte görünür. `#` bir kartın ekranını açar: [detayının](changes.md#detay) log sekmesi (iş sahibinindir, yoksa ilk pay alanın), detayın başlığı altında kartın durumu, kimlerin payı olduğu ve hikâyesi; `tab` sahibinin diff'ine ve konuşmasına geçer, `esc` ana ekrana döner. Onunla, bütün günlüğü okumadan tek bir işe ne olduğunu öğrenmek istediğinizde karşılaşırsınız. Türkçe ekran karta `#` menüsünde "iş" der.
+Bir kart tek bir iş birimidir: lider asar (ya da boşta bir işçiye mesajınız, işi bir değişikliğe varınca açar), bir işçi alır, bir `done` ile biter. Numarası, `#3`, ana ekranda işçisinin satırında, panoda ve günlükte görünür. `#` bir kartın ekranını açar: [detayının](changes.md#detay) log sekmesi (iş sahibinindir, yoksa ilk pay alanın), detayın başlığı altında kartın durumu, kimlerin payı olduğu ve hikâyesi; `tab` sahibinin diff'ine ve konuşmasına geçer, `esc` ana ekrana döner. Onunla, bütün günlüğü okumadan tek bir işe ne olduğunu öğrenmek istediğinizde karşılaşırsınız. Türkçe ekran karta `#` menüsünde "iş" der.
 
 ```text
 #1 Kargo ücret hesabı · shop-api · claude-1 · 27 dk · $0.30
