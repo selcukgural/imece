@@ -715,6 +715,10 @@ pub struct Live {
     mail: Vec<Vec<Mail>>,
     /// Prompts each session was given and has not finished.
     turns: Vec<usize>,
+    /// Prompts each session took since its last turn ended
+    /// (`AgentEvent::Took`): what its next `TurnDone` ends, one at the
+    /// least (record 135).
+    took: Vec<usize>,
     /// Agents the person spoke to whose answer has not come yet.
     asked: Vec<bool>,
     /// Turns each agent took on messages since the person last spoke.
@@ -1090,6 +1094,7 @@ impl Live {
             calls_rx,
             mail: Vec::new(),
             turns: Vec::new(),
+            took: Vec::new(),
             asked: Vec::new(),
             woken: Vec::new(),
             posts: HashMap::new(),
@@ -1237,7 +1242,15 @@ impl Live {
             if generation != self.generation[id] {
                 continue;
             }
+            if matches!(e, AgentEvent::Took) {
+                self.took[id] += 1;
+                continue;
+            }
             let turn_done = matches!(e, AgentEvent::TurnDone { .. });
+            // The prompts this turn's end finishes: every one it took (a
+            // prompt given while it waited on a tool joins it), else the
+            // one it was started with.
+            let ends = if turn_done { self.took[id].max(1) } else { 0 };
             if turn_done {
                 // What Claude Code said the turn failed on: back on the
                 // agent for its end below, unless the turn runs again.
@@ -1278,9 +1291,8 @@ impl Live {
                     self.renewed[id] = false;
                 }
                 self.turned[id] = true;
-                if !self.inflight[id].is_empty() {
-                    self.inflight[id].remove(0);
-                }
+                let done = ends.min(self.inflight[id].len());
+                self.inflight[id].drain(..done);
                 w.agents[id].fault = fault;
                 // The person's yes for this turn ends with it.
                 w.turn_over(id);
@@ -1345,7 +1357,7 @@ impl Live {
                 AgentEvent::Stopped(why) => Some(why.clone()),
                 AgentEvent::TurnDone {
                     ok: false, text, ..
-                } if self.turns[id] == 1 => Some(text.clone()),
+                } if self.turns[id] <= ends => Some(text.clone()),
                 _ => None,
             };
             if stopped {
@@ -1374,7 +1386,8 @@ impl Live {
             }
             if turn_done {
                 self.stand(w, id);
-                self.turns[id] = self.turns[id].saturating_sub(1);
+                self.turns[id] = self.turns[id].saturating_sub(ends);
+                self.took[id] = 0;
                 if self.turns[id] == 0 && self.leaving[id] {
                     self.release(w, id);
                     continue;
@@ -2001,6 +2014,65 @@ mod tests {
         live.tx.send((1, 0, done())).unwrap();
         live.step(&mut w);
         assert!(live.lonca_is_due());
+    }
+
+    #[test]
+    fn a_turn_ends_every_prompt_it_took_and_one_when_it_took_none() {
+        let done = || AgentEvent::TurnDone {
+            ok: true,
+            text: "done".into(),
+            cost: 0,
+            denied: 0,
+        };
+        // `given` prompts, `took` of them taken before the turn's end.
+        let run = |given: usize, took: usize| {
+            let mut w = team(1);
+            let mut live = Live::new(2, claude_at("x"), PathBuf::new(), PathBuf::new());
+            live.turns[1] = given;
+            live.inflight[1] = (0..given).map(|n| n.to_string()).collect();
+            w.agents[1].set_status(Status::Working, 0);
+            for _ in 0..took {
+                live.tx.send((1, 0, AgentEvent::Took)).unwrap();
+            }
+            live.tx.send((1, 0, done())).unwrap();
+            live.step(&mut w);
+            (live.turns[1], live.inflight[1].clone(), live.took[1], w)
+        };
+        // A message given while the turn waited on a tool joined it:
+        // Claude Code ends both with one result.
+        let (turns, inflight, took, w) = run(2, 2);
+        assert_eq!((turns, took), (0, 0));
+        assert!(inflight.is_empty());
+        assert_ne!(w.agents[1].status, Status::Working);
+        // One taken of two: the other is a turn still to come.
+        let (turns, inflight, took, w) = run(2, 1);
+        assert_eq!((turns, inflight, took), (1, vec!["1".to_string()], 0));
+        assert_eq!(w.agents[1].status, Status::Working);
+        // None said (a command such as `/clear` is not echoed): one ends.
+        let (turns, inflight, _, _) = run(3, 0);
+        assert_eq!((turns, inflight.len()), (2, 2));
+        // More said than given never goes below nothing.
+        let (turns, inflight, _, _) = run(1, 3);
+        assert_eq!((turns, inflight.len()), (0, 0));
+    }
+
+    #[test]
+    fn a_prompt_taken_is_counted_until_the_turn_ends_and_traces_nothing() {
+        let mut w = team(1);
+        let mut live = Live::new(2, claude_at("x"), PathBuf::new(), PathBuf::new());
+        live.turns[1] = 1;
+        let traced = w.agents[1].trace.len();
+        live.tx.send((1, 0, AgentEvent::Took)).unwrap();
+        live.tx.send((1, 0, AgentEvent::Took)).unwrap();
+        live.step(&mut w);
+        assert_eq!(live.took[1], 2);
+        assert_eq!(w.agents[1].trace.len(), traced);
+        // A session that ends forgets what it took.
+        live.tx
+            .send((1, 0, AgentEvent::Stopped("gone".into())))
+            .unwrap();
+        live.step(&mut w);
+        assert_eq!(live.took[1], 0);
     }
 
     #[test]

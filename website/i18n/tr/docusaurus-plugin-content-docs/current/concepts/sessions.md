@@ -16,6 +16,10 @@ imece'nin bildiği her şey tek bir SQLite dosyasındadır: `$XDG_STATE_HOME/ime
 - Dosyayı **bir anda tek imece** tutar (yanında bir `.lock`): ikincisi reddedilir ve ilkinden `:open` kullanması söylenir.
 - imece'nin açamadığı ya da yükleyemediği bir dosya (veritabanı değil, daha yeni bir imece'nin şeması, bilmediği bir satır) reddedilir ve olduğu gibi bırakılır; ileti dosyayı adlandırır ve nasıl sıfırdan başlanacağını söyler (`-wal` ve `-shm`'siyle birlikte kenara taşıyın). imece onu kendi başına asla yedeklemez ya da sıfırdan başlamaz; daha yeni bir imece hâlâ okuyabilir.
 
+## Turun ortasında bir ajana yazmak
+
+Bir ajana yazdığınız, tur ortasında bile hemen oturumuna gider. Tur bir aracı beklerken (çalışan bir komut, sizden bir onay) Claude Code sözlerinizi aynı tura alır ve ajan onları orada yanıtlar; değilse ajanın bir sonraki turunu başlatırlar. İki durumda da ajanın satırı, değişikliği ve `done`'u Claude Code'un gerçekte yaptığını izler: imece, Claude Code'un aldığını söylediği istemleri sayar; ikisini alan bir tur ikisini de bitirir.
+
 ## Uyku ve uyanış
 
 Sonraki başlangıçta her ajan `◦ önceki çalışmadan beri uyuyor, yazınca uyanır` olarak gelir: siz ona yazana, bir ekip arkadaşının uyandıran mesajı gelene ya da bu çalıştırmada asılan bir kart ona teklif edilene dek süreç yok, maliyet yok. Yeniden başlatmayı bekleyen posta ve kartlar kimseyi uyandırmaz.

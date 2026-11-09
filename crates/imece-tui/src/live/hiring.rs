@@ -98,6 +98,7 @@ impl Live {
         self.notes.push(Vec::new());
         self.mail.push(Vec::new());
         self.turns.push(0);
+        self.took.push(0);
         self.asked.push(false);
         self.woken.push(0);
         self.posted.push(0);

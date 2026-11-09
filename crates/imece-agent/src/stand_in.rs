@@ -156,6 +156,8 @@ pub struct Args {
     /// `--fork-session` with `--session-id`.
     pub session_id: Option<String>,
     pub fork: bool,
+    /// `--replay-user-messages`: each prompt taken is echoed back.
+    pub replay: bool,
 }
 
 impl Args {
@@ -185,6 +187,7 @@ impl Args {
                 "--resume" => a.resume = Some(value()?),
                 "--session-id" => a.session_id = Some(value()?),
                 "--fork-session" => a.fork = true,
+                "--replay-user-messages" => a.replay = true,
                 "--mcp-config" => a.servers = servers_of(&value()?)?,
                 // Flags that take a value the stand-in does not read.
                 "--input-format"
@@ -832,6 +835,18 @@ impl<W: Write> Hands for Busy<'_, W> {
     }
 }
 
+/// The echo of a prompt taken, as Claude Code writes it under
+/// `--replay-user-messages`.
+fn replayed(prompt: &str, session: &str) -> Value {
+    serde_json::json!({
+        "type": "user",
+        "message": { "role": "user", "content": prompt },
+        "session_id": session,
+        "parent_tool_use_id": null,
+        "isReplay": true,
+    })
+}
+
 /// The text of a stdin line that gives a prompt.
 fn prompt_of(line: &str) -> Option<String> {
     let v: Value = serde_json::from_str(line).ok()?;
@@ -969,6 +984,11 @@ pub fn run(
             stream.result("", 0);
             kept_now(&session, &mind, &stream);
             continue;
+        }
+        if a.replay {
+            // Claude Code echoes a prompt as it takes it; its own
+            // commands (`/clear` above) are not echoed.
+            stream.line(&replayed(&prompt, &session));
         }
         let mut hands = Busy {
             stream: &mut stream,
@@ -1130,6 +1150,7 @@ mod tests {
                 resume: Some("old".into()),
                 session_id: Some("new".into()),
                 fork: true,
+                replay: false,
             },
             "a value that looks like a flag is a value"
         );
@@ -1467,6 +1488,68 @@ mod tests {
             .map(|l| (l["total_cost_usd"].as_f64().unwrap() * 1_000_000.0).round() as u64)
             .collect();
         (session, costs)
+    }
+
+    #[test]
+    fn a_prompt_is_echoed_as_taken_under_replay_and_a_command_never() {
+        let lines = |args: &[&str]| -> Vec<Value> {
+            let a = Args::parse(&strings(args)).unwrap();
+            let input: String = (["one", "/clear", "two"].iter())
+                .map(|p| crate::claude::prompt_line(p) + "\n")
+                .collect();
+            let mut out = Vec::new();
+            run(
+                &a,
+                Path::new("/work"),
+                None,
+                &Habits::default(),
+                input.as_bytes(),
+                &mut out,
+            );
+            (String::from_utf8(out).unwrap().lines())
+                .map(|l| serde_json::from_str(l).unwrap())
+                .collect()
+        };
+        let echoed = |v: &[Value]| -> Vec<String> {
+            (v.iter())
+                .filter(|l| l["isReplay"] == true)
+                .map(|l| l["message"]["content"].as_str().unwrap().to_string())
+                .collect()
+        };
+        let all = lines(&["--replay-user-messages"]);
+        assert_eq!(echoed(&all), ["one", "two"]);
+        // Each echo comes before its turn's result.
+        let at = |content: &str| all.iter().position(|l| l["message"]["content"] == content);
+        let first_result = all.iter().position(|l| l["type"] == "result").unwrap();
+        assert!(at("one").unwrap() < first_result);
+        assert!(
+            Args::parse(&strings(&["--replay-user-messages"]))
+                .unwrap()
+                .replay
+        );
+        assert!(echoed(&lines(&[])).is_empty());
+        // imece's parser reads the echo as a prompt taken.
+        let a = Args::parse(&strings(&[
+            "--replay-user-messages",
+            "--permission-mode",
+            "acceptEdits",
+        ]))
+        .unwrap();
+        let input = crate::claude::prompt_line("one") + "\n";
+        let mut out = Vec::new();
+        run(
+            &a,
+            Path::new("/work"),
+            None,
+            &Habits::default(),
+            input.as_bytes(),
+            &mut out,
+        );
+        let events = parsed(&String::from_utf8(out).unwrap(), &a);
+        assert_eq!(
+            events.iter().filter(|e| **e == crate::Event::Took).count(),
+            1
+        );
     }
 
     #[test]
