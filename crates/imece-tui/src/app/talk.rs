@@ -283,6 +283,7 @@ impl App {
             words: None,
             folds: Folds::every(self.fold_talk),
             room: Cell::new(usize::MAX),
+            about: None,
         });
     }
 

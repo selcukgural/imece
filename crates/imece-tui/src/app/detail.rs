@@ -40,10 +40,14 @@ impl App {
         }
     }
 
-    /// The agent the open conversation is with: the one that wrote its
-    /// first line, else the one it was written to.
+    /// The agent the open conversation is with: the one whose talk tab
+    /// opened it, else the one that wrote its first line, else the one
+    /// it was written to.
     pub fn thread_agent(&self) -> Option<AgentId> {
         let th = self.thread.as_ref()?;
+        if let Some(id) = th.about {
+            return Some(id);
+        }
         let first = &self.world.journal[*th.entries.first()?].event;
         let s = ui::words::said(first)?;
         match (s.from, s.to) {
@@ -111,6 +115,9 @@ impl App {
             Tab::Talk => {
                 if let Some(i) = self.last_talk(id) {
                     self.open_thread(i);
+                    if let Some(th) = &mut self.thread {
+                        th.about = Some(id);
+                    }
                 }
             }
             Tab::Log => {
@@ -300,8 +307,18 @@ mod tests {
             re: None,
         });
         app.open_tab(one, Tab::Talk);
-        assert_eq!(app.thread_agent(), Some(two), "the first line's writer");
-        assert_eq!(app.detail(), Some((two, Tab::Talk)));
+        assert_eq!(
+            app.thread_agent(),
+            Some(one),
+            "the tab's agent, though two wrote the first line"
+        );
+        assert_eq!(app.detail(), Some((one, Tab::Talk)));
+        // So the next tab is its log, not the other's.
+        app.next_tab(false);
+        assert_eq!(app.detail(), Some((one, Tab::Log)));
+        // Opened from the line itself, the first line's writer.
+        app.open_thread(app.world.journal.len() - 1);
+        assert_eq!(app.thread_agent(), Some(two));
         // The log keeps a raw stream of the same agent; the diff and the
         // log close a conversation.
         app.zoom = Zoom::Trace(one);

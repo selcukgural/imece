@@ -273,6 +273,9 @@ pub struct Thread {
     /// How wide its text was last drawn, which its lines are as copy mode
     /// moves over them (a table wraps to it); none drawn yet, unbounded.
     pub room: Cell<usize>,
+    /// The agent whose talk tab opened it: the detail stays that agent's
+    /// though another wrote its first line; none: opened from a line.
+    pub about: Option<AgentId>,
 }
 
 impl Thread {
