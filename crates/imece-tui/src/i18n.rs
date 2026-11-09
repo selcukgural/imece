@@ -379,6 +379,18 @@ pub fn fill(template: &str, args: &[&str]) -> String {
     out
 }
 
+/// A noun counted: what one says (`1 file`), and what any other number
+/// says (`{} files`).
+pub type Count = (&'static str, &'static str);
+
+/// `n` of a counted noun, in the words of its language.
+pub fn counted(n: usize, (one, many): Count) -> String {
+    match n {
+        1 => one.to_string(),
+        n => fill(many, &[&n.to_string()]),
+    }
+}
+
 pub struct Text {
     // Header
     /// An agent's row when it finished a turn the person has not opened.
@@ -593,7 +605,11 @@ pub struct Text {
     pub forget_refused: &'static str,
     pub empty_message: &'static str,
     pub command_refused: &'static str,
+    /// A message refused because the pot is spent: what it paid, of
+    /// what it holds; the pot is the team's, never one agent's.
     pub budget_spent: &'static str,
+    /// The header's pot once it is spent (`{}`: `$0.96 of $0.95`).
+    pub pot_spent: &'static str,
     pub budget_is: &'static str,
     pub bad_budget: &'static str,
     pub no_command: &'static str,
@@ -725,6 +741,10 @@ pub struct Text {
     /// the day it was archived, what waits for the person behind it);
     /// what would act there; the store would not give its journal.
     pub view_banner: &'static str,
+    /// What waits on the screen behind an archive's view: the decisions,
+    /// and the replies to read apart (`{}` 1 reply).
+    pub view_waiting: &'static str,
+    pub view_waiting_read: &'static str,
     pub read_only: &'static str,
     pub view_failed: &'static str,
     pub no_project: &'static str,
@@ -844,6 +864,19 @@ pub struct Text {
     pub home_fail: &'static str,
     /// Home's TO DECIDE heading counts each kind: one, and many (`{}`).
     pub home_counts: [(&'static str, &'static str); 5],
+    /// Counted nouns, one and many (`{}`), said by [`counted`]: English
+    /// has a plural, Turkish says a noun after a number alike.
+    pub n_agents: Count,
+    pub n_open_cards: Count,
+    pub n_cards_done: Count,
+    pub n_cards: Count,
+    pub n_files: Count,
+    pub n_lines: Count,
+    pub n_turns: Count,
+    pub n_asks: Count,
+    pub n_attempts: Count,
+    pub n_processes: Count,
+    pub n_worktrees: Count,
     /// The five groups of TO DECIDE, in their order: permissions,
     /// questions, changes, replies (read, nothing to decide), what was
     /// put off.
@@ -1158,7 +1191,7 @@ pub struct Text {
     pub notify_many: &'static str,
     pub theme_is: &'static str,
     /// After a worker's name: how many helpers it has (folded or not).
-    pub helpers: &'static str,
+    pub helpers: Count,
     /// The header's last ten minutes: its label, then cards done, changes
     /// that came for review, messages on the bus.
     pub group_working: &'static str,
@@ -1413,6 +1446,12 @@ pub struct Text {
     pub ev_confine_standard: &'static str,
     pub ev_confine_open: &'static str,
     pub ev_worktree_moved: &'static str,
+    /// A worker hired before `:lonca import` moved onto a workspace, or
+    /// kept its worktree, which holds work (record 119).
+    pub ev_onto_lonca: &'static str,
+    pub ev_off_lonca: &'static str,
+    /// The import window's line on the workers hired before it.
+    pub import_workers: &'static str,
     pub ev_worktree_changes: &'static str,
     pub ev_worktree_commits: &'static str,
     pub ev_change_ready: &'static str,
@@ -1564,6 +1603,9 @@ pub struct Text {
     pub left_spent: &'static str,
     pub left_project: &'static str,
     pub left_waiting: &'static str,
+    /// The replies left to read, apart from what is to decide (`{}`: 1
+    /// reply).
+    pub left_replies: &'static str,
     pub left_more: &'static str,
     pub left_interrupted: &'static str,
     pub left_last: &'static str,
@@ -1896,7 +1938,7 @@ pub const EN: Text = Text {
     grace_close: "◷ closing {} in {} s · u keeps it open · U now",
     grace_forget: "◷ {} forgets its session in {} s · u keeps it · U now",
     grace_archive: "◷ archiving {} as “{}” in {} s · u keeps it · U now",
-    grace_archive_cut: "◷ archiving {} as “{}” in {} s, cutting {} turns short · u keeps it · U now",
+    grace_archive_cut: "◷ archiving {} as “{}” in {} s, cutting {} short · u keeps it · U now",
     undone_close: "{} stays open",
     undone_archive: "{} stays as it is",
     undone_forget: "{} keeps its session",
@@ -1920,7 +1962,8 @@ pub const EN: Text = Text {
     forget_refused: "{} keeps its session: {}",
     empty_message: "the message is empty",
     command_refused: "{} took no command: {}",
-    budget_spent: "{} has spent its budget",
+    budget_spent: "nothing went: the team's pot is spent ({} of {}); :budget USD raises it",
+    pot_spent: "{}, pot spent",
     budget_is: "the budget is {} now",
     bad_budget: "{} is not dollars like 80 or 2.50",
     no_command: "no command {}; : and tab list them",
@@ -1947,7 +1990,7 @@ pub const EN: Text = Text {
     ev_reviewed: "{} ({}) reviewed {}'s change, for {}: {}",
     ev_review_failed: "no review of {}'s change came ({}): {}",
     review_head: "✎ review · {} · {} · {}",
-    review_more: "  … +{} lines · R shows all",
+    review_more: "  … +{} · R shows all",
     review_under_way: "✎ {} reads this change…",
     copy_added: "{} is copied into {}'s worktrees that lack it, at a worker's start",
     copy_removed: "{} is no longer copied",
@@ -2002,10 +2045,12 @@ pub const EN: Text = Text {
     no_archives: "nothing is archived yet; :archive puts the project at hand away",
     archives_title: " ARCHIVES ",
     archives_count: "{} archived",
-    archives_open: "open now · {} agents",
-    archives_row: "{} · {} cards done · {} agents · archived {}",
+    archives_open: "open now · {}",
+    archives_row: "{} · {} · {} · archived {}",
     archives_keys: " j k move · h l za fold · enter view · / filter · r restore · esc close",
-    view_banner: " ARCHIVE · {} “{}” · archived {} · {} to decide now · esc back ",
+    view_banner: " ARCHIVE · {} “{}” · archived {} · {} · esc back ",
+    view_waiting: "{} to decide now",
+    view_waiting_read: "{} to decide, {} to read now",
     read_only: "an archive is read-only · :restore brings it back · esc goes back",
     view_failed: "the archive's journal could not be read: {}",
     no_project: "no open project named {}",
@@ -2044,7 +2089,7 @@ pub const EN: Text = Text {
     journal_story: " JOURNAL · J story ",
     card_who: "WHO",
     card_story: "STORY",
-    ledger_title: "LEDGER · {} attempts",
+    ledger_title: "LEDGER · {}",
     ledger_estimated: " · API-equivalent",
     ledger_totals: "applied {} · wasted {} · at work {} · lead {}",
     ledger_none: "nothing spent on a card yet",
@@ -2102,6 +2147,17 @@ pub const EN: Text = Text {
         ("1 reply", "{} replies"),
         ("1 put off", "{} put off"),
     ],
+    n_agents: ("1 agent", "{} agents"),
+    n_open_cards: ("1 open card", "{} open cards"),
+    n_cards_done: ("1 card done", "{} cards done"),
+    n_cards: ("1 card", "{} cards"),
+    n_files: ("1 file", "{} files"),
+    n_lines: ("1 line", "{} lines"),
+    n_turns: ("1 turn", "{} turns"),
+    n_asks: ("1 ask", "{} asks"),
+    n_attempts: ("1 attempt", "{} attempts"),
+    n_processes: ("1 process", "{} processes"),
+    n_worktrees: ("1 worktree", "{} worktrees"),
     home_groups: ["permissions", "questions", "changes", "replies", "later"],
     home_one_key: "one key each",
     home_ready: "{} ready to approve",
@@ -2114,7 +2170,7 @@ pub const EN: Text = Text {
     row_research: "{}'s report proposes a new package: {}",
     row_reply: "answered: {}",
     row_fault: "API error, write to it once mended: {}",
-    row_plan: "plans {} cards for {}: {}",
+    row_plan: "plans {} for {}: {}",
     row_tries: "failed {} tries: one more, or it fails for good",
     row_rounds: "its change came back {} times: one more round, or it fails for good",
     row_sensitive: "sensitive change: {}",
@@ -2255,8 +2311,8 @@ pub const EN: Text = Text {
         ("esc", "back"),
     ],
     notice_plan: "imece · {}: a plan waits for your yes",
-    in_plan: "{}: plans {} cards for {}; enter reads it",
-    plan_win_title: " PLAN · {} · {} cards · {} ",
+    in_plan: "{}: plans {} for {}; enter reads it",
+    plan_win_title: " PLAN · {} · {} · {} ",
     plan_head: "the leader hires a second worker only once you say yes: a yes opens hiring until its next plan, a no drops the plan, n writes to the leader (hiring stays shut until a new plan has your yes)",
     plan_pot: "expected {} · left in the pot {}",
     plan_card: "{}. {} · {}",
@@ -2283,7 +2339,7 @@ pub const EN: Text = Text {
     plan_on: "plan gate on for {}: a plan with your yes before the second worker",
     plan_off: "plan gate off for {}: the leader hires as it sees fit",
     plan_bad: "{} is not on or off",
-    ev_planned: "{} planned {} cards for {}; waits for your yes",
+    ev_planned: "{} planned {} for {}; waits for your yes",
     ev_plan_yes: "you said yes to {}'s plan",
     ev_plan_no: "you said no to {}'s plan",
     setup_yes: "yes to the setup script: it runs now in the worktree asked about, then in each new one",
@@ -2316,10 +2372,10 @@ pub const EN: Text = Text {
     ev_killed: "you ended {} ({}) under {}",
     ps_hints: [("d", "end this one"), ("j k", "move"), ("esc", "back")],
     ps_left_head: "LEFT FROM AN EARLIER RUN · {}",
-    ps_left_found: "{} processes left from an earlier run: :ps lists them",
+    ps_left_found: "{} left from an earlier run: :ps lists them",
     ps_no_left: "nothing is left from an earlier run",
     ps_left_sure: "end {} ({}), left from an earlier run? y ends it, any other key keeps it",
-    ps_all_sure: "end all {} processes left from an earlier run? y ends them, any other key keeps them",
+    ps_all_sure: "end all {} left from an earlier run? y ends them, any other key keeps them",
     ps_left_ended: "you ended {} processes left from an earlier run",
     ps_left_ended_one: "you ended {} ({}), left from an earlier run",
     ps_left_gone: "that is no longer left from an earlier run",
@@ -2343,7 +2399,7 @@ pub const EN: Text = Text {
     ],
     lonca_not_shown: "proposal {} is no change shown here: nobody's of this project, or its worker's turn goes on",
     tidy_sure: "remove {} with what it holds ({})? y removes it, any other key keeps it",
-    tidy_found: "{} worktrees no agent owns: :tidy lists them",
+    tidy_found: "{} no agent owns: :tidy lists them",
     tidy_removed: "removed {}",
     tidy_kept: "not removed: {}",
     tidy_owned: "an agent works in it now",
@@ -2396,7 +2452,7 @@ pub const EN: Text = Text {
     notice_fault: "imece · {} hit a API error that needs you",
     notify_many: "imece · {} things wait for you",
     theme_is: "theme: {}",
-    helpers: "{} helpers",
+    helpers: ("1 helper", "{} helpers"),
     group_working: "{} working",
     group_waiting: " ! {} waiting ",
     you: "you",
@@ -2422,7 +2478,7 @@ pub const EN: Text = Text {
     board_blocked: "✕ {} failed",
     board_withdrawn: "✕ {} withdrawn",
     leases: "{} being edited",
-    shared_files: " · {} files with several agents at once",
+    shared_files: " · {} with several agents at once",
     code_glyphs: ["idle", "working", "needs you", "stuck"],
     code_shared: "⇆ several agents in one file",
     same_file: "⇆ {}",
@@ -2638,14 +2694,17 @@ pub const EN: Text = Text {
     ev_confine_standard: "confine standard: workers get Claude Code's shell and web; isolation is a container's job, not imece's",
     ev_confine_open: "confine open: agents run with your own Claude Code setup (settings, hooks, MCP servers); isolation is a container's job, not imece's",
     ev_worktree_moved: "{}: worktree moved from {} to HEAD {}",
+    ev_onto_lonca: "{} works in a workspace of Lonca repository {} now: its worktree held nothing and went",
+    ev_off_lonca: "{} works off Lonca until its change is in: its worktree holds {} changed and {} commits of its own",
+    import_workers: "workers hired before it move onto a Lonca workspace at their next turn; one whose worktree holds work stays on it, off Lonca, until its change is in",
     ev_worktree_changes: "{}: worktree kept at {}, it has uncommitted changes (HEAD is {})",
     ev_worktree_commits: "{}: worktree kept at {}, it has commits of its own (HEAD is {})",
-    ev_change_ready: "{} finished: change ready · {} files +{} −{}",
-    ev_change_ready_spent: "{} finished: change ready · {} files +{} −{} · {}",
+    ev_change_ready: "{} finished: change ready · {} +{} −{}",
+    ev_change_ready_spent: "{} finished: change ready · {} +{} −{} · {}",
     ev_change_cost: "{}'s change cost {}",
     spend_rounds: " · {} rounds",
     diff_spend: "cost · {}",
-    ev_applied: "you applied {}'s change ({} files) to the checkout, staged; worktree mark {}",
+    ev_applied: "you applied {}'s change ({}) to the checkout, staged; worktree mark {}",
     ev_apply_failed: "{}'s change did not apply: {}",
     ev_apply_failed_back: "{}'s change did not apply: {} · b in the change sends it back",
     default_model: "default model",
@@ -2659,7 +2718,7 @@ pub const EN: Text = Text {
     st_research_arrived: "{} report arrived: {} (soft-tainted)",
     st_research_needs_you: "{} report proposes a new package; waits for you",
     st_from_cache: "research came from the cache: {}",
-    st_change: "{} files, +{} −{}",
+    st_change: "{}, +{} −{}",
     st_sensitive: "sensitive: {}",
     st_verified: "build ✓ · {} affected tests ✓ · trunk #{}",
     st_queue_failed: "merge queue: test ✗, fixing",
@@ -2703,7 +2762,7 @@ pub const EN: Text = Text {
     st_posted: "{} posted it: {}",
     in_research: "{} report \"{}\" proposes a new package → {}",
     in_reply: "{} answered you: {}",
-    in_change: "{} finished: {} ({} files, +{} −{})",
+    in_change: "{} finished: {} ({}, +{} −{})",
     ran_clean: " · ✓ ran clean on this tree: {}",
     ran_failed: " · ✗ failed on this tree: {}",
     ran_none: " · no run on this tree",
@@ -2726,7 +2785,7 @@ pub const EN: Text = Text {
     ev_allowed: "you allowed {}: {}",
     ev_standing: "{}: you say yes from now on to {}",
     ev_turn_yes: "you say yes to everything {} asks until its turn ends",
-    ev_turn_yes_ended: "{}'s turn ended, and your yes for it: it let {} asks go on",
+    ev_turn_yes_ended: "{}'s turn ended, and your yes for it: it let {} go on",
     ev_unstanding: "{}: no standing yes any more to {}",
     ev_refused: "you refused {}: {}",
     allowed: "allowed: {} goes on",
@@ -2887,8 +2946,9 @@ pub const EN: Text = Text {
     left_title: " WHERE YOU LEFT OFF ",
     left_title_ago: " WHERE YOU LEFT OFF · {} ago ",
     left_spent: "{} of {} spent; every agent sleeps until spoken to",
-    left_project: "{}: {} agents, {} open cards",
+    left_project: "{}: {}, {}",
     left_waiting: "{} to decide:",
+    left_replies: "{} to read on Home",
     left_more: "… and {} more",
     left_interrupted: "turns cut short when imece closed: {}",
     left_last: "the last lines before:",
@@ -3283,7 +3343,7 @@ pub const TR: Text = Text {
     grace_close: "◷ {} {} sn sonra kapanıyor · u açık tutar · U hemen",
     grace_forget: "◷ {} {} sn sonra oturumunu unutuyor · u tutar · U hemen",
     grace_archive: "◷ {} “{}” adıyla arşivleniyor, {} sn sonra · u tutar · U hemen",
-    grace_archive_cut: "◷ {} “{}” adıyla arşivleniyor, {} sn sonra; {} tur yarıda kesilecek · u tutar · U hemen",
+    grace_archive_cut: "◷ {} “{}” adıyla arşivleniyor, {} sn sonra; {} yarıda kesilecek · u tutar · U hemen",
     undone_close: "{} açık kalıyor",
     undone_archive: "{} olduğu gibi kalıyor",
     undone_forget: "{} oturumunu tutuyor",
@@ -3307,7 +3367,8 @@ pub const TR: Text = Text {
     forget_refused: "{} oturumunu koruyor: {}",
     empty_message: "mesaj boş",
     command_refused: "{} komutu almadı: {}",
-    budget_spent: "{} bütçesini bitirdi",
+    budget_spent: "gitmedi: takımın ortak bütçesi bitti ({} / {}); :budget USD artırır",
+    pot_spent: "{}, bütçe bitti",
     budget_is: "bütçe artık {}",
     bad_budget: "{} dolar değil; 80 ya da 2.50 gibi yaz",
     no_command: "{} diye komut yok; : ve tab hepsini listeler",
@@ -3334,7 +3395,7 @@ pub const TR: Text = Text {
     ev_reviewed: "{} ({}) {} değişikliğini inceledi, {} tuttu: {}",
     ev_review_failed: "{} değişikliği için inceleme gelmedi ({}): {}",
     review_head: "✎ inceleme · {} · {} · {}",
-    review_more: "  … +{} satır · R hepsini gösterir",
+    review_more: "  … +{} · R hepsini gösterir",
     review_under_way: "✎ {} bu değişikliği okuyor…",
     copy_added: "{}, {} çalışma ağaçlarında yoksa çalışan başlarken kopyalanacak",
     copy_removed: "{} artık kopyalanmayacak",
@@ -3389,10 +3450,12 @@ pub const TR: Text = Text {
     no_archives: "henüz arşiv yok; :archive elindeki projeyi kaldırır",
     archives_title: " ARŞİVLER ",
     archives_count: "{} arşiv",
-    archives_open: "şu an açık · {} agent",
-    archives_row: "{} · {} kart bitti · {} agent · {} arşivlendi",
+    archives_open: "şu an açık · {}",
+    archives_row: "{} · {} · {} · {} arşivlendi",
     archives_keys: " j k gez · h l za katla · enter bak · / süz · r geri getir · esc kapat",
-    view_banner: " ARŞİV · {} “{}” · {} arşivlendi · şu an {} karar bekliyor · esc geri ",
+    view_banner: " ARŞİV · {} “{}” · {} arşivlendi · {} · esc geri ",
+    view_waiting: "şu an {} karar bekliyor",
+    view_waiting_read: "şu an {} karar bekliyor, {} okunacak",
     read_only: "arşiv salt okunur · :restore geri getirir · esc geri döner",
     view_failed: "arşivin günlüğü okunamadı: {}",
     no_project: "{} adında açık proje yok",
@@ -3431,7 +3494,7 @@ pub const TR: Text = Text {
     journal_story: " DEFTER · J hikâye ",
     card_who: "KİM",
     card_story: "HİKÂYE",
-    ledger_title: "HARCAMALAR · {} deneme",
+    ledger_title: "HARCAMALAR · {}",
     ledger_estimated: " · API karşılığı",
     ledger_totals: "uygulanan {} · boşa {} · süren {} · lider {}",
     ledger_none: "henüz bir karta harcama yok",
@@ -3489,6 +3552,17 @@ pub const TR: Text = Text {
         ("1 yanıt", "{} yanıt"),
         ("1 ertelenen", "{} ertelenen"),
     ],
+    n_agents: ("1 agent", "{} agent"),
+    n_open_cards: ("1 açık kart", "{} açık kart"),
+    n_cards_done: ("1 kart bitti", "{} kart bitti"),
+    n_cards: ("1 kart", "{} kart"),
+    n_files: ("1 dosya", "{} dosya"),
+    n_lines: ("1 satır", "{} satır"),
+    n_turns: ("1 tur", "{} tur"),
+    n_asks: ("1 istek", "{} istek"),
+    n_attempts: ("1 deneme", "{} deneme"),
+    n_processes: ("1 süreç", "{} süreç"),
+    n_worktrees: ("1 worktree", "{} worktree"),
     home_groups: ["izinler", "sorular", "değişiklikler", "yanıtlar", "sonraya"],
     home_one_key: "her biri tek tuş",
     home_ready: "{} onaya hazır",
@@ -3501,7 +3575,7 @@ pub const TR: Text = Text {
     row_research: "{} raporu yeni paket öneriyor: {}",
     row_reply: "yanıtladı: {}",
     row_fault: "API hatası, giderince ona yaz: {}",
-    row_plan: "{} kart planladı, {}: {}",
+    row_plan: "{} planladı, {}: {}",
     row_tries: "{} denemede başarısız: bir deneme daha, ya da kart başarısız sayılır",
     row_rounds: "değişikliği {} kez geri döndü: bir tur daha, ya da kart başarısız sayılır",
     row_sensitive: "hassas değişiklik: {}",
@@ -3642,8 +3716,8 @@ pub const TR: Text = Text {
         ("esc", "geri"),
     ],
     notice_plan: "imece · {}: bir plan onayını bekliyor",
-    in_plan: "{}: {} kart planladı, {}; enter okur",
-    plan_win_title: " PLAN · {} · {} kart · {} ",
+    in_plan: "{}: {} planladı, {}; enter okur",
+    plan_win_title: " PLAN · {} · {} · {} ",
     plan_head: "lider ikinci işçiyi ancak siz evet deyince alır: evet, sonraki planına dek işe alımı açar; hayır planı düşürür; n lidere yazar (yeni bir plan onayınızı alana dek işe alım kapalı kalır)",
     plan_pot: "beklenen {} · bütçede kalan {}",
     plan_card: "{}. {} · {}",
@@ -3670,7 +3744,7 @@ pub const TR: Text = Text {
     plan_on: "{} için plan kapısı açık: ikinci işçiden önce onayınızı alan bir plan",
     plan_off: "{} için plan kapısı kapalı: lider uygun gördüğü gibi işe alır",
     plan_bad: "{} on ya da off değil",
-    ev_planned: "{} {} kart planladı, {}; onayınızı bekliyor",
+    ev_planned: "{} {} planladı, {}; onayınızı bekliyor",
     ev_plan_yes: "{} planına evet dediniz",
     ev_plan_no: "{} planına hayır dediniz",
     setup_yes: "kurulum betiğine evet: sorulan worktree'de şimdi, sonra her yenisinde çalışır",
@@ -3703,10 +3777,10 @@ pub const TR: Text = Text {
     ev_killed: "{} ({}) sonlandırıldı, {} altında",
     ps_hints: [("d", "bunu sonlandır"), ("j k", "gez"), ("esc", "geri")],
     ps_left_head: "ÖNCEKİ BİR ÇALIŞMADAN KALAN · {}",
-    ps_left_found: "önceki bir çalışmadan kalan {} süreç var: :ps listeler",
+    ps_left_found: "önceki bir çalışmadan kalan {} var: :ps listeler",
     ps_no_left: "önceki bir çalışmadan kalan bir şey yok",
     ps_left_sure: "{} ({}) sonlandırılsın mı (önceki bir çalışmadan kalan)? y sonlandırır, başka bir tuş bırakır",
-    ps_all_sure: "önceki bir çalışmadan kalan {} sürecin hepsi sonlandırılsın mı? y sonlandırır, başka bir tuş bırakır",
+    ps_all_sure: "önceki bir çalışmadan kalan {} sonlandırılsın mı? y sonlandırır, başka bir tuş bırakır",
     ps_left_ended: "önceki bir çalışmadan kalan {} süreç sonlandırıldı",
     ps_left_ended_one: "{} ({}) sonlandırıldı (önceki bir çalışmadan kalan)",
     ps_left_gone: "o artık önceki bir çalışmadan kalan değil",
@@ -3730,7 +3804,7 @@ pub const TR: Text = Text {
     ],
     lonca_not_shown: "{} numaralı öneri burada gösterilen bir değişiklik değil: bu projeden kimsenin değil ya da işçisinin turu sürüyor",
     tidy_sure: "{} tuttuklarıyla ({}) silinsin mi? y siler, başka her tuş bırakır",
-    tidy_found: "sahibi olmayan {} worktree var: :tidy listeler",
+    tidy_found: "sahibi olmayan {} var: :tidy listeler",
     tidy_removed: "silindi: {}",
     tidy_kept: "silinmedi: {}",
     tidy_owned: "şimdi bir ajan içinde çalışıyor",
@@ -3783,7 +3857,7 @@ pub const TR: Text = Text {
     notice_fault: "imece · {} senin çözmen gereken bir API hatası aldı",
     notify_many: "imece · {} şey seni bekliyor",
     theme_is: "tema: {}",
-    helpers: "{} yardımcı",
+    helpers: ("1 yardımcı", "{} yardımcı"),
     group_working: "{} çalışıyor",
     group_waiting: " ! {} bekliyor ",
     you: "sen",
@@ -3815,7 +3889,7 @@ pub const TR: Text = Text {
     board_blocked: "✕ {} başarısız",
     board_withdrawn: "✕ {} geri çekildi",
     leases: "{} düzenleniyor",
-    shared_files: " · {} dosyada birden çok agent aynı anda çalışıyor",
+    shared_files: " · birden çok agent'ın aynı anda çalıştığı {}",
     code_glyphs: ["boşta", "çalışıyor", "seni bekliyor", "takıldı"],
     code_shared: "⇆ aynı dosyada birden çok agent",
     same_file: "⇆ {}",
@@ -4031,14 +4105,17 @@ pub const TR: Text = Text {
     ev_confine_standard: "confine standard: işçiler Claude Code'un kabuğunu ve web'ini alır; yalıtım bir konteynerin işi, imece'nin değil",
     ev_confine_open: "confine open: ajanlar senin kendi Claude Code kurulumunla çalışır (ayarlar, hook'lar, MCP sunucuları); yalıtım bir konteynerin işi, imece'nin değil",
     ev_worktree_moved: "{}: çalışma ağacı {} yerine HEAD {} oldu",
+    ev_onto_lonca: "{} artık Lonca deposu {} için bir çalışma alanında: çalışma ağacı boştu ve kaldırıldı",
+    ev_off_lonca: "{} değişikliği girene dek Lonca dışında çalışıyor: çalışma ağacında {} değişmiş ve kendi {} commit'i var",
+    import_workers: "daha önce alınan işçiler bir sonraki turlarında Lonca çalışma alanına geçer; çalışma ağacında iş olan, değişikliği girene dek Lonca dışında kendi ağacında kalır",
     ev_worktree_changes: "{}: çalışma ağacı {} noktasında kaldı, commit edilmemiş değişiklikleri var (HEAD {})",
     ev_worktree_commits: "{}: çalışma ağacı {} noktasında kaldı, kendi commit'leri var (HEAD {})",
-    ev_change_ready: "{} bitirdi: değişiklik hazır · {} dosya +{} −{}",
-    ev_change_ready_spent: "{} bitirdi: değişiklik hazır · {} dosya +{} −{} · {}",
+    ev_change_ready: "{} bitirdi: değişiklik hazır · {} +{} −{}",
+    ev_change_ready_spent: "{} bitirdi: değişiklik hazır · {} +{} −{} · {}",
     ev_change_cost: "{} değişikliği {} tuttu",
     spend_rounds: " · {} tur",
     diff_spend: "maliyet · {}",
-    ev_applied: "{} değişikliğini ({} dosya) checkout'a uyguladın, stage'de; çalışma ağacı işareti {}",
+    ev_applied: "{} değişikliğini ({}) checkout'a uyguladın, stage'de; çalışma ağacı işareti {}",
     ev_apply_failed: "{} değişikliği uygulanamadı: {}",
     ev_apply_failed_back: "{} değişikliği uygulanamadı: {} · değişiklikte b onu geri gönderir",
     default_model: "varsayılan model",
@@ -4060,7 +4137,7 @@ pub const TR: Text = Text {
     st_research_arrived: "{} raporu geldi: {} (hafif kirli)",
     st_research_needs_you: "{} raporu yeni paket öneriyor; onayını bekliyor",
     st_from_cache: "araştırma önbellekten geldi: {}",
-    st_change: "{} dosya, +{} −{}",
+    st_change: "{}, +{} −{}",
     st_sensitive: "hassas: {}",
     st_verified: "build ✓ · {} etkilenen test ✓ · trunk #{}",
     st_queue_failed: "merge queue: test ✗, düzeltiyor",
@@ -4105,7 +4182,7 @@ pub const TR: Text = Text {
     st_posted: "{} panoya astı: {}",
     in_research: "{} raporu \"{}\" yeni paket öneriyor → {}",
     in_reply: "{} yanıt verdi: {}",
-    in_change: "{} bitirdi: {} ({} dosya, +{} −{})",
+    in_change: "{} bitirdi: {} ({}, +{} −{})",
     ran_clean: " · ✓ bu ağaçta temiz geçti: {}",
     ran_failed: " · ✗ bu ağaçta başarısız: {}",
     ran_none: " · bu ağaçta çalıştırma yok",
@@ -4128,7 +4205,7 @@ pub const TR: Text = Text {
     ev_allowed: "{} için izin verdin: {}",
     ev_standing: "{}: artık hep evet diyorsun: {}",
     ev_turn_yes: "{} turu bitene dek ne isterse evet diyorsun",
-    ev_turn_yes_ended: "{} turunu bitirdi, onun için evetin de bitti: {} isteğe sormadan izin verdi",
+    ev_turn_yes_ended: "{} turunu bitirdi, onun için evetin de bitti: {} sormadan geçti",
     ev_unstanding: "{}: artık hep evet yok: {}",
     ev_refused: "{} için reddettin: {}",
     allowed: "izin verildi: {} devam ediyor",
@@ -4286,8 +4363,9 @@ pub const TR: Text = Text {
     left_title: " NEREDE KALMIŞTIN ",
     left_title_ago: " NEREDE KALMIŞTIN · {} önce ",
     left_spent: "{} harcandı, bütçe {}; her agent kendisiyle konuşulana dek uyur",
-    left_project: "{}: {} agent, {} açık kart",
+    left_project: "{}: {}, {}",
     left_waiting: "{} şey karar bekliyor:",
+    left_replies: "Home'da {} okunacak",
     left_more: "… ve {} daha",
     left_interrupted: "imece kapanırken kesilen turlar: {}",
     left_last: "kapanmadan önceki son satırlar:",
@@ -4603,6 +4681,21 @@ mod tests {
     }
 
     #[test]
+    fn a_count_of_one_says_its_noun_once() {
+        assert_eq!(counted(1, EN.n_agents), "1 agent");
+        assert_eq!(counted(0, EN.n_agents), "0 agents");
+        assert_eq!(counted(2, EN.n_open_cards), "2 open cards");
+        assert_eq!(counted(1, EN.n_open_cards), "1 open card");
+        assert_eq!(counted(1, TR.n_files), "1 dosya");
+        assert_eq!(counted(3, TR.n_files), "3 dosya");
+        let left = fill(
+            EN.left_project,
+            &["a", &counted(1, EN.n_agents), &counted(1, EN.n_open_cards)],
+        );
+        assert_eq!(left, "a: 1 agent, 1 open card");
+    }
+
+    #[test]
     fn templates_take_their_arguments_in_order() {
         assert_eq!(fill("{} → {}: {}", &["a", "b", "c"]), "a → b: c");
         assert_eq!(fill("{} and {}", &["only"]), "only and ");
@@ -4728,7 +4821,7 @@ mod tests {
             (e.forked, t.forked),
             (e.fork_refused, t.fork_refused),
             (e.ev_left, t.ev_left),
-            (e.helpers, t.helpers),
+            (e.helpers.1, t.helpers.1),
             (e.helper_of, t.helper_of),
             (e.ev_fallback, t.ev_fallback),
             (e.ev_resumed, t.ev_resumed),
@@ -4907,6 +5000,9 @@ mod tests {
             (e.refused, t.refused),
             (e.waiting_yes, t.waiting_yes),
             (e.ev_worktree_moved, t.ev_worktree_moved),
+            (e.ev_onto_lonca, t.ev_onto_lonca),
+            (e.ev_off_lonca, t.ev_off_lonca),
+            (e.import_workers, t.import_workers),
             (e.ev_worktree_changes, t.ev_worktree_changes),
             (e.ev_worktree_commits, t.ev_worktree_commits),
             (e.budget_is, t.budget_is),
@@ -5039,6 +5135,11 @@ mod tests {
             (e.left_spent, t.left_spent),
             (e.left_project, t.left_project),
             (e.left_waiting, t.left_waiting),
+            (e.left_replies, t.left_replies),
+            (e.budget_spent, t.budget_spent),
+            (e.pot_spent, t.pot_spent),
+            (e.view_waiting, t.view_waiting),
+            (e.view_waiting_read, t.view_waiting_read),
             (e.left_more, t.left_more),
             (e.left_interrupted, t.left_interrupted),
             (e.ago_minutes, t.ago_minutes),
@@ -5087,6 +5188,29 @@ mod tests {
         ];
         for (en, tr) in pairs {
             assert_eq!(count(en), count(tr), "{en} / {tr}");
+        }
+        let counts = [
+            (e.n_agents, t.n_agents),
+            (e.n_open_cards, t.n_open_cards),
+            (e.n_cards_done, t.n_cards_done),
+            (e.n_cards, t.n_cards),
+            (e.n_files, t.n_files),
+            (e.n_lines, t.n_lines),
+            (e.n_turns, t.n_turns),
+            (e.n_asks, t.n_asks),
+            (e.n_attempts, t.n_attempts),
+            (e.n_processes, t.n_processes),
+            (e.n_worktrees, t.n_worktrees),
+            (e.helpers, t.helpers),
+        ];
+        for ((one, many), (bir, çok)) in counts {
+            // One says its number itself; many takes it.
+            assert_eq!((count(one), count(bir)), (0, 0), "{one} / {bir}");
+            assert_eq!((count(many), count(çok)), (1, 1), "{many} / {çok}");
+            assert!(
+                one.starts_with("1 ") && bir.starts_with("1 "),
+                "{one} / {bir}"
+            );
         }
         for (en, tr) in e.landed_whys.iter().zip(t.landed_whys) {
             assert_eq!(count(en), count(tr), "{en} / {tr}");

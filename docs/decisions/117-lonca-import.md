@@ -116,3 +116,8 @@ journal events; the schema is unchanged.
 Field fix (2026-11-09): the import window showed the checkout's whole
 path (`/Users/<name>/…`); it is shown as every folder on the screen is,
 `~` for the home (`App::shown_path`, record 103).
+
+**The workers already hired (2026-11-09).** The import window has a line on
+them when the project has workers: they move onto a workspace at their next
+turn, and one whose worktree holds work stays on it, off Lonca, until its change
+is in (record 119).

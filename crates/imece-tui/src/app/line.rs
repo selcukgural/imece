@@ -507,8 +507,8 @@ impl App {
 
     pub(super) fn submit(&mut self) {
         self.end_preview();
-        let text = self.input.trim().to_string();
-        let target = self.typing_target();
+        let mut text = self.input.trim().to_string();
+        let mut target = self.typing_target();
         self.input.clear();
         self.after = 0;
         self.typing = false;
@@ -521,11 +521,15 @@ impl App {
             None => {}
         }
         if let Some(id) = self.rejecting.take() {
-            match self.reason_on(id, &text) {
+            match self.reason_on(id, &text).map(str::to_string) {
                 Some(reason) => {
-                    if !self.reject(id, reason) {
+                    if !self.reject(id, &reason) {
                         return;
                     }
+                    // The words go to the worker whose change it was,
+                    // whatever became of the name put on the line.
+                    target = self.world.agents[id].name.clone();
+                    text = format!("@{target} {reason}");
                 }
                 None => {
                     self.flash(self.lang.text().not_rejected);
@@ -625,7 +629,7 @@ impl App {
                 self.world.said(id, text);
                 self.flash(fill(t.sent, &[&name]));
             }
-            Some(Refusal::Budget) => self.flash(fill(t.budget_spent, &[&name])),
+            Some(Refusal::Budget) => self.flash(ui::words::pot_spent(self.lang, &self.world)),
             Some(Refusal::Start(why)) => self.flash(fill(t.cannot_start, &[&name, &why])),
             Some(Refusal::Command(why)) => self.flash(fill(t.command_refused, &[&name, &why])),
         }

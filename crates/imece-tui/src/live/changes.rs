@@ -361,6 +361,8 @@ impl Live {
             Ok(None) => {
                 w.agents[id].trace(w.tick, "change: none");
                 w.change_none(id);
+                // Nothing held: on Lonca its next start may move it.
+                self.off_lonca[id] = false;
                 "; your worktree holds no change".to_string()
             }
             Ok(Some(c)) => {
@@ -495,6 +497,10 @@ impl Live {
         };
         self.changes.remove(&id);
         w.change_applied(id, mark.clone(), part.is_none());
+        // Its change is in: on Lonca its next start may move it.
+        if part.is_none() {
+            self.off_lonca[id] = false;
+        }
         self.stand(w, id);
         // The checkout has new files now, maybe: the list is read again.
         self.files(w.agents[id].project);
@@ -1011,6 +1017,7 @@ mod tests {
                 imece_agent::copy::Brought::default(),
                 setup::Done::None,
                 None,
+                Moved::Stayed,
             )),
         );
         live.ready(
@@ -1024,6 +1031,7 @@ mod tests {
                 imece_agent::copy::Brought::default(),
                 setup::Done::None,
                 None,
+                Moved::Stayed,
             )),
         );
         live.run_programs.push("sh".into());
@@ -1183,6 +1191,7 @@ mod tests {
                 imece_agent::copy::Brought::default(),
                 setup::Done::None,
                 None,
+                Moved::Stayed,
             )),
         );
         assert_eq!(
@@ -1288,6 +1297,7 @@ mod tests {
                 imece_agent::copy::Brought::default(),
                 setup::Done::None,
                 None,
+                Moved::Stayed,
             )),
         );
         live.ready(
@@ -1301,6 +1311,7 @@ mod tests {
                 imece_agent::copy::Brought::default(),
                 setup::Done::None,
                 None,
+                Moved::Stayed,
             )),
         );
         std::fs::write(tree.join("a.txt"), "changed").unwrap();
@@ -1452,6 +1463,7 @@ mod tests {
                 imece_agent::copy::Brought::default(),
                 setup::Done::None,
                 None,
+                Moved::Stayed,
             )),
         );
         live.ready(
@@ -1465,6 +1477,7 @@ mod tests {
                 imece_agent::copy::Brought::default(),
                 setup::Done::None,
                 None,
+                Moved::Stayed,
             )),
         );
         std::fs::write(tree.join("a.txt"), "changed").unwrap();
@@ -1529,6 +1542,7 @@ mod tests {
                 imece_agent::copy::Brought::default(),
                 setup::Done::None,
                 None,
+                Moved::Stayed,
             )),
         );
         let commit = |name: &str| {
@@ -1602,6 +1616,7 @@ mod tests {
                 imece_agent::copy::Brought::default(),
                 setup::Done::None,
                 None,
+                Moved::Stayed,
             )),
         );
         commit("d.txt");
@@ -1960,6 +1975,7 @@ mod tests {
                 imece_agent::copy::Brought::default(),
                 setup::Done::None,
                 None,
+                Moved::Stayed,
             )),
         );
         live.follow(&mut w, 0);
@@ -2077,6 +2093,7 @@ mod tests {
                 imece_agent::copy::Brought::default(),
                 setup::Done::None,
                 None,
+                Moved::Stayed,
             )),
         );
         assert_eq!(live.standing[solo], None, "no worktree to read");
@@ -2225,6 +2242,7 @@ mod tests {
                     imece_agent::copy::Brought::default(),
                     setup::Done::None,
                     None,
+                    Moved::Stayed,
                 )),
             );
         }

@@ -23,7 +23,7 @@ Five columns, each titled with its count:
 | Column | Cards in it |
 | --- | --- |
 | TO DO | posted and not yet taken: the leader's `post`, or a card the leader wrote for a worker that is not free yet, or one an `assign` holds for its worker until the cards it waits on are done |
-| IN PROGRESS | taken: assigned by the leader or claimed from the board by an idle worker. Under the title, its owner with the owner's state glyph and a progress bar; a working owner's glyph breathes as on Home (`:motion`) |
+| IN PROGRESS | taken: assigned by the leader or claimed from the board by an idle worker. Under the title, its owner with the owner's state glyph (and in the demo, a progress bar of its made-up phases); a working owner's glyph breathes as on Home (`:motion`) |
 | TO REVIEW | finished with a `done`, and its change (`Δ`) waits for you in TO DECIDE, newest first: the agent is through, the work is not in yet. Sent back, the card goes back to IN PROGRESS |
 | VERIFYING | on Lonca, its change is in the merge queue after your yes |
 | DONE | its change is in whole (or its `done` left nothing to take), newest first, with the owner that finished it; a card that failed stands here too, marked `✕`, and one the leader withdrew, marked `–` dim. Only a card at work shows its owner's state: in the last two columns the owner may be at work on something else |

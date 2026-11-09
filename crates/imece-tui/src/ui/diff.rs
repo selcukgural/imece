@@ -418,7 +418,7 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, id: AgentId) {
         Some(v) => verdict_lines(app.lang, &v, width),
         None => Vec::new(),
     };
-    if let Some(why) = w.done_why(id) {
+    if let Some(why) = w.change_why(id) {
         ran.extend(why_lines(why, width));
     }
     if let Some(proposal) = w.proposal_of(id) {
@@ -990,7 +990,7 @@ pub(crate) fn review_lines(
     let left = body.len().saturating_sub(shown);
     out.extend(body.into_iter().take(shown));
     if left > 0 {
-        let more = fill(t.review_more, &[&left.to_string()]);
+        let more = fill(t.review_more, &[&crate::i18n::counted(left, t.n_lines)]);
         out.push(Line::from(Span::styled(more, dim())));
     }
     out
@@ -1372,7 +1372,7 @@ mod tests {
             false,
         ));
         assert_eq!(got.len(), 1 + 8 + 1, "{got:?}");
-        assert_eq!(got.last().unwrap(), "… +1 lines · R shows all");
+        assert_eq!(got.last().unwrap(), "… +1 line · R shows all");
         let got = texts(&review_lines(
             Lang::En,
             Some(&nine),
@@ -2389,6 +2389,7 @@ diff --git a/c.rs b/c.rs
             cut: false,
             verifies: Runs::default(),
             on_trunk: true,
+            intent: String::new(),
         }
     }
 

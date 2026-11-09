@@ -31,7 +31,7 @@ Her proje adıyla ve ilk sütununun, ortadakinin ve `şimdi`nin saatiyle başlar
 | `░` | düşünüyordu: tur içinde, elinde araç çağrısı yok |
 | `●` | başlıyordu: oturumu kalkıyordu |
 | `?` | bir takım arkadaşına sorup yanıtını bekliyordu |
-| `⚑` | sizi bekliyordu: onayınızı bekleyen bir araç çağrısı, size bir soru ya da tur dışında KARAR BEKLEYEN'de bir şeyi |
+| `⚑` | sizi bekliyordu: onayınızı bekleyen bir araç çağrısı, size bir soru ya da tur dışında KARAR BEKLEYEN'de karar bekleyen bir şeyi (yalnız okunacak bir yanıt beklemek değildir: ajanı boştadır) |
 | `■` | takılmıştı: bloke ya da oturumu durmuş |
 | `✓` | bir turun bittiği tick |
 | `·` | boştaydı |

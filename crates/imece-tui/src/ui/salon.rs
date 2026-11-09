@@ -311,7 +311,7 @@ pub(super) fn agent_line(
         tail.push(Span::styled(
             format!(
                 "  {}",
-                fill(app.lang.text().helpers, &[&helpers.to_string()])
+                crate::i18n::counted(helpers, app.lang.text().helpers)
             ),
             dim(),
         ));

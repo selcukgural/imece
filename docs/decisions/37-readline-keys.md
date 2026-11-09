@@ -54,3 +54,8 @@ Esc+; Terminal.app: "Use Option as Meta key"); without it Option-b types
 are not here. Multi-line writing came later (record 39): since then
 ctrl-a / ctrl-e, home / end and ctrl-u / ctrl-k stop at the ends of the
 line the cursor is on, which for one line is where they always went.
+
+**Text put on the line (2026-11-09).** `App::compose` opens the line on text the
+person writes after (cursor at the end, `after` 0, no menu, no recall); `r` on a
+change, a question's answer, the plan's `n` and every `@name ` put there use it
+or set `after` to 0 (record 120).

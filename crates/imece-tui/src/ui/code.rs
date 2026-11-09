@@ -233,7 +233,10 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
             fill(t.leases, &[&held.len().to_string()]),
             bold(pal().strong),
         ),
-        Span::styled(fill(t.shared_files, &[&shared_files.to_string()]), dim()),
+        Span::styled(
+            fill(t.shared_files, &[&counted(shared_files, t.n_files)]),
+            dim(),
+        ),
         Span::raw(" "),
     ];
     for (k, colour) in seen.iter().enumerate() {

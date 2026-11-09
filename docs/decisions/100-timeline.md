@@ -61,3 +61,7 @@ alone opens it in a window over the screen (`App.window`,
 `overlay::view`; `App::window_key` has its `j k g G [ ] enter @`, the
 window takes every other key), `esc` or `q` closes it; `4` does nothing,
 `K` and `t` are not its.
+
+**A reply is no wait (2026-11-09).** `watch_lanes` counted any open item as the
+agent waiting, so an idle agent with an unread reply drew `⚑` all along its
+lane; a reply is only read, and its agent is drawn idle.

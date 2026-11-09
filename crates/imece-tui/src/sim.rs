@@ -815,6 +815,10 @@ struct Extras {
     /// Workers stopped for hooks Lonca did not hear: the next word to one
     /// goes on under a new session.
     unheard: HashSet<AgentId>,
+    /// Workers hired before their project went on Lonca whose worktree
+    /// held work at a card they took: off Lonca until their change is in,
+    /// said once (record 119).
+    off_lonca: HashSet<AgentId>,
     /// Proposals decided on the demo's table: each fifth fails its tests.
     landings: u64,
     /// How many integrations each project's checkout has of its
@@ -1592,6 +1596,8 @@ impl Sim {
                 Runs::These(vec!["build".into(), "tests".into()])
             },
             on_trunk: !n.is_multiple_of(3),
+            // The worker's own words, as Lonca keeps them for the commit.
+            intent: format!("{}: done, with its tests", change.title),
         };
         w.change_proposed(change, proposal);
     }
@@ -2909,6 +2915,35 @@ impl Sim {
         id
     }
 
+    /// A worker hired before its project went on Lonca, at the card it
+    /// takes, as live at its next turn (record 119): with no change of its
+    /// waiting its worktree goes and it sits in a workspace; with one, it
+    /// stays off Lonca until that change is in, said once.
+    fn onto_lonca(&mut self, w: &mut World, id: AgentId) {
+        let a = &w.agents[id];
+        let p = a.project;
+        let Some(repo) = w.projects[p].lonca.as_ref().map(|on| on.repo.clone()) else {
+            return;
+        };
+        if a.role != Role::Worker || a.workspace.is_some() || w.store_closed(p).is_some() {
+            return;
+        }
+        if let Some(c) = w.change_of(id) {
+            if self.extras.off_lonca.insert(id) {
+                let changes = c.files.len();
+                w.note(Event::OffLonca {
+                    agent: id,
+                    changes,
+                    commits: 0,
+                });
+            }
+            return;
+        }
+        self.extras.off_lonca.remove(&id);
+        Self::seat(w, id);
+        w.note(Event::OntoLonca { agent: id, repo });
+    }
+
     /// A new worker of a project on Lonca works in a workspace of it, as
     /// live: the focus says so, and `:fork` refuses it (record 119).
     fn seat(w: &mut World, id: AgentId) {
@@ -3517,6 +3552,7 @@ impl Sim {
     /// Worker `agent` takes `card` (`how` says who chose it), leasing a
     /// symbol or two nobody else holds, and starts on it.
     fn take(&mut self, w: &mut World, agent: AgentId, card: CardId, how: Taken) {
+        self.onto_lonca(w, agent);
         let t = w.tick;
         let project = w.cards[card].project;
         if how == Taken::Handed {
@@ -9289,6 +9325,49 @@ diff --git a/b.rs b/b.rs
         assert_eq!(w.agents[worker].workspace, None);
     }
 
+    /// The demo mirrors record 119's move: a worker hired before the
+    /// import sits in a workspace at its next card, one whose change
+    /// waits stays off Lonca, said once.
+    #[test]
+    fn a_demo_worker_hired_before_the_import_moves_at_its_next_card() {
+        let (mut w, mut s, worker, card) = one_at_work();
+        on_store(&mut w, up());
+        assert_eq!(w.agents[worker].workspace, None);
+        let change = |w: &mut World| {
+            w.change_ready(Change {
+                agent: worker,
+                title: "t".into(),
+                files: vec![ChangedFile {
+                    path: "a".into(),
+                    added: 1,
+                    removed: 0,
+                    binary: false,
+                }],
+                patch: "p".into(),
+                runs: Vec::new(),
+                check: Check::None,
+                spend: None,
+            })
+        };
+        change(&mut w);
+        let off = |w: &World| {
+            (w.journal.iter())
+                .filter(|e| matches!(e.event, Event::OffLonca { agent, .. } if agent == worker))
+                .count()
+        };
+        s.take(&mut w, worker, card, Taken::Handed);
+        s.take(&mut w, worker, card, Taken::Handed);
+        assert_eq!(off(&w), 1, "said once");
+        assert_eq!(w.agents[worker].workspace, None, "its change waits");
+        w.changes.retain(|c| c.agent != worker);
+        s.take(&mut w, worker, card, Taken::Handed);
+        assert_eq!(w.agents[worker].workspace.as_deref(), Some("r"));
+        assert!(w.journal.iter().any(|e| matches!(
+            &e.event,
+            Event::OntoLonca { agent, repo } if *agent == worker && repo == "r"
+        )));
+    }
+
     #[test]
     fn a_demo_worker_whose_store_is_down_takes_no_helper() {
         let (mut w, mut s, worker, card) = one_at_work();
@@ -9639,6 +9718,7 @@ diff --git a/b.rs b/b.rs
             cut: false,
             verifies: Runs::default(),
             on_trunk: true,
+            intent: String::new(),
         }
     }
 

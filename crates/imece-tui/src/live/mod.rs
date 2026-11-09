@@ -246,9 +246,21 @@ type Ready = Result<
         copy::Brought,
         setup::Done,
         Option<String>,
+        Moved,
     ),
     String,
 >;
+
+/// What became, at a start, of the worktree of a worker hired before its
+/// project went on Lonca (record 119): nothing (no such worktree), it
+/// went and the worker sits in a workspace now, or it holds work and
+/// stays until its change is in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Moved {
+    Stayed,
+    Onto,
+    Kept(worktree::Held),
+}
 
 /// A tool call of an agent (tool name, arguments), where its answer goes,
 /// and who has it: see [`answer_of`].
@@ -662,6 +674,11 @@ pub struct Live {
     /// Whether the agent's session was renewed after hitting its cap and
     /// has not finished a turn since: a second cap in a row is final.
     renewed: Vec<bool>,
+    /// Whether the worker's worktree held work when its project on Lonca
+    /// would have moved it onto a workspace (record 119): it works off
+    /// Lonca until its change is in, and no prompt ends its session for
+    /// the move again before that.
+    off_lonca: Vec<bool>,
     /// Helpers that sent done to their worker: each leaves when its turn
     /// ends, so the turn's cost is still reported.
     leaving: Vec<bool>,
@@ -1078,6 +1095,7 @@ impl Live {
             turned: Vec::new(),
             inflight: Vec::new(),
             renewed: Vec::new(),
+            off_lonca: Vec::new(),
             leaving: Vec::new(),
             lost: Vec::new(),
             notes: Vec::new(),

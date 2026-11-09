@@ -93,6 +93,7 @@ impl Live {
         self.turned.push(false);
         self.inflight.push(Vec::new());
         self.renewed.push(false);
+        self.off_lonca.push(false);
         self.leaving.push(false);
         self.lost.push(false);
         self.notes.push(Vec::new());
@@ -249,10 +250,11 @@ impl Live {
         let left = w.budget.saturating_sub(w.spent());
         let hiring = match self.hire_room(w, from) {
             Ok((had, cap)) => {
-                let whom = if a.role == Role::Leader {
-                    "workers"
-                } else {
-                    "helpers"
+                let whom = match (a.role == Role::Leader, cap - had) {
+                    (true, 1) => "worker",
+                    (true, _) => "workers",
+                    (false, 1) => "helper",
+                    (false, _) => "helpers",
                 };
                 format!(
                     "yes, {} more {whom} (you have {had} of at most {cap})",
@@ -269,6 +271,19 @@ impl Live {
             dollars(left),
             dollars(w.budget),
         );
+        if a.role == Role::Leader {
+            let free: Vec<&str> = (w.free_workers(a.project).into_iter())
+                .map(|id| w.agents[id].name.as_str())
+                .collect();
+            out.push_str(&match free.as_slice() {
+                [] => "\nfree workers: none".to_string(),
+                names => format!(
+                    "\nfree workers: {} (idle, no card at work: give one the next card \
+                     before you hire)",
+                    names.join(", ")
+                ),
+            });
+        }
         if project.runners.any() {
             out.push_str(&format!(
                 "\ntests that run at once, through the run tool too: {}",
@@ -307,6 +322,19 @@ impl Live {
             f => Some(self.start_point(project, f)?),
         };
         let model = self.claude.ladder.model(tier).map(str::to_string);
+        // A free worker of the same tier takes the next card: a new one
+        // costs a session and a worktree for nothing.
+        if role == Role::Worker
+            && start.is_none()
+            && let Some(free) = (w.free_workers(project).into_iter())
+                .find(|&id| self.models.get(id).is_some_and(|m| *m == model))
+        {
+            return Err(format!(
+                "{} is free (idle, no card at work) on that tier: give it the next card \
+                 with send (type assign) instead of hiring",
+                w.agents[free].name
+            ));
+        }
         // Only a model other than the standard one has something to fall
         // back to.
         let tiered = model != self.claude.ladder.standard;
@@ -924,6 +952,7 @@ mod tests {
                 imece_agent::copy::Brought::default(),
                 setup::Done::None,
                 None,
+                Moved::Stayed,
             )),
         );
         assert_eq!(w.agents[2].status, Status::Stopped);
@@ -980,6 +1009,52 @@ mod tests {
         let _ = std::fs::remove_dir_all(&live.claude_home);
     }
 
+    /// The acceptance run: the leader hired new workers while one sat
+    /// idle with its card done. whoami says who is free, and hire sends
+    /// the leader to it on the same tier.
+    #[test]
+    fn a_free_worker_of_the_tier_takes_the_next_card_before_anyone_is_hired() {
+        let mut w = team(1);
+        let mut live = idle_live(2);
+        live.max_workers = 4;
+        w.agents[1].set_status(Status::Working, 0);
+        assert!(live.whoami(&w, 0).ends_with("\nfree workers: none"));
+        live.hire(&mut w, 0, &json!({})).unwrap();
+        let free = w.agents.len() - 1;
+        let name = w.agents[free].name.clone();
+        assert_eq!(w.free_workers(0), [free]);
+        let said = live.whoami(&w, 0);
+        assert!(
+            said.contains(&format!("\nfree workers: {name} (idle")),
+            "{said}"
+        );
+        let err = live.hire(&mut w, 0, &json!({})).unwrap_err();
+        assert!(err.starts_with(&format!("{name} is free")), "{err}");
+        assert!(err.contains("type assign"), "{err}");
+        // Another tier is another worker.
+        live.hire(&mut w, 0, &json!({ "tier": "strong" })).unwrap();
+        let strong = w.agents.len() - 1;
+        w.agents[strong].set_status(Status::Working, 0);
+        // A card done is no card at work; one at work is.
+        let c = with_card(&mut w, free);
+        w.cards[c].column = Column::Done;
+        assert!(live.hire(&mut w, 0, &json!({})).is_err());
+        w.cards[c].column = Column::Working;
+        assert!(w.free_workers(0).is_empty());
+        live.hire(&mut w, 0, &json!({})).unwrap();
+        assert!(
+            live.whoami(&w, 0).contains("free workers: claude-"),
+            "the new one"
+        );
+        // Mid-turn, gone, or with a change waiting: not free.
+        let newest = w.agents.len() - 1;
+        w.agents[newest].set_status(Status::Working, 0);
+        assert!(w.free_workers(0).is_empty());
+        w.agents[newest].set_status(Status::Idle, 0);
+        w.agents[newest].gone = true;
+        assert!(w.free_workers(0).is_empty());
+    }
+
     #[test]
     fn a_new_worker_s_name_skips_the_ones_taken() {
         let mut w = team(2);
@@ -1006,14 +1081,15 @@ mod tests {
             live.whoami(&w, 0),
             format!(
                 "name: lead\nrole: the leader\nproject: repo\nyou answer to: the person \
-                 (send to: you)\n{pot}\nmay hire: yes, 1 more workers (you have 2 of at most 3)"
+                 (send to: you)\n{pot}\nmay hire: yes, 1 more worker (you have 2 of at most 3)\n\
+                 free workers: none"
             )
         );
         assert_eq!(
             live.whoami(&w, 1),
             format!(
                 "name: claude-1\nrole: a worker\nproject: repo\nyou answer to: the leader \
-                 lead\n{pot}\nmay hire: yes, 1 more helpers (you have 1 of at most 2)"
+                 lead\n{pot}\nmay hire: yes, 1 more helper (you have 1 of at most 2)"
             )
         );
         assert_eq!(
@@ -1027,7 +1103,7 @@ mod tests {
         // As hire would answer: the cap reached, or none allowed.
         live.max_workers = 2;
         let said = live.whoami(&w, 0);
-        assert!(said.ends_with("may hire: no: the team is full: 2 workers, the most the person allowed (--agents 2); give the work to one of them"), "{said}");
+        assert!(said.ends_with("may hire: no: the team is full: 2 workers, the most the person allowed (--agents 2); give the work to one of them\nfree workers: none"), "{said}");
         live.max_helpers = 1;
         assert!(
             live.whoami(&w, 1)
@@ -1746,6 +1822,9 @@ mod tests {
         assert_eq!(w.plan_hold(0), None);
         live.notes[0].clear();
         assert!(live.hire(&mut w, 0, &json!({})).is_ok());
+        // At work on a card: no free worker to give the next one.
+        let hired = w.agents.len() - 1;
+        with_card(&mut w, hired);
         assert!(
             live.hire(&mut w, 0, &json!({})).is_ok(),
             "the yes holds until the next plan"
@@ -1802,6 +1881,9 @@ mod tests {
              your plan was not kept"
         );
         assert_eq!(w.plan_item(0), None);
+        for a in &mut w.agents[1..] {
+            a.set_status(Status::Working, 0);
+        }
         assert!(live.hire(&mut w, 0, &json!({})).is_ok());
         // Only the leader plans.
         let err = live

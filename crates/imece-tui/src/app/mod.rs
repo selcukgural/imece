@@ -14,7 +14,7 @@ use crate::away::Away;
 use crate::complete::{self, Jump, Menu};
 use crate::edit;
 use crate::editor;
-use crate::i18n::{Lang, clean, fill};
+use crate::i18n::{Lang, clean, counted, fill};
 use crate::keys::{self, Keymap};
 use crate::live::{self, Live, Open, Refusal, TidyRefusal, standing};
 use crate::model::*;
@@ -764,10 +764,12 @@ pub struct LeftOff {
     /// Every open project: its name, its agents (the ones that are still
     /// there, asleep) and its cards that are not done.
     pub projects: Vec<(String, usize, usize)>,
-    /// The oldest open inbox items (indexes), at most [`LEFT_SHOWN`], and
-    /// how many there are in all.
+    /// The oldest open inbox items to decide (indexes), at most
+    /// [`LEFT_SHOWN`], and how many there are in all; the replies, only
+    /// to read, are counted apart.
     pub waiting: Vec<usize>,
     pub waiting_total: usize,
+    pub replies: usize,
     /// Agents whose turn the earlier run cut short.
     pub interrupted: Vec<AgentId>,
     /// The earlier runs' last journal lines, at most [`LEFT_SHOWN`].
@@ -804,6 +806,9 @@ impl LeftOff {
                 (q.name.clone(), agents, cards)
             })
             .collect();
+        let decide: Vec<usize> = (open.iter().copied())
+            .filter(|&i| w.inbox[i].kind != InboxKind::Reply)
+            .collect();
         let interrupted = w.journal[journal..]
             .iter()
             .filter_map(|e| match e.event {
@@ -817,8 +822,9 @@ impl LeftOff {
             spent: w.spent(),
             budget: w.budget,
             projects,
-            waiting_total: open.len(),
-            waiting: open.into_iter().take(LEFT_SHOWN).collect(),
+            waiting_total: decide.len(),
+            replies: open.len() - decide.len(),
+            waiting: decide.into_iter().take(LEFT_SHOWN).collect(),
             interrupted,
             last,
         })
@@ -852,7 +858,7 @@ impl Digest {
             blocked: count(EntryKind::Blocked),
             assumptions: count(EntryKind::Assumption),
             talks: count(EntryKind::Talk),
-            waiting: w.open_inbox().len(),
+            waiting: w.open_decisions(),
             highlights,
         })
     }
@@ -1431,7 +1437,9 @@ impl App {
     pub(crate) fn watch_lanes(&mut self) {
         let w = &self.world;
         let t = w.tick;
+        // A reply is only to be read: its agent waits on nobody.
         let waiting: BTreeSet<AgentId> = (w.open_inbox().into_iter())
+            .filter(|&i| w.inbox[i].kind != InboxKind::Reply)
             .map(|i| w.inbox[i].agent)
             .collect();
         let cells: Vec<Option<LaneCell>> = (w.agents.iter())
@@ -1627,6 +1635,19 @@ impl App {
     pub fn editor_back(&self, editor: &str, why: &editor::Why) -> String {
         let why = ui::words::editor_why(self.lang, editor, why);
         fill(self.lang.text().editor_back, &[&why])
+    }
+
+    /// The composer opens on `line`, put there for the person to write
+    /// on: the cursor at its end, so what they type comes after it, no
+    /// menu, no recall.
+    pub(crate) fn compose(&mut self, line: String) {
+        self.typing = true;
+        self.input = line;
+        self.after = 0;
+        self.menu = None;
+        self.recall = None;
+        self.searching = false;
+        self.recalling = false;
     }
 
     /// The editor closed on `draft`: what it left is the line now, the

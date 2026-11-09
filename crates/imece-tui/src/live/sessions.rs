@@ -437,8 +437,9 @@ impl Live {
         };
         w.agents[id].starting = false;
         let mut session = match ready {
-            Ok((session, cwd, placed, held, copied, set_up, workspace)) => {
+            Ok((session, cwd, placed, held, copied, set_up, workspace, moved)) => {
                 self.copied(w, id, copied);
+                self.moved(w, id, moved);
                 if let Some(repo) = &workspace {
                     w.agents[id].trace(w.tick, format!("on Lonca: a workspace of {repo}"));
                 }
@@ -590,6 +591,7 @@ impl Live {
         opening: Option<Opening<'_>>,
     ) -> Result<(), String> {
         let t = w.tick;
+        self.onto_lonca(w, id);
         self.renew_seat(w, id, Instant::now());
         // Whatever goes in now is the next try: no retry waits beside it.
         w.agents[id].retry = None;
@@ -871,6 +873,9 @@ impl Live {
         // A session whose hooks Lonca did not hear is never sat in again
         // (lonca#190).
         let renew = self.seat_short(w, id, Instant::now()) || self.unheard(w, id).is_some();
+        // A worker hired before its project went on Lonca leaves its
+        // worktree for a workspace when the worktree holds nothing.
+        let onto = store.is_some() && self.may_move(w, id);
         let notes = self.notes_of(w, id);
         let (own, instructions) = (self.own_notes.clone(), self.instructions.clone());
         let checkout = place.repo.clone();
@@ -884,6 +889,7 @@ impl Live {
         let (tx, ready) = (self.tx.clone(), self.ready_tx.clone());
         thread::spawn(move || {
             let started = (|| {
+                let mut moved = Moved::Stayed;
                 let scratch = match scratch {
                     Some(dir) => {
                         let dir = make_private(&dir).map_err(|e| {
@@ -901,6 +907,9 @@ impl Live {
                     // A worktree `:tidy` removes is made anew once it is
                     // gone, never reused while it goes.
                     removing.wait(&at);
+                    if onto {
+                        moved = lonca::move_off(&at)?;
+                    }
                     let (asked, own) = (store.as_deref(), scratch.as_deref());
                     lonca::seat(&place_on, asked, &at, &agent, own, renew)?
                 };
@@ -995,7 +1004,7 @@ impl Live {
                     )
                     .map_err(|e| format!("{program}: {e}"))?,
                 );
-                Ok((session, cwd, placed, held, copied, set_up, workspace))
+                Ok((session, cwd, placed, held, copied, set_up, workspace, moved))
             })();
             // Nobody to take it (imece is closing): dropping it stops it.
             let _ = ready.send((id, generation, started));
@@ -1592,6 +1601,7 @@ mod tests {
                 imece_agent::copy::Brought::default(),
                 setup::Done::None,
                 None,
+                Moved::Stayed,
             )),
         );
         w.agents[1].status = Status::Idle;
@@ -1886,6 +1896,7 @@ mod tests {
                 imece_agent::copy::Brought::default(),
                 setup::Done::None,
                 None,
+                Moved::Stayed,
             )),
         );
         live.prompt(&mut w, 0, "fix it".into(), None).unwrap();
@@ -2221,6 +2232,7 @@ mod tests {
                 imece_agent::copy::Brought::default(),
                 setup::Done::None,
                 None,
+                Moved::Stayed,
             )),
         );
         assert!(!w.agents[1].starting, "up: not starting any more");
@@ -2313,6 +2325,7 @@ mod tests {
                 imece_agent::copy::Brought::default(),
                 setup::Done::None,
                 None,
+                Moved::Stayed,
             )),
         );
         w.agents[1].cost = w.budget;
@@ -2751,6 +2764,56 @@ mod tests {
             args.contains("Lonca workspace of repository demo"),
             "{args}"
         );
+        let _ = std::fs::remove_dir_all(&repo);
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&fake);
+    }
+
+    /// A worker hired before `:lonca import` starts again: its clean
+    /// worktree goes and a workspace takes its place (record 119).
+    #[test]
+    fn a_worker_s_clean_worktree_gives_way_to_a_workspace_at_its_start() {
+        let repo = checkout("onto-repo");
+        let root = trees("onto");
+        let dir = std::env::temp_dir().join(format!("imece-onto-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let (place, fake) = imece_agent::lonca_fake::program(
+            r#"prev=""
+               for a in "$@"; do
+                 if [ "$prev" = --workspace ]; then
+                   mkdir -p "$a/.lonca"
+                   echo '{"repo":"demo"}' > "$a/.lonca/workspace.json"
+                 fi
+                 prev="$a"
+               done
+               echo '{}'"#,
+        );
+        let tree = worktree::ensure(&repo, &root, "claude-1", None)
+            .unwrap()
+            .path;
+        assert!(tree.join(".git").exists(), "a worktree before the import");
+        let mut w = team(1);
+        w.on_lonca(0, Some("demo".into()));
+        let up = StoreSeen::Up {
+            trunk: "t".into(),
+            pending: 0,
+            behind: Behind::Unknown,
+        };
+        w.store_seen(0, "demo", up);
+        let mut live = Live::new(2, claude_at(&whole_args(&dir)), repo.clone(), root.clone());
+        live.lonca = lonca::Watch::start(place.clone());
+        live.slots[1] = Slot::Starting(Vec::new());
+        live.start(&mut w, 1, None);
+        wait_for(&mut live, &mut w, |w| w.agents[1].workspace.is_some());
+        assert!(!tree.join(".git").exists(), "the worktree went");
+        assert!(tree.join(".lonca/workspace.json").exists());
+        assert!(w.journal.iter().any(|e| matches!(
+            &e.event,
+            Event::OntoLonca { agent: 1, repo } if repo == "demo"
+        )));
+        assert!(live.notes[1].iter().any(|n| n == lonca::ONTO_LONCA));
         let _ = std::fs::remove_dir_all(&repo);
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&dir);

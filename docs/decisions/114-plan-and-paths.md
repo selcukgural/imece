@@ -160,3 +160,9 @@ title and body, the head line). Every line wraps within it (`ui::wrap`; a
 card's lines under its three-cell indent, `overlay::hung`); the drawing
 keeps its width in `App.plan_width`, so `j k` and the pages scroll the
 wrapped lines (`plan_lines(app, p, width)`).
+
+**The reply that came with the plan (2026-11-09).** The leader's closing words
+of the turn that proposed ("I wait for your yes before I hire") stayed in TO
+DECIDE after the yes. One open reply per agent held already (`World::replied`
+closes the older); now `decide_plan` closes the leader's open reply too: the
+decision answers it.

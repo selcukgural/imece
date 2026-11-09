@@ -19,11 +19,11 @@ use imece_agent::lonca::{
 use imece_agent::worktree::{self, Forward};
 
 use super::Live;
-use super::{Slot, apply};
+use super::{Moved, Slot, apply};
 use crate::model::{
-    Agent, AgentId, Attested, Behind, Cap, Change, ChangedFile, Check, Decision, ImportAsk, Landed,
-    MsgKind, ProjectId, Role, StoreDown, StoreJob, StoreLease, StorePending, StoreProposal,
-    StoreSeen, Synced, World,
+    Agent, AgentId, Attested, Behind, Cap, Change, ChangedFile, Check, Decision, Event, ImportAsk,
+    Landed, MsgKind, ProjectId, Role, StoreDown, StoreJob, StoreLease, StorePending, StoreProposal,
+    StoreSeen, Synced, World, home_tilde,
 };
 
 /// How often the store is asked. Each look is a connection and a
@@ -80,6 +80,13 @@ pub(crate) fn unheard_why(hooks: &Hooks) -> String {
 pub(super) const SEAT_RENEWED: &str = "your Lonca session ran out of time and a new one goes on in \
                                        this workspace: your files and proposals are as they were, \
                                        your leases are gone, so lease again before you edit";
+
+/// A worker hired before its project went on Lonca, told at the first
+/// prompt in the workspace that took its worktree's place (record 119).
+pub(super) const ONTO_LONCA: &str = "your project is on Lonca now: your directory, the same path, \
+                                     is a Lonca workspace in place of your git worktree, so \
+                                     your work reaches the repository as a proposal (your \
+                                     instructions say how); lease what you edit";
 
 /// The longest reason told of a proposal that did not land, in characters.
 const REASON_TOLD: usize = 400;
@@ -199,6 +206,7 @@ fn offers(status: &lonca::Status, read: &mut impl FnMut(&str) -> Option<Arc<Diff
                 cut: diff.cut,
                 verifies: newest.runs.clone().into(),
                 on_trunk: newest.base.as_deref() == Some(status.trunk.as_str()),
+                intent: newest.intent.clone().unwrap_or_default(),
             },
             diff,
         });
@@ -206,8 +214,10 @@ fn offers(status: &lonca::Status, read: &mut impl FnMut(&str) -> Option<Arc<Diff
     out
 }
 
-/// A proposal's change as the person reads it.
-fn change_of(id: AgentId, offer: &Offer) -> Change {
+/// A proposal's change as the person reads it, titled as its worker's
+/// card `card` says (the intent, the worker's words, is its text: they
+/// name cards by other numbers); without a card, by the intent.
+fn change_of(id: AgentId, offer: &Offer, card: Option<&str>) -> Change {
     let files = offer.diff.files.iter().map(|f| ChangedFile {
         path: f.path.clone(),
         added: f.lines.map_or(0, |(added, _)| added),
@@ -216,7 +226,7 @@ fn change_of(id: AgentId, offer: &Offer) -> Change {
     });
     Change {
         agent: id,
-        title: offer.title.clone(),
+        title: card.map_or_else(|| offer.title.clone(), str::to_string),
         files: files.collect(),
         patch: offer.diff.patch.clone(),
         runs: Vec::new(),
@@ -483,6 +493,26 @@ pub(super) fn seat(
     };
     place.sit(&seat_on(repo)).map_err(told)?;
     Ok(Some(true))
+}
+
+/// At a start of a worker hired before its project went on Lonca: its
+/// worktree at `at` goes when it holds nothing (`worktree::held`), so
+/// that a workspace takes its place; one that holds work stays, said as
+/// [`Moved::Kept`]. A workspace, nothing there, or no worktree of a
+/// checkout: nothing to do. git's own refusal to remove stops the start.
+pub(super) fn move_off(at: &Path) -> Result<Moved, String> {
+    if !at.exists() || lonca::is_workspace(at) {
+        return Ok(Moved::Stayed);
+    }
+    match worktree::held(at) {
+        Ok((_, held)) if held.clean() => {
+            worktree::remove(at, false)
+                .map_err(|e| format!("its worktree {}: {e}", home_tilde(at)))?;
+            Ok(Moved::Onto)
+        }
+        Ok((_, held)) => Ok(Moved::Kept(held)),
+        Err(_) => Ok(Moved::Stayed),
+    }
 }
 
 /// The thread that asks the daemon, and when it is next asked.
@@ -993,7 +1023,11 @@ impl Live {
                 moved
             }
             _ => {
-                w.change_proposed(change_of(id, offer), offer.proposal.clone());
+                let card = w.card_of(id).map(|c| w.cards[c].title.clone());
+                w.change_proposed(
+                    change_of(id, offer, card.as_deref()),
+                    offer.proposal.clone(),
+                );
                 true
             }
         }
@@ -1206,6 +1240,70 @@ impl Live {
         self.notes[id].push(SEAT_RENEWED.to_string());
         let t = w.tick;
         w.agents[id].trace(t, "its Lonca session is running out: a new one takes over");
+    }
+
+    /// Whether worker `id`, of a project on Lonca, may be moved from its
+    /// worktree onto a workspace at its next start (record 119): a
+    /// worker or solo not in a workspace, started at no branch of its
+    /// own, whose worktree was not found holding work since its change
+    /// was last in, with no change waiting and no helper at work in its
+    /// tree, while the store answers.
+    pub(super) fn may_move(&self, w: &World, id: AgentId) -> bool {
+        let a = &w.agents[id];
+        let p = a.project;
+        matches!(a.role, Role::Worker | Role::Solo)
+            && a.workspace.is_none()
+            && a.start.is_none()
+            && !self.off_lonca[id]
+            && w.projects[p].lonca.is_some()
+            && w.store_closed(p).is_none()
+            && self.places[p].git
+            && w.change_of(id).is_none()
+            && w.helpers_of(id)
+                .all(|h| matches!(self.slots[h.id], Slot::None))
+    }
+
+    /// Before a prompt: a worker hired before its project went on Lonca,
+    /// between turns in its worktree, ends its session, which goes on in
+    /// the same conversation at the start the prompt makes, where its
+    /// worktree goes and a workspace takes its place (`move_off`). Done
+    /// at its next task, never mid-turn.
+    pub(super) fn onto_lonca(&mut self, w: &mut World, id: AgentId) {
+        let between_turns = matches!(self.slots[id], Slot::Running(_)) && self.turns[id] == 0;
+        if !between_turns || !self.may_move(w, id) {
+            return;
+        }
+        self.end(w, id);
+        self.remembered[id] = true;
+        let t = w.tick;
+        w.agents[id].trace(
+            t,
+            "its project is on Lonca: its session goes on where a workspace takes its worktree's place",
+        );
+    }
+
+    /// What became of worker `id`'s worktree at the start that just came
+    /// (`move_off`): the journal says it, the worker hears where it is,
+    /// and one that held work is left alone until its change is in.
+    pub(super) fn moved(&mut self, w: &mut World, id: AgentId, moved: Moved) {
+        match moved {
+            Moved::Stayed => {}
+            Moved::Onto => {
+                let repo = (w.projects[w.agents[id].project].lonca.as_ref())
+                    .map(|on| on.repo.clone())
+                    .unwrap_or_default();
+                w.note(Event::OntoLonca { agent: id, repo });
+                self.notes[id].push(ONTO_LONCA.to_string());
+            }
+            Moved::Kept(held) => {
+                self.off_lonca[id] = true;
+                w.note(Event::OffLonca {
+                    agent: id,
+                    changes: held.changes,
+                    commits: held.commits,
+                });
+            }
+        }
     }
 
     /// The next step asks at once: the person just named a repository.
@@ -1546,6 +1644,117 @@ mod tests {
         assert!(live.seat_short(&w, 1, now), "its helper is not working");
         live.slots[helper] = Slot::Starting(Vec::new());
         assert!(!live.seat_short(&w, 1, now), "its helper works");
+    }
+
+    /// The acceptance run: workers hired before `:lonca import` kept
+    /// their worktrees and their work skipped Lonca. A worktree that holds
+    /// nothing goes, so that the workspace takes its place; one that
+    /// holds work stays, said.
+    #[test]
+    fn a_worktree_moves_off_for_a_workspace_only_when_it_holds_nothing() {
+        use crate::live::testing::{checkout, trees};
+        let repo = checkout("move-off-repo");
+        let root = trees("move-off");
+        let clean = worktree::ensure(&repo, &root, "claude-1", None)
+            .unwrap()
+            .path;
+        assert_eq!(move_off(&clean), Ok(Moved::Onto));
+        assert!(!clean.exists(), "gone, for the workspace");
+        let busy = worktree::ensure(&repo, &root, "claude-2", None)
+            .unwrap()
+            .path;
+        std::fs::write(busy.join("new.txt"), "work").unwrap();
+        let kept = move_off(&busy).unwrap();
+        assert!(
+            matches!(kept, Moved::Kept(h) if h.changes == 1 && h.commits == 0),
+            "{kept:?}"
+        );
+        assert!(busy.join("new.txt").exists(), "nothing lost");
+        // Nothing there, or a folder that is no worktree: nothing to do.
+        assert_eq!(move_off(&root.join("none")), Ok(Moved::Stayed));
+        let plain = root.join("plain");
+        std::fs::create_dir_all(&plain).unwrap();
+        assert_eq!(move_off(&plain), Ok(Moved::Stayed));
+        assert!(plain.exists());
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    #[test]
+    fn a_worker_hired_before_the_import_moves_at_its_next_turn_and_is_told() {
+        let mut w = team(1);
+        let mut live = idle_live(2);
+        w.on_lonca(0, Some("demo".into()));
+        assert!(!live.may_move(&w, 1), "the store has not answered yet");
+        let up = StoreSeen::Up {
+            trunk: TRUNK.into(),
+            pending: 0,
+            behind: Behind::Unknown,
+        };
+        w.store_seen(0, "demo", up);
+        assert!(live.may_move(&w, 1));
+        live.slots[1] = Slot::Running(Box::new(Stub));
+        live.turns[1] = 1;
+        live.onto_lonca(&mut w, 1);
+        assert!(matches!(live.slots[1], Slot::Running(_)), "mid-turn");
+        live.turns[1] = 0;
+        // Not when its change waits, it started at a point of its own, or
+        // a helper of it works.
+        w.change_ready(Change {
+            agent: 1,
+            title: "t".into(),
+            files: Vec::new(),
+            patch: "p".into(),
+            runs: Vec::new(),
+            check: Check::None,
+            spend: None,
+        });
+        assert!(!live.may_move(&w, 1), "a change waits");
+        w.changes.retain(|c| c.agent != 1);
+        assert!(live.may_move(&w, 1));
+        w.agents[1].start = Some("v1".into());
+        assert!(!live.may_move(&w, 1), "its own start");
+        w.agents[1].start = None;
+        let helper = with_helper(&mut w, 1);
+        live.grow(None, false);
+        live.slots[helper] = Slot::Starting(Vec::new());
+        assert!(!live.may_move(&w, 1), "its helper works");
+        live.slots[helper] = Slot::None;
+        assert!(!live.may_move(&w, helper), "a helper never");
+        assert!(!live.may_move(&w, 0), "nor the leader");
+        live.onto_lonca(&mut w, 1);
+        assert!(matches!(live.slots[1], Slot::None), "ended between turns");
+        assert!(live.remembered[1], "goes on in its conversation");
+        // The start that comes: moved, journaled, told.
+        live.moved(&mut w, 1, Moved::Onto);
+        assert!(w.journal.iter().any(|e| matches!(
+            &e.event,
+            Event::OntoLonca { agent: 1, repo } if repo == "demo"
+        )));
+        assert!(live.notes[1].iter().any(|n| n == ONTO_LONCA));
+        // Holding work: off Lonca, and no prompt ends its session for it
+        // again until its change is in.
+        live.moved(
+            &mut w,
+            1,
+            Moved::Kept(worktree::Held {
+                changes: 2,
+                commits: 1,
+            }),
+        );
+        assert!(w.journal.iter().any(|e| matches!(
+            e.event,
+            Event::OffLonca {
+                agent: 1,
+                changes: 2,
+                commits: 1
+            }
+        )));
+        assert!(!live.may_move(&w, 1));
+        // Off Lonca, nothing moves.
+        live.off_lonca[1] = false;
+        w.projects[0].lonca = None;
+        assert!(!live.may_move(&w, 1));
     }
 
     #[test]
@@ -2394,6 +2603,7 @@ mod tests {
                 cut: false,
                 verifies: Runs::default(),
                 on_trunk: true,
+                intent: format!("intent {seq}"),
             },
             diff: diff_of("diff --git a/a.rs b/a.rs\n"),
         }
@@ -2427,6 +2637,7 @@ mod tests {
             cut: true,
             verifies: Runs::These(vec!["build".into(), "api".into()]),
             on_trunk: false,
+            intent: "intent 9".into(),
         };
         assert_eq!(got[0].proposal, want);
         assert_eq!(got[1].proposal.verifies, Runs::Unsaid, "Lonca said nothing");
@@ -2451,9 +2662,12 @@ mod tests {
 
     #[test]
     fn a_proposal_reads_as_a_change_with_its_binary_file_said() {
-        let change = change_of(3, &offer("w1", 5, "c5"));
+        let change = change_of(3, &offer("w1", 5, "c5"), None);
         assert_eq!(change.agent, 3);
         assert_eq!(change.title, "intent 5");
+        // A worker's card names it; the intent is its text then.
+        let titled = change_of(3, &offer("w1", 5, "c5"), Some("Settle the ledger"));
+        assert_eq!(titled.title, "Settle the ledger");
         assert_eq!(change.patch, "diff --git a/a.rs b/a.rs\n");
         let (text, binary) = (&change.files[0], &change.files[1]);
         assert_eq!(
@@ -3172,6 +3386,23 @@ mod tests {
         assert_eq!(w.open_inbox().len(), 1);
     }
 
+    /// The acceptance run: a change's title was the agent's raw intent
+    /// ("Card 16: …", its own numbering); its card's title is the title,
+    /// the intent its text.
+    #[test]
+    fn a_proposal_of_a_worker_on_a_card_is_titled_by_the_card() {
+        let (mut w, mut live, word) = proposer();
+        let c = with_card(&mut w, 1);
+        w.cards[c].title = "Settle the ledger".into();
+        assert!(live.offered(&mut w, 0, &offer(&word, 5, "c5")));
+        assert_eq!(w.change_of(1).unwrap().title, "Settle the ledger");
+        assert_eq!(w.proposal_of(1).unwrap().intent, "intent 5");
+        assert_eq!(w.change_why(1), Some("intent 5"));
+        // Words the same as the title say nothing more.
+        w.proposals.get_mut(&1).unwrap().intent = "Settle the ledger".into();
+        assert_eq!(w.change_why(1), None);
+    }
+
     #[test]
     fn someone_elses_proposal_is_no_ones_change() {
         let (mut w, mut live, _) = proposer();
@@ -3531,7 +3762,7 @@ mod tests {
             Err(no_proposal)
         );
         w.change_proposed(
-            change_of(1, &offer("w", 5, "c5")),
+            change_of(1, &offer("w", 5, "c5"), None),
             offer("w", 5, "c5").proposal,
         );
         assert_eq!(live.apply_change(&w, 1, Vec::new()), Ok(()));
@@ -3567,7 +3798,7 @@ mod tests {
         let c = with_card(&mut w, 1);
         w.cards[c].checks = vec!["api".into(), "e2e".into()];
         w.change_proposed(
-            change_of(1, &offer("w", 5, "c5")),
+            change_of(1, &offer("w", 5, "c5"), None),
             offer("w", 5, "c5").proposal,
         );
         assert_eq!(live.apply_change(&w, 1, Vec::new()), Ok(()));
@@ -3594,7 +3825,7 @@ mod tests {
             },
         );
         w.change_proposed(
-            change_of(1, &offer("w", 5, "c5")),
+            change_of(1, &offer("w", 5, "c5"), None),
             offer("w", 5, "c5").proposal,
         );
         live.apply_change(&w, 1, Vec::new()).unwrap();
@@ -3622,7 +3853,7 @@ mod tests {
             },
         );
         w.change_proposed(
-            change_of(1, &offer("w", 5, "c5")),
+            change_of(1, &offer("w", 5, "c5"), None),
             offer("w", 5, "c5").proposal,
         );
         live.reject_proposal(&w, 1, "not this").unwrap();
@@ -3646,7 +3877,7 @@ mod tests {
         let (mut w, mut live, _) = proposer();
         w.store_seen(0, "demo", StoreSeen::Down(StoreDown::NoDaemon));
         w.change_proposed(
-            change_of(1, &offer("w", 5, "c5")),
+            change_of(1, &offer("w", 5, "c5"), None),
             offer("w", 5, "c5").proposal,
         );
         let why = Err(StoreDown::NoDaemon.why().to_string());

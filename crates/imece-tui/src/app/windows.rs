@@ -19,6 +19,7 @@ impl App {
                 self.peek = None;
                 self.typing = true;
                 self.input = format!("@{} ", self.world.agents[id].name);
+                self.after = 0;
                 self.menu = self.suggest();
             }
             KeyCode::Esc | KeyCode::Char('K') => self.peek = None,
@@ -188,9 +189,7 @@ impl App {
         }
         let name = self.world.agents[self.world.inbox[item].agent].name.clone();
         self.plan_window = None;
-        self.typing = true;
-        self.input = format!("@{name} ");
-        self.menu = None;
+        self.compose(format!("@{name} "));
     }
 
     /// `:plan [on|off]` (record 114): the project at hand's plan gate;
@@ -256,7 +255,7 @@ impl App {
         if self.tidy_start && !self.world.orphans.busy {
             self.tidy_start = false;
             if n > 0 && self.tidy.is_none() {
-                self.flash(fill(t.tidy_found, &[&n.to_string()]));
+                self.flash(fill(t.tidy_found, &[&counted(n, t.n_worktrees)]));
             }
         }
     }

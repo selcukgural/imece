@@ -29,7 +29,7 @@ use ratatui::widgets::{Block, Clear, Paragraph, Wrap};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::app::{App, Caret, FLASH, Field, Noting, Rung, Undoable, Window, Zoom};
-use crate::i18n::{Lang, clean, fill};
+use crate::i18n::{Lang, clean, counted, fill};
 use crate::model::*;
 use crate::motion::{GlowOn, Lit};
 use crate::screen::{Look, Shape};
@@ -249,6 +249,21 @@ pub(crate) fn breathes(a: &Agent, rung: Rung) -> bool {
     rung == Rung::Working && a.role != Role::Leader
 }
 
+/// What waits on the screen behind an archive's view: the decisions,
+/// and the replies (only to read) apart.
+fn behind_view(app: &App, lang: Lang) -> String {
+    let t = lang.text();
+    let w = &app.world;
+    let decide = w.open_decisions();
+    match w.open_inbox().len() - decide {
+        0 => fill(t.view_waiting, &[&decide.to_string()]),
+        n => fill(
+            t.view_waiting_read,
+            &[&decide.to_string(), &counted(n, t.home_counts[3])],
+        ),
+    }
+}
+
 /// The top row over an archive's view `v`: which archive, when it was
 /// put away, what waits for the person on the screen behind it, and how
 /// to go back.
@@ -262,7 +277,7 @@ fn view_banner(f: &mut Frame, app: &App, v: &App) {
             &v.world.projects[viewed.project].name,
             &viewed.title,
             &date(day(viewed.at)),
-            &app.world.open_inbox().len().to_string(),
+            &behind_view(app, v.lang),
         ],
     );
     let area = Rect {
@@ -1358,6 +1373,15 @@ pub(crate) fn bar(progress: u8) -> String {
     format!("{}{}", "▓".repeat(full), "░".repeat(5 - full))
 }
 
+/// The demo's made-up progress of `a` as a dim bar and a space, to stand
+/// before its status; a live agent has no phases, so nothing.
+pub(crate) fn demo_bar(w: &World, a: &Agent) -> Vec<Span<'static>> {
+    match w.demo {
+        true => vec![Span::styled(bar(a.progress), dim()), Span::raw(" ")],
+        false => Vec::new(),
+    }
+}
+
 /// The most characters a row's status takes, the text it carries
 /// included (a question, a reason, the newest exchange).
 pub(crate) const STATUS_WIDTH: usize = 40;
@@ -1439,10 +1463,8 @@ fn doing_status(lang: Lang, w: &World, a: &Agent) -> Vec<Span<'static>> {
             )]
         }
         Status::Idle if let Some(it) = w.open_item(a.id, InboxKind::Question) => {
-            let mut spans = vec![
-                Span::styled(bar(a.progress), dim()),
-                Span::styled(format!(" ? → {}", t.you), fg(pal().warn)),
-            ];
+            let mut spans = demo_bar(w, a);
+            spans.push(Span::styled(format!("? → {}", t.you), fg(pal().warn)));
             add_quote(&mut spans, &it.detail, fg(pal().warn));
             spans
         }
@@ -1482,13 +1504,14 @@ fn doing_status(lang: Lang, w: &World, a: &Agent) -> Vec<Span<'static>> {
             ],
             None => vec![Span::styled(t.thinking, fg(pal().ok))],
         },
-        Status::Asking { to, .. } => vec![
-            Span::styled(bar(a.progress), dim()),
-            Span::styled(
-                format!(" ? → {}", clean(&w.agents[to].name)),
+        Status::Asking { to, .. } => {
+            let mut spans = demo_bar(w, a);
+            spans.push(Span::styled(
+                format!("? → {}", clean(&w.agents[to].name)),
                 fg(pal().warn),
-            ),
-        ],
+            ));
+            spans
+        }
         Status::Blocked => {
             let wait = match a.researcher {
                 Some(r) => format!(" ← {}", clean(&w.agents[r].name)),
@@ -1685,6 +1708,11 @@ pub(crate) fn header_parts(app: &App) -> Vec<HeadPart> {
                 ),
                 attention(),
             )],
+            KEEP,
+        )),
+        // Spent: said loud, as a low pot is.
+        None if w.spent() >= w.budget => parts.push(part(
+            vec![Span::styled(fill(t.pot_spent, &[&spent]), attention())],
             KEEP,
         )),
         // One of the header's four things: kept, as what waits is.
@@ -2036,7 +2064,7 @@ fn footer(f: &mut Frame, area: Rect, app: &App) -> Option<Position> {
                     0 => fill(t.grace_archive, &[name, &app.archive_title, &left]),
                     n => fill(
                         t.grace_archive_cut,
-                        &[name, &app.archive_title, &left, &n.to_string()],
+                        &[name, &app.archive_title, &left, &counted(n, t.n_turns)],
                     ),
                 }
             }
@@ -2644,6 +2672,7 @@ mod tests {
                 cut: false,
                 verifies: Runs::default(),
                 on_trunk: true,
+                intent: String::new(),
             },
         );
         app.selected = crate::app::Sel::Project(1);
@@ -5182,6 +5211,14 @@ mod tests {
             top.starts_with(" imece  ") && top.contains("! 1 to decide"),
             "{top}"
         );
+        // Spent, a cent over or to the last of it: said, and kept.
+        assert_eq!(keeps(&app, "pot spent"), None);
+        for over in [0, 1] {
+            app.world.budget = app.world.spent() - over;
+            assert_eq!(keeps(&app, "pot spent").map(|k| k.1), Some(KEEP), "{over}");
+        }
+        app.world.budget = app.world.spent() + 1;
+        assert_eq!(keeps(&app, "pot spent"), None);
     }
 
     #[test]
@@ -5925,11 +5962,21 @@ mod tests {
         let t = app.world.tick;
         assert_eq!(app.world.agents[w[0]].lane.at(t, 1)[0], LaneCell::Writing);
         assert_eq!(app.world.agents[w[1]].lane.last(), LaneCell::Gap);
-        waiting(&mut app, w[2]);
+        app.world.inbox.push(item(InboxKind::Question, w[2]));
         app.world.agents[w[2]].status = Status::Idle;
         app.watch_lanes();
         let t = app.world.tick;
         assert_eq!(app.world.agents[w[2]].lane.at(t, 1)[0], LaneCell::Waiting);
+        // A reply to read is no wait on the person: its agent is idle.
+        app.world.inbox.clear();
+        app.world.agents[w[2]].lane = Lane::default();
+        let mut reply = item(InboxKind::Reply, w[2]);
+        reply.open = true;
+        app.world.inbox.push(reply);
+        app.world.tick += 1;
+        app.watch_lanes();
+        let t = app.world.tick;
+        assert_eq!(app.world.agents[w[2]].lane.at(t, 1)[0], LaneCell::Idle);
     }
 
     #[test]
@@ -6179,6 +6226,17 @@ mod tests {
         assert_eq!(said(&app), "thinking…");
         app.lang = Lang::Tr;
         assert_eq!(said(&app), "düşünüyor…");
+        // Asking someone, or the person, a live agent has no bar either.
+        let leader = app.world.projects[0].leader;
+        app.lang = Lang::En;
+        app.world.agents[id].status = Status::Asking {
+            to: leader,
+            until: 9,
+        };
+        let lead = app.world.agents[leader].name.clone();
+        assert_eq!(said(&app), format!("? → {lead}"));
+        app.world.demo = true;
+        assert_eq!(said(&app), format!("{} ? → {lead}", bar(50)));
     }
 
     #[test]
@@ -6435,6 +6493,20 @@ mod tests {
         assert!(bar("at work"), "{s}");
         assert!(!bar("checked"), "{s}");
         assert!(!bar("newer done"), "{s}");
+        // The bar is the demo's made-up progress: a live run has none.
+        app.world.demo = false;
+        let s = render(&app, 160, 40);
+        let row = s
+            .lines()
+            .skip_while(|l| !l.contains("at work"))
+            .nth(1)
+            .unwrap();
+        assert!(
+            row.contains(&name) && !row.contains('░') && !row.contains('▓'),
+            "{s}"
+        );
+        app.world.demo = true;
+        let s = render(&app, 160, 40);
         assert!(!glyph("newer review").contains('●'), "{s}");
         assert!(!glyph("newer done").contains('●'), "{s}");
         // Record 126: a card waiting for review stands there by its own
@@ -7417,6 +7489,7 @@ mod tests {
             cut: false,
             verifies: Runs::default(),
             on_trunk: true,
+            intent: String::new(),
         };
         app.world.change_proposed(a_change(1), proposal);
         let s = render(&app, 140, 40);
@@ -9471,7 +9544,7 @@ mod tests {
             (
                 Lang::En,
                 "◷ archiving shop as “first epic” in 10 s · u keeps it",
-                "◷ archiving shop as “first epic” in 10 s, cutting 1 turns short · u keeps it",
+                "◷ archiving shop as “first epic” in 10 s, cutting 1 turn short · u keeps it",
                 "shop stays as it is",
                 "archived shop as “first epic”: its agents sleep with all they had; a fresh \
                  one opens",
@@ -9681,7 +9754,7 @@ mod tests {
                 "nothing is archived yet; :archive puts the project at hand away",
                 " ARCHIVES ",
                 " ▾ shop · 1 archived",
-                "   ● shop · open now · 1 agents",
+                "   ● shop · open now · 1 agent",
                 "   ▸ first epic · $4.00 · 2 cards done · 2 agents · archived {}",
                 " j k move · h l za fold · enter view · / filter · r restore · esc close",
                 "brought shop “first epic” back",
@@ -9844,7 +9917,25 @@ mod tests {
             tick: app.world.tick,
             card: None,
         });
-        let waiting = app.world.open_inbox().len().to_string();
+        // A reply is to read, not to decide: said apart.
+        app.world.inbox.push(InboxItem {
+            kind: InboxKind::Reply,
+            agent: app.world.projects[0].leader,
+            detail: "y".into(),
+            researcher: None,
+            open: true,
+            tick: app.world.tick,
+            card: None,
+        });
+        let waiting = app.world.open_decisions();
+        assert_eq!(waiting + 1, app.world.open_inbox().len());
+        let read = (app.world.open_inbox().into_iter())
+            .filter(|&i| app.world.inbox[i].kind == InboxKind::Reply)
+            .count();
+        let read = match read {
+            1 => "1 reply".to_string(),
+            n => format!("{n} replies"),
+        };
         key(&mut app, KeyCode::Char('A'));
         key(&mut app, KeyCode::Enter);
         let at = app.world.projects[1].archived.as_ref().unwrap().at;
@@ -9854,7 +9945,7 @@ mod tests {
         );
         let s = render(&app, 160, 40);
         let banner = format!(
-            " ARCHIVE · {name} “first epic” · archived {} · {waiting} to decide now · esc back ",
+            " ARCHIVE · {name} “first epic” · archived {} · {waiting} to decide, {read} to read now · esc back ",
             date(day(at))
         );
         let top = s.lines().next().unwrap();
@@ -9881,7 +9972,7 @@ mod tests {
         key(&mut app, KeyCode::Char('L'));
         let s = render(&app, 160, 40);
         let banner = format!(
-            " ARŞİV · {name} “first epic” · {} arşivlendi · şu an {waiting} karar bekliyor · esc geri ",
+            " ARŞİV · {name} “first epic” · {} arşivlendi · şu an {waiting} karar bekliyor, 1 yanıt okunacak · esc geri ",
             date(day(at))
         );
         assert!(s.lines().next().unwrap().starts_with(&banner), "{s}");
@@ -11193,6 +11284,7 @@ mod tests {
             projects: vec![("shop-api".into(), 3, 2), ("other".into(), 1, 0)],
             waiting: vec![item],
             waiting_total: 2,
+            replies: 1,
             interrupted: vec![leader, worker],
             last,
         });
@@ -11201,8 +11293,9 @@ mod tests {
             "WHERE YOU LEFT OFF · 3 h 5 min ago",
             "$0.12 of $50.00 spent",
             "shop-api: 3 agents, 2 open cards",
-            "other: 1 agents, 0 open cards",
+            "other: 1 agent, 0 open cards",
             "! 2 to decide:",
+            "» 1 reply to read on Home",
             "» 00:08 ",
             "the answer's first line",
             "… and 1 more",
@@ -11250,6 +11343,7 @@ mod tests {
         l.ago = None;
         l.waiting.clear();
         l.waiting_total = 0;
+        l.replies = 0;
         l.interrupted.clear();
         l.last.clear();
         let screen = render(&app, 140, 40);
@@ -14239,6 +14333,23 @@ after | not a table";
             let s = render(&app, 120, 30);
             assert!(s.contains("~/code/shelf"), "{s}");
             assert!(!s.contains("/Users/me"), "{s}");
+            // Its workers hired before: what becomes of their worktrees.
+            let words = match lang {
+                Lang::En => "workers hired before it move onto a Lonca workspace",
+                Lang::Tr => "daha önce alınan işçiler",
+            };
+            assert!(s.contains(words), "{s}");
+            let s = render(&app, 120, 30);
+            assert!(
+                s.contains(word) && s.contains("esc"),
+                "the window grew: {s}"
+            );
+            for a in &mut app.world.agents {
+                if a.role == Role::Worker {
+                    a.gone = true;
+                }
+            }
+            assert!(!render(&app, 120, 30).contains(words), "nobody hired");
         }
     }
 

@@ -23,7 +23,7 @@ Beş sütun, her biri sayısıyla başlıklı:
 | Sütun | İçindeki kartlar |
 | --- | --- |
 | YAPILACAK | asılmış, henüz alınmamış: liderin `post`'u ya da liderin henüz boşta olmayan bir işçi için yazdığı kart, ya da bir `assign`'ın, beklediği kartlar bitene dek işçisi için tuttuğu kart |
-| ÜZERİNDE | alınmış: lider görev vermiş ya da boşta bir işçi panodan almış. Başlığın altında sahibi, sahibinin durum işaretiyle ve bir ilerleme çubuğuyla; çalışan bir sahibin işareti ana ekrandaki gibi nefes alır (`:motion`) |
+| ÜZERİNDE | alınmış: lider görev vermiş ya da boşta bir işçi panodan almış. Başlığın altında sahibi, sahibinin durum işaretiyle (demoda bir de uydurma evrelerinin ilerleme çubuğuyla); çalışan bir sahibin işareti ana ekrandaki gibi nefes alır (`:motion`) |
 | İNCELENECEK | bir `done` ile bitmiş ve değişikliği (`Δ`) KARAR BEKLEYEN'de sizi bekliyor, en yeni önce: ajan işini bitirdi, iş henüz içeri girmedi. Geri gönderilince kart ÜZERİNDE'ye döner |
 | DOĞRULANIYOR | Lonca'da, değişikliği onayınızdan sonra merge queue'da |
 | BİTTİ | değişikliği tamamen içeride (ya da `done`'ı alınacak bir şey bırakmadı), en yeni önce, bitiren sahibiyle; başarısız olan bir kart da burada durur, `✕` ile, liderin geri çektiği bir kart da, soluk `–` ile. Sahibinin durumunu yalnız üzerinde çalışılan kart gösterir: son iki sütunda sahibi başka bir iş yapıyor olabilir |

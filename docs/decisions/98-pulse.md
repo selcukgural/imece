@@ -40,3 +40,9 @@ leader that posts more cards moves the bar back: that is what happened.
 
 Not done: who holds up whom (D) goes with the story panel (B), not the
 header; spending in the last ten minutes is the rate already there.
+
+**A spent pot is loud (2026-11-09).** A low pot was `KEEP` and loud, a spent one
+plain (`pot_lasts` is none at zero left): the header says `$0.96 of $0.95, pot
+spent` in the attention colour, kept, and a message refused for the pot says it
+is the team's (`words::pot_spent`, `:budget USD raises it`), never one agent's
+budget.

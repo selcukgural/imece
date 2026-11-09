@@ -129,7 +129,8 @@ pub(super) fn system_prompt(
                      each is a coding agent in its own git worktree of the repository. \
                      {so_far} Hire for the work at hand, not in advance: one worker \
                      takes several tasks in turn, so hire a second only when two tasks \
-                     can run at once. Before a second worker, put your plan before the \
+                     can run at once, and give a free worker (idle, its card done; \
+                     whoami lists them) the next card before you hire another. Before a second worker, put your plan before the \
                      person with the plan tool (the cards you mean to assign or post, \
                      each with a tier and the paths it owns, and what you expect them to \
                      cost) and end your turn: they read it and their yes opens hiring; \
@@ -469,7 +470,11 @@ pub(super) fn lonca_note(repo: &str) -> String {
          runs no git here, and `git clean -x` would end the workspace. A \
          change reaches the repository as a proposal: lease what you edit, check with the \
          preview tool, submit with the propose tool. Propose before you say done: what is \
-         not proposed nobody sees, and a done with changes no proposal carries is refused. A \
+         not proposed nobody sees, and a done with changes no proposal carries is refused. \
+         A proposal's intent becomes trunk's commit message: write it as one line, a \
+         commit subject that says what the change does (`Ledger.settle splits the \
+         remainder`), with no card number in it (imece shows the change under its card \
+         already, and numbers you see in mail are not the card's). A \
          proposal waits for the person's approval, and then \
          the sync tool brings trunk to you. When a proposal is denied and you can not put \
          it right, say blocked with what it said."
@@ -784,6 +789,12 @@ mod tests {
         assert!(note.contains("`git clean -x`"), "{note}");
         assert!(note.contains("Propose before you say done"), "{note}");
         assert!(note.contains("say blocked"), "{note}");
+        // The intent is trunk's commit message: one line, no card number.
+        assert!(
+            note.contains("intent becomes trunk's commit message"),
+            "{note}"
+        );
+        assert!(note.contains("no card number"), "{note}");
     }
 
     #[test]
@@ -800,6 +811,7 @@ mod tests {
                 imece_agent::copy::Brought::default(),
                 setup::Done::None,
                 None,
+                Moved::Stayed,
             ))
         };
         live.ready(&mut w, 1, placed(Some(worktree::Placed::Fresh)));
