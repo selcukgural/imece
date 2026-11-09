@@ -1671,6 +1671,7 @@ impl Store {
             limits: Vec::new(),
             tick: 0,
             started_at,
+            demo: false,
             run_spent: 0,
             spending: Spending::default(),
             projects: Vec::new(),
@@ -2374,6 +2375,7 @@ mod tests {
             limits: Vec::new(),
             tick: 77,
             started_at: 1_700_000_000,
+            demo: false,
             run_spent: 5,
             spending: Spending::default(),
             projects: vec![

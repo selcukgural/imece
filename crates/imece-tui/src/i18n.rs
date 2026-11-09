@@ -210,6 +210,9 @@ pub struct Text {
     pub window_hours: &'static str,
     pub window_days: &'static str,
     pub waiting_for_you: &'static str,
+    /// The header's count of replies waiting to be read, apart from the
+    /// decisions (a reply asks for nothing).
+    pub replies_waiting: &'static str,
     /// The terminal's title while something waits for the person.
     pub title_waiting: &'static str,
     pub paused: &'static str,
@@ -219,6 +222,8 @@ pub struct Text {
     pub help: &'static str,
     pub trace: &'static str,
     pub back: &'static str,
+    /// Home with nothing listed: `/` writes to the lead.
+    pub write_lead: &'static str,
     pub write_this: &'static str,
     pub reject: &'static str,
     /// `>` in a change, and what it says where there is no hunk to quote.
@@ -645,10 +650,11 @@ pub struct Text {
     pub home_once_more: &'static str,
     pub home_fail: &'static str,
     /// Home's TO DECIDE heading counts each kind: one, and many (`{}`).
-    pub home_counts: [(&'static str, &'static str); 4],
-    /// The four groups of TO DECIDE, in their order: permissions,
-    /// questions, changes, what was put off.
-    pub home_groups: [&'static str; 4],
+    pub home_counts: [(&'static str, &'static str); 5],
+    /// The five groups of TO DECIDE, in their order: permissions,
+    /// questions, changes, replies (read, nothing to decide), what was
+    /// put off.
+    pub home_groups: [&'static str; 5],
     /// What makes a group's rows cheap, at its line's right end.
     pub home_one_key: &'static str,
     pub home_ready: &'static str,
@@ -1415,6 +1421,7 @@ pub const EN: Text = Text {
     window_hours: "{}h",
     window_days: "{}d",
     waiting_for_you: " ! {} to decide ",
+    replies_waiting: " {} to read ",
     title_waiting: "imece · {} to decide",
     paused: " ‖ PAUSED ",
     to_agent: "to an agent",
@@ -1423,6 +1430,7 @@ pub const EN: Text = Text {
     trace: "trace",
     back: "back",
     write_this: "write to this agent",
+    write_lead: "write to the lead",
     reject: "send back",
     no_hunk: "no hunk here to quote",
     note_where: "a note goes on a line of a hunk: scroll one to the top",
@@ -1890,9 +1898,10 @@ pub const EN: Text = Text {
         ("1 permission", "{} permissions"),
         ("1 question", "{} questions"),
         ("1 change", "{} changes"),
+        ("1 reply", "{} replies"),
         ("1 put off", "{} put off"),
     ],
-    home_groups: ["permissions", "questions", "changes", "later"],
+    home_groups: ["permissions", "questions", "changes", "replies", "later"],
     home_one_key: "one key each",
     home_ready: "{} ready to approve",
     home_stuck_count: "stuck {}",
@@ -2769,6 +2778,7 @@ pub const TR: Text = Text {
     window_hours: "{} sa",
     window_days: "{} g",
     waiting_for_you: " ! {} karar bekliyor ",
+    replies_waiting: " {} okunacak ",
     title_waiting: "imece · {} karar bekliyor",
     paused: " ‖ DURDU ",
     to_agent: "agent'a",
@@ -2777,6 +2787,7 @@ pub const TR: Text = Text {
     trace: "iz",
     back: "geri",
     write_this: "bu agent'a yaz",
+    write_lead: "lidere yaz",
     reject: "geri gönder",
     no_hunk: "burada alıntılanacak bir parça yok",
     note_where: "not bir parçanın satırına yazılır: bir satırı en üste kaydır",
@@ -3267,9 +3278,10 @@ pub const TR: Text = Text {
         ("1 izin", "{} izin"),
         ("1 soru", "{} soru"),
         ("1 değişiklik", "{} değişiklik"),
+        ("1 yanıt", "{} yanıt"),
         ("1 ertelenen", "{} ertelenen"),
     ],
-    home_groups: ["izinler", "sorular", "değişiklikler", "sonraya"],
+    home_groups: ["izinler", "sorular", "değişiklikler", "yanıtlar", "sonraya"],
     home_one_key: "her biri tek tuş",
     home_ready: "{} onaya hazır",
     home_stuck_count: "takılan {}",

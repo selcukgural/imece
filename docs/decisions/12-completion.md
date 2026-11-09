@@ -50,3 +50,9 @@ go, numbered as a list frozen when the line opened, with notes.
 Record 66 puts the `^r` search over the lines sent on it too.
 
 Record 67 adds files and leased symbols for any word of a message.
+
+Field fix (2026-11-09): the trace's line for the list said every command
+and skill the person had installed (60 names and more, several lines):
+noise on the screen and, in a recording, the person's own setup. It says
+how many, `commands: 61`; `Agent.commands` keeps the list for completion.
+The demo traces its own the same way.

@@ -1058,6 +1058,9 @@ pub struct App {
     /// rows); none before the first drawing. Under the floor (record
     /// 131) no key acts but `ctrl-c`: what was not shown is not decided.
     pub drawn_size: Cell<Option<(u16, u16)>>,
+    /// How wide the plan window last drew its lines (they wrap there, and
+    /// `j k` scroll the wrapped ones); none wraps before it is drawn.
+    pub plan_width: Cell<usize>,
     /// The person's own keys (`keys.rs`): the key file's, else imece's.
     pub keys: Keymap,
     /// Where the key file is; none without a home.
@@ -1318,6 +1321,7 @@ impl App {
             help_scroll: 0,
             help_room: Cell::new((1, 0)),
             drawn_size: Cell::new(None),
+            plan_width: Cell::new(usize::MAX),
             keys: Keymap::default(),
             keys_file: None,
             keys_good: None,

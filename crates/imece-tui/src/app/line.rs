@@ -292,7 +292,7 @@ impl App {
                 .agent_at_hand()
                 .map(|id| self.world.agents[id].name.clone()),
             "next" | "waiting" => {
-                let open = self.world.open_inbox().len().to_string();
+                let open = self.world.open_decisions().to_string();
                 Some(fill(t.value_waiting, &[&open]))
             }
             "story" => Some(on_off(self.story)),
@@ -872,6 +872,9 @@ mod tests {
         app.world.asks_you(1, "Bash: make test");
         assert_eq!(app.command_note("next"), "(2 to decide)");
         assert_eq!(app.command_note("waiting"), "(2 to decide)");
+        // A reply is read, not decided.
+        app.world.replied(1, "done");
+        assert_eq!(app.command_note("next"), "(2 to decide)");
         assert_eq!(app.command_note("story"), "(off)");
         app.story = true;
         assert_eq!(app.command_note("story"), "(on)");

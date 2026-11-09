@@ -280,17 +280,25 @@ const TREE_WIDTH: u16 = 36;
 /// The rows of what the worker said of its change, above everything.
 const WHY_ROWS: usize = 4;
 
-/// What the worker said of its change, wrapped at `width`, its first
-/// [`WHY_ROWS`] rows, the last of them cut when there is more.
+/// What the worker said of its change, as the Markdown it is, wrapped at
+/// `width`, its first [`WHY_ROWS`] rows, the last of them cut when there
+/// is more.
 fn why_lines(why: &str, width: usize) -> Vec<Line<'static>> {
-    let mut rows = overlay::wrap_words(&clean(why), width.saturating_sub(2));
+    let mut rows = markdown_rows(why, width.saturating_sub(2));
     let more = rows.len() > WHY_ROWS;
     rows.truncate(WHY_ROWS);
     if more && let Some(last) = rows.last_mut() {
-        last.push('…');
+        if let Some(end) = last.spans.last_mut() {
+            end.content = end.content.trim_end().to_string().into();
+        }
+        last.spans.push(Span::raw("…"));
     }
     (rows.into_iter())
-        .map(|row| Line::from(format!(" {row}")))
+        .map(|row| {
+            let mut spans = vec![Span::raw(" ")];
+            spans.extend(row.spans);
+            Line::from(spans)
+        })
         .collect()
 }
 
@@ -1085,10 +1093,25 @@ mod tests {
         let texts = |lines: Vec<Line>| {
             lines
                 .iter()
-                .map(|l| l.spans[0].content.to_string())
+                .map(|l| {
+                    let s: String = l.spans.iter().map(|s| s.content.as_ref()).collect();
+                    s.trim_end().to_string()
+                })
                 .collect::<Vec<_>>()
         };
         assert_eq!(texts(why_lines("one two", 20)), [" one two"]);
+        // The worker's Markdown reads as such: its list a list, its marks
+        // gone, never one run-on paragraph (the field, 2026-11-09).
+        let said = "Done.\n- **Added:** a filter\n- **Changed:** the search";
+        assert_eq!(
+            texts(why_lines(said, 40)),
+            [" Done.", " • Added: a filter", " • Changed: the search"]
+        );
+        // A list item wraps under its words.
+        assert_eq!(
+            texts(why_lines("- **Added:** a filter", 14)),
+            [" • Added: a", "   filter"]
+        );
         let four = "aaaa bbbb cccc dddd";
         assert_eq!(texts(why_lines(four, 6)).len(), 4);
         assert!(!texts(why_lines(four, 6))[3].ends_with('…'));

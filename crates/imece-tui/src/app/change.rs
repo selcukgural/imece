@@ -1231,12 +1231,11 @@ mod tests {
         let (mut app, worker) = with_change("+x\n");
         app.world.replied(worker, "hi");
         app.zoom = Zoom::None;
-        app.pane = Pane::Inbox;
-        app.inbox_sel = app
-            .inbox_rows()
-            .iter()
-            .position(|&i| app.world.inbox[i].kind == InboxKind::Reply)
+        let reply = (app.world.inbox.iter())
+            .position(|i| i.kind == InboxKind::Reply)
             .unwrap();
+        app.at_home.at = Some(HomeRow::Item(reply));
+        app.home_settle();
         app.command("review");
         assert!(!app.reviewing(worker));
         assert_eq!(flash(&app), t.review_off);

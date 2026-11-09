@@ -154,3 +154,9 @@ there (`Sim::propose`: a card per waiting card, each owning one file of
 the code map, a flat `PLANNED_COST` a card), hires on the next chance
 after the yes, and asks the person what should change after a no
 (`Sim::decide_plan`).
+
+Field fix (2026-11-09): the plan window cut long lines at its edge (a card's
+title and body, the head line). Every line wraps within it (`ui::wrap`; a
+card's lines under its three-cell indent, `overlay::hung`); the drawing
+keeps its width in `App.plan_width`, so `j k` and the pages scroll the
+wrapped lines (`plan_lines(app, p, width)`).

@@ -127,3 +127,8 @@ them; `website/video/README.md`).
 Since record 125's step 5 (2026-11-07) the mark mid the free rows is
 Home's (`home::mark_under`, while no project has an agent on the list);
 the salon's screen is no more.
+
+Field fix (2026-11-09): "an agent on the list" missed a worker idle with
+a change waiting (it is listed as its change, not under AT WORK), so the
+mark stood beside a team. `home::staffed`: an agent row listed, or any
+agent not a leader, not gone, not put away, in an open project.

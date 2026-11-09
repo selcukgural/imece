@@ -112,3 +112,7 @@ Lonca's store grows by the history imported; that is Lonca's. **Read cost.**
 repository too large for 10 minutes fails with `lonca did not answer` while the
 daemon may finish alone, and the next `:lonca NAME` finds it. **Migration.** New
 journal events; the schema is unchanged.
+
+Field fix (2026-11-09): the import window showed the checkout's whole
+path (`/Users/<name>/…`); it is shown as every folder on the screen is,
+`~` for the home (`App::shown_path`, record 103).

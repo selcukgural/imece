@@ -610,7 +610,7 @@ fn run(
             app.drawn(now);
         }
         // The ladder's top on the tab and in the title.
-        let waiting = app.world.open_inbox().len();
+        let waiting = app.world.open_decisions();
         let ladder = app.progress();
         title.show(
             &mut std::io::stdout(),

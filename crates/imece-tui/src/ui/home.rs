@@ -45,9 +45,11 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
         f.render_widget(Paragraph::new(line), store);
     }
     let at = app.home_at();
-    if body.width < WIDE {
+    // Nothing listed: no row to read beside, the list takes the width so
+    // what it says is said once, whole.
+    if body.width < WIDE || at.is_none() {
         let drawn = list_drawn(app, usize::from(body.width), body.width < NARROW, at);
-        let scroll = drawn.scroll.min(drawn.lines.len().saturating_sub(1) as u16);
+        let scroll = drawn.scroll(body.height);
         let used = drawn.lines.len() as u16;
         note_breath(app, &drawn.lines, &drawn.spots, scroll, body);
         f.render_widget(Paragraph::new(drawn.lines).scroll((scroll, 0)), body);
@@ -61,7 +63,7 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     ])
     .areas(body);
     let drawn = list_drawn(app, usize::from(list.width), false, at);
-    let scroll = drawn.scroll.min(drawn.lines.len().saturating_sub(1) as u16);
+    let scroll = drawn.scroll(list.height);
     let used = drawn.lines.len() as u16;
     note_breath(app, &drawn.lines, &drawn.spots, scroll, list);
     f.render_widget(Paragraph::new(drawn.lines).scroll((scroll, 0)), list);
@@ -69,23 +71,28 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     let rule = vec![Line::from(Span::styled("│", dim())); usize::from(gap.height)];
     f.render_widget(Paragraph::new(rule), gap);
     let room = usize::from(preview.width).saturating_sub(1);
-    let text = at.map_or_else(
-        || {
-            vec![Line::from(Span::styled(
-                app.lang.text().home_nothing,
-                dim(),
-            ))]
-        },
-        |row| preview_lines(app, row, room, usize::from(preview.height)),
-    );
-    f.render_widget(Paragraph::new(text), preview);
+    if let Some(row) = at {
+        let text = preview_lines(app, row, room, usize::from(preview.height));
+        f.render_widget(Paragraph::new(text), preview);
+    }
+}
+
+/// Whether a project in view has a worker (a solo, a helper, a
+/// researcher too), listed or not: one with a change waiting has no
+/// row of its own under AT WORK, yet the team is not empty.
+fn staffed(app: &App) -> bool {
+    let w = &app.world;
+    let listed = (app.home_rows().iter()).any(|r| matches!(r.1, HomeRow::Agent(_)));
+    listed
+        || (w.agents.iter()).any(|a| {
+            a.role != Role::Leader && !a.gone && !w.put_away(a.id) && !w.projects[a.project].closed
+        })
 }
 
 /// While no project has a worker, imece's mark in the rows the list
 /// leaves free under it (record 101).
 fn mark_under(f: &mut Frame, area: Rect, app: &App, used: u16) {
-    let working = (app.home_rows().iter()).any(|r| matches!(r.1, HomeRow::Agent(_)));
-    if working {
+    if staffed(app) {
         return;
     }
     let free = Rect {
@@ -124,7 +131,7 @@ impl Listed {
     }
 }
 
-/// `TO DECIDE  2 permissions · 1 question · 3 changes`: the heading and
+/// `TO DECIDE  2 permissions · 1 question · 3 changes · 1 reply`: the heading and
 /// what is under it, each kind counted, a count of none left out.
 fn decide_heading(app: &App, listed: &Listed) -> Line<'static> {
     let t = app.lang.text();
@@ -134,6 +141,7 @@ fn decide_heading(app: &App, listed: &Listed) -> Line<'static> {
         HomeGroup::Permission,
         HomeGroup::Question,
         HomeGroup::Change,
+        HomeGroup::Reply,
         HomeGroup::Later,
     ]
     .into_iter()
@@ -191,7 +199,8 @@ fn group_line(app: &App, group: HomeGroup, listed: &Listed, width: usize) -> Lin
         HomeGroup::Permission => t.home_groups[0],
         HomeGroup::Question => t.home_groups[1],
         HomeGroup::Change => t.home_groups[2],
-        _ => t.home_groups[3],
+        HomeGroup::Reply => t.home_groups[3],
+        _ => t.home_groups[4],
     };
     let note = match group {
         HomeGroup::Permission => Some(t.home_one_key.to_string()),
@@ -233,21 +242,51 @@ fn glyph_spots(app: &App, lines_before: usize, row: HomeRow) -> Option<(usize, u
     Some((lines_before, if under { 2 } else { 1 }, id))
 }
 
-/// Home's list as drawn: its lines, how far they scroll for the row at
-/// hand to show, and where the agents' glyphs stand (the line, the span,
+/// Home's list as drawn: its lines, the lines the row at hand takes
+/// (from, to), and where the agents' glyphs stand (the line, the span,
 /// the agent) for the breath's patch.
 struct Drawn {
     lines: Vec<Line<'static>>,
-    scroll: u16,
+    at: Option<(usize, usize)>,
     spots: Vec<(usize, usize, AgentId)>,
 }
 
+/// Lines kept above the row at hand once the list scrolls.
+const ABOVE: usize = 4;
+
+impl Drawn {
+    /// How far the list scrolls in `height` rows: not at all while the
+    /// row at hand shows whole with a line under it, so the headings stay
+    /// in view; past that the row at hand `ABOVE` lines from the top, the
+    /// list's end never above the area's.
+    fn scroll(&self, height: u16) -> u16 {
+        let height = usize::from(height);
+        let Some((from, to)) = self.at else {
+            return 0;
+        };
+        if to + 1 < height {
+            return 0;
+        }
+        let last = self.lines.len().saturating_sub(height);
+        let scroll = from.saturating_sub(ABOVE).min(last);
+        // A row taller than what is above it on the screen still ends in view.
+        let scroll = scroll.max((to + 1).saturating_sub(height)).min(from);
+        u16::try_from(scroll).unwrap_or(u16::MAX)
+    }
+}
+
 /// The list in rows `width` wide, on a screen as wide, and how far to
-/// scroll it for the row at hand to show.
+/// scroll it in `height` rows for the row at hand to show.
 #[cfg(test)]
-fn list_lines(app: &App, width: usize, at: Option<HomeRow>) -> (Vec<Line<'static>>, u16) {
+fn list_lines(
+    app: &App,
+    width: usize,
+    height: u16,
+    at: Option<HomeRow>,
+) -> (Vec<Line<'static>>, u16) {
     let drawn = list_drawn(app, width, width < usize::from(NARROW), at);
-    (drawn.lines, drawn.scroll)
+    let scroll = drawn.scroll(height);
+    (drawn.lines, scroll)
 }
 
 /// The list drawn: see [`Drawn`]. `stacked` on a narrow screen (record
@@ -258,7 +297,7 @@ fn list_drawn(app: &App, width: usize, stacked: bool, at: Option<HomeRow>) -> Dr
         rows: app.home_rows(),
     };
     let mut lines = Vec::new();
-    let mut scroll = 0;
+    let mut at_lines = None;
     let mut spots = Vec::new();
     let mut last: Option<HomeGroup> = None;
     for &(group, row) in &listed.rows {
@@ -279,11 +318,12 @@ fn list_drawn(app: &App, width: usize, stacked: bool, at: Option<HomeRow>) -> Dr
             last = Some(group);
         }
         let here = at == Some(row);
-        if here {
-            scroll = lines.len().saturating_sub(4) as u16;
-        }
+        let from = lines.len();
         spots.extend(glyph_spots(app, lines.len(), row));
         lines.extend(row_lines(app, row, width, stacked, here));
+        if here {
+            at_lines = Some((from, lines.len().saturating_sub(1).max(from)));
+        }
     }
     // Nothing to decide but what `:clear` hid: the heading says so.
     if !listed.rows.iter().any(|r| r.0.heading() == Heading::Decide) && app.world.hidden_inbox() > 0
@@ -292,16 +332,17 @@ fn list_drawn(app: &App, width: usize, stacked: bool, at: Option<HomeRow>) -> Dr
         for spot in &mut spots {
             spot.0 += 1;
         }
-        if scroll > 0 {
-            scroll += 1;
-        }
+        at_lines = at_lines.map(|(from, to)| (from + 1, to + 1));
     }
     if listed.rows.is_empty() {
-        lines.push(Line::from(Span::styled(t.home_nothing, dim())));
+        // Whole: wrapped to the width, never cut.
+        for row in overlay::wrap_words(t.home_nothing, width.saturating_sub(1).max(1)) {
+            lines.push(Line::from(Span::styled(format!(" {row}"), dim())));
+        }
     }
     Drawn {
         lines,
-        scroll,
+        at: at_lines,
         spots,
     }
 }
@@ -539,6 +580,43 @@ fn row_keys(app: &App) -> Vec<Span<'static>> {
     spans
 }
 
+/// How many cells past its column a title longer than it may take: what
+/// a one-line row leaves free after its words whole (and, at hand, its
+/// keys and the least its words keep beside them), so a long title is
+/// cut only where the row is full; none for a row whose words wrap.
+fn title_room(
+    app: &App,
+    head: &[Span<'static>],
+    tail: &Tail,
+    title: &str,
+    width: usize,
+    column: usize,
+    here: bool,
+) -> usize {
+    let Tail::Cut(text) = tail else {
+        return 0;
+    };
+    let before: usize = head.iter().map(Span::width).sum();
+    let keys: usize = if here {
+        row_keys(app).iter().map(Span::width).sum()
+    } else {
+        0
+    };
+    // Keys that would not fit beside the column's title go anyway.
+    let keys = if width.saturating_sub(before + column + 2 + keys + 2) >= ASK_MIN {
+        keys
+    } else {
+        0
+    };
+    let said = if keys > 0 {
+        text.width().max(ASK_MIN) + keys + 2
+    } else {
+        text.width() + 1
+    };
+    let free = width.saturating_sub(before + column + 2 + said);
+    free.min(title.width().saturating_sub(column))
+}
+
 /// The rows of one entry of the list: its glyph, project (when several
 /// are open and the list is not narrowed), card and title, then what it
 /// asks or says, whole: the words wrap under their own column, and the
@@ -638,8 +716,11 @@ fn row_lines(
         lines.push(selection(Line::from(std::mem::take(&mut head))));
         head.push(Span::raw(" ".repeat(lead)));
     } else {
+        let title = title_of(w, row);
+        let title_width =
+            title_width + title_room(app, &head, &tail, &title, width, title_width, here);
         head.push(Span::styled(
-            format!("{:<title_width$}  ", fit(&title_of(w, row), title_width)),
+            format!("{:<title_width$}  ", fit(&title, title_width)),
             style,
         ));
     }
@@ -756,15 +837,6 @@ fn labelled(label: &str, text: Vec<Span<'static>>) -> Line<'static> {
     Line::from(spans)
 }
 
-/// `text` in rows of `room`, under `label`.
-fn labelled_text(lines: &mut Vec<Line<'static>>, label: &str, text: &str, room: usize) {
-    let wrapped = overlay::wrap_words(&clean(text), room.saturating_sub(9));
-    for (n, row) in wrapped.into_iter().enumerate() {
-        let label = if n == 0 { label } else { "" };
-        lines.push(labelled(label, vec![Span::raw(row)]));
-    }
-}
-
 /// What a change comes to: its why, its proof, cost and gate, its files
 /// and the top of its patch.
 fn change_lines(lang: Lang, w: &World, c: &Change, lines: &mut Vec<Line<'static>>, room: usize) {
@@ -779,7 +851,14 @@ fn change_lines(lang: Lang, w: &World, c: &Change, lines: &mut Vec<Line<'static>
             lines.push(labelled(if n == 0 { verdict } else { "" }, line.spans));
         }
     }
-    labelled_text(lines, why, w.done_why(c.agent).unwrap_or(&c.title), room);
+    // The worker's words as the Markdown they are: its lists stay lists.
+    let said = w.done_why(c.agent).unwrap_or(&c.title);
+    for (n, line) in markdown_rows(said, room.saturating_sub(9).max(12))
+        .into_iter()
+        .enumerate()
+    {
+        lines.push(labelled(if n == 0 { why } else { "" }, line.spans));
+    }
     if let Some(s) = c.spend {
         lines.push(labelled(
             cost,
@@ -872,11 +951,32 @@ fn agent_lines(app: &App, id: AgentId, lines: &mut Vec<Line<'static>>, room: usi
         lines.push(Line::default());
     }
     let left = rows.saturating_sub(lines.len());
-    let colour = speaker_color(id);
-    let newest = a.trace.len().saturating_sub(left);
-    for raw in a.trace.iter().skip(newest) {
-        lines.extend(focus::trace_lines(raw, colour, room));
+    lines.extend(newest_trace(&a.trace, speaker_color(id), room, left));
+}
+
+/// The newest of a trace in `rows` lines, as the trace window follows
+/// it: whole entries, the newest last, as many as fit (a line may wrap
+/// to several); the newest alone, its first lines, when it is taller.
+fn newest_trace(
+    trace: &std::collections::VecDeque<String>,
+    colour: Color,
+    room: usize,
+    rows: usize,
+) -> Vec<Line<'static>> {
+    let mut kept: Vec<Vec<Line<'static>>> = Vec::new();
+    let mut used = 0;
+    for raw in trace.iter().rev() {
+        let entry = focus::trace_lines(raw, colour, room);
+        if used + entry.len() > rows {
+            if kept.is_empty() {
+                kept.push(entry.into_iter().take(rows).collect());
+            }
+            break;
+        }
+        used += entry.len();
+        kept.push(entry);
     }
+    kept.into_iter().rev().flatten().collect()
 }
 
 /// A question whole, past its first line (the row has that), then the
@@ -1068,7 +1168,7 @@ mod tests {
     }
 
     fn lines(app: &App, width: usize) -> Vec<String> {
-        list_lines(app, width, app.home_at())
+        list_lines(app, width, 40, app.home_at())
             .0
             .iter()
             .map(text)
@@ -1116,7 +1216,11 @@ mod tests {
             .push(change(w[3], vec![ran("cargo test", 0)]));
         app.world.inbox.push(item(InboxKind::Change, w[3], ""));
         let got = lines(&app, 100);
-        assert_eq!(got[0], " TO DECIDE 1 permission · 2 questions · 1 change");
+        // A reply asks for nothing: its own group, after the decisions.
+        assert_eq!(
+            got[0],
+            " TO DECIDE 1 permission · 1 question · 1 change · 1 reply"
+        );
         assert!(got[1].starts_with(" permissions"), "{}", got[1]);
         assert!(got[1].ends_with("one key each"), "{}", got[1]);
         assert_eq!(
@@ -1125,12 +1229,14 @@ mod tests {
             "the note a cell short of the edge"
         );
         assert_eq!(got[3], " questions");
-        assert!(got[6].starts_with(" changes"), "{}", got[6]);
-        assert!(got[6].ends_with("1 ready to approve"), "{}", got[6]);
+        assert!(got[5].starts_with(" changes"), "{}", got[5]);
+        assert!(got[5].ends_with("1 ready to approve"), "{}", got[5]);
+        assert_eq!(got[7], " replies");
+        assert!(got[8].contains("answered: done"), "{}", got[8]);
         // A change that was not proved clean is not ready: no note.
         app.world.changes[0].runs.clear();
         let got = lines(&app, 100);
-        assert_eq!(got[6], " changes");
+        assert_eq!(got[5], " changes");
         // The note needs a cell between it and the word, and one at the
         // end: 12 + 1 + 12 + 1 + 1 columns.
         assert!(
@@ -1142,20 +1248,28 @@ mod tests {
         // What was put off stands last, in its own group, counted.
         app.deferred.push(0);
         let got = lines(&app, 100);
-        assert_eq!(got[0], " TO DECIDE 2 questions · 1 change · 1 put off");
+        assert_eq!(
+            got[0],
+            " TO DECIDE 1 question · 1 change · 1 reply · 1 put off"
+        );
         assert_eq!(got[1], " questions");
-        assert_eq!(got[6], " later");
-        assert!(got[7].contains("run cargo test?"), "{}", got[7]);
+        assert_eq!(got[5], " replies");
+        assert_eq!(got[7], " later");
+        assert!(got[8].contains("run cargo test?"), "{}", got[8]);
         app.deferred.clear();
         // One of a kind, many of another, in Turkish.
         app.lang = Lang::Tr;
         let got = lines(&app, 100);
-        assert_eq!(got[0], " KARAR BEKLEYEN 1 izin · 2 soru · 1 değişiklik");
+        assert_eq!(
+            got[0],
+            " KARAR BEKLEYEN 1 izin · 1 soru · 1 değişiklik · 1 yanıt"
+        );
+        assert_eq!(got[7], " yanıtlar");
         assert!(got[1].ends_with("her biri tek tuş"), "{}", got[1]);
         app.deferred.push(0);
         let got = lines(&app, 100);
         assert!(got[0].ends_with("· 1 ertelenen"), "{}", got[0]);
-        assert_eq!(got[6], " sonraya");
+        assert_eq!(got[7], " sonraya");
     }
 
     #[test]
@@ -1538,7 +1652,10 @@ mod tests {
         ] {
             assert!(got.contains(&want), "{want}:\n{got}");
         }
-        assert!(got.contains("TO DECIDE 4 questions · 1 change"), "{got}");
+        assert!(
+            got.contains("TO DECIDE 3 questions · 1 change · 1 reply"),
+            "{got}"
+        );
     }
 
     #[test]
@@ -1675,7 +1792,7 @@ mod tests {
         assert!(!row.contains("help") && !row.contains("turn"), "{row}");
         assert!(!got[4].contains("answer"), "not at hand: {}", got[4]);
         // The keys dim, their badges as the status line's.
-        let line = &list_lines(&app, 100, app.home_at()).0[2];
+        let line = &list_lines(&app, 100, 40, app.home_at()).0[2];
         let badge = line.spans.iter().find(|s| s.content == " a ").unwrap();
         assert_eq!(badge.style, key_style());
         let word = line
@@ -1774,7 +1891,7 @@ mod tests {
     }
 
     #[test]
-    fn the_list_scrolls_to_keep_the_row_at_hand_four_lines_from_the_top() {
+    fn the_list_scrolls_only_once_the_row_at_hand_would_leave_the_screen() {
         let mut app = home(Lang::En);
         let a = worker(&app);
         for n in 0..12 {
@@ -1782,17 +1899,44 @@ mod tests {
                 .inbox
                 .push(item(InboxKind::Question, a, &format!("q{n}")));
         }
-        let scroll = |app: &App| list_lines(app, 100, app.home_at()).1;
-        app.home_go(0);
-        assert_eq!(scroll(&app), 0);
-        app.home_go(3);
-        assert_eq!(
-            scroll(&app),
-            1,
-            "row 3 is line 5: TO DECIDE, questions, then rows"
-        );
+        // TO DECIDE, questions, 12 rows, a blank, AT WORK and its rows.
+        let total = list_lines(&app, 100, 40, None).0.len();
+        let scroll = |app: &App, height| list_lines(app, 100, height, app.home_at()).1;
+        assert_eq!(total, 21);
+        // All of it fits: never scrolled, the headings stay.
         app.home_go(11);
-        assert_eq!(scroll(&app), 9);
+        assert_eq!(scroll(&app, total as u16), 0);
+        assert_eq!(scroll(&app, 40), 0);
+        // Row 11 is line 13: in 15 rows it shows with a line under it.
+        assert_eq!(scroll(&app, 15), 0);
+        // In 14 it would be the last: it scrolls, as far as the list's
+        // end lets it, else to stand four lines from the top.
+        assert_eq!(scroll(&app, 14), 7, "the end at the foot");
+        assert_eq!(scroll(&app, 10), 9, "four lines above it");
+        // The first rows on a short screen: the heading stays.
+        app.home_go(3);
+        assert_eq!(scroll(&app, 7), 0, "row 3 is line 5");
+        assert_eq!(scroll(&app, 6), 1);
+        app.home_go(0);
+        assert_eq!(scroll(&app, 4), 0);
+        assert_eq!(scroll(&app, 3), 0);
+        // Nothing at hand: nothing scrolls.
+        assert_eq!(list_lines(&app, 100, 3, None).1, 0);
+    }
+
+    #[test]
+    fn a_row_taller_than_the_lines_above_it_ends_in_view() {
+        let drawn = Drawn {
+            lines: vec![Line::default(); 30],
+            at: Some((10, 19)),
+            spots: Vec::new(),
+        };
+        // Ten lines from 10 to 19 in 12 rows: from line 8, its end shows.
+        assert_eq!(drawn.scroll(12), 8);
+        // Taller than the screen: its first line stays at the top.
+        assert_eq!(drawn.scroll(5), 10);
+        assert_eq!(drawn.scroll(20), 6);
+        assert_eq!(drawn.scroll(30), 0);
     }
 
     #[test]
@@ -1840,6 +1984,52 @@ mod tests {
         let got = lines(&app, 100);
         let row = got.iter().find(|l| l.contains("○ ")).unwrap();
         assert!(row.contains("  idle · 1 min"), "{row}");
+    }
+
+    #[test]
+    fn an_agent_s_preview_follows_the_newest_of_its_trace() {
+        let mut app = home(Lang::En);
+        let a = worker(&app);
+        app.world.agents[a].status = Status::Working;
+        app.world.agents[a].plan.clear();
+        app.world.agents[a].trace.clear();
+        for n in 0..40 {
+            app.world.agents[a]
+                .trace
+                .push_back(format!("12:{n:02} tool_use Read src/file{n}.py"));
+        }
+        let preview = |app: &App, rows| -> Vec<String> {
+            preview_lines(app, HomeRow::Agent(a), 60, rows)
+                .iter()
+                .map(text)
+                .collect()
+        };
+        let got = preview(&app, 12);
+        assert_eq!(got.len(), 12, "{got:?}");
+        assert!(
+            got[11].contains("src/file39.py"),
+            "the newest last: {got:?}"
+        );
+        assert!(got.iter().any(|l| l.contains("src/file32.py")), "{got:?}");
+        assert!(!got.iter().any(|l| l.contains("src/file31.py")), "{got:?}");
+        assert!(!got.iter().any(|l| l.contains("src/file0.py")), "{got:?}");
+        // An entry of several lines is kept whole, or left out whole: the
+        // seven lines of the newest and the one before fill the eight.
+        let words: Vec<String> = (0..7).map(|n| format!("- line {n}")).collect();
+        let words = words.join("\\n");
+        app.world.agents[a]
+            .trace
+            .push_back(format!("12:41 text \"{words}\""));
+        let got = preview(&app, 12);
+        assert!(got[4].contains("src/file39.py"), "{got:?}");
+        assert!(!got.iter().any(|l| l.contains("src/file38.py")), "{got:?}");
+        assert!(got[5].contains("12:41"), "{got:?}");
+        assert!(got[11].trim_end().ends_with("line 6"), "{got:?}");
+        // The newest alone taller than the room: its first lines.
+        let got = preview(&app, 6);
+        assert_eq!(got.len(), 6, "{got:?}");
+        assert!(got[4].contains("12:41"), "{got:?}");
+        assert!(got[5].trim_end().ends_with("line 1"), "{got:?}");
     }
 
     #[test]
@@ -1905,6 +2095,25 @@ mod tests {
         assert!(s.contains("+new line") && s.contains("-old line"), "{s}");
         assert!(!s.contains("diff --git") && !s.contains("+++ b/x"), "{s}");
         assert!(!s.contains("index 1..2") && !s.contains("--- a/x"), "{s}");
+        // What the worker said of it is read as the Markdown it is.
+        app.world.journal.push(Entry {
+            tick: app.world.tick,
+            event: Event::Sent {
+                from: a,
+                to: app.world.projects[app.world.agents[a].project].leader,
+                kind: MsgKind::Done,
+                text: "Paging\n- **Added:** a page size\n- **Changed:** the query".into(),
+                id: 9,
+                re: None,
+            },
+        });
+        let preview = preview_lines(&app, HomeRow::Item(0), 60, 40);
+        let preview: Vec<String> = preview.iter().map(text).collect();
+        let at = (preview.iter())
+            .position(|l| l.starts_with("why"))
+            .expect("the why");
+        assert_eq!(preview[at].trim_end(), "why      • Added: a page size");
+        assert_eq!(preview[at + 1].trim_end(), "         • Changed: the query");
     }
 
     #[test]
@@ -2094,6 +2303,25 @@ mod tests {
         }
         assert!(render(&app, 150, 40).contains("Nothing needs you"));
         assert!(render(&app, 80, 24).contains("Nothing needs you"));
+        // Said once and whole, where the preview would stand beside it
+        // too, at the width the list alone would cut it (record 125).
+        let said = Lang::En.text().home_nothing;
+        for width in [120, 100] {
+            let screen = render(&app, width, 40);
+            assert_eq!(screen.matches("Nothing needs you").count(), 1, "{screen}");
+            assert!(screen.contains(&format!(" {said}")), "{screen}");
+        }
+        // Too narrow for one line: it wraps, every word kept.
+        let got = lines(&app, 30);
+        let words: Vec<&str> = got.iter().flat_map(|l| l.split_whitespace()).collect();
+        assert_eq!(words, said.split_whitespace().collect::<Vec<_>>());
+        assert!(got.len() > 1 && got.iter().all(|l| l.chars().count() <= 30));
+        // The status line offers nothing to write to an agent: none is at
+        // hand; `/` writes to the lead, as the list says.
+        let foot = render(&app, 120, 40);
+        let foot = foot.lines().last().unwrap();
+        assert!(!foot.contains("write to this agent"), "{foot}");
+        assert!(foot.contains("/  write to the lead"), "{foot}");
     }
 
     #[test]
@@ -2133,6 +2361,47 @@ mod tests {
         assert_eq!(title(64), TITLE);
         assert_eq!(title(60), 20);
         assert_eq!(title(45), TITLE_MIN);
+    }
+
+    #[test]
+    fn a_long_title_takes_what_the_row_leaves_free_after_its_words() {
+        let mut app = home(Lang::En);
+        let a = worker(&app);
+        app.at_home.scope = Some(app.world.agents[a].project);
+        app.world.agents[a].card = Some(0);
+        app.world.agents[a].status = Status::Idle;
+        let long = "Case-insensitive filter for the product search page";
+        app.world.cards[0].title = long.into();
+        let row = |app: &App, width, here| {
+            text(&row_lines(app, HomeRow::Agent(a), width, false, here)[0])
+        };
+        // 54 wide (the list beside the preview at 120): ` ○ #1   ` is 8,
+        // the column 14 and 2, `idle` 4 and a cell: 25 more for the title.
+        let got = row(&app, 54, false);
+        assert_eq!(got, format!(" ○ #1   {}…  idle", &long[..38]));
+        assert_eq!(got.chars().count(), 53);
+        // A title that fits whole takes only what it needs: the column.
+        app.world.cards[0].title = "Short one".into();
+        assert!(row(&app, 54, false).contains(&format!("{:<16}idle", "Short one")));
+        // At hand, too narrow for its keys: they go as before, the title
+        // takes the row as one not at hand does.
+        app.world.cards[0].title = long.into();
+        app.at_home.at = Some(HomeRow::Agent(a));
+        let got = row(&app, 54, true);
+        assert_eq!(got, format!("▸○ #1   {}…  idle", &long[..38]));
+        // Wide enough for them: they keep their place at the end and the
+        // words their least cells; the title has what is left.
+        let got = row(&app, 80, true);
+        assert!(got.trim_end().ends_with("enter  open"), "{got}");
+        // Just room for the keys beside the column's title (70 - 8 - 24 -
+        // 2 - 14 - 2 is the words' least 20): they stay, nothing is free.
+        let got = row(&app, 70, true);
+        assert!(got.trim_end().ends_with("enter  open"), "{got}");
+        assert!(got.contains(&format!("{}…  idle", &long[..23])), "{got}");
+        let got = row(&app, 80, true);
+        // 80 - 8 - 2 - (20 + 14 + 2): 34 cells, the column's 24 and 10.
+        assert!(got.contains(&format!("{}…  idle ", &long[..33])), "{got}");
+        assert!(got.chars().count() <= 80);
     }
 
     #[test]

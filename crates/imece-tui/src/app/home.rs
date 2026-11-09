@@ -18,14 +18,16 @@ pub enum HomeRow {
 
 /// The groups of Home's list, in their order (record 125): what is to
 /// decide by what deciding costs (a permission is one key, a question is
-/// read and answered, a change is a diff read; what the person put off
-/// with `s` last), then who is at work: a project's heading, then its
-/// agents stuck, at work and quiet.
+/// read and answered, a change is a diff read; a reply asks for nothing
+/// and comes after them; what the person put off with `s` last), then
+/// who is at work: a project's heading, then its agents stuck, at work
+/// and quiet.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum HomeGroup {
     Permission,
     Question,
     Change,
+    Reply,
     Later,
     Team,
     Stuck,
@@ -47,21 +49,24 @@ impl HomeGroup {
             InboxKind::Approval | InboxKind::Script | InboxKind::Check => HomeGroup::Permission,
             InboxKind::Question
             | InboxKind::Research
-            | InboxKind::Reply
             | InboxKind::Fault
             | InboxKind::Plan
             | InboxKind::Tries
             | InboxKind::Rounds => HomeGroup::Question,
             InboxKind::Change | InboxKind::Sensitive => HomeGroup::Change,
+            // An agent's closing words: read, nothing to decide.
+            InboxKind::Reply => HomeGroup::Reply,
         }
     }
 
     /// The heading the group stands under.
     pub fn heading(self) -> Heading {
         match self {
-            HomeGroup::Permission | HomeGroup::Question | HomeGroup::Change | HomeGroup::Later => {
-                Heading::Decide
-            }
+            HomeGroup::Permission
+            | HomeGroup::Question
+            | HomeGroup::Change
+            | HomeGroup::Reply
+            | HomeGroup::Later => Heading::Decide,
             HomeGroup::Team | HomeGroup::Stuck | HomeGroup::Work | HomeGroup::Quiet => {
                 Heading::Work
             }
@@ -937,7 +942,7 @@ mod triage_tests {
             (InboxKind::Check, HomeGroup::Permission),
             (InboxKind::Question, HomeGroup::Question),
             (InboxKind::Research, HomeGroup::Question),
-            (InboxKind::Reply, HomeGroup::Question),
+            (InboxKind::Reply, HomeGroup::Reply),
             (InboxKind::Fault, HomeGroup::Question),
             (InboxKind::Plan, HomeGroup::Question),
             (InboxKind::Tries, HomeGroup::Question),
@@ -951,6 +956,7 @@ mod triage_tests {
             (HomeGroup::Permission, Heading::Decide),
             (HomeGroup::Question, Heading::Decide),
             (HomeGroup::Change, Heading::Decide),
+            (HomeGroup::Reply, Heading::Decide),
             (HomeGroup::Later, Heading::Decide),
             (HomeGroup::Stuck, Heading::Work),
             (HomeGroup::Work, Heading::Work),
@@ -960,7 +966,8 @@ mod triage_tests {
         }
         assert!(HomeGroup::Permission < HomeGroup::Question);
         assert!(HomeGroup::Question < HomeGroup::Change);
-        assert!(HomeGroup::Change < HomeGroup::Later);
+        assert!(HomeGroup::Change < HomeGroup::Reply);
+        assert!(HomeGroup::Reply < HomeGroup::Later);
         assert!(HomeGroup::Later < HomeGroup::Stuck);
         assert!(HomeGroup::Stuck < HomeGroup::Work);
         assert!(HomeGroup::Work < HomeGroup::Quiet);
@@ -993,6 +1000,32 @@ mod triage_tests {
         assert_eq!(rows[3], (HomeGroup::Later, HomeRow::Item(2)));
         assert_eq!(app.home_group(2), HomeGroup::Later);
         assert_eq!(app.home_group(3), HomeGroup::Permission);
+    }
+
+    #[test]
+    fn a_reply_is_read_after_every_decision_and_before_what_was_put_off() {
+        let mut app = quiet();
+        let w = workers(&app);
+        // The oldest is the reply: age does not lift it over a decision.
+        app.world.inbox.push(item(InboxKind::Reply, w[0]));
+        app.world.inbox.push(item(InboxKind::Change, w[1]));
+        app.world.inbox.push(item(InboxKind::Question, w[2]));
+        app.world.inbox.push(item(InboxKind::Approval, w[3]));
+        let rows = app.home_rows();
+        assert_eq!(
+            rows[..4],
+            [
+                (HomeGroup::Permission, HomeRow::Item(3)),
+                (HomeGroup::Question, HomeRow::Item(2)),
+                (HomeGroup::Change, HomeRow::Item(1)),
+                (HomeGroup::Reply, HomeRow::Item(0)),
+            ]
+        );
+        // What was put off still goes under the reply.
+        app.deferred.push(3);
+        let rows = app.home_rows();
+        assert_eq!(rows[2], (HomeGroup::Reply, HomeRow::Item(0)));
+        assert_eq!(rows[3], (HomeGroup::Later, HomeRow::Item(3)));
     }
 
     #[test]
