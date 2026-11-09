@@ -5,7 +5,7 @@ description: Bir imece ekibinde kim var - lider, işçiler, yardımcılar ve hen
 
 # Ekip
 
-Bir imece ekibi, sizinle konuşan ve iş gerektirdikçe işçi alan bir lider, görevlerinin parçaları için yardımcı alabilen işçiler ve (bir gün) araştırmacılardan oluşur. Ekip boyutunu siz seçmezsiniz; üst sınırları koyarsınız. Ekiple ekipte, projeye göre gruplanmış olarak karşılaşırsınız.
+Bir imece ekibi, sizinle konuşan ve iş gerektirdikçe işçi alan bir lider, görevlerinin parçaları için yardımcı alabilen işçiler ve (bir gün) araştırmacılardan oluşur. Ekip boyutunu siz seçmezsiniz; üst sınırları koyarsınız. Ekiple ana ekranda, ÇALIŞAN altında, projeye göre gruplanmış olarak karşılaşırsınız.
 
 ## Roller
 
@@ -64,15 +64,14 @@ Ajanlar bus'ta birbirlerine bu adlarla seslenir; aynı projenin ekibinde olmayan
 ## Ekranda
 
 ```text
- EKİP
- ● lead            koordine ediyor
- ● claude-1        #12 parser: tokens      ⎇ ↑1 +34 −8   ▾ 1 yardımcı
-   └ ● claude-1.1  claude-1 yardımcısı
- ○ claude-2         boşta
- ✓ claude-3        bitti, henüz bakılmadı
+ ÇALIŞAN 4
+ ● #13  E-posta şablonları        Değişikliği yap · 22 dk
+   └ ● claude-1.1                başlıyor…
+ ● #12  Arama sonuç sıralaması    Lidere yaz · 4 dk
+ ● #7   Ödeme dokümanı            Çevresindeki kodu oku
 ```
 
-Sizi bekleyen işçiler önce gelir (takılan, sonra sizi bekleyen, sonra bitip bakılmamış: [durum merdiveni](../screen/salon.md#durum-merdiveni)); yardımcılar işçilerinin altında durur ve `h` `l` ile katlanır. Başlık filoyu sayar: `● 2 çalışıyor ✓ 1 bitti ■ 1 takıldı`.
+Bir işçinin satırı kartıyla başlar (`#13 E-posta şablonları`), sonra yapılacaklar listesinde bulunduğu adım ya da yaptığı şey ve ne zamandır (bir dakikadan itibaren); kartı olmayan bir işçi adını gösterir. Nasıl durduğunu beş glif söyler: `●` çalışıyor, `○` boşta, `■` takıldı (bloke, ya da oturumu bitti), `!` sizi bekliyor, `✓` bitti. Önce takılan işçiler gelir, sonra çalışanlar, sonra boştakiler; yardımcılar işçilerinin altına asılır (`└`). Evetinizi ya da yanıtınızı bekleyen bir işçi burada listelenmez: KARAR BEKLEYEN'deki o ögenin kendisidir. Bir lider, çalışırken ya da takıldığında projesinin işçilerinden sonra listelenir, boştayken listelenmez; bir projenin başlığında `enter` onu açar. Bir satırda `enter` o ajanın işini açar; baş satırı kartını, projesini, ajanı, süresini ve maliyetini söyler. Başlık ajan saymaz: sizi gerektireni `! N karar bekliyor` söyler, kalanını ana ekranın başlıkları sayar (`ÇALIŞAN 4`, `takılan 1 · boşta 2`).
 
 ## Sağlık bildirimleri
 
@@ -92,4 +91,4 @@ Bir yardımcı hiç okumadığı mesajlarla ayrılırsa, ekipte kalan her gönde
 - [Mesajlar ve pano](../concepts/messages-and-board.md)
 - [Claude Code](../concepts/claude-code.md): confine düzeyleri, bir oturum nedir.
 - [Projeler](../concepts/projects.md): proje başına bir lider.
-- [Ekip](../screen/salon.md) ve [CLI başvurusu](../reference/cli.md).
+- [Ana ekran](../screen/home.md) ve [CLI başvurusu](../reference/cli.md).

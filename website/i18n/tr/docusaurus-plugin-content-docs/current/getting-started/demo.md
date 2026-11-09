@@ -44,7 +44,7 @@ Canlı ajanlar gerçek zamanda çalışır; simülasyonun tutabileceğiniz bir s
 
 Simülasyon canlının olaylarını canlının kullandığı aynı model çağrılarıyla üretir; ekran gerçek ekrandır:
 
-- **Liderin işi**: kart asar (başlangıçta da), isteğinizi astığı kartlarla yanıtlar (KARAR BEKLEYEN'de bir yanıt `»`), bir kartı boştaki bir işçiye verir ya da panodan almasına bırakır, iki kart bekler ve kimse boşta değilse işçi tutar (en çok altı), katmanlı bir tutma zaman zaman varsayılan modele düşer.
+- **Liderin işi**: kart asar (başlangıçta da), isteğinizi astığı kartlarla yanıtlar (KARAR BEKLEYEN'de bir yanıt), bir kartı boştaki bir işçiye verir ya da panodan almasına bırakır, iki kart bekler ve kimse boşta değilse işçi tutar (en çok altı), katmanlı bir tutma zaman zaman varsayılan modele düşer.
 - **İşçiler**: bus'ta tipli mesajlar (`assign`, `ask`, `answer`, `progress`, `done`), varsaydıklarını size `inform` olarak söylemeleri, dokunduklarının kartın hikâyesinde görünmesi, testler için tutulan ve `done` gönderip ayrılan bir yardımcı.
 - **Onaylar (`⚑`)**: bir işçinin oturumu projenin hassas adımlarından biri için onayınızı ister; öğe siz karar verene (`a` izin, `r` ret) ya da Claude Code'un kendi sorusu gibi 100 saniye sonra vazgeçilene kadar tutulur.
 - **Sorular (`?`)**: bir işçi size bir şey sorar; bir süre bekler, sonra yanıta bağlı olmayanla devam eder. `enter` konuşmayı soruda açar; işçiye yazmak yanıtlar.
@@ -52,22 +52,29 @@ Simülasyon canlının olaylarını canlının kullandığı aynı model çağr�
 - **Oturumlar**: bir oturum bir kez başlar (Claude Code'un `/` komutlarıyla; bir işçininki worktree'sinin taşındığını ya da yerinde kaldığını söyleyebilir), zaman zaman durur (`■ oturum bitti · yazınca yeniden başlar`), `:forget` ya da `/clear` ile unutulur ve yazılınca yeniden başlar; `/cost` ve `/compact` bir tur olarak yanıtlanır.
 - **Kese ve sınırlar**: ajan başına ve saat başına harcama, kesenin azalması, biten bir kesenin sözleri ve komutları reddetmesi; `:budget` notunda ve dolmak üzereyken başlıkta kullanım penceresi, ajanların harcadığından doldurulur.
 - **Projeler**: `:open YOL [AD]` bir lider, iki işçi ve üç kartla sahte bir proje ekler; `:close` ajanlarını gönderir; `:rename` canlıdaki gibi. `:pin` de.
-- **Bütün ekran**: ekip, katlama, `f`, pano (`:board`), lease'leriyle kod haritası (`:code`), kartlar (`#N`), söz sıraları ve yanıtlarıyla (`↩`) konuşmalar, işaretler, günlük, `W` `S`, çıkış sorusu, yardım, temalar, iki dil, readline tuşları, çok satırlı yazma ve yapıştırma. `Confine` başlangıçta canlının söylediği gibi söylenir.
+- **Kartlar ve denemeleri**: bir kart değişikliğini panonun sütunlarında izler; her yedinci ilk deneme başarısız olur ve lideri kartı başka bir işçiye verir, başarısız olmayı sürdüren bir kart dördüncü denemesinde devre kesiciye takılır ve sizi bekler (`a` bir daha, `r` başarısız say), uzun süren bir kart işçisinden alınır ve o işçinin turu geç bir `done` ile biter, bazı kartlar başkalarını bekler (`⧗ #2 bitince`), lider de ara sıra kimsenin almadığı bir kartı geri çeker.
+- **Deponun kontrolü**: demonun her checkout'unda bir tane vardır; ilk değişiklik ona evetinizi ister, sonra her üçüncü değişiklikte başarısız olur.
+- **Sağlık**: başarısız her dördüncü test çalıştırması döngüye girer ve lidere döngü söylenir.
+- **Süreçler**: `:ps` her oturumun altında uydurma süreçler listeler (çalışırken test programı), `y` dediğinizde birini sonlandırır ve önceki bir çalıştırmadan kalan iki süreç ağacını listeler.
+- **Lonca'daki bir proje**: iki ya da daha çok projeyle ikincisi sahte bir Lonca deposuna dayanır. İşçileri öneri yapar; onlarınkinin yanında bir yabancının önerisi (`ayse`) bekler, üç öneriden biri gövdenin gerisindeki bir temele dayanır, her beşinci iniş kuyrukta testlerinden kalır ve her üçüncü kart `api` kontrolünü ister, evetiniz de onu ister. Satırı deponun nasıl durduğunu söyler, `:lonca` penceresini açar, `:sync` checkout'u yetiştirir (her üçüncüsü sizin commit'lerinizi bulur) ve daemon 60 tikte 6 tik yanıt vermez.
+- **Harcamalar**: `:ledger` kartlar uygulandıkça, başarısız oldukça, başkasına geçtikçe ve geri çekildikçe dolar; demonun girişi bir plan olduğundan her rakam `≈` okunur.
+- **Bütün ekran**: gruplarıyla KARAR BEKLEYEN ve projeleriyle ÇALIŞAN'ıyla ana ekran, katlama ve gizleme, ayrıntının sekmeleri, pencereler (`:board`, lease'leriyle `:code`, `:timeline`, `J`), kartlar (`#N`), söz sıraları ve yanıtlarıyla (`↩`) konuşmalar, işaretler, `W` `S`, çıkış sorusu, yardım, temalar, iki dil, readline tuşları, çok satırlı yazma ve yapıştırma. `Confine` başlangıçta canlının söylediği gibi söylenir.
 
 ## Demo canlıyı yansıtır
 
-Canlının yaptığına her düzeltme, özellik ya da değişiklik, aynı değişiklikte, testiyle demoda da gösterilir; bir şeyi taklit edemeyen bir değişiklik bunu söyler. Bu projenin yerleşik bir kuralıdır; demoda gördüğünüz, aynı kodun çizdiği, canlının yaptığıdır. Demonun bir zamanlar canlıda olmayan şeyleri (bir merge kuyruğu, trunk numaraları, doğrulanıyor durumu) çıkarıldı.
+Canlının yaptığına her düzeltme, özellik ya da değişiklik, aynı değişiklikte, testiyle demoda da gösterilir; bir şeyi taklit edemeyen bir değişiklik bunu söyler. Bu projenin yerleşik bir kuralıdır; demoda gördüğünüz, aynı kodun çizdiği, canlının yaptığıdır. Demonun bir zamanlar canlıda olmayan şeyleri (bir merge kuyruğu, trunk numaraları, doğrulanıyor durumu) çıkarıldı; Lonca'daki projesi artık canlının Lonca'da yaptığını gösterir.
 
 ## Taklit edilemeyenler
 
 - **"Nerede kalmıştın" penceresi**, bir kapanışla yarım kalan turlar ve başlangıçtan uykuda ajanlar: bunlar bir depo ve önceki bir çalıştırma gerektirir; demo hiçbirini tutmaz.
-- **Araştırmacılar, sembol lease'leri ve kod haritasının lease'leri**: demo bunları planlananın ön izlemesi olarak gösterir; canlıda henüz yok. Canlının kod haritası `henüz ortak trunk yok: her agent kendi worktree'sinde çalışıyor, gösterilecek lease yok` der.
-- **Artık hiçbir şeyin doldurmadığı iki ekran parçası**: ekibin KUYRUK satırı ve panonun DOĞRULANIYOR sütunu, merge kuyruğu gidince kaldı.
+- **Araştırmacılar**: demo onları planlananın ön izlemesi olarak gösterir; canlıda henüz yok.
+- **Worktree'lerdeki bir projenin kod haritası**: demo her projede kartlarından lease çizer, bir ön izleme olarak; canlıda lease yalnız Lonca'da vardır, orada harita daemon'ınkileri gösterir, worktree'lerdeki bir proje ise `henüz ortak trunk yok: her agent kendi worktree'sinde çalışıyor, kimin neyi düzenlediği gösterilemez` der. Demonun Lonca projesi `:lonca`'da tutulan sembol listelemez.
+- **Panonun DOĞRULANIYOR sütunu**: canlı kartlar, Lonca'nın merge kuyruğu değişikliklerini tutarken orada durur; demo bir öneriyi hemen indirir, bu yüzden sütunu boş kalır.
 
 ## Ayrıca bakınız
 
 - [İlk çalıştırma](first-run.md)
 - [Klavye](../screen/keyboard.md)
-- [Ekip](../screen/salon.md)
+- [Ana ekran](../screen/home.md)
 - [Komut satırı başvurusu](../reference/cli.md)
 - [Videolar](../videos.mdx)

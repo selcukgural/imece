@@ -39,7 +39,7 @@ Claude Code başarısız bir API çağrısını önce kendisi yeniden dener, on 
 | Claude Code ne diyor | imece |
 | --- | --- |
 | aşırı yük, bir sunucu hatası (5xx), kopan bir bağlantı, bir hız sınırı | geçici bir hata: günlük `claude-1 API hatası aldı: … · imece 30 sn sonra yeniden deniyor (1/3)` der, satır geri sayar `↻ 1/3 · 25 sn sonra`, zamanı gelince oturuma kaldığı yerden devam etmesi söylenir. İkinci deneme bir sonraki hatadan 2 dk sonra, üçüncüsü ondan 8 dk sonradır. Üçüncüden sonra sizi bekler. |
-| oturum kapalı, reddedilen bir anahtar, biten bir kota, bir fatura, bir planın kullanım sınırı | hesabın işi: hemen sizi bekler, [KARAR BEKLEYEN](../screen/waiting.md)'de `■` olarak. |
+| oturum kapalı, reddedilen bir anahtar, biten bir kota, bir fatura, bir planın kullanım sınırı | hesabın işi: hemen sizi bekler, [ana ekranda](../screen/home.md) KARAR BEKLEYEN'de. |
 | başka her şey (reddedilen bir istek, dolu bir bağlam) | günlük, önceden olduğu gibi turun durduğunu söyler. |
 
 Oturum başarısız bir turdan sonra da yaşar ve Claude Code başarısız istemi içinde tutar; bu yüzden bir deneme istemi yeniden göndermez, kısa bir "devam et" gönderir. İyi bir tur, sizin mesajınız ya da agent'a gelen posta sayımı sıfırlar; biten bir oturum bekleyen denemeyi de götürür. Demoda bir agent'a söylediğiniz her üçüncü şey aşırı yüklü bir API yüzünden başarısız olur ve yeniden denenir, her yedinci şey reddedilen bir anahtar yüzünden.
@@ -80,7 +80,7 @@ Bir arşivden hiçbir şey uyanmaz, hiçbir şey harcanmaz: işçilerine kart su
  NEREDE KALMIŞTIN · 3 sa 20 dk önce
  $12.40 harcandı, bütçe $50.00; her agent kendisiyle konuşulana dek uyur
  imece: 4 agent, 2 açık kart
- 2 şey seni bekliyor:
+ ! 2 şey karar bekliyor:
    Δ claude-1 bitirdi: parser tokens (3 dosya, +34 −8)
    ? claude-2 sana soruyor: eski CLI bayrağı kalsın mı?
  imece kapanırken kesilen turlar: claude-3

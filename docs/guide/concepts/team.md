@@ -5,7 +5,7 @@ description: Who is on an imece team - the leader, workers, helpers and the rese
 
 # The team
 
-An imece team is a leader that talks to you and hires workers as the work needs them, workers that may hire helpers for parts of their task, and (one day) researchers. You never pick a team size; you set caps. You meet the team in the team, grouped by project.
+An imece team is a leader that talks to you and hires workers as the work needs them, workers that may hire helpers for parts of their task, and (one day) researchers. You never pick a team size; you set caps. You meet the team on Home, under AT WORK, grouped by project.
 
 ## Roles
 
@@ -64,15 +64,14 @@ Agents address each other by these names on the bus; a `send` to a name that is 
 ## On the screen
 
 ```text
- TEAM
- ● lead            coordinating
- ● claude-1        #12 parser: tokens      ⎇ ↑1 +34 −8   ▾ 1 helper
-   └ ● claude-1.1  helper of claude-1
- ○ claude-2         idle
- ✓ claude-3        done, not seen yet
+ AT WORK 4
+ ● #13  E-mail templates          Make the change · 22 min
+   └ ● claude-1.1                starting…
+ ● #12  Search result ranking     Write it up for the leader · 4 min
+ ● #7   Payments docs             Read the code around it
 ```
 
-Workers that need you come first (stuck, then waiting for you, then done and not seen: the [state ladder](../screen/salon.md#the-state-ladder)); helpers sit under their worker and fold with `h` `l`. The header counts the fleet: `● 2 working ✓ 1 done ■ 1 stuck`.
+A worker's row leads with its card (`#13 E-mail templates`), then the step of its to-do list it is on, or what it does, and how long since (from a minute on); a worker with no card shows its name. Five glyphs say how it stands: `●` working, `○` idle, `■` stuck (blocked, or its session ended), `!` it needs you, `✓` done. Stuck workers come first, then those at work, then the idle ones; helpers hang under their worker (`└`). A worker that waits on your yes or your answer is not listed here: it is that item in TO DECIDE. A leader is listed while it works or is stuck, after its project's workers, and not while it is idle; `enter` on a project's heading opens it. `enter` on a row opens that agent's work, whose head line names its card, its project, the agent, its time and its cost. The header counts no agents: what needs you is `! N to decide`, and Home's headings count the rest (`AT WORK 4`, `stuck 1 · idle 2`).
 
 ## Health notices
 
@@ -92,4 +91,4 @@ When a helper leaves with messages it never read, each sender still on the team 
 - [Messages and the board](../concepts/messages-and-board.md)
 - [Claude Code](../concepts/claude-code.md): the confine levels and what a session is.
 - [Projects](../concepts/projects.md): a leader per project.
-- [The team](../screen/salon.md) and [the CLI reference](../reference/cli.md).
+- [Home](../screen/home.md) and [the CLI reference](../reference/cli.md).
