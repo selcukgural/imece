@@ -45,6 +45,12 @@ Satır işin kendisidir: `!` (ya da ajanın işareti), birden çok proje açıkk
 
 120 kolondan itibaren eldeki satır tuşa basmadan listenin yanında okunur: bir soru bütün olarak, yanıtlarıyla ve soran ajanın şimdiye dek yaptığıyla, ya da bir isteğin sözleri; bir betiğin satırları, numaralı; bir değişikliğin hüküm satırı, nedeni, maliyeti, geçidi, dosyaları ve git'in kendi satırları olmadan yamasının başı; bir ajanın durumu, yapılacakları ve en yeni iz satırları. 120 kolonun altında, editörün yanında, liste tüm genişliği alır ve satırlar her şeyi söyler.
 
+## Küçük bir terminal
+
+imece ssh üzerinden bir telefonda da çalışır. 80 sütunun altında her satır alt alta durur: kart ve başlığı bir satırda, istek, hüküm ya da durum altında, eksiksiz; çalışan bir ajan sığdığı sürece tek satırda kalır. Satırın sonunda o zaman tuş olmaz: tuşlar durum satırındadır, durum satırı da her ekranda nerede olduğunuzu söylemeden önce tuşların hepsine yer açar. Yardımın sözleri ekrana göre sarılır, bir işin baş satırı başlığından sonra ikiye bölünür, bir konuşma bütün genişliği alır.
+
+40 sütunun ya da 12 satırın altında imece yalnızca terminalin boyutunu ve kendi en azını gösterir; `ctrl-c` dışında hiçbir tuş işlemez: gösteremeyen bir ekranda hiçbir şeye karar verilmez. Pencereyi büyütün (ya da yazıyı küçültün), her şey olduğu gibi geri gelir.
+
 ## Tuşlar
 
 | Tuş | Ne yapar |

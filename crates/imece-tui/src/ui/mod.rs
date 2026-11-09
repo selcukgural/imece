@@ -40,6 +40,21 @@ pub(crate) use diff::{
 pub(crate) use overlay::{chosen_text, fold, in_view, talk_notes_message, thread_lines, word_step};
 pub(crate) use salon::{card_rows, journal_rows, reply_jump, thread_of, turn_starts};
 
+/// The narrowest screen imece draws on (record 131): a phone in
+/// portrait; under it one line says so and no key acts but `ctrl-c`.
+pub(crate) const MIN_COLUMNS: u16 = 40;
+/// The shortest: the header, the status line and ten rows between.
+pub(crate) const MIN_ROWS: u16 = 12;
+/// Under this many columns the screen is narrow (record 131): Home's
+/// entries stack, the help's text takes what the key leaves, a head
+/// line breaks in two.
+pub(crate) const NARROW: u16 = 80;
+
+/// Whether a screen `(columns, rows)` is at the floor or above it.
+pub(crate) fn fits_floor((columns, rows): (u16, u16)) -> bool {
+    columns >= MIN_COLUMNS && rows >= MIN_ROWS
+}
+
 pub fn draw(f: &mut Frame, app: &App) {
     // The salon puts back where its glyphs breathe; anything else drawn
     // over it takes them away again (`patch` is then not used).
@@ -47,6 +62,12 @@ pub fn draw(f: &mut Frame, app: &App) {
     app.caret_at.set(None);
     app.mark_before.set(app.mark_drawn.get());
     app.mark_drawn.set(false);
+    let size = (f.area().width, f.area().height);
+    app.drawn_size.set(Some(size));
+    if !fits_floor(size) {
+        *app.breathing.borrow_mut() = None;
+        return too_small(f, app, size);
+    }
     // An archive's view is a screen of its own, its banner in place of
     // its header.
     if let Some(v) = &app.viewing {
@@ -1127,6 +1148,35 @@ pub(crate) fn markdown_in(
     out
 }
 
+/// A screen under the floor: its size and the floor's on the middle row,
+/// nothing else.
+fn too_small(f: &mut Frame, app: &App, (columns, rows): (u16, u16)) {
+    paint(f, f.area());
+    let words = fill(
+        app.lang.text().too_small,
+        &[
+            &columns.to_string(),
+            &rows.to_string(),
+            &MIN_COLUMNS.to_string(),
+            &MIN_ROWS.to_string(),
+        ],
+    );
+    let area = f.area();
+    let lines: Vec<Line> = overlay::wrap_words(&words, usize::from(area.width).max(1))
+        .into_iter()
+        .map(|row| Line::from(Span::styled(row, fg(pal().warn))))
+        .collect();
+    let tall = u16::try_from(lines.len())
+        .unwrap_or(u16::MAX)
+        .min(area.height);
+    let rows = Rect {
+        y: area.y + (area.height - tall) / 2,
+        height: tall,
+        ..area
+    };
+    f.render_widget(Paragraph::new(lines).centered(), rows);
+}
+
 /// Key hints as the bottom bar shows them: each key on a badge, its
 /// meaning after it.
 pub(crate) fn hint_spans(hints: &[(&str, &str)]) -> Vec<Span<'static>> {
@@ -1642,16 +1692,17 @@ pub(crate) fn header_parts(app: &App) -> Vec<HeadPart> {
 /// The header in `width` columns: ` imece `, then the parts, a `│`
 /// before each that is not glued to the one before; while the line is
 /// wider, the part with the lowest `keep` goes, the last of equals first,
-/// so what matters most is never what the screen's edge cuts off.
+/// so what matters most is never what the screen's edge cuts off; when
+/// what is left is still wider, the brand goes too (record 131: a phone).
 pub(crate) fn fit_header(mut parts: Vec<HeadPart>, width: usize) -> Line<'static> {
     const BRAND: usize = 8;
     const SEP: usize = 3;
     let columns = |parts: &[HeadPart]| -> usize {
         let text: usize = parts.iter().flat_map(|p| &p.spans).map(Span::width).sum();
         let seps = parts.iter().skip(1).filter(|p| !p.glued).count();
-        BRAND + text + SEP * seps
+        text + SEP * seps
     };
-    while columns(&parts) > width {
+    while BRAND + columns(&parts) > width {
         let Some(i) = (0..parts.len())
             .filter(|&i| parts[i].keep < KEEP)
             .min_by_key(|&i| (parts[i].keep, std::cmp::Reverse(i)))
@@ -1660,7 +1711,11 @@ pub(crate) fn fit_header(mut parts: Vec<HeadPart>, width: usize) -> Line<'static
         };
         parts.remove(i);
     }
-    let mut spans = vec![Span::styled(" imece ", brand()), Span::raw(" ")];
+    let mut spans = if BRAND + columns(&parts) > width {
+        vec![Span::raw(" ")]
+    } else {
+        vec![Span::styled(" imece ", brand()), Span::raw(" ")]
+    };
     for (i, p) in parts.into_iter().enumerate() {
         if i > 0 && !p.glued {
             spans.push(Span::styled(" │ ", dim()));
@@ -1978,7 +2033,7 @@ fn footer(f: &mut Frame, area: Rect, app: &App) -> Option<Position> {
             }
             keys.push(("?", t.help));
         };
-        let mut hints: Vec<(&str, &str)> = match app.zoom {
+        let hints: Vec<(&str, &str)> = match app.zoom {
             _ if app.script.is_some() => t.setup_hints.to_vec(),
             _ if app.plan_window.is_some() => t.plan_hints.to_vec(),
             // A window over the screen: its own keys, no place.
@@ -2034,24 +2089,11 @@ fn footer(f: &mut Frame, area: Rect, app: &App) -> Option<Position> {
                 keys
             }
         };
-        let width = usize::from(area.width);
         let mut spans = vec![Span::raw(" ")];
-        let room = width.saturating_sub(1);
-        let place = place_spans(app);
-        let place_width = spans_width(&place);
-        // The place stays while its keys' tail fits beside it; then it
-        // goes, so the keys that decide are never what the edge cuts.
-        if place_width > 0 {
-            let beside = fit_hints(hints.clone(), room.saturating_sub(place_width + 3));
-            if place_width + 3 + spans_width(&hint_spans(&beside)) <= room {
-                spans.extend(place);
-                spans.push(Span::raw("   "));
-                hints = beside;
-            } else {
-                hints = fit_hints(hints, room);
-            }
-        } else {
-            hints = fit_hints(hints, room);
+        let (place, hints) = status_parts(place_spans(app), hints, usize::from(area.width));
+        if let Some(place) = place {
+            spans.push(place);
+            spans.push(Span::raw("   "));
         }
         spans.extend(hint_spans(&hints));
         Line::from(spans)
@@ -2222,6 +2264,30 @@ fn place_spans(app: &App) -> Vec<Span<'static>> {
         }
     }
     vec![Span::styled(clean(&words.join(" · ")), dim())]
+}
+
+/// The place's narrowest on the status line: under it the place goes.
+const PLACE_MIN: usize = 12;
+
+/// The status line's parts on a line `width` wide (record 131): every
+/// key first, the place in what they leave, cut with `…` while it keeps
+/// `PLACE_MIN` cells, else gone; only then keys go, from the end, never
+/// `esc` or `?`. A blank leads the line and three stand between the two.
+fn status_parts<'a>(
+    place: Vec<Span<'static>>,
+    hints: Vec<(&'a str, &'a str)>,
+    width: usize,
+) -> (Option<Span<'static>>, Vec<(&'a str, &'a str)>) {
+    let room = width.saturating_sub(1);
+    let left = room.saturating_sub(spans_width(&hint_spans(&hints)) + 3);
+    let place = place.into_iter().next().filter(|p| p.width() > 0);
+    match place {
+        Some(p) if left >= PLACE_MIN => {
+            let words = cut_title(&p.content, left);
+            (Some(Span::styled(words, p.style)), hints)
+        }
+        _ => (None, fit_hints(hints, room)),
+    }
 }
 
 /// How much of a card's title the status line carries.
@@ -2400,7 +2466,7 @@ mod tests {
         );
         // On a short screen the row at hand stays in view.
         app.ps = Some(crate::app::PsWin { at: 2, sure: None });
-        let s = render(&app, 120, 9);
+        let s = render(&app, 120, MIN_ROWS);
         assert!(s.contains("▶"), "{s}");
         // What an earlier run left, under its own heading, `a` named.
         app.world.procs.failed = None;
@@ -4670,7 +4736,9 @@ mod tests {
         assert_eq!(text(22), " imece  AAAA │ CCC", "with its separator");
         assert_eq!(text(18), " imece  AAAA │ CCC");
         assert_eq!(text(17), " imece  AAAA");
-        assert_eq!(text(3), " imece  AAAA", "a kept part never goes");
+        assert_eq!(text(12), " imece  AAAA", "the brand while it fits");
+        assert_eq!(text(11), " AAAA", "then the brand goes, a kept part never");
+        assert_eq!(text(3), " AAAA", "a kept part never goes");
     }
 
     #[test]
@@ -4741,12 +4809,19 @@ mod tests {
         assert_eq!(keeps(&app, "left").map(|k| k.1), Some(KEEP));
         assert_eq!(keeps(&app, "/h"), None);
         // On a narrow screen the projects go first; what waits and the
-        // pot are still there.
+        // pot are still there, and the brand goes before they would be
+        // cut (record 131).
         let s = render(&app, 70, 20);
         let top = s.lines().next().unwrap();
-        assert!(top.starts_with(" imece   ! 1 to decide"), "{top}");
-        assert!(top.contains(" of $"), "{top}");
-        assert!(!top.contains(&name), "{top}");
+        assert!(top.starts_with("  ! 1 to decide"), "{top}");
+        assert!(top.contains(" of $") && top.contains("10% left"), "{top}");
+        assert!(!top.contains(&name) && !top.contains("imece"), "{top}");
+        let s = render(&app, 90, 20);
+        let top = s.lines().next().unwrap();
+        assert!(
+            top.starts_with(" imece  ") && top.contains("! 1 to decide"),
+            "{top}"
+        );
     }
 
     #[test]
@@ -9430,8 +9505,10 @@ mod tests {
             "selected"
         );
         assert!(!buf[(x, 7)].modifier.contains(Modifier::REVERSED));
-        // However short the screen, the selected row is drawn.
-        assert!(render(&app, 120, 4).contains("▸ epic0 "));
+        // However short the screen, down to the floor, the selected row
+        // is drawn; under it nothing is (record 131).
+        assert!(!render(&app, 120, MIN_ROWS - 1).contains("epic0"));
+        assert!(render(&app, 120, MIN_ROWS).contains("▸ epic0 "));
         // At the top again, the first rows are in sight.
         key(&mut app, KeyCode::Char('g'));
         key(&mut app, KeyCode::Char('g'));
@@ -10040,7 +10117,12 @@ mod tests {
         let rows: Vec<_> = rows.iter().collect();
         let keys = overlay::help_columns(&rows, false, overlay::help_widths(80, false)).len();
         assert!(keys > rows.len(), "some wrap");
-        let lines = keys + t.help_legend.len() + 2;
+        let (key_cells, text_cells) = overlay::help_widths(80, false);
+        let legend: usize = (t.help_legend.iter())
+            .map(|l| overlay::legend_wrap(l, 1 + key_cells + text_cells).len())
+            .sum();
+        assert!(legend > t.help_legend.len(), "the legend wraps");
+        let lines = keys + legend + 2;
         let room = 20 - 3;
         let first = |app: &App| {
             let s = render(app, 80, 20);
@@ -10140,13 +10222,17 @@ mod tests {
         key(&mut app, KeyCode::Char('?'));
         app.help_all = true;
         assert!(app.help && app.help_scroll == 0);
-        // However short the screen, a line is in sight and ^d moves one.
-        render(&app, 80, 3);
-        assert_eq!(app.help_room.get().0, 1);
-        render(&app, 80, 4);
-        assert_eq!(app.help_room.get(), (1, lines - 1));
+        // However short the screen, down to the floor, its lines less the
+        // frame and the last line are in sight and ^d moves half of them.
+        render(&app, 80, MIN_ROWS);
+        let least = usize::from(MIN_ROWS) - 3;
+        assert_eq!(app.help_room.get(), (least, lines - least));
         ctrl(&mut app, 'd');
-        assert_eq!(app.help_scroll, 1);
+        assert_eq!(app.help_scroll, least / 2);
+        // Under the floor nothing is drawn, so no key moves it (record 131).
+        render(&app, 80, MIN_ROWS - 1);
+        ctrl(&mut app, 'd');
+        assert_eq!(app.help_scroll, least / 2);
         app.help_scroll = 0;
         // A screen it fits: nothing to say, nothing to scroll.
         let s = render(&app, 80, 100);
@@ -11960,9 +12046,10 @@ mod tests {
             usize::MAX,
             "not drawn yet"
         );
-        let s = render(&app, 60, 30);
+        // On a narrow screen the window is as wide as it (record 131):
+        // 56, its border and gutter take 4.
+        let s = render(&app, 56, 30);
         let th = app.thread.as_ref().unwrap();
-        // The window is 56 wide, its border and gutter take 4.
         assert_eq!(th.room.get(), 52);
         assert!(
             s.contains("▌   1 │ a cell of many words that cannot fit in the   │"),
@@ -13798,5 +13885,151 @@ after | not a table";
         assert_eq!(words::short_commit("693d62952cd8"), "693d629");
         assert_eq!(words::short_commit("693d629"), "693d629");
         assert_eq!(words::short_commit("69"), "69");
+    }
+
+    #[test]
+    fn the_floor_is_forty_columns_by_twelve_rows() {
+        assert!(fits_floor((MIN_COLUMNS, MIN_ROWS)));
+        assert!(!fits_floor((MIN_COLUMNS - 1, MIN_ROWS)));
+        assert!(!fits_floor((MIN_COLUMNS, MIN_ROWS - 1)));
+        assert!(fits_floor((u16::MAX, MIN_ROWS)));
+        assert_eq!((MIN_COLUMNS, MIN_ROWS, NARROW), (40, 12, 80));
+    }
+
+    #[test]
+    fn under_the_floor_one_line_says_so_in_the_middle_and_nothing_else() {
+        let app = app_after(1, 4, 0, Lang::En);
+        assert!(!app.too_small(), "not drawn yet: keys act");
+        let buf = buffer(&app, 39, 20);
+        let row = |y: u16| -> String { (0..39).map(|x| buf[(x, y)].symbol()).collect() };
+        let all: Vec<String> = (0..20).map(row).collect();
+        // Two rows of words on twenty: from the tenth.
+        assert_eq!(
+            all[9].trim(),
+            "this terminal is 39×20; imece needs",
+            "{all:#?}"
+        );
+        assert_eq!(all[10].trim(), "40×12");
+        let words = all.iter().filter(|r| !r.trim().is_empty());
+        assert_eq!(words.count(), 2, "nothing else: {all:#?}");
+        assert!(app.too_small());
+        // One row short is under it too; the floor itself is not.
+        assert!(render(&app, 120, MIN_ROWS - 1).contains("120×11"));
+        assert!(app.too_small());
+        let s = render(&app, MIN_COLUMNS, MIN_ROWS);
+        assert!(s.starts_with(" imece ") || s.starts_with("  "), "{s}");
+        assert!(!s.contains("this terminal"), "{s}");
+        assert!(!app.too_small());
+        // In Turkish too.
+        let tr = app_after(1, 4, 0, Lang::Tr);
+        assert!(render(&tr, 30, 30).contains("bu terminal 30×30; imece en az"));
+        // A screen of no rows draws nothing and holds the keys.
+        render(&app, 80, 0);
+        assert!(app.too_small());
+    }
+
+    #[test]
+    fn under_the_floor_no_key_acts_but_ctrl_c_and_no_paste_lands() {
+        let mut app = app_after(1, 4, 0, Lang::En);
+        render(&app, MIN_COLUMNS - 1, 30);
+        key(&mut app, KeyCode::Char(':'));
+        assert!(!app.typing, "what was not shown is not decided");
+        key(&mut app, KeyCode::Char('?'));
+        assert!(!app.help);
+        render(&app, MIN_COLUMNS, MIN_ROWS);
+        key(&mut app, KeyCode::Char(':'));
+        assert!(app.typing, "at the floor keys act");
+        app.paste("ab");
+        assert_eq!(app.input, ":ab");
+        render(&app, 80, MIN_ROWS - 1);
+        app.paste("cd");
+        assert_eq!(app.input, ":ab", "a paste neither");
+        key(&mut app, KeyCode::Char('x'));
+        assert_eq!(app.input, ":ab");
+        ctrl(&mut app, 'c');
+        assert!(app.quit, "ctrl-c always");
+    }
+
+    #[test]
+    fn the_status_line_keeps_every_key_and_puts_the_place_in_what_they_leave() {
+        let hints = vec![
+            ("a", "approve"),
+            ("r", "send back"),
+            ("esc", "back"),
+            ("?", "help"),
+        ];
+        let keys = spans_width(&hint_spans(&hints));
+        let place = |words: &str| vec![Span::styled(words.to_string(), dim())];
+        let words = "home · shop-api · #1 Shipping cost";
+        let n = words.chars().count();
+        let parts = |width: usize| status_parts(place(words), hints.clone(), width);
+        // A blank, the place, three blanks, the keys.
+        let (p, h) = parts(1 + n + 3 + keys);
+        assert_eq!(p.unwrap().content, words, "whole where it fits");
+        assert_eq!(h, hints);
+        assert_eq!(
+            p_style(&parts(1 + n + 3 + keys)),
+            Some(dim()),
+            "its style kept"
+        );
+        let (p, h) = parts(n + 3 + keys);
+        assert_eq!(p.unwrap().content, "home · shop-api · #1 Shipping co…");
+        assert_eq!(h, hints, "the place is cut, never a key");
+        let (p, h) = parts(1 + PLACE_MIN + 3 + keys);
+        assert_eq!(p.unwrap().content, "home · shop…", "at its least");
+        assert_eq!(h, hints);
+        let (p, h) = parts(PLACE_MIN + 3 + keys);
+        assert!(p.is_none(), "under it the place goes");
+        assert_eq!(h, hints, "every key still");
+        // Then keys go from the end, never `esc` or `?`.
+        let (p, h) = parts(1 + keys - 1);
+        assert!(p.is_none());
+        assert_eq!(h, vec![("a", "approve"), ("esc", "back"), ("?", "help")]);
+        // No place: the keys alone.
+        let (p, h) = status_parts(place(""), hints.clone(), 200);
+        assert!(p.is_none());
+        assert_eq!(h, hints);
+        let (p, _) = status_parts(Vec::new(), hints.clone(), 200);
+        assert!(p.is_none());
+    }
+
+    fn p_style(parts: &(Option<Span<'static>>, Vec<(&str, &str)>)) -> Option<Style> {
+        parts.0.as_ref().map(|p| p.style)
+    }
+
+    #[test]
+    fn a_narrow_screen_s_status_line_has_the_row_s_keys_not_the_place() {
+        let mut app = app_after(1, 4, 0, Lang::En);
+        let a = app.world.projects[0].leader + 1;
+        app.world.inbox.clear();
+        app.world.asked_you(a, "Which parser should the tests use?");
+        app.home_settle();
+        let s = render(&app, 48, 20);
+        let foot = s.lines().last().unwrap();
+        assert!(foot.contains(" a  ") && foot.contains("?  help"), "{foot}");
+        assert!(!foot.contains("home ·"), "{foot}");
+        let s = render(&app, 120, 20);
+        let foot = s.lines().last().unwrap();
+        assert!(foot.contains("home ·") && foot.contains(" a  "), "{foot}");
+    }
+
+    #[test]
+    fn a_conversation_takes_the_whole_body_of_a_narrow_screen() {
+        let app = replies();
+        let left = |width: u16| {
+            let buf = buffer(&app, width, 30);
+            let y = (0..30)
+                .find(|&y| {
+                    (0..width)
+                        .map(|x| buf[(x, y)].symbol())
+                        .collect::<String>()
+                        .contains("CONVERSATION")
+                })
+                .unwrap();
+            let right = (0..width).rev().find(|&x| buf[(x, y)].symbol() == "┐");
+            ((0..width).find(|&x| buf[(x, y)].symbol() == "┌"), right)
+        };
+        assert_eq!(left(79), (Some(0), Some(78)), "edge to edge");
+        assert_eq!(left(80), (Some(2), Some(77)), "two columns either side");
     }
 }

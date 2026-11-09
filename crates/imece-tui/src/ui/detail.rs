@@ -14,7 +14,7 @@ use crate::app::{App, Tab};
 /// the body.
 pub(crate) fn frame(f: &mut Frame, area: Rect, app: &App, id: AgentId, tab: Tab) -> Rect {
     let width = usize::from(area.width);
-    let mut lines = vec![head_line(app, id, tab, width)];
+    let mut lines = head_lines(app, id, tab, width);
     if let Some(q) = app.world.question_of(id) {
         lines.push(Line::default());
         lines.extend(question_lines(app, id, &q, width));
@@ -108,6 +108,27 @@ pub(crate) fn head_line(app: &App, id: AgentId, tab: Tab, width: usize) -> Line<
         }
     }
     Line::from(spans)
+}
+
+/// The head line, or where it is wider than `width` (record 131: a
+/// narrow screen) its title on a line and the rest under it, each
+/// wrapped at its blanks rather than cut by the edge.
+pub(crate) fn head_lines(app: &App, id: AgentId, tab: Tab, width: usize) -> Vec<Line<'static>> {
+    let line = head_line(app, id, tab, width);
+    if line.width() <= width {
+        return vec![line];
+    }
+    let title = 1 + usize::from(app.detail_card(id).is_some());
+    let mut spans = line.spans;
+    let mut rest = spans.split_off(title.min(spans.len()));
+    if let Some(first) = rest.first_mut() {
+        first.content = first.content.trim_start_matches(" · ").to_string().into();
+    }
+    let mut lines = wrap(Line::from(spans), width.max(1));
+    if !rest.is_empty() {
+        lines.extend(wrap(Line::from(rest), width.max(1)));
+    }
+    lines
 }
 
 /// A question's block: who asks, the question whole, then the answers
@@ -239,6 +260,41 @@ mod tests {
             check: Check::None,
             spend: None,
         }
+    }
+
+    #[test]
+    fn a_head_line_wider_than_the_screen_breaks_after_its_title() {
+        let mut app = team();
+        let a = worker(&app);
+        let w = &mut app.world;
+        let (project, name) = (w.projects[0].name.clone(), w.agents[a].name.clone());
+        w.agents[a].card = Some(0);
+        w.cards[0].title = "Refund flow".into();
+        w.agents[a].cost = 600;
+        let whole = format!("#1 Refund flow · {project} · {name} · $0.06");
+        let lines = |app: &App, width| -> Vec<String> {
+            head_lines(app, a, Tab::Log, width)
+                .iter()
+                .map(text)
+                .collect()
+        };
+        let n = whole.chars().count();
+        assert_eq!(lines(&app, n), [whole], "just fits: one line");
+        let got = lines(&app, n - 1);
+        assert_eq!(got[0].trim_end(), "#1 Refund flow", "{got:?}");
+        assert_eq!(got[1].trim_end(), format!("{project} · {name} · $0.06"));
+        // Narrower still, each part wraps at its blanks.
+        let got = lines(&app, 12);
+        assert!(
+            got.iter().all(|l| l.trim_end().chars().count() <= 12),
+            "{got:?}"
+        );
+        assert_eq!(got[0].trim_end(), "#1 Refund", "{got:?}");
+        // Without a card the title alone goes first.
+        app.world.agents[a].card = None;
+        let got = lines(&app, 20);
+        assert_eq!(got[0].trim_end(), name, "{got:?}");
+        assert!(got[1].starts_with(&project), "{got:?}");
     }
 
     #[test]

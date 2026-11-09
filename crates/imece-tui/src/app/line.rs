@@ -159,6 +159,9 @@ impl App {
     /// elsewhere its characters would be taken as keys, so it is left
     /// out and the person told how to write first.
     pub fn paste(&mut self, text: &str) {
+        if self.too_small() {
+            return;
+        }
         if let Some(v) = &mut self.viewing {
             v.paste(text);
             return self.after_view();

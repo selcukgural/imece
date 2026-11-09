@@ -67,12 +67,23 @@ impl App {
 
     pub fn on_key(&mut self, k: KeyEvent) {
         let ctrl_c = k.modifiers.contains(KeyModifiers::CONTROL) && k.code == KeyCode::Char('c');
+        if self.too_small() && !ctrl_c {
+            return;
+        }
         if self.viewing.is_some() && !ctrl_c {
             return self.view_key(k);
         }
         // The mark's coming never holds a key up.
         self.mark_from.set(None);
         self.around(|app| app.key(k));
+    }
+
+    /// Whether the screen last drawn was under the floor (record 131),
+    /// so it showed nothing a key could act on.
+    pub fn too_small(&self) -> bool {
+        self.drawn_size
+            .get()
+            .is_some_and(|size| !crate::ui::fits_floor(size))
     }
 
     /// A key while an archive's view is open: `esc` or `q` where the view

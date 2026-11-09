@@ -370,6 +370,8 @@ pub struct Text {
     pub forgot: &'static str,
     /// The bottom line while a `:close` or `:forget` waits: the project or
     /// agent and the seconds left.
+    /// The screen under the floor (record 131): its size, the floor's.
+    pub too_small: &'static str,
     pub grace_close: &'static str,
     pub grace_forget: &'static str,
     /// The bottom line while an `:archive` waits: the project, its title
@@ -1652,6 +1654,7 @@ pub const EN: Text = Text {
         "stuck",
     ],
     forgot: "{} forgot its session; the next message starts a new one, told where it left off",
+    too_small: "this terminal is {}×{}; imece needs {}×{}",
     grace_close: "◷ closing {} in {} s · u keeps it open · U now",
     grace_forget: "◷ {} forgets its session in {} s · u keeps it · U now",
     grace_archive: "◷ archiving {} as “{}” in {} s · u keeps it · U now",
@@ -2997,6 +3000,7 @@ pub const TR: Text = Text {
         "takıldı",
     ],
     forgot: "{} oturumunu unuttu; sonraki mesaj yeni bir oturum başlatır, kaldığı yer anlatılır",
+    too_small: "bu terminal {}×{}; imece en az {}×{} ister",
     grace_close: "◷ {} {} sn sonra kapanıyor · u açık tutar · U hemen",
     grace_forget: "◷ {} {} sn sonra oturumunu unutuyor · u tutar · U hemen",
     grace_archive: "◷ {} “{}” adıyla arşivleniyor, {} sn sonra · u tutar · U hemen",

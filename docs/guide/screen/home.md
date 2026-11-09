@@ -45,6 +45,12 @@ A row is the piece of work: `!` (or the agent's glyph), its project when several
 
 From 120 columns the row at hand is read beside the list without a key: a question whole with its answers and what the asking agent did so far, or an ask's words; a script's lines, numbered; a change's verdict line, why, cost, gate, files and the top of its patch without git's own lines; an agent's status, to-do list and newest trace lines. Below 120 columns, beside an editor, the list takes the width and the rows say it all.
 
+## A small terminal
+
+imece works on a phone over ssh. Under 80 columns each row stands stacked: the card and its title on one line, the ask, the verdict or the status under it, whole; an agent at work keeps one line while it fits. The row has no keys at its end then: the status line has them, and on any screen it keeps every key before it says where you are. The help's words wrap to the screen, a piece of work's head line breaks after its title, and a conversation takes the whole width.
+
+Under 40 columns or 12 rows imece shows only the terminal's size and its own least, and no key acts but `ctrl-c`: nothing is decided on a screen that cannot show it. Make the window larger (or the font smaller) and everything is back as it was.
+
 ## Keys
 
 | Key | What it does |

@@ -664,11 +664,19 @@ pub fn help(f: &mut Frame, app: &App) -> Option<Position> {
     let whole = help_columns(&all.iter().collect::<Vec<_>>(), wide, widths).len();
     lines.resize(lines.len().max(whole), Line::raw(""));
     lines.push(Line::raw(""));
-    lines.extend(legend.iter().map(|l| Line::from(Span::styled(**l, dim()))));
-    lines.resize(
-        lines.len() + t.help_legend.len() - legend.len(),
-        Line::raw(""),
-    );
+    // The legend wraps to the window, its height kept while filtered.
+    let room = 1 + widths.0 + widths.1;
+    let legend_rows = |legend: &[&&str]| -> Vec<Line<'static>> {
+        (legend.iter())
+            .flat_map(|l| legend_wrap(l, room))
+            .map(|row| Line::from(Span::styled(row, dim())))
+            .collect()
+    };
+    let shown = legend_rows(&legend);
+    let rows = legend_rows(&t.help_legend.iter().collect::<Vec<_>>()).len();
+    let shown_rows = shown.len();
+    lines.extend(shown);
+    lines.resize(lines.len() + rows.saturating_sub(shown_rows), Line::raw(""));
     lines.push(Line::raw(""));
     // The frame and the last line take three rows; what does not fit the
     // rest scrolls, and the last line says how much is below.
@@ -735,13 +743,22 @@ pub(crate) const HELP_KEY: (usize, usize) = (13, 16);
 /// screen until the longest text (74, `:copy YOL`) is on one line.
 pub(crate) const HELP_TEXT: (usize, usize) = (44, 74);
 
+/// The text column's narrowest, on a narrow screen: 40 columns less the
+/// frame, the blanks and the key leave 23.
+pub(crate) const HELP_NARROW: usize = 20;
+
 /// The help's key and text columns on a screen `width` wide, in two
 /// columns (`wide`) or one. A column is a blank, the key, a blank and the
 /// text; two of them leave a cell to spare on either side and the frame.
 /// The text gets the room first, the key what is left past its widest.
 pub(crate) fn help_widths(width: u16, wide: bool) -> (usize, usize) {
     if !wide {
-        return (HELP_KEY.0, HELP_TEXT.0);
+        // On a narrow screen (record 131) the text takes what the frame
+        // and the key leave.
+        let text = usize::from(width)
+            .saturating_sub(4 + HELP_KEY.0)
+            .clamp(HELP_NARROW, HELP_TEXT.0);
+        return (HELP_KEY.0, text);
     }
     let column = (usize::from(width).saturating_sub(4) / 2).saturating_sub(2);
     let key = column
@@ -814,6 +831,32 @@ fn help_cell((k, what): &(String, String), (key, text): (usize, usize)) -> Vec<V
         lines.push(line(if i == 0 && !alone { &name } else { "" }, words));
     }
     lines
+}
+
+/// A line of the help's legend in rows of at most `room` characters, a
+/// blank before each: its entries (two blanks apart) packed whole, two
+/// blanks between them; an entry longer than a row wraps by its words.
+pub(crate) fn legend_wrap(line: &str, room: usize) -> Vec<String> {
+    let room = room.saturating_sub(1).max(1);
+    let mut rows: Vec<String> = Vec::new();
+    let mut row = String::new();
+    for entry in line.split("  ").map(str::trim).filter(|e| !e.is_empty()) {
+        let n = entry.chars().count();
+        let used = row.chars().count();
+        if used > 0 && used + 2 + n <= room {
+            row.push_str("  ");
+            row.push_str(entry);
+            continue;
+        }
+        if used > 0 {
+            rows.push(std::mem::take(&mut row));
+        }
+        let mut pieces = wrap_words(entry, room);
+        row = pieces.pop().unwrap_or_default();
+        rows.extend(pieces);
+    }
+    rows.push(row);
+    rows.into_iter().map(|r| format!(" {r}")).collect()
 }
 
 /// `s` in lines of at most `width` characters, broken between words; a
@@ -1852,9 +1895,12 @@ pub(crate) fn thread_layout(
 pub fn thread(f: &mut Frame, app: &App, th: &Thread, within: Rect) -> Rect {
     let w = &app.world;
     let t = app.lang.text();
+    // On a narrow screen (record 131) it takes the whole body: two
+    // columns either side would only show what is under it.
+    let margin = if within.width < NARROW { 0 } else { 4 };
     let area = centered(
         within,
-        within.width.saturating_sub(4).min(120),
+        within.width.saturating_sub(margin).min(120),
         within.height,
     );
     shade(f, area);
@@ -1928,7 +1974,9 @@ pub fn thread(f: &mut Frame, app: &App, th: &Thread, within: Rect) -> Rect {
 
 #[cfg(test)]
 mod tests {
-    use super::{help_columns, help_rows, help_widths, in_view, wrap_words};
+    use super::{
+        HELP_NARROW, help_columns, help_rows, help_widths, in_view, legend_wrap, wrap_words,
+    };
     use crate::i18n::Lang;
     use ratatui::text::Line;
 
@@ -1959,13 +2007,44 @@ mod tests {
     }
 
     #[test]
+    fn a_legend_line_packs_its_entries_whole_and_wraps_one_too_long() {
+        // A blank leads each row, so `room` holds one character less.
+        assert_eq!(legend_wrap(" a  bb", 6), [" a  bb"], "just full");
+        assert_eq!(legend_wrap(" a  bb", 5), [" a", " bb"]);
+        assert_eq!(legend_wrap("a  bb  ccc", 8), [" a  bb", " ccc"]);
+        assert_eq!(
+            legend_wrap("a  one two three  b", 9),
+            [" a", " one two", " three  b"],
+            "a long entry wraps by its words, the next goes on after it"
+        );
+        assert_eq!(
+            legend_wrap("a  one two three  b", 8),
+            [" a", " one two", " three", " b"]
+        );
+        assert_eq!(legend_wrap("ab", 80), [" ab"]);
+        assert_eq!(legend_wrap("", 80), [" "]);
+        assert!(
+            legend_wrap("abcdef", 1)
+                .iter()
+                .all(|r| r.chars().count() == 2)
+        );
+    }
+
+    #[test]
     fn the_help_s_columns_grow_with_the_screen_the_text_first() {
         assert_eq!(help_widths(80, false), (13, 44), "one column");
         assert_eq!(
             help_widths(300, false),
             (13, 44),
-            "one column whatever the width"
+            "one column no wider whatever the width"
         );
+        // Narrower, the text takes what the frame and the key leave
+        // (record 131), never under its least.
+        assert_eq!(help_widths(61, false), (13, 44), "the window whole");
+        assert_eq!(help_widths(60, false), (13, 43));
+        assert_eq!(help_widths(40, false), (13, 23), "at the floor");
+        assert_eq!(help_widths(37, false), (13, HELP_NARROW));
+        assert_eq!(help_widths(36, false), (13, HELP_NARROW));
         assert_eq!(help_widths(120, true), (13, 44));
         assert_eq!(help_widths(140, true), (13, 53));
         assert_eq!(help_widths(178, true), (13, 72));
