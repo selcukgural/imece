@@ -235,3 +235,51 @@ Next: helpers, faults and retries, rate limits and context, strays and
 the plan gate, the leader's board and cards, informs to the person, the
 commit and review one-shots; then Lonca's fake daemon, then `Engine::Sim`
 goes.
+
+## A worker that hires a helper (2026-11-09)
+
+One assign in `Habits.helpers` (`IMECE_STAND_IN_HELPERS`, never at 0; by
+the roll's bits from the 32nd, apart from `asks` and `questions`) whose
+file has a test file has the worker hand its tests on once it made the
+change: `hire` with `tier: cheap` (the answer's first word is the name,
+`claude-1.1`), then `send` an `assign` to it, `work::helper_task`: `Write
+the tests in TEST for the change to FILE:` and the task. It ends its turn
+there, its list's third task in progress; `Mind.waiting` keeps the task,
+the list, the helper and what the person said (`Waiting.helper`,
+`Waiting.said`, in the transcript). A hire refused or an assign not sent
+waits for nobody: the worker writes the tests itself in that turn.
+
+A helper (`role: a helper`, `Mind::help`) reads its part back
+(`work::part_of`), notes `covers: …` in the test file as the worker would,
+runs the tests of the file's kind, and sends its worker `done`: `Wrote the
+tests in TEST.` and what the run said; imece lets it go when that turn
+ends (record 09). A part it can not read, or a test file it can not
+write, is said in its `done` instead.
+
+The worker goes on at the prompt that carries its helper's `done`
+(`work::done_from`, by the heading `[done …] from NAME:`): with `Wrote the
+tests in` the test file is the helper's and the line goes in the worker's
+`done`; any other `done`, or imece's note that the helper stopped before
+it (`work::lost`, record 09's `helper_lost`), has the worker write them
+itself and say so. Other mail, or the person's words, keeps it waiting.
+Then the tests run and the `done` goes to the leader as before. The demo
+hires in one assign of three (`HIRES` 3). The test
+`a_worker_s_helper_writes_its_tests_says_done_and_leaves` runs it on the
+real `Live`: the helper under its worker, gone after its `done`, one
+change of the worker's with both files, and the helper's line in its
+"why".
+
+Five end-to-end tests in one process opened their buses in the same
+microsecond (macOS's clock) and one refused the other's directory: a
+bus's directory now ends with the process's count of buses
+(`live::bus_dir`).
+
+`Sim`'s helper is hired by chance at any step of a card and works for a
+number of ticks; the stand-in's has a part of its own to do, so it is
+hired only when there are tests to write. A helper lost mid-part is not
+made to happen by the stand-in (its sessions do not fail yet): faults
+come next.
+
+Next: faults and retries, rate limits and context, strays and the plan
+gate, the leader's board and cards, informs to the person, the commit and
+review one-shots; then Lonca's fake daemon, then `Engine::Sim` goes.

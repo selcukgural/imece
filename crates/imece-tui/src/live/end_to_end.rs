@@ -286,3 +286,83 @@ fn a_worker_s_question_waits_with_its_answers_and_the_answer_goes_into_its_chang
     let _ = std::fs::remove_dir_all(&dir);
     let _ = std::fs::remove_dir_all(&repo);
 }
+
+#[test]
+fn a_worker_s_helper_writes_its_tests_says_done_and_leaves() {
+    let dir = std::env::temp_dir().join(format!("imece-e2e-helper-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let repo = checkout("e2e-helper-repo");
+    // A file and its test, so the worker has tests to hand on.
+    std::fs::create_dir_all(repo.join("src")).unwrap();
+    std::fs::write(repo.join("src/money.rs"), "// money\n").unwrap();
+    std::fs::write(repo.join("src/money_test.rs"), "// money test\n").unwrap();
+    let git = |args: &[&str]| {
+        let out = std::process::Command::new("git")
+            .args(["-c", "user.name=t", "-c", "user.email=t@t"])
+            .args(["-c", "commit.gpgsign=false"])
+            .args(args)
+            .current_dir(&repo)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "git {args:?}");
+    };
+    git(&["add", "."]);
+    git(&["commit", "--quiet", "-m", "money"]);
+    // Every assign hires a helper for its tests.
+    let habits = imece_agent::stand_in::Habits {
+        helpers: 1,
+        ..Default::default()
+    };
+    let claude =
+        imece_agent::stand_in::install(&dir, &imece(), &dir.join("home"), &habits).unwrap();
+    let mut w = team(0);
+    let mut live = Live::new(
+        1,
+        claude_at(&claude.to_string_lossy()),
+        repo.clone(),
+        dir.join("trees"),
+    );
+    live.open_bus(&w, imece().to_string_lossy().into_owned())
+        .unwrap();
+    live.told(&mut w, 0, "Round money half up").unwrap();
+    let start = std::time::Instant::now();
+    while !(w.changes.iter().any(|c| c.agent == 1)
+        && w.agents.iter().all(|a| a.gone || a.status == Status::Idle))
+    {
+        assert!(
+            start.elapsed().as_secs() < 30,
+            "timed out: {:#?}",
+            w.journal
+        );
+        live.step(&mut w);
+        thread::sleep(Duration::from_millis(20));
+    }
+    // The worker hired its helper in its worktree; the helper wrote the
+    // tests, said done to its worker and left.
+    let helper = &w.agents[2];
+    assert_eq!(
+        (helper.name.as_str(), helper.role, helper.parent),
+        ("claude-1.1", Role::Helper, Some(1))
+    );
+    assert!(helper.gone, "{:?}", helper.status);
+    // One change of the worker's: its file and the helper's test.
+    let change = w.changes.iter().find(|c| c.agent == 1).unwrap();
+    let files: Vec<&str> = change.files.iter().map(|f| f.path.as_str()).collect();
+    assert_eq!(files, ["src/money.rs", "src/money_test.rs"]);
+    assert!(
+        change.patch.contains("+// covers: Round money half up"),
+        "{}",
+        change.patch
+    );
+    assert_eq!(
+        w.done_why(1),
+        Some(
+            "Changed src/money.rs, src/money_test.rs.\nclaude-1.1: Wrote the tests in \
+             src/money_test.rs.\ncargo test: All 12 tests passed."
+        )
+    );
+    drop(live);
+    let _ = std::fs::remove_dir_all(&dir);
+    let _ = std::fs::remove_dir_all(&repo);
+}
