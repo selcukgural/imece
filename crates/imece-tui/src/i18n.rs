@@ -2573,7 +2573,7 @@ pub const EN: Text = Text {
             "first / last line · Home: to decide · at work",
         ),
         ("^d ^u ^f ^b", "half a page / a page"),
-        ("^o", "back where you were: view, panel, focus, card"),
+        ("^o", "back where you were: Home, a detail, a card"),
         (
             "← →  h l",
             "fold/unfold: project, helpers, message, entry, file",
@@ -3965,7 +3965,7 @@ pub const TR: Text = Text {
             "ilk / son satır · Home: karar bekleyen · çalışan",
         ),
         ("^d ^u ^f ^b", "yarım sayfa / tam sayfa"),
-        ("^o", "olduğun yere geri: görünüm, panel, odak, kart"),
+        ("^o", "olduğun yere geri: ana ekran, ayrıntı, kart"),
         (
             "← →  h l",
             "katla / aç: proje, yardımcılar, mesaj, kayıt, dosya",
