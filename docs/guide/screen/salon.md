@@ -5,25 +5,18 @@ description: The team on Home - the header, AT WORK project by project, each age
 
 # The team
 
-The team is the lower half of [Home](home.md), AT WORK (record 125): `:salon` goes there, as `gw`. What this page describes of the guild tree (every project, its leader, its workers and their helpers, folding, `s`) stands there, project by project; what waited beside it is Home's TO DECIDE, and the [journal](journal.md) (told as the story) is a window, `J` or `:journal`. The board, the code map and the timeline open as windows too (`:board`, `:code`, `:timeline`); everything else opens over Home and `esc` brings it back.
+The team is the lower half of [Home](home.md), AT WORK (record 125): `:salon` goes there, as `gw`. What this page describes (every project, its workers and their helpers, folding, `s`) stands there, project by project; what waited beside it is Home's TO DECIDE, and the [journal](journal.md) (told as the story) is a window, `J` or `:journal`. The board, the code map and the timeline open as windows too (`:board`, `:code`, `:timeline`); everything else opens over Home and `esc` brings it back.
 
 ```text
- imece  shop-api · web │  ! 2 to decide  │ $3.10 of $20.00  14:02
- TO DECIDE 1 permission · 1 change
- permissions                                                                 one key each
- ! #5   Money rounding             run Bash: npm install left-pad                  a  yes   r  no
- changes                                                                 1 ready to approve
- ! #3   Parse the manifest         3 files +41 −6 · ✓ cargo test
-
- AT WORK 5 · stuck 1 · idle 1
-▾ ▴ shop-api  ▓▓▓░░░░░ 3/8  ! 2 waiting  2 working  $2.40
- ● lead             coordinating
- ● #3   Parse the manifest         ▸ Write the tests  Edit tests/parse.rs · 2 min  $1.10  ⎇ fix-parser ↑2 +12
-   └ ● claude-1.1                  thinking… ← claude-1 "add the tests"
- ■ #7   Order tests                ■ session ended · write to it to restart
- ✓ #5   Money rounding             done, not seen yet → you "rounded half up" · 5 min
-▸ web  1 working  $0.70  ● claude-9
- home · shop-api · #3 Parse the manifest    enter  open   ?  help
+ imece  shop-api · mobile-app │ $0.13 of $200.00  14:05
+  lonca mobile-app 9d3f1c2 · 1 pending
+ AT WORK 3
+▸▾ shop-api      ░░░░░░░░ 0/1  1 working  $0.04  ~/src/shop-api
+ ● shop-api    #1   Shipping zones            Run the tests · 4 min
+ ▾ mobile-app    ░░░░░░░░ 0/3  2 working  $0.08  lonca mobile-app 9d3f1c2 · 1 pending  ~/src/mobile-app
+ ● mobile-app  #2   Shipping cost             Run the tests · 2 min
+ ● mobile-app  #3   Paging in product search  Run the tests · 4 min
+ home · shop-api    enter  open   h l  fold · unfold   s  hide   ?  help
 ```
 
 ## The header
@@ -42,43 +35,62 @@ What happened in the last ten minutes, the count of cards and the researchers' c
 
 See [budget and limits](../concepts/budget-and-limits.md) for how the pot and the windows are counted.
 
-## The guild tree
+## Project by project
 
-Agents are grouped by project. Each project is a header row, then its leader, then its workers, each worker's helpers under it. Projects come in the order they were opened, pinned ones first.
+AT WORK lists the open projects in the order they were opened, pinned ones first. When more than one is in view (none narrowed to with `[` `]`), each heads its agents with a line of its own; narrowed to one, or with one project open, the rows stand alone. Under a project come its workers and solos: the stuck first, then those at work, then the quiet ones, equals keeping their order so the list does not jump as agents go from idle to working and back; each has its helpers and the researcher working for it hung under it (`└`). A leader is listed only while it works or is stuck, and an agent waiting on a yes or an answer of yours is that item in TO DECIDE instead. The AT WORK heading counts them: `AT WORK 12 · stuck 2 · idle 1`. When the rows do not fit the screen, the list scrolls with the row at hand; nothing folds by itself.
 
 While no project has a worker yet (a team that has only its leader, a solo), imece's mark and its words stand in the middle of the free rows: `imece v…`, `one terminal, many agents, one leader`, the project at hand and who heads it. Its dots come one a beat as it appears (see [first run](../getting-started/first-run.md#the-welcome-window)); the first worker's row takes its place.
 
-A project header: `▾ shop-api  ▓▓▓░░░░░ 3/8  ! 2 waiting  ■2  2 working  $2.40`. `▾` is open, `▸` folded. After the name: how far its cards are (eight cells, the done share filled down to the cell, then done of all; none before its leader posts a card), in the attention colour how many items of this project wait for you, `■N` stuck agents (blocked or stopped) when there are any, how many workers and helpers are not idle, what the project's agents have cost, then how its Lonca repository stands. What wants you comes first, so a row too long for its pane loses the rest. A folded project is one line, that line still shows what waits (quiet, not deaf) and ends with its loudest member, `▸ shop-api  ! 1 waiting  2 working  $2.40  ! claude-5`: the agent highest on the state ladder below, the first in order among equals. A pinned project (`:pin`) wears `▴` before its name and keeps the top of the team; the pin is saved between runs.
+A project's line: `▾ shop-api  ▓▓▓░░░░░ 3/8  ! 2 waiting  ■2  2 working  $2.40  ~/src/shop-api`. `▾` is open, `▸` folded. After the name: how far its cards are (eight cells, the done share filled down to the cell, then done of all; none before its leader posts a card), in the attention colour how many items of this project wait for you, `■N` stuck agents (blocked or stopped) when there are any, how many workers and helpers are not idle, what the project's agents have cost, how its Lonca repository stands, and last, while it is open, the folder it works in. What wants you comes first, so a line too long for the screen loses the rest. A folded project is one line, that line still shows what waits (quiet, not deaf) and ends with its loudest member, `▸ shop-api  ! 1 waiting  2 working  $2.40  ! claude-5`: the agent highest on the state ladder below, the first in order among equals. A pinned project (`:pin`) wears `▴` before its name and keeps the top of the list; the pin is saved between runs.
 
-An agent's row:
+## An agent's row
+
+On Home an agent's row is short and says the piece of work first:
 
 ```text
-  ├ ● ▎claude-1 #3   Parse the manifest  ▸ Write the tests  Edit tests/parse.rs · 2 min  $1.10  ⎇ fix-parser ↑2 ↓1 +12 −3  ▾ 1 helpers  ↗ localhost:5173/
+ ● #16  Search result ranking     Make the change · 3 min
+ ■ #8   Shipping cost             session ended: the process exited with code 1 · 9 min
 ```
 
-- The tree lines `├ └ │` show who is under whom; a helper is under its worker, named `claude-1.1`.
-- The state glyph: where the agent stands on the state ladder (see the legend below). Five glyphs, and only these: `■` stuck (blocked, or its session stopped: the status words say which); `!` when something of its waits for you, whatever it does meanwhile; `✓` for a worker that finished a turn you have not opened since, with `done, not seen yet` as its status; `●` at work (mid-turn, starting, asking a teammate, researching); `○` idle (or asleep). Every state is a shape of its own, so the mono theme tells them apart. A leader's row carries its status's glyph like any other: its role is in its name, not in a shape. While motion moves ([`:motion`](../reference/commands.md#motion-offcalmfull), calm by default), a working row's glyph breathes in its colour (never its shape), a row that comes to wait for you blinks three times, one whose turn is done or whose session started hides from a green background, and `starting` counts its dots; in another window nothing moves.
+- Its status's glyph: `●` at work (mid-turn, starting, asking a teammate, researching), `○` idle or asleep, `■` stuck (blocked, or its session ended: the words say which), `!` waiting for you. Every state is a shape of its own, so the mono theme tells them apart; a leader's row carries its status's glyph like any other. While motion moves ([`:motion`](../reference/commands.md#motion-offcalmfull), calm by default), a working row's glyph breathes in its colour (never its shape), a row that comes to wait for you blinks three times, one whose turn is done or whose session started hides from a green background; in another window nothing moves.
+- Its project, dim, when several are open and the list is not narrowed to one.
+- The card's number and title; an agent with no card shows its name instead. A helper or a researcher hangs under its worker, `└`, without a number.
+- What it does: the step of its to-do list in progress (`Make the change`), else its status in the words below, cut to what the row has left.
+- How long it has been in that state, from a minute on: `· 3 min`, `· 1 h 5 min`. For something waiting for you, since the item came.
+
+The row at hand has `▸` before it and the selection colour. `enter` opens the agent's focus, where everything else about it is: its folder, worktree stand, to-do list, context window, activity and story.
+
+### Status words
+
+`starting…` while its session comes up (the process, a first worktree's checkout), `thinking…`, what it says it is doing, `? → claude-2` while it waits for a teammate's answer, `? → you` while a question of its waits for you, `⚑ asks to run` while a tool call of its waits in TO DECIDE, `answered you` while its answer waits to be read, `↻ 2/3 in 25 s` while imece waits to try a turn that failed on a passing API error again (the try, the tries, the time left), `■ API error` while an API error waits for you, `coordinating` for a leader whose workers work, `BLOCKED`, `■ session ended · write to it to restart`, `◦ asleep since the last run, write to it to wake it`. Where the status has a text of its own, the row carries it: `? → you "which index?"`, `answered you "use the enum"`, `⚑ asks to run "cargo test"`, `■ API error "Invalid API key"`, `BLOCKED "JWT clock skew" ← researcher-1`, `■ session ended: the process exited with code 1`. Messages that wait with an agent while it waits on you come first, `✉ 2 queued ? → you "which index?"`, and `✓ turn` first says you said yes to everything it asks this turn.
+
+### The long row
+
+A [card's screen](cards.md) lists who had a part in the card with the long row, every figure of an agent on one line:
+
+```text
+owner     ● ▎claude-1  #3   Parse the manifest  ▸ Write the tests  Edit tests/parse.rs · 2 min  $1.10  ⎇ fix-parser ↑2 ↓1 +12 −3  ▾ 1 helpers  ↗ localhost:5173/
+```
+
+- The state glyph: where the agent stands on the [state ladder](#the-state-ladder). The five glyphs again, with two more meanings: `!` when something of its waits for you, whatever it does meanwhile, and `✓` for a worker that finished a turn you have not opened since.
 - `▎` in the agent's speaker colour, the same colour its lines have in the journal and in a conversation, so a row and its talk read as one agent.
 - Its name, then `~` or `≈` when it is tainted (research taint, demo only).
 - A worker's card: `#3` and the card's title.
-- Its status: `starting…` while its session comes up (the process, a first worktree's checkout), `thinking…`, what it says it is doing, `? → claude-2` while it waits for a teammate's answer, `? → you` while a question of its waits for you, `⚑ asks to run` while a tool call of its waits in TO DECIDE, `answered you` while its answer waits to be read, `↻ 2/3 in 25 s` while imece waits to try a turn that failed on a passing API error again (the try, the tries, the time left), `■ API error` while an API error waits for you, `coordinating` for a leader whose workers work, `BLOCKED`, `■ session ended · write to it to restart`, `◦ asleep since the last run, write to it to wake it`. A working agent whose to-do list has a step in progress says that step first and what it does for it after, dim: `▸ Write the tests  Edit tests/parse.rs`, `▸ Run the tests  thinking…`, so the row says what the agent is after rather than only its last tool call; the step takes at most 24 columns and never more than the row's fixed parts leave it, the tool call what is left after the step (a tool call waiting for your yes, or a session still starting, says that instead). Where the status has a text of its own, the row carries it: `? → you "which index?"`, `answered you "use the enum"`, `⚑ asks to run "cargo test"`, `■ API error "Invalid API key"`, `BLOCKED "JWT clock skew" ← researcher-1`, `■ session ended: the process exited with code 1`. Otherwise the status ends with the agent's newest exchange, the arrow saying who said it: `thinking… ← lead "fix the parser"`, `idle → you "parser fixed, tests green"`, `? → claude-2 "which parser?"` (its own question to the one it waits for, quoted alone). The exchange stays until the next one replaces it, so a row says what the agent last did, and the status with its text keeps to forty columns. Messages that wait with an agent while it waits on you come first on the row: `✉ 2 queued ? → you "which index?"`.
-- `▁▃▅▂▁`: what the agent did lately, one column for each of the last five ticks (5 seconds each, 25 in all), the oldest first: how many lines its trace got in that tick (a text, a tool call, a message, a note), on one scale for every row (`▁` none, `▂` one, `▃` two, `▄` up to four, `▅` six, `▆` nine, `▇` fourteen, `█` more), so a busy row and a quiet one read apart at a glance. It moves only as the agent does something and as the ticks pass, never on a timer of its own; once nothing has been written for five ticks it is gone. It gives way first on a narrow row, even before the quote, and [`:motion off`](../reference/commands.md#motion-offcalmfull) leaves it out. The focus (`enter`) has a longer one, two minutes, 24 columns on the same scale, with how many lines they count: `activity: ▁▁▂▄▁…█▃ · trace lines in 2 min: 21`. Not kept between runs.
-- How long it has been in that state, from a minute on: `· 3 min`, `· 1 h 5 min`. For something waiting for you, since the item came.
+- Its status, in the words above. A working agent whose to-do list has a step in progress says that step first and what it does for it after, dim: `▸ Write the tests  Edit tests/parse.rs`, `▸ Run the tests  thinking…`, so the row says what the agent is after rather than only its last tool call; the step takes at most 24 columns and never more than the row's fixed parts leave it, the tool call what is left after the step (a tool call waiting for your yes, or a session still starting, says that instead). Otherwise the status ends with the agent's newest exchange, the arrow saying who said it: `thinking… ← lead "fix the parser"`, `idle → you "parser fixed, tests green"`, `? → claude-2 "which parser?"` (its own question to the one it waits for, quoted alone). The exchange stays until the next one replaces it, so a row says what the agent last did, and the status with its text keeps to forty columns.
+- `▁▃▅▂▁`: what the agent did lately, one column for each of the last five ticks (5 seconds each, 25 in all), the oldest first: how many lines its trace got in that tick (a text, a tool call, a message, a note), on one scale for every row (`▁` none, `▂` one, `▃` two, `▄` up to four, `▅` six, `▆` nine, `▇` fourteen, `█` more), so a busy agent and a quiet one read apart at a glance. It moves only as the agent does something and as the ticks pass, never on a timer of its own; once nothing has been written for five ticks it is gone. It gives way first on a narrow row, even before the quote, and [`:motion off`](../reference/commands.md#motion-offcalmfull) leaves it out. The focus (`enter`) has a longer one, two minutes, 24 columns on the same scale, with how many lines they count: `activity: ▁▁▂▄▁…█▃ · trace lines in 2 min: 21`. Not kept between runs.
+- How long it has been in that state, from a minute on, as on Home.
 - What it has cost, when anything.
 - `≡ 3/7`: how far its own to-do list is, the steps done and all of them, when its planning tool keeps one (Claude Code's tasks). The step in progress is the row's status (`▸`); the focus lists them all. The mark gives way after the quote and the time when the row is narrow. Gone with the session.
 - `◔ 72%`: how full its context window is, from 70% on, in the attention colour from 90%, as Claude Code last said (its message usage and the window its result names). The focus has the figure whatever it is, `context: 22% · 45k of 200k`, or the tokens alone when the window's size is not said. It stays on a narrow row longer than the to-do mark. Gone with the session.
 - A worker's worktree stand, `⎇ fix-parser ↑2 ↓1 +12 −3`: the branch the agent made (none while the worktree is detached, as imece makes it; a worker hired from a start point shows that point instead, `⎇ #41`), its own commits the checkout does not have (imece's marks of applied changes are not counted), the checkout's commits it does not have, and the lines added and removed against its own HEAD, untracked files included: what its next `done` would hand you. Each part shows only when there is something to say. Read on imece's git thread as the session starts, when a turn ends, after an apply and every 15 seconds while the worker or a helper is mid-turn; not kept between runs.
-- `▾ 1 helpers` or `▸ 1 helpers`: its helpers are listed under it, or folded away.
+- `▾ 1 helpers` or `▸ 1 helpers  ● claude-1.1`: a worker's helpers, listed or folded away, with the loudest of them when folded.
 - `↗ localhost:5173/`: the newest loopback address the worker or helper wrote in its own text, as a link the terminal opens (OSC 8). Only `http`/`https` on `localhost`, `127.0.0.1` or `[::1]` counts, the query and fragment are dropped, and an address over 60 characters is not shown. Gone with the session.
-- A worker with helpers ends with `▾ 2 helpers`, or `▸ 2 helpers  ● claude-1.1` when they are folded away: the count and the loudest of them.
 
-Every agent is one row, whatever it says: rows never change height, and the parts of a row stand in columns: every status starts at one column, whatever the depth, and each part after it is as wide as its widest on a row, blank on a row without it. On a narrow screen the blanks go first. The time, the quote and the activity bar take only what the row has left once its cost, stand, helpers and link are on it, so a narrow screen drops the bar first, the quote next and then the time. A row that just changed stands out for a moment, then calms down. The selected row is reversed.
-
-Within a project the workers come by what they need: stuck first, then at work, then the quiet ones, equals keeping their order so the list does not jump as agents go from idle to working and back; a worker's helpers stay under it (`└`). The AT WORK heading counts them: `AT WORK 12 · stuck 2 · idle 1`. When the rows do not fit the screen, the list scrolls with the row at hand; nothing folds by itself.
+The time, the quote and the activity bar take only what the row has left once its cost, stand, helpers and link are on it, so a narrow screen drops the bar first, the quote next and then the time.
 
 ## The state ladder
 
-Every agent stands on one rung, loudest first: stuck (blocked, or its session stopped: it goes nowhere until you write to it) > something of its waits for you > working (mid-turn, asking a teammate, researching) > starting > done, not seen > idle (or asleep, or gone). The rung decides the row's glyph, which worker comes first in its project (stuck, then waiting for you, then done and not seen; the calm rungs keep their order so the screen does not jump as agents go from idle to working and back), and which member a folded project shows for all of them: the highest rung, the first in order among equals.
+Every agent stands on one rung, loudest first: stuck (blocked, or its session stopped: it goes nowhere until you write to it) > something of its waits for you > working (mid-turn, asking a teammate, researching) > starting > done, not seen > idle (or asleep, or gone). The rung decides the long row's glyph, the mark the terminal's title and tab carry for the open projects, and which member a folded project shows for all of them: the highest rung, the first in order among equals. Home orders its rows by its own groups (stuck, at work, quiet), not by the rung.
 
 ## The legend
 

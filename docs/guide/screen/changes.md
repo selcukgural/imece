@@ -5,33 +5,37 @@ description: Reading a worker's change (Δ) - the diff, its files and kinds, mov
 
 # The change view
 
-When a worker sends `done`, imece reads its worktree and the change waits for you as `Δ` in TO DECIDE. `enter` on it (or `W` when it is the next item) opens the change view in the team's place: the whole diff, with the verdict on it above. You decide here: `a` applies it to your checkout, staged; `r` sends it back; `n` sends it back with your notes on its lines; `x` and `a` apply only the hunks you chose; `b` sends back one that clashed with your checkout.
+When a worker sends `done`, imece reads its worktree and the change waits for you as `Δ` in TO DECIDE. `enter` on it (or `W` when it is the next item) opens the change, the diff tab of its [detail](#the-detail): the whole diff, with the verdict line on it above. You decide here: `a` applies it to your checkout, staged; `r` sends it back; `n` sends it back with your notes on its lines; `x` and `a` apply only the hunks you chose; `b` sends back one that clashed with your checkout.
 
 ```text
-┌ CHANGE · claude-1 · 3 files +41 −6 · parser returns an error on an empty file ─────────────┐
-│✓ ready to approve · ✓ cargo test · 3 files, all inside #6 · no overlap with other changes   │
-│source +23 −6 (2) · tests +18 −0 (1)                                                         │
-│  src/parser/manifest.rs  +19 −6                                                             │
-│  src/parser/mod.rs  +4 −0                                                                   │
-│  tests/manifest.rs  +18 −0                                                                  │
-│diff --git a/src/parser/manifest.rs b/src/parser/manifest.rs                                 │
-│--- a/src/parser/manifest.rs                                                                 │
-│+++ b/src/parser/manifest.rs                                                                 │
-│@@ -12,7 +12,9 @@ pub fn read(path: &Path) -> Result<Manifest>  ✓                            │
-│     let text = fs::read_to_string(path)?;                                                   │
-│-    let doc: Doc = toml::from_str(&text).unwrap();                                          │
-│+    if text.trim().is_empty() {                                                             │
-│+        return Err(Error::Empty(path.to_owned()));                                          │
-│  ✎ say which file in the message                                                            │
-│+    }                                                                                       │
-│+    let doc: Doc = toml::from_str(&text)?;                                                  │
-└─────────────────────────────────────────────────────────────────────────────────────────────┘
-  j k  w scroll · wrap  [ ] file  a x approve · choose a hunk  r send back  > quote to it  c n note · send notes  v copy lines  esc back  ? help
+#6 Parse the manifest · shop-api · claude-1 · 12 min · $0.84 · 3 files +41 −6           change 1 of 3
+
+diff · talk · log                                                                       tab switches
+┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
+│✓ ready to approve · ✓ cargo test · 3 files, all inside #6 · no overlap with other changes        │
+│ parser returns an error on an empty file                                                         │
+│ cost · $0.84 · 12 min                                                                            │
+│ source +23 −6 (2) · tests +18 −0 (1)                                                             │
+│ src/parser/manifest.rs +19 −6                                                                    │
+│ src/parser/mod.rs +4 −0                                                                          │
+│ tests/manifest.rs +18 −0                                                                         │
+│src/parser/manifest.rs                                                                            │
+│@@ -12,7 +12,9 @@ pub fn read(path: &Path) -> Result<Manifest>  ✓                                 │
+│     let text = fs::read_to_string(path)?;                                                        │
+│-    let doc: Doc = toml::from_str(&text).unwrap();                                               │
+│+    if text.trim().is_empty() {                                                                  │
+│+        return Err(Error::Empty(path.to_owned()));                                               │
+│  ✎ say which file in the message                                                                 │
+│+    }                                                                                            │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+ change · shop-api · #6 Parse the manifest    a  approve   r  send back   c  note   esc  back   ?  help
 ```
+
+The status line shows at most three keys for the change; every other key of this page is in `?`.
 
 ## The detail
 
-A change, a conversation and a focus are the three tabs of one screen, the detail of a piece of work (record 125): above the tab's own frame a head line says the card and its title, the project, the agent, how long it has been as it is and what it cost; on the diff, the files and lines, and `change 2 of 5` at the right when several wait. When the agent has a question open, the question stands under the head with the answers it offers and their keys (`1`-`9` pick one, `/` writes your own), whatever the tab. Then the tab bar, `diff · talk · log`: the open tab bold, one with nothing to show (no change, nothing said yet) dim; `tab` and `⇧tab` go to the next and the previous tab that has something. The diff is this page; talk is the [conversation](conversations.md) with the agent (with you when there is one, else its newest with a teammate); log is its focus, or its raw stream once `enter` opened it. `esc` leaves the tab as it did before: the conversation closes back to what was under it, the diff and the focus back to Home or the team.
+A change, a conversation and a focus are the three tabs of one screen, the detail of a piece of work (record 125): above the tab's own frame a head line says the card and its title, the project, the agent, how long it has been as it is and what it cost; on the diff, the files and lines, and `change 2 of 5` at the right when several wait. When the agent has a question open, the question stands under the head with the answers it offers and their keys (`1`-`9` pick one, `/` writes your own), whatever the tab. Then the tab bar, `diff · talk · log`: the open tab bold, one with nothing to show (no change, nothing said yet) dim; `tab` and `⇧tab` go to the next and the previous tab that has something. The diff is this page; talk is the [conversation](conversations.md) with the agent (with you when there is one, else its newest with a teammate); log is its focus, or its raw stream once `enter` opened it. `esc` leaves the tab as it did before: the conversation closes back to what was under it, the diff and the focus back to Home.
 
 ```text
 #6 E-mail templates · shop-api · claude-9 · 6 min · $0.06 · 3 files +41 −6                            change 1 of 3
@@ -58,7 +62,7 @@ diff · talk · log                                                             
 
 It is ready when every proof passed, every file is inside the card's paths, nothing overlaps, it fits and it is shown whole; one thing short of that is `! look first`, and the line says which. The same facts, without the head, follow the change's row on [Home](home.md), and the ready ones come first there. It is a note, never a gate: `a` approves a change the line says to look at first.
 
-Then, when the worker wrote more in its `done` than the first line, what it said: why, what it decided, what to look at; four rows at most, cut with `…`. With several changes waiting the window's top right says which this is, `change 2 of 5`. Under that:
+Then, when the worker wrote more in its `done` than the first line, what it said: why, what it decided, what to look at; four rows at most, cut with `…`. With several changes waiting the head line's right end says which this is, `change 2 of 5`. Under that:
 
 1. **The check's state** when it has not come to an end: `● the check runs on this change…` while it runs; `▶ the repository's check asks to run: it is in TO DECIDE` until you answer its ask; or why it could not run. A failed check's last output lines stand here too.
 2. **What it cost**, once the worker's turn ended: `cost · $0.84 · 12 min`, dim, the worker's spend (its helpers' counted in) from its first prompt after its last change to this `done`, and the time it worked; a change sent back and sent again adds its rounds (`$1.20 · 25 min · 3 rounds`). The same figure ends the item's row in TO DECIDE and the journal says it (`claude-1's change cost $0.84 · 12 min`). A `done` read mid-turn shows it a moment later, when the turn's cost is known.
@@ -79,7 +83,7 @@ The patch shows a file's path where git writes `diff --git`, and leaves out the 
 | `w` | wrap long lines under themselves (a minified file, a long string); again cuts them at the edge. The scroll still counts patch lines, so `j` moves a whole line however many rows it takes. On for every change until turned off; not kept between runs |
 | `R` | the second reading (`:review`), above the file list: its first six rows, or all of it ([changes](../concepts/changes.md#a-second-reading)) |
 | `v` | choose lines to copy (below) |
-| `esc` | back to TO DECIDE |
+| `esc` | back to Home, where the change's row is |
 
 Added and removed lines have their own colours; headers stand out. Every line goes through the cleaning everything drawn gets.
 
@@ -101,7 +105,7 @@ Added and removed lines have their own colours; headers stand out. Every line go
 
 ### Sending a clash back
 
-When git refuses a change, imece also finds which of its hunks do not fit your checkout: a copy of your index, the same plain and three-way tries as the apply, nothing of yours touched. The journal line then ends `· b in the change sends it back`, the change opens under a red line, and the footer has `b  send back`:
+When git refuses a change, imece also finds which of its hunks do not fit your checkout: a copy of your index, the same plain and three-way tries as the apply, nothing of yours touched. The journal line then ends `· b in the change sends it back`, the change opens under a red line, and the status line has `b  send back`:
 
 ```text
  ✗ does not fit your checkout at 4f3a2c1: CHANGELOG.md · b sends it back to claude-1

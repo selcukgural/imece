@@ -1,6 +1,6 @@
 ---
 title: The journal
-description: The journal pane - what imece writes down, how lines fold and carry their day, marks, the away digest, where you left off, and opening a conversation from a line.
+description: The journal window - what imece writes down, how lines fold and carry their day, marks, the away digest, where you left off, and opening a conversation from a line.
 ---
 
 # The journal
@@ -8,7 +8,7 @@ description: The journal pane - what imece writes down, how lines fold and carry
 The journal opens in a window over the screen, `J` or `:journal` (told as [the story](#the-story) by default; `J` in the window turns the story on and off): what happened, newest first, one line per event. `esc` or `q` closes the window. Everything meaningful an agent or you did is there; routine assignments are left to the board and the leader's trace. It is kept in the store, so the next `imece` opens with the same journal, and the away digest and the "where you left off" window are built from it.
 
 ```text
-┌ JOURNAL ────────────────────────────────────────────────┐
+┌ JOURNAL · J story ──────────────────────────────────────┐
 │14:07 › you → claude-1: the empty-file check belongs in …│
 │14:05 ✓ you applied claude-1's change (3 files) to the checkout, staged; worktree mark 7f3a2c1
 │13:58 ! claude-1 finished: change ready · 3 files +41 −6
@@ -22,11 +22,11 @@ The journal opens in a window over the screen, `J` or `:journal` (told as [the s
 
 ## The story
 
-By default the journal's window does not show the journal line by line: it tells the story, the same lines grouped by card. `J` (or `:story`) switches between the two; the choice is remembered, and the journal's title then says the key back, `JOURNAL · J story`. On a card's detail the log is always that card's journal.
+By default the journal's window does not show the journal line by line: it tells the story, the same lines grouped by card. `J` (or `:story`) switches between the two; the choice is remembered, and the journal's title then says the key back, `JOURNAL · J story`. A card's own story is on [its screen](cards.md), the log tab of its detail.
 
 ```text
 ┌ STORY · J journal ─────────────────────────────────────────┐
-│! waiting on you (3): claude-2, claude-3, claude-1 via cl…  │
+│! needs you (3): claude-2, claude-3, claude-1 via claude-2  │
 │#1 Payment retry policy · claude-2 ≡ 4/5                    │
 │  14:00 ⇄ lead-shop-api → claude-2 [assign]: #1 Payment re… │
 │  14:01 ⇄ claude-4 → claude-2 [ask]: Zone codes an enum?    │
@@ -43,7 +43,7 @@ By default the journal's window does not show the journal line by line: it tells
 - **A block per card** the journal lately spoke of, the card with the newest line first. Its header: the number and title, its owner, then how far it is (`≡ 4/5` its to-do list, `✓ done`, `change ready` when a change of that card waits). Under it the card's three newest lines, oldest first: what was said about it, its owner's change, a stop, a failure, an apply. A line belongs to the card its agent was on when it was written, so a worker that moved on to another card does not take its old lines along; something said belongs to the card of whoever asked. An ask that got no reply says so: `no answer yet`, then `no answer · 2 min`. Last, `now` and what the owner does now, its step and how long, while the card is not done.
 - **Elsewhere**: lines of no card (the leader hiring, a worktree being set up, an API call retrying), each kind once, its newest line, with how many there were (`×12`). An assignment names its card, so it is told in that card's block.
 
-The story reads at most the 2,000 newest journal lines per frame and shows as many cards as fill the panel; for older ones, `J` and the journal. Lines `:clear` took off are not told (a marked one is), and an archive's lines wait in the archive.
+The story reads at most the 2,000 newest journal lines per frame and shows as many cards as fill the window; for older ones, `J` and the journal. Lines `:clear` took off are not told (a marked one is), and an archive's lines wait in the archive.
 
 | Key | What it does |
 | --- | --- |
@@ -59,7 +59,7 @@ Each line has the time, a glyph for its kind, the project's name when several ar
 | Glyph | Lines |
 | --- | --- |
 | `⇄` | a message between two parties, `from → to [type]: first line`; `↩` after the type when it replies to another message. Your own messages, `you → claude-1: …`, and an agent's closing text to you, `claude-1 answered you: …` |
-| `→` | the leader's acts: a card posted, a worker hired (`lead hired claude-1 (default model)`), a worker that finished and left. Assignments and claims are not shown in the pane (the board and the card's screen have them) |
+| `→` | the leader's acts: a card posted, a worker hired (`lead hired claude-1 (default model)`), a worker that finished and left. Assignments and claims are not shown in the journal (the board and the card's screen have them) |
 | `!` | something for you: a worker finished (`claude-1 finished: change ready · 3 files +41 −6`), `:commit`'s suggestion came, the pot runs low |
 | `✓` | you applied a change: `you applied claude-1's change (3 files) to the checkout, staged; worktree mark 7f3a2c1` |
 | `⚑` | what an agent assumed, and the session's notes: `goes on in the session it had`, `starts a new session, told where it left off`, a model that was not available (`using the default`), the confine level, a worktree moved to your HEAD or kept where it is, a path copied into a worktree, a session that listed no commands |
@@ -102,7 +102,7 @@ Under the selected line a dim row names its keys: `enter open the conversation �
 
 ## Marks
 
-`m` marks the line at hand to come back to: the selected line of the open conversation, else the selected journal line (the card's, on a card's screen); `m` again takes the mark away, and the flash says which. With no line at hand (the window closed, or the story in it) the flash says where `m` works. `'` goes to the next marked line, round to the first; with none it says so. A mark is yours, so it outlives the run: it is kept with the line in the store, a load always brings the marked lines however old, and the tidy never lets one go. The demo has no store, so its marks end with the run. Marks do not show in `:export`, and there is no list of all marks: the journal with `'` stands for it.
+`m` marks the line at hand to come back to: the selected line of the open conversation, else the selected line of the journal's window; `m` again takes the mark away, and the flash says which. With no line at hand (the window closed, or the story in it) the flash says where `m` works. `'` goes to the next marked line, round to the first; with none it says so. A mark is yours, so it outlives the run: it is kept with the line in the store, a load always brings the marked lines however old, and the tidy never lets one go. The demo has no store, so its marks end with the run. Marks do not show in `:export`, and there is no list of all marks: the journal with `'` stands for it.
 
 ## While you were away
 
@@ -114,11 +114,11 @@ Back in the terminal after half an hour or more in another window, the same dige
 
 ## Clearing the screen
 
-`:clear` takes the journal's lines and what TO DECIDE lists off the team's screen; `:clear journal` and `:clear inbox` take one. It waits ten seconds first, and `u` keeps the screen as it is. Nothing is deleted: the store keeps every line, `:export`, a card's screen and the archives still show them, and the clear itself is kept, so the next start begins clean too. A marked line stays. What still waits for you stays open and counted in the title, `TO DECIDE (0 · +2 hidden)`, and `W` opens the next one, back on the list. `:unclear` (or `:unclear journal`, `:unclear inbox`) brings it all back.
+`:clear` takes the journal's lines and what TO DECIDE lists off the screen; `:clear journal` and `:clear inbox` take one. It waits ten seconds first, and `u` keeps the screen as it is. Nothing is deleted: the store keeps every line, `:export` and the archives still show them, and the clear itself is kept, so the next start begins clean too. A marked line stays. What still waits for you stays open, counted in the terminal's title and on the TO DECIDE heading, `TO DECIDE 1 change · 2 hidden (:unclear)`, and `W` opens the next one, back on the list. `:unclear` (or `:unclear journal`, `:unclear inbox`) brings it all back.
 
 ## Where you left off
 
-A live start that remembers an earlier run opens WHERE YOU LEFT OFF · 2 h 10 min ago before anything moves: the pot (`$3.10 of $20.00 spent; every agent sleeps until spoken to`), one line per open project (agents, open cards), the oldest items waiting for you as the panel lists them (six at most, then `… and N more`), the turns the earlier run cut short, and the earlier run's last six journal lines with a day row where the day changes. Any key closes it and does nothing else. With nothing to tell there is no window; the demo never has one.
+A live start that remembers an earlier run opens WHERE YOU LEFT OFF · 2 h 10 min ago before anything moves: the pot (`$3.10 of $20.00 spent; every agent sleeps until spoken to`), one line per open project (agents, open cards), the oldest items to decide (`3 to decide:`, six at most, then `… and N more`), the turns the earlier run cut short, and the earlier run's last six journal lines with a day row where the day changes. Any key closes it and does nothing else. With nothing to tell there is no window; the demo never has one.
 
 ## Export
 

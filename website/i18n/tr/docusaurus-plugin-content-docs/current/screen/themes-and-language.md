@@ -18,7 +18,7 @@ Ekran İngilizce ve Türkçe konuşur ve siz başka bir şey seçmedikçe termin
 
 Varsayılan İngilizce. Dil çalıştırmalar arasında saklanmaz: kalıcı bir seçim için `IMECE_LANG` ya da `--lang` kullanın.
 
-Ekrandaki her sözcük tek bir yerde, iki dilde ve aynı yer tutucularla yaşar, böylece hiçbir şey yalnız İngilizce değildir: yardım, lejant, panel başlıkları (WAITING FOR YOU → KARAR BEKLEYEN, JOURNAL → DEFTER, EKİP → EKİP), günlüğün satırları, flaşlar, terminalin başlığı (`! imece · 2 karar bekliyor`), dışa aktarılan Markdown'ın başlıkları. Model olayları veri olarak saklar ve çizim anında sözcüğe döker, bu yüzden `L` yalnız yeni satırları değil bütün günlüğü yeniden yazar. Tuşlar ve `:` komutları iki dilde aynıdır. `?` yardımının `/` süzgeci Türkçe harfleri katlar, böylece `calis`, onlar olmayan bir klavyeden `çalış`'ı bulur.
+Ekrandaki her sözcük tek bir yerde, iki dilde ve aynı yer tutucularla yaşar, böylece hiçbir şey yalnız İngilizce değildir: yardım, lejant, başlıklar (TO DECIDE → KARAR BEKLEYEN, AT WORK → ÇALIŞAN, JOURNAL → DEFTER, home → ana ekran), günlüğün satırları, flaşlar, terminalin başlığı (`! imece · 2 to decide` → `! imece · 2 karar bekliyor`), dışa aktarılan Markdown'ın başlıkları. Model olayları veri olarak saklar ve çizim anında sözcüğe döker, bu yüzden `L` yalnız yeni satırları değil bütün günlüğü yeniden yazar. Tuşlar ve `:` komutları iki dilde aynıdır. `?` yardımının `/` süzgeci Türkçe harfleri katlar, böylece `calis`, onlar olmayan bir klavyeden `çalış`'ı bulur.
 
 Agent'ların söylediği hangi dilde yazdıklarıysa odur; imece asla çevirmez. Ham akış (iz) Claude Code'un gönderdiği gibi kalır.
 
@@ -60,7 +60,7 @@ Başlangıçta sonda renkler için 200 ms, sonra bir imleç konumu raporu için 
 
 ### Soluk arka plan
 
-Tema ne olsa, ekibin üstündeki bir pencere (bir konuşma, yardım, özet, nerede kalmıştın, çıkış listesi) çevresindeki her şeyi soluklaştırır, böylece önce pencere okunur. Dikkat tek renktir: sizi bekleyenler, bitmek üzere bir bütçe, %90'dan itibaren bir kullanım penceresi.
+Tema ne olsa, ana ekranın üstündeki bir pencere (bir konuşma, yardım, özet, nerede kalmıştın, çıkış listesi) çevresindeki her şeyi soluklaştırır, böylece önce pencere okunur. Dikkat tek renktir: sizi bekleyenler, bitmek üzere bir bütçe, %90'dan itibaren bir kullanım penceresi.
 
 ## Ayrıca bakınız
 

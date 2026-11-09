@@ -227,8 +227,10 @@ pub(crate) fn repos() -> impl Iterator<Item = (&'static str, Repo)> {
 }
 
 /// What the agents spend in the demo for each percent of the plan's
-/// five-hour window, in ten-thousandths of a dollar.
-const LIMIT_COST: u64 = 200;
+/// five-hour window, in ten-thousandths of a dollar: $50 fills it, so a
+/// tour sped up for a while comes nowhere near; a week takes four times
+/// as much a percent.
+const LIMIT_COST: u64 = 5_000;
 const FIVE_HOURS: u32 = imece_agent::FIVE_HOURS;
 const WEEK: u32 = imece_agent::WEEK;
 
@@ -767,6 +769,10 @@ fn fault_of(n: u32) -> Option<Fault> {
 /// What the demo keeps for `:commit` and `:copy`.
 #[derive(Default)]
 struct Extras {
+    /// Each usage window (five hours, then the week) as last seen: its
+    /// number on the world's clock and what the agents had spent when it
+    /// began. A window holds only what was spent since.
+    windows: [Option<(u64, u64)>; 2],
     /// The demo's Lonca store, a table (record 116): each repository and
     /// how many changes it has integrated.
     store: Vec<(String, u32)>,
@@ -2374,18 +2380,28 @@ impl Sim {
     }
 
     /// The plan's usage windows, as live sessions report them, once a
-    /// session runs: what the agents spent fills its five-hour window, a
-    /// percent for every [`LIMIT_COST`], and a quarter as much of its week;
-    /// each starts again at the next whole window of the world's clock.
+    /// session runs: what the agents spent in a window fills it, a percent
+    /// for every [`LIMIT_COST`] in five hours and four times that in the
+    /// week; each starts again, empty, at the next whole window of the
+    /// world's clock. What was spent before the first look counts in the
+    /// window it was seen in.
     fn limits(&mut self, w: &mut World) {
         let now = w.now();
         if !w.agents.iter().any(|a| self.started(a.id)) {
             return;
         }
         let spent: u64 = w.agents.iter().map(|a| a.cost).sum();
-        let five = (spent / LIMIT_COST).min(100) as u8;
-        for (minutes, used) in [(FIVE_HOURS, five), (WEEK, five / 4)] {
+        let windows = [(FIVE_HOURS, LIMIT_COST), (WEEK, 4 * LIMIT_COST)];
+        for (seen, (minutes, per)) in self.extras.windows.iter_mut().zip(windows) {
             let length = u64::from(minutes) * 60;
+            let number = now / length;
+            let base = match *seen {
+                Some((at, base)) if at == number => base,
+                Some(_) => spent,
+                None => 0,
+            };
+            *seen = Some((number, base));
+            let used = (spent.saturating_sub(base) / per).min(100) as u8;
             w.limit(Limit {
                 minutes,
                 used,
@@ -6648,39 +6664,44 @@ diff --git a/b.rs b/b.rs
         s.limits(&mut w);
         assert!(w.limits.is_empty());
         s.start(&mut w, lead);
-        w.agents[lead].cost = 3_000;
-        w.agents[workers[1]].cost = 2_100;
+        w.agents[lead].cost = 30_000;
+        w.agents[workers[1]].cost = 21_000;
         w.tick = 4_000;
         s.limits(&mut w);
-        // $0.51: 25% of five hours, 6% of the week.
+        // $5.10, all of it before the first look: 10% of five hours, 2% of
+        // the week ($2.00 a percent).
         let now = w.now();
         assert_eq!(now, 20_000);
-        assert_eq!(
-            w.limits,
-            [
-                Limit {
-                    minutes: 300,
-                    used: 25,
-                    resets_at: Some(36_000)
-                },
-                Limit {
-                    minutes: 10_080,
-                    used: 6,
-                    resets_at: Some(604_800)
-                },
-            ]
-        );
-        // Full at most.
-        w.agents[workers[0]].cost = 99_999;
+        let five = |used, resets| Limit {
+            minutes: 300,
+            used,
+            resets_at: Some(resets),
+        };
+        let week = |used| Limit {
+            minutes: 10_080,
+            used,
+            resets_at: Some(604_800),
+        };
+        assert_eq!(w.limits, [five(10, 36_000), week(2)]);
+        // $2.40 more in the same windows ($7.50): 15%, 3%.
+        w.agents[workers[0]].cost = 24_000;
         s.limits(&mut w);
-        assert_eq!(
-            w.tightest(),
-            Some(Limit {
-                minutes: 300,
-                used: 100,
-                resets_at: Some(36_000)
-            })
-        );
+        assert_eq!(w.limits, [five(15, 36_000), week(3)]);
+        // Later in the same five hours, nothing more spent: as it was.
+        w.tick = 7_100;
+        s.limits(&mut w);
+        assert_eq!(w.limits, [five(15, 36_000), week(3)]);
+        // The next five hours start empty; the week keeps what it had.
+        w.tick = 7_200;
+        s.limits(&mut w);
+        assert_eq!(w.limits, [five(0, 54_000), week(3)]);
+        w.agents[workers[0]].cost += 15_000;
+        s.limits(&mut w);
+        assert_eq!(w.limits, [five(3, 54_000), week(4)]);
+        // Full at most.
+        w.agents[workers[0]].cost += 9_999_999;
+        s.limits(&mut w);
+        assert_eq!(w.tightest(), Some(five(100, 54_000)));
         // Said every minute of the demo's clock.
         w.limits.clear();
         w.tick = 11;

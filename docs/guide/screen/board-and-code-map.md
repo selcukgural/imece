@@ -5,7 +5,7 @@ description: Two windows over the screen - the board with every card in its colu
 
 # The board and the code map
 
-The team shows the team; the board shows the work, and the code map shows the files. `:board` and `:code` open them in a window over whatever is on the screen; `esc` (or `q`) closes the window. While it is open it takes every key, so `W`, `/` and the rest wait for it to close; `?` opens the help over it. The board has one key of its own, `r`; the code map none.
+Home shows what is to decide and who works; the board shows the work, and the code map shows the files. `:board` and `:code` open them in a window over whatever is on the screen; `esc` (or `q`) closes the window. While it is open it takes every key, so `W`, `/` and the rest wait for it to close; `?` opens the help over it. The board has one key of its own, `r`; the code map none.
 
 ## The board
 
@@ -23,7 +23,7 @@ Five columns, each titled with its count:
 | Column | Cards in it |
 | --- | --- |
 | TO DO | posted and not yet taken: the leader's `post`, or a card the leader wrote for a worker that is not free yet, or one an `assign` holds for its worker until the cards it waits on are done |
-| IN PROGRESS | taken: assigned by the leader or claimed from the board by an idle worker. Under the title, its owner with the owner's state glyph and a progress bar; a working owner's glyph breathes as on the team (`:motion`) |
+| IN PROGRESS | taken: assigned by the leader or claimed from the board by an idle worker. Under the title, its owner with the owner's state glyph and a progress bar; a working owner's glyph breathes as on Home (`:motion`) |
 | TO REVIEW | finished with a `done`, and its change (`Δ`) waits for you in TO DECIDE, newest first: the agent is through, the work is not in yet. Sent back, the card goes back to IN PROGRESS |
 | VERIFYING | on Lonca, its change is in the merge queue after your yes |
 | DONE | its change is in whole (or its `done` left nothing to take), newest first, with the owner that finished it; a card that failed stands here too, marked `✕`, and one the leader withdrew, marked `–` dim. Only a card at work shows its owner's state: in the last two columns the owner may be at work on something else |
@@ -49,7 +49,7 @@ What a card is, how the leader posts and assigns and how a worker claims, is in 
 ```
 
 - Files are grouped under their directory, a dim `dir/` row above each group.
-- A lease cell is the holder's state glyph (the team's), its name and the symbol (its last part, `Round` for `Money.Round`). Every cell is padded to the widest name and symbol in the project, capped, so the columns do not jump when a lease comes or goes.
+- A lease cell is the holder's state glyph (as on Home), its name and the symbol (its last part, `Round` for `Money.Round`). Every cell is padded to the widest name and symbol in the project, capped, so the columns do not jump when a lease comes or goes.
 - A file nobody holds is dim with nothing after it. A file several agents hold ends with `⇆ N` in the warning colour.
 - The bottom line counts what is being edited (the leases) and the shared files, and words only the glyphs on the map right now: a fixed legend missed the glyphs the map had started to use. `⇆` is explained only when a file is shared.
 
