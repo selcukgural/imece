@@ -192,6 +192,7 @@ The focus's `folder` line says where the agent works: the checkout for a leader,
 | --- | --- |
 | `:home` `:salon` | none: Home · Home's AT WORK (`gw`) |
 | `:waiting` | none: Home's first row to decide (`gd`) |
+| `:changes` | `gc` |
 | `:board` `:code` `:timeline` | none: windows over the screen; `esc` closes them |
 | `:journal` / `:story` | `J` / `J` in the journal's window |
 | `:lang` | `L` |
@@ -201,7 +202,6 @@ The focus's `folder` line says where the agent works: the checkout for a leader,
 | `:pending` | `q` `s` |
 | `:next` / `:defer` | `W` / `S` |
 | `:goto` | `&` |
-| `:changes` | `gc` |
 | `:settle` | `s` |
 | `:peek` | `K` |
 | `:archives` | `A` |

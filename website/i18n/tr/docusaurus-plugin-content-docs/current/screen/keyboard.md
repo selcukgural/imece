@@ -192,6 +192,7 @@ Odağın `klasör` satırı ajanın nerede çalıştığını söyler: lider iç
 | --- | --- |
 | `:home` `:salon` | yok: ana ekran · ana ekranın ÇALIŞAN'ı (`gw`) |
 | `:waiting` | yok: ana ekranın karar bekleyen ilk satırı (`gd`) |
+| `:changes` | `gc` |
 | `:board` `:code` `:timeline` | yok: ekranın üstünde pencereler; `esc` kapatır |
 | `:journal` / `:story` | `J` / günlüğün penceresinde `J` |
 | `:lang` | `L` |
@@ -201,7 +202,6 @@ Odağın `klasör` satırı ajanın nerede çalıştığını söyler: lider iç
 | `:pending` | `q` `s` |
 | `:next` / `:defer` | `W` / `S` |
 | `:goto` | `&` |
-| `:changes` | `gc` |
 | `:settle` | `s` |
 | `:peek` | `K` |
 | `:archives` | `A` |
