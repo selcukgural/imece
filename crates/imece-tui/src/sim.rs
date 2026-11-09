@@ -19,7 +19,7 @@ use crate::procs::{Left, Proc, Refusal as ProcRefusal};
 use crate::rng::Rng;
 use imece_agent::Tier;
 
-type Repo = &'static [(&'static str, &'static [&'static str])];
+pub(crate) type Repo = &'static [(&'static str, &'static [&'static str])];
 
 /// The start point the demo's second worker of a project is hired from.
 const DEMO_START: &str = "#41";
@@ -218,6 +218,13 @@ const PROJECTS: &[(&str, Repo, &Kit)] = &[
 ];
 
 pub const MAX_PROJECTS: usize = 4;
+
+/// The demo's projects by name, with the files of each and the symbols
+/// in them: what the demo on `Live` makes its checkouts of
+/// (`live::demo`).
+pub(crate) fn repos() -> impl Iterator<Item = (&'static str, Repo)> {
+    PROJECTS.iter().map(|&(name, repo, _)| (name, repo))
+}
 
 /// What the agents spend in the demo for each percent of the plan's
 /// five-hour window, in ten-thousandths of a dollar.

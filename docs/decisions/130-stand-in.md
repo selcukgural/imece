@@ -82,3 +82,58 @@ moved from `sim.rs` into the stand-in's mind (asks to the person,
 approvals through `approve`, helpers, faults, rate limits, to-do lists,
 strays, the plan gate, the commit and review one-shots), Lonca's fake
 daemon for the demo; then `Engine::Sim` goes.
+
+## The demo on `Live`, first step (2026-11-09)
+
+The person's answers (2026-11-09): `--demo` stays on `Sim` until the
+stand-in does what `Sim` does; a hidden `--demo-live` runs the demo on the
+real `Live` meanwhile, and the pull request that deletes `Sim` gives it
+`--demo`'s name. The demo on `Live` runs on real time: no pause, no speed,
+no 14:00 start; `--seed` will only seed the stand-in's choices.
+
+`live::demo::world(projects, agents, imece)` makes one directory of the
+run's own, `imece-demo-PID` under the temporary directory, 0700, named by
+its real path (Claude Code keeps a transcript by the directory a session
+ran in as it sees it, and macOS's temporary directory is a link): `bin/`
+for the stand-in's program, `home/` as its `CLAUDE_CONFIG_DIR`, `state/`
+for the store and the worktrees, `src/<name>` for each project (the
+simulation's names and files, `sim::repos`, as many as asked, 1 to 4): a
+git checkout on `main` with one commit, the person's hooks and signing
+kept out. `live::world` takes `Options.claude: StandIn { program, home,
+relay }` for it: the session's program, the configuration directory
+`Live` looks for transcripts in, and the imece whose `mcp-relay` the
+sessions start (imece's own binary; `current_exe` is not, in a test).
+Projects after the first are opened as teams. There is no probe, no
+welcome and no news; the farewell says the demo keeps nothing. `Demo`
+removes the directory when dropped, after the app (its sessions end
+with it, reaped).
+
+`--demo-live` takes `--projects` and `--agents` (`Live`'s limit of 16, by
+default `DEMO_LIVE_WORKERS` 3: the scale record 125 designs at);
+`--researchers` and `--seed` stay `--demo`'s.
+
+The stand-in keeps transcripts now: `install(dir, imece, home)` sets
+`CLAUDE_CONFIG_DIR` in the program it writes (a session's environment is
+cleared, so imece's own would not reach it), and under it each session
+adds a line to `claude::transcript(home, cwd, session)` at its start and
+after each turn: its mind (`Mind::to_json`: `whoami`'s lines and the
+workers it hired), what it has spent and its context (`Kept`). A
+`--resume` reads the last line of that session's transcript in whichever
+directory it ran (`kept`; a fork goes on from another directory's) and
+goes on from it, reporting the whole session's cost as Claude Code does;
+one not found starts afresh (Claude Code would refuse; `Live` resumes only
+what it found the transcript of). Without `CLAUDE_CONFIG_DIR` it keeps
+nothing, so a test never writes in the person's `~/.claude`. The test
+`a_session_of_an_earlier_run_resumes_from_its_transcript` runs `Live`
+twice on the same state: the leader's session resumes, gives the new
+work to the worker it hired before, and only the new turns are booked.
+
+Growth: the transcripts grow a line a turn and go with the demo's
+directory. Failure: a transcript that cannot be written is said on the
+stand-in's stderr and leaves a resume to start afresh; a checkout or the
+stand-in that cannot be made ends the start with what failed, the
+directory removed.
+
+Next, unchanged: the demo's behaviours from `sim.rs` into the stand-in's
+mind, Lonca's fake daemon for the demo, then `Engine::Sim` goes and
+`--demo-live` becomes `--demo`.

@@ -127,6 +127,10 @@ struct Args {
     lang: Lang,
     theme: Option<String>,
     demo: bool,
+    /// `--demo-live` (hidden, record 130): the demo on the real `Live`
+    /// with imece's stand-in for Claude Code, until it does what `--demo`
+    /// does and takes its name.
+    demo_live: bool,
     fresh: bool,
     awake: bool,
     repo: PathBuf,
@@ -150,6 +154,9 @@ const DEFAULT_WORKERS: usize = 4;
 /// otherwise.
 const MAX_HELPERS: u64 = 8;
 const DEFAULT_HELPERS: usize = 2;
+/// Workers a leader of `--demo-live` may hire unless the person says
+/// otherwise: the scale the screens are designed at (record 125).
+const DEMO_LIVE_WORKERS: usize = 3;
 
 fn parse_args() -> Result<Args, String> {
     parse(std::env::args().skip(1), |k| std::env::var(k).ok())
@@ -179,6 +186,7 @@ fn parse(
             None => None,
         },
         demo: false,
+        demo_live: false,
         fresh: false,
         awake: false,
         repo: PathBuf::from("."),
@@ -198,6 +206,10 @@ fn parse(
         }
         if flag == "--demo" {
             args.demo = true;
+            continue;
+        }
+        if flag == "--demo-live" {
+            args.demo_live = true;
             continue;
         }
         if flag == "--fresh" {
@@ -267,6 +279,14 @@ fn parse(
             }
             _ => return Err(format!("unknown option {flag}\n\n{USAGE}")),
         }
+    }
+    if args.demo && args.demo_live {
+        return Err("--demo or --demo-live, not both".into());
+    }
+    // The demo on `Live` has Live's limits, and as many projects as the
+    // demo's.
+    if args.demo_live {
+        demo_only.retain(|f| f != "--projects");
     }
     if args.demo {
         if args.agents == Some(0) {
@@ -392,6 +412,14 @@ fn main() -> std::io::Result<()> {
     let icon = screen::shows_icon(said.who.as_ref(), var);
     let mut terminal =
         screen::init(said.keys, progress, icon).inspect_err(|_| screen::restore())?;
+    let fail = |msg: String| -> ! {
+        screen::restore();
+        eprintln!("imece: {msg}");
+        std::process::exit(1);
+    };
+    // The demo on `Live`'s directory: it goes after the app (declared
+    // first, dropped last), once its sessions have ended.
+    let mut demo_dir = None;
     let mut app = if args.demo {
         // The simulation's clock says 14:00 at its start, on today's date.
         model::start_clock_at(14 * 3600, live::today());
@@ -402,12 +430,17 @@ fn main() -> std::io::Result<()> {
             args.seed,
             args.lang,
         )
+    } else if args.demo_live {
+        let imece =
+            std::env::current_exe().unwrap_or_else(|e| fail(format!("imece's own path: {e}")));
+        let agents = args.agents.unwrap_or(DEMO_LIVE_WORKERS);
+        let (world, live, demo) =
+            live::demo::world(args.projects, agents, &imece).unwrap_or_else(|e| fail(e));
+        let (seconds, day) = live::local_clock(world.started_at);
+        model::start_clock_at(seconds, day);
+        demo_dir = Some(demo);
+        app::App::with(world, app::Engine::Live(Box::new(live)), args.lang)
     } else {
-        let fail = |msg: String| -> ! {
-            screen::restore();
-            eprintln!("imece: {msg}");
-            std::process::exit(1);
-        };
         live::probe(&args.repo, imece_agent::claude::PROGRAM).unwrap_or_else(|e| fail(e));
         let options = live::Options {
             repo: args.repo,
@@ -423,6 +456,7 @@ fn main() -> std::io::Result<()> {
             own_notes: imece_agent::claude::own_notes(),
             confine: args.confine,
             solo: args.solo,
+            claude: None,
         };
         match live::world(options) {
             Ok((world, live)) => {
@@ -471,11 +505,14 @@ fn main() -> std::io::Result<()> {
     // What is left in the terminal once the screen is gone (record 101),
     // read before the sessions end.
     let spent = app.world.spent().saturating_sub(app.spent_at_start);
-    let bye = ui::words::farewell(app.lang, &app.world, spent, app.demo());
+    let bye = ui::words::farewell(app.lang, &app.world, spent, app.demo() || args.demo_live);
     app.leave();
     screen::restore();
     // A terminal gone away takes nothing; that is no error of the run's.
     let _ = writeln!(std::io::stdout(), "{bye}");
+    // The demo's sessions end with the app, then its directory goes.
+    drop(app);
+    drop(demo_dir);
     result
 }
 
@@ -926,6 +963,31 @@ mod tests {
             args(&["--demo", "--agents", "200"], &[]).unwrap().agents,
             Some(200)
         );
+    }
+
+    #[test]
+    fn the_demo_on_live_takes_projects_and_live_s_limits() {
+        let a = args(&["--demo-live"], &[]).unwrap();
+        assert!(a.demo_live && !a.demo);
+        assert_eq!((a.projects, a.agents), (2, None));
+        assert_eq!(DEMO_LIVE_WORKERS, 3);
+        assert!(!args(&[], &[]).unwrap().demo_live);
+        let a = args(&["--demo-live", "--projects", "4", "--agents", "16"], &[]).unwrap();
+        assert_eq!((a.projects, a.agents), (4, Some(16)));
+        assert_eq!(
+            args(&["--demo-live", "--agents", "0"], &[]).unwrap().agents,
+            Some(0)
+        );
+        let e = args(&["--demo-live", "--agents", "17"], &[]).unwrap_err();
+        assert_eq!(e, "--agents: a leader hires at most 16");
+        for flag in ["--researchers", "--seed"] {
+            let e = args(&["--demo-live", flag, "2"], &[]).unwrap_err();
+            assert!(e.starts_with(&format!("{flag} is for --demo")), "{e}");
+        }
+        let e = args(&["--projects", "2"], &[]).unwrap_err();
+        assert!(e.starts_with("--projects is for --demo"), "{e}");
+        let e = args(&["--demo", "--demo-live"], &[]).unwrap_err();
+        assert_eq!(e, "--demo or --demo-live, not both");
     }
 
     #[test]

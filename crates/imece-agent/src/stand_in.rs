@@ -7,8 +7,11 @@
 //! writes one file in its directory and says done. It asks no model and
 //! spends nothing; the cost it reports is made up, the same every run.
 //!
-//! It is what the demo will run on the real `Live` (record 111), and what
-//! tests run the real `Live` on end to end. It is no sandbox and checks
+//! It is what the demo runs on the real `Live` (record 111, `--demo-live`
+//! for now), and what tests run the real `Live` on end to end. Under
+//! `CLAUDE_CONFIG_DIR` it keeps a transcript per session where Claude Code
+//! keeps its own ([`crate::claude::transcript`]), so a `--resume` goes on
+//! from what the session had learned and spent; without it, nothing. It is no sandbox and checks
 //! nothing: imece's checks of what a session reports run on it as on
 //! Claude Code.
 
@@ -47,12 +50,32 @@ pub const OUT_DIR: &str = "stand-in";
 /// exits with.
 pub fn main(args: &[String]) -> i32 {
     let cwd = std::env::current_dir().unwrap_or_default();
-    answer(args, &cwd, io::stdin().lock(), io::stdout().lock())
+    let home = home_of(std::env::var_os("CLAUDE_CONFIG_DIR"));
+    answer(
+        args,
+        &cwd,
+        home.as_deref(),
+        io::stdin().lock(),
+        io::stdout().lock(),
+    )
+}
+
+/// Where the transcripts go, from `CLAUDE_CONFIG_DIR`'s value: nowhere
+/// when it is not set or empty (never the person's `~/.claude`).
+pub fn home_of(var: Option<std::ffi::OsString>) -> Option<PathBuf> {
+    var.filter(|d| !d.is_empty()).map(PathBuf::from)
 }
 
 /// What the stand-in does with `args` in `cwd`, `input` its stdin and
-/// `out` its stdout; what it exits with.
-pub fn answer(args: &[String], cwd: &Path, input: impl BufRead, mut out: impl Write) -> i32 {
+/// `out` its stdout, its transcripts under `home` (none: kept nowhere);
+/// what it exits with.
+pub fn answer(
+    args: &[String],
+    cwd: &Path,
+    home: Option<&Path>,
+    input: impl BufRead,
+    mut out: impl Write,
+) -> i32 {
     match args {
         [v] if v == "--version" || v == "-v" => {
             let _ = writeln!(out, "{VERSION}");
@@ -65,7 +88,7 @@ pub fn answer(args: &[String], cwd: &Path, input: impl BufRead, mut out: impl Wr
         }
         _ => match Args::parse(args) {
             Ok(a) => {
-                run(&a, cwd, input, out);
+                run(&a, cwd, home, input, out);
                 0
             }
             Err(why) => {
@@ -77,13 +100,19 @@ pub fn answer(args: &[String], cwd: &Path, input: impl BufRead, mut out: impl Wr
 }
 
 /// Writes `dir/claude`, a program that runs `imece stand-in` with its
-/// arguments, `imece` being imece's own binary: what a session's program
-/// is (one path) when the stand-in plays Claude Code. Gives its path.
-pub fn install(dir: &Path, imece: &Path) -> io::Result<PathBuf> {
+/// arguments, `imece` being imece's own binary, its transcripts under
+/// `home` (as `CLAUDE_CONFIG_DIR`, which a session's cleared environment
+/// would not pass on otherwise): what a session's program is (one path)
+/// when the stand-in plays Claude Code. Gives its path.
+pub fn install(dir: &Path, imece: &Path, home: &Path) -> io::Result<PathBuf> {
     use std::os::unix::fs::PermissionsExt;
-    let quoted = format!("'{}'", imece.to_string_lossy().replace('\'', r"'\''"));
+    let quoted = |p: &Path| format!("'{}'", p.to_string_lossy().replace('\'', r"'\''"));
     let path = dir.join("claude");
-    std::fs::write(&path, format!("#!/bin/sh\nexec {quoted} stand-in \"$@\"\n"))?;
+    let (imece, home) = (quoted(imece), quoted(home));
+    std::fs::write(
+        &path,
+        format!("#!/bin/sh\nCLAUDE_CONFIG_DIR={home} exec {imece} stand-in \"$@\"\n"),
+    )?;
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700))?;
     Ok(path)
 }
@@ -389,6 +418,24 @@ pub struct Mind {
 }
 
 impl Mind {
+    /// The mind as a transcript keeps it.
+    pub fn to_json(&self) -> Value {
+        json!({ "me": self.me, "hired": self.hired })
+    }
+
+    /// A mind a transcript kept; what is not text is left out.
+    pub fn from_json(v: &Value) -> Mind {
+        let text = |v: &Value| v.as_str().map(String::from);
+        Mind {
+            me: (v["me"].as_object().into_iter().flatten())
+                .filter_map(|(k, v)| Some((k.clone(), text(v)?)))
+                .collect(),
+            hired: (v["hired"].as_array().into_iter().flatten())
+                .filter_map(text)
+                .collect(),
+        }
+    }
+
     /// One turn on prompt `prompt`: what it ends with.
     pub fn turn(&mut self, hands: &mut impl Hands, prompt: &str) -> String {
         if self.me.is_empty()
@@ -631,23 +678,101 @@ fn prompt_of(line: &str) -> Option<String> {
     }
 }
 
+/// What a transcript keeps of a session after each of its turns: its
+/// mind, what it has spent (a resumed session reports its whole cost, as
+/// Claude Code's does) and its context.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Kept {
+    pub mind: Mind,
+    pub spent: u64,
+    pub context: u64,
+}
+
+impl Kept {
+    fn fresh() -> Kept {
+        Kept {
+            mind: Mind::default(),
+            spent: 0,
+            context: CONTEXT_START,
+        }
+    }
+
+    fn line(&self) -> Value {
+        json!({
+            "type": "stand-in",
+            "mind": self.mind.to_json(),
+            "spent": self.spent,
+            "context": self.context,
+        })
+    }
+}
+
+/// The last of what session `id`'s transcript under `home` kept, in
+/// whichever directory it ran (a fork goes on from another's).
+pub fn kept(home: &Path, id: &str) -> Option<Kept> {
+    let file = format!("{id}.jsonl");
+    let text = (std::fs::read_dir(home.join("projects")).ok()?)
+        .flatten()
+        .find_map(|d| std::fs::read_to_string(d.path().join(&file)).ok())?;
+    let v: Value = serde_json::from_str(text.lines().last()?).ok()?;
+    Some(Kept {
+        mind: Mind::from_json(&v["mind"]),
+        spent: v["spent"].as_u64()?,
+        context: v["context"].as_u64()?,
+    })
+}
+
+/// Adds `k` to session `id`'s transcript under `home` for `cwd`. A
+/// transcript that can not be written leaves a resume to start afresh.
+fn keep(home: &Path, cwd: &Path, id: &str, k: &Kept) {
+    let file = crate::claude::transcript(home, cwd, id);
+    let wrote = file
+        .parent()
+        .map_or(Ok(()), std::fs::create_dir_all)
+        .and_then(|()| {
+            std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&file)
+        })
+        .and_then(|mut f| writeln!(f, "{}", k.line()));
+    if let Err(e) = wrote {
+        eprintln!("imece stand-in: {}: {e}", file.display());
+    }
+}
+
 /// A session: its servers started in `cwd`, `init`, then a turn per
-/// prompt until stdin ends.
-pub fn run(a: &Args, cwd: &Path, input: impl BufRead, out: impl Write) {
+/// prompt until stdin ends; its transcript under `home`, and a
+/// `--resume` going on from the one there (one not found: afresh).
+pub fn run(a: &Args, cwd: &Path, home: Option<&Path>, input: impl BufRead, out: impl Write) {
     let mut servers: Vec<(String, Server)> = (a.servers.iter())
         .map(|(n, c, args)| (n.clone(), Server::start(c, args, cwd)))
         .collect();
     let new = || crate::new_uuid().unwrap_or_else(|_| "stand-in".into());
     let mut session = a.session(new);
+    let was = (home.zip(a.resume.as_deref()))
+        .and_then(|(h, id)| kept(h, id))
+        .unwrap_or_else(Kept::fresh);
     let mut stream = Stream {
         out,
-        spent: 0,
-        context: CONTEXT_START,
+        spent: was.spent,
+        context: was.context,
         calls: 0,
         model: a.model.clone().unwrap_or_else(|| "stand-in".into()),
     };
     stream.line(&init(a, &session, &servers));
-    let mut mind = Mind::default();
+    let mut mind = was.mind;
+    let kept_now = |session: &str, mind: &Mind, stream: &Stream<_>| {
+        if let Some(h) = home {
+            let k = Kept {
+                mind: mind.clone(),
+                spent: stream.spent,
+                context: stream.context,
+            };
+            keep(h, cwd, session, &k);
+        }
+    };
+    kept_now(&session, &mind, &stream);
     for line in input.lines() {
         let Ok(line) = line else { break };
         let Some(prompt) = prompt_of(&line) else {
@@ -661,6 +786,7 @@ pub fn run(a: &Args, cwd: &Path, input: impl BufRead, out: impl Write) {
             mind = Mind::default();
             stream.line(&init(a, &session, &servers));
             stream.result("", 0);
+            kept_now(&session, &mind, &stream);
             continue;
         }
         let mut hands = Busy {
@@ -673,6 +799,7 @@ pub fn run(a: &Args, cwd: &Path, input: impl BufRead, out: impl Write) {
         hands.say(&text);
         stream.context += CONTEXT_TURN;
         stream.result(&text, TURN_COST);
+        kept_now(&session, &mind, &stream);
     }
 }
 
@@ -1037,6 +1164,96 @@ mod tests {
     }
 
     #[test]
+    fn transcripts_go_under_the_config_dir_only_when_it_is_named() {
+        assert_eq!(home_of(Some("/h".into())), Some(PathBuf::from("/h")));
+        assert_eq!(home_of(Some("".into())), None);
+        assert_eq!(home_of(None), None);
+    }
+
+    #[test]
+    fn a_mind_is_kept_as_json_and_read_back_without_what_is_not_text() {
+        let mind = Mind {
+            me: BTreeMap::from([("role".into(), "the leader".into())]),
+            hired: vec!["claude-1".into(), "claude-2".into()],
+        };
+        assert_eq!(Mind::from_json(&mind.to_json()), mind);
+        let odd = json!({ "me": { "role": 3, "name": "x" }, "hired": ["a", 4] });
+        let read = Mind::from_json(&odd);
+        assert_eq!(read.me, BTreeMap::from([("name".into(), "x".into())]));
+        assert_eq!(read.hired, ["a"]);
+        assert_eq!(Mind::from_json(&json!(null)), Mind::default());
+    }
+
+    /// Runs a session on `args` in `cwd` with `prompts`, its transcripts
+    /// under `home`: its session id and the costs its turns reported.
+    fn session_in(home: &Path, cwd: &Path, args: &[&str], prompts: &[&str]) -> (String, Vec<u64>) {
+        let a = Args::parse(&strings(args)).unwrap();
+        let input: String = (prompts.iter())
+            .map(|p| crate::claude::prompt_line(p) + "\n")
+            .collect();
+        let mut out = Vec::new();
+        run(&a, cwd, Some(home), input.as_bytes(), &mut out);
+        let lines: Vec<Value> = (String::from_utf8(out).unwrap().lines())
+            .map(|l| serde_json::from_str(l).unwrap())
+            .collect();
+        let session = lines[0]["session_id"].as_str().unwrap().to_string();
+        let costs = (lines.iter())
+            .filter(|l| l["type"] == "result")
+            .map(|l| (l["total_cost_usd"].as_f64().unwrap() * 1_000_000.0).round() as u64)
+            .collect();
+        (session, costs)
+    }
+
+    #[test]
+    fn a_session_keeps_a_transcript_a_resume_and_a_fork_go_on_from() {
+        let home = std::env::temp_dir().join(format!("imece-stand-in-home-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        let (here, there) = (Path::new("/work/here"), Path::new("/work/there"));
+        let (old, costs) = session_in(&home, here, &[], &["one", "two"]);
+        assert_eq!(costs, [TURN_COST, 2 * TURN_COST]);
+        // Where Claude Code keeps its own: a line at the start, one a turn.
+        let file = crate::claude::transcript(&home, here, &old);
+        let lines = || std::fs::read_to_string(&file).unwrap().lines().count();
+        assert_eq!(lines(), 3);
+        let k = kept(&home, &old).unwrap();
+        assert_eq!(k.spent, 2 * TURN_COST);
+        let context = CONTEXT_START + 2 * (CONTEXT_TURN / 10 + CONTEXT_TURN);
+        assert_eq!(k.context, context);
+        // A resume reports the whole session's cost, as Claude Code's does,
+        // and goes on in the same transcript.
+        let (again, costs) = session_in(&home, here, &["--resume", &old], &["three"]);
+        assert_eq!(again, old);
+        assert_eq!(costs, [3 * TURN_COST]);
+        assert_eq!(lines(), 5);
+        assert_eq!(
+            kept(&home, &old).unwrap().context,
+            context + CONTEXT_TURN / 10 + CONTEXT_TURN
+        );
+        // A fork, in another directory: a transcript of its own there, the
+        // old one as it was.
+        let fork = "11111111-2222-4333-8444-555555555555";
+        let args = ["--resume", &old, "--fork-session", "--session-id", fork];
+        let (forked, costs) = session_in(&home, there, &args, &["four"]);
+        assert_eq!(forked, fork);
+        assert_eq!(costs, [4 * TURN_COST]);
+        assert_eq!(lines(), 5);
+        assert!(crate::claude::transcript(&home, there, fork).is_file());
+        assert_eq!(kept(&home, fork).unwrap().spent, 4 * TURN_COST);
+        // `/clear`: a new session from nothing, kept apart.
+        let (_, costs) = session_in(&home, here, &["--resume", &old], &["/clear", "five"]);
+        assert_eq!(costs, [0, TURN_COST]);
+        assert_eq!(lines(), 6, "the old one took no more than its start");
+        // One not found starts afresh; nothing is kept without a home.
+        let none = "99999999-2222-4333-8444-555555555555";
+        let (_, costs) = session_in(&home, here, &["--resume", none], &["six"]);
+        assert_eq!(costs, [TURN_COST]);
+        assert_eq!(kept(&home, "not-there"), None);
+        std::fs::write(&file, "not json\n").unwrap();
+        assert_eq!(kept(&home, &old), None, "a last line not understood");
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
     fn a_session_streams_what_imece_s_parser_takes() {
         let a = Args {
             tools: strings(&["Read", "Write"]),
@@ -1050,7 +1267,7 @@ mod tests {
             crate::claude::prompt_line("again"),
         );
         let mut out = Vec::new();
-        run(&a, Path::new("/work"), input.as_bytes(), &mut out);
+        run(&a, Path::new("/work"), None, input.as_bytes(), &mut out);
         let text = String::from_utf8(out).unwrap();
         let events = parsed(&text, &a);
         let done: Vec<(bool, String, u64)> = (events.iter())
@@ -1122,7 +1339,7 @@ mod tests {
             crate::claude::prompt_line("two"),
         );
         let mut out = Vec::new();
-        run(&a, Path::new("/work"), input.as_bytes(), &mut out);
+        run(&a, Path::new("/work"), None, input.as_bytes(), &mut out);
         let events = parsed(&String::from_utf8(out).unwrap(), &a);
         let said = CONTEXT_START + CONTEXT_TURN / 10;
         assert!(events.contains(&crate::Event::Context {
@@ -1194,20 +1411,34 @@ mod tests {
         let odd = dir.join("it's here");
         std::fs::create_dir_all(&odd).unwrap();
         let imece = odd.join("imece");
-        std::fs::write(&imece, "#!/bin/sh\nprintf '%s|' \"$@\"\n").unwrap();
+        std::fs::write(
+            &imece,
+            "#!/bin/sh\nprintf '%s|' \"$CLAUDE_CONFIG_DIR\" \"$@\"\n",
+        )
+        .unwrap();
         std::fs::set_permissions(&imece, std::fs::Permissions::from_mode(0o700)).unwrap();
-        let claude = install(&dir, &imece).unwrap();
+        let home = odd.join("it's home");
+        let claude = install(&dir, &imece, &home).unwrap();
         assert_eq!(claude, dir.join("claude"));
         let mode = std::fs::metadata(&claude).unwrap().permissions().mode();
         assert_eq!(mode & 0o777, 0o700);
         let out = Command::new(&claude).args(["-p", "a b"]).output().unwrap();
-        assert_eq!(String::from_utf8_lossy(&out.stdout), "stand-in|-p|a b|");
+        assert_eq!(
+            String::from_utf8_lossy(&out.stdout),
+            format!("{}|stand-in|-p|a b|", home.display())
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
     fn said(args: &[&str], input: &str) -> (i32, String) {
         let mut out = Vec::new();
-        let code = answer(&strings(args), Path::new("/"), input.as_bytes(), &mut out);
+        let code = answer(
+            &strings(args),
+            Path::new("/"),
+            None,
+            input.as_bytes(),
+            &mut out,
+        );
         (code, String::from_utf8(out).unwrap())
     }
 

@@ -5,27 +5,13 @@
 use super::testing::*;
 use super::*;
 
-/// imece's own binary, which the unit tests do not run from: they run
-/// from `target/<profile>/deps`, and the binary is one directory up,
-/// built by cargo for the integration tests (`tests/stand_in.rs`).
-fn imece() -> PathBuf {
-    let exe = std::env::current_exe().unwrap();
-    let bin = exe.parent().unwrap().parent().unwrap().join("imece");
-    assert!(
-        bin.is_file(),
-        "{} is not built: run the crate's tests whole (cargo test -p imece-tui)",
-        bin.display()
-    );
-    bin
-}
-
 #[test]
 fn a_leader_hires_a_worker_whose_change_waits_for_the_person() {
     let dir = std::env::temp_dir().join(format!("imece-e2e-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let repo = checkout("e2e-repo");
-    let claude = imece_agent::stand_in::install(&dir, &imece()).unwrap();
+    let claude = imece_agent::stand_in::install(&dir, &imece(), &dir.join("home")).unwrap();
     let mut w = team(0);
     let mut live = Live::new(
         1,
@@ -72,6 +58,83 @@ fn a_leader_hires_a_worker_whose_change_waits_for_the_person() {
     let cost = imece_agent::stand_in::TURN_COST;
     assert!(w.agents[0].cost > 0 && w.agents[1].cost > 0);
     assert!(w.spent() * 100 >= 3 * cost, "three turns at least");
+    drop(live);
+    let _ = std::fs::remove_dir_all(&dir);
+    let _ = std::fs::remove_dir_all(&repo);
+}
+
+#[test]
+fn a_session_of_an_earlier_run_resumes_from_its_transcript() {
+    let dir = std::env::temp_dir().join(format!("imece-e2e-resume-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    // Its real path: a session's transcript is kept by the directory it
+    // runs in as it sees it.
+    let dir = dir.canonicalize().unwrap();
+    let repo = checkout("e2e-resume-repo").canonicalize().unwrap();
+    let home = dir.join("home");
+    let program = imece_agent::stand_in::install(&dir, &imece(), &home).unwrap();
+    let options = || Options {
+        repo: repo.clone(),
+        state: dir.join("state"),
+        max_workers: 2,
+        max_helpers: 0,
+        tiers: Vec::new(),
+        budget: None,
+        fresh: false,
+        run_programs: Vec::new(),
+        run_timeout: DEFAULT_RUN_TIMEOUT,
+        instructions: None,
+        own_notes: None,
+        confine: Confine::Standard,
+        solo: None,
+        claude: Some(StandIn {
+            program: program.clone(),
+            home: home.clone(),
+            relay: imece(),
+        }),
+    };
+    let settle = |w: &mut World, live: &mut Live, changes: usize| {
+        let start = std::time::Instant::now();
+        while !(w.changes.len() == changes && w.agents.iter().all(|a| a.status == Status::Idle)) {
+            assert!(
+                start.elapsed().as_secs() < 30,
+                "timed out: {:#?}",
+                w.journal
+            );
+            live.step(w);
+            thread::sleep(Duration::from_millis(20));
+        }
+    };
+    let (mut w, mut live) = world(options()).unwrap();
+    live.told(&mut w, 0, "Write a greeting").unwrap();
+    settle(&mut w, &mut live, 1);
+    assert_eq!(live.persist(&w), Ok(true));
+    drop(live);
+    // The next run: the leader's session resumes, remembers the worker it
+    // hired and gives it the new work; nobody new is hired.
+    let (mut w, mut live) = world(options()).unwrap();
+    let spent = w.agents[0].cost;
+    w.changes.clear();
+    live.told(&mut w, 0, "Write a farewell").unwrap();
+    settle(&mut w, &mut live, 1);
+    let resumed = |id| {
+        w.journal
+            .iter()
+            .any(|e| e.event == Event::Resumed { agent: id })
+    };
+    assert!(resumed(0), "{:#?}", w.journal);
+    assert_eq!(w.agents.len(), 2, "no second worker");
+    assert!(
+        w.changes[0].patch.contains("+# Write a farewell"),
+        "{}",
+        w.changes[0].patch
+    );
+    // What the resumed session reports is its whole cost; only the new
+    // turns are booked, fewer calls than the first run's (no whoami, no
+    // hire), so less than the whole would be.
+    let booked = w.agents[0].cost - spent;
+    assert!(booked > 0 && booked < spent, "{booked} after {spent}");
     drop(live);
     let _ = std::fs::remove_dir_all(&dir);
     let _ = std::fs::remove_dir_all(&repo);

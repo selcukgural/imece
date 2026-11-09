@@ -582,3 +582,17 @@ pub(crate) fn commit_all(dir: &Path) {
         assert!(out.status.success(), "git {args:?}");
     }
 }
+
+/// imece's own binary, which the unit tests do not run from: they run
+/// from `target/<profile>/deps`, and the binary is one directory up,
+/// built by cargo for the integration tests (`tests/stand_in.rs`).
+pub(crate) fn imece() -> PathBuf {
+    let exe = std::env::current_exe().unwrap();
+    let bin = exe.parent().unwrap().parent().unwrap().join("imece");
+    assert!(
+        bin.is_file(),
+        "{} is not built: run the crate's tests whole (cargo test -p imece-tui)",
+        bin.display()
+    );
+    bin
+}

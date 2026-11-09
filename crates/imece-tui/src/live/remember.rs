@@ -1335,6 +1335,7 @@ mod tests {
             own_notes: None,
             confine: Confine::Standard,
             solo: None,
+            claude: None,
         };
         let (mut w, mut live) = world(options(&repo, None)).unwrap();
         assert_eq!(w.projects.len(), 1);
@@ -2285,6 +2286,7 @@ mod tests {
             own_notes: None,
             confine: Confine::Standard,
             solo: None,
+            claude: None,
         };
         let (w, mut live) = world(options()).unwrap();
         assert_eq!(live.persist(&w), Ok(true));
@@ -2335,6 +2337,7 @@ mod tests {
             own_notes: None,
             confine: Confine::Strict,
             solo: None,
+            claude: None,
         };
         let (w, mut live) = world(options(false)).unwrap();
         assert_eq!(live.confine, Confine::Strict);
