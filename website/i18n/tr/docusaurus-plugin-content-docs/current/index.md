@@ -76,6 +76,7 @@ Bu sitedeki her davranış, GitHub'daki [`docs/decisions/`](https://github.com/s
 - [Kurulum](getting-started/install.md): araç zinciri, Claude Code ve durumun durduğu yer.
 - [İlk çalıştırma](getting-started/first-run.md): `imece`'den ilk uygulanan değişikliğe bir yürüyüş.
 - [Demo](getting-started/demo.md): `imece --demo`, bütün ekran iş başında, bedava.
+- [Kopya kâğıdı](cheat-sheet.md): ilk haftanın tuşları ve komutları, yazdırılabilir tek sayfada.
 - [Senaryolar](scenarios/index.md): tek düzeltme, notlu inceleme, çok proje, ertesi sabah.
 - [Klavye](screen/keyboard.md): her tuş ve her `:` komutu.
 - [Videolar](videos.mdx): ekran hareket halinde.

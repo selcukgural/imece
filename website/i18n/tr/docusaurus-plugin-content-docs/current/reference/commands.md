@@ -145,7 +145,7 @@ KARAR BEKLEYEN'in listelediklerini ve günlüğün satırlarını ekrandan kald�
 
 ### `:code`
 
-Kod haritası, ekranın üstünde bir pencerede; `esc` kapatır. Canlıda henüz ortak trunk olmadığını söyler (her ajan kendi worktree'sinde çalışır, kimin neyi düzenlediği gösterilemez); sembol lease'leri yapılmamıştır. Bkz. [pano ve kod haritası](../screen/board-and-code-map.md).
+Kod haritası, ekranın üstünde bir pencerede; `esc` kapatır. [Lonca](../concepts/projects.md#loncada)'daki bir projede daemon'ın tutulduğunu söylediğini gösterir: birinin lease tuttuğu dosyalar ve kim. Lonca dışında henüz ortak trunk olmadığını söyler (her ajan kendi worktree'sinde çalışır, kimin neyi düzenlediği gösterilemez). Bkz. [pano ve kod haritası](../screen/board-and-code-map.md).
 
 ### `:commit`
 
