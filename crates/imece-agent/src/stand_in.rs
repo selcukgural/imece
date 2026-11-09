@@ -4,8 +4,9 @@
 //! servers its `--mcp-config` names as their client (imece's bus, through
 //! `imece mcp-relay`), and does a small, fixed piece of work per role: a
 //! leader hires a worker and assigns it the person's words, a worker
-//! writes one file in its directory and says done. It asks no model and
-//! spends nothing; the cost it reports is made up, the same every run.
+//! changes a file of its directory as a task list says ([`work`]) and says
+//! done. It asks no model and spends nothing; the cost it reports is made
+//! up, the same every run.
 //!
 //! It is what the demo runs on the real `Live` (record 111, `--demo-live`
 //! for now), and what tests run the real `Live` on end to end. Under
@@ -23,6 +24,9 @@ use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use serde_json::{Value, json};
 
 use crate::claude::{EDIT_TOOLS, SHELL_TOOL, SUBAGENT_TOOLS, TASK_TOOLS, WEB_TOOLS};
+
+pub mod work;
+pub use work::Habits;
 
 /// What `--version` says: no Claude Code's number, so nothing mistakes it
 /// for one.
@@ -43,18 +47,26 @@ pub const CALL_COST: u64 = 5_000;
 /// The longest task a leader hands on, in characters.
 pub const TASK_MAX: usize = 200;
 
-/// The directory a worker writes its file in, inside its own.
+/// The directory a worker writes its file in, inside its own, when it has
+/// nothing to change.
 pub const OUT_DIR: &str = "stand-in";
+
+/// What a tool call that needs a yes gets in a session that has nobody
+/// to ask, as Claude Code words it.
+pub const NOT_GRANTED: &str =
+    "Claude requested permissions to use {}, but you haven't granted it yet.";
 
 /// The stand-in as a program: `args` without the program's name; what it
 /// exits with.
 pub fn main(args: &[String]) -> i32 {
     let cwd = std::env::current_dir().unwrap_or_default();
     let home = home_of(std::env::var_os("CLAUDE_CONFIG_DIR"));
+    let habits = Habits::of(|k| std::env::var(k).ok());
     answer(
         args,
         &cwd,
         home.as_deref(),
+        &habits,
         io::stdin().lock(),
         io::stdout().lock(),
     )
@@ -67,12 +79,13 @@ pub fn home_of(var: Option<std::ffi::OsString>) -> Option<PathBuf> {
 }
 
 /// What the stand-in does with `args` in `cwd`, `input` its stdin and
-/// `out` its stdout, its transcripts under `home` (none: kept nowhere);
-/// what it exits with.
+/// `out` its stdout, its transcripts under `home` (none: kept nowhere),
+/// working with `habits`; what it exits with.
 pub fn answer(
     args: &[String],
     cwd: &Path,
     home: Option<&Path>,
+    habits: &Habits,
     input: impl BufRead,
     mut out: impl Write,
 ) -> i32 {
@@ -88,7 +101,7 @@ pub fn answer(
         }
         _ => match Args::parse(args) {
             Ok(a) => {
-                run(&a, cwd, home, input, out);
+                run(&a, cwd, home, habits, input, out);
                 0
             }
             Err(why) => {
@@ -102,16 +115,17 @@ pub fn answer(
 /// Writes `dir/claude`, a program that runs `imece stand-in` with its
 /// arguments, `imece` being imece's own binary, its transcripts under
 /// `home` (as `CLAUDE_CONFIG_DIR`, which a session's cleared environment
-/// would not pass on otherwise): what a session's program is (one path)
-/// when the stand-in plays Claude Code. Gives its path.
-pub fn install(dir: &Path, imece: &Path, home: &Path) -> io::Result<PathBuf> {
+/// would not pass on otherwise), working with `habits`: what a session's
+/// program is (one path) when the stand-in plays Claude Code. Gives its
+/// path.
+pub fn install(dir: &Path, imece: &Path, home: &Path, habits: &Habits) -> io::Result<PathBuf> {
     use std::os::unix::fs::PermissionsExt;
     let quoted = |p: &Path| format!("'{}'", p.to_string_lossy().replace('\'', r"'\''"));
     let path = dir.join("claude");
-    let (imece, home) = (quoted(imece), quoted(home));
+    let (imece, home, vars) = (quoted(imece), quoted(home), habits.vars());
     std::fs::write(
         &path,
-        format!("#!/bin/sh\nCLAUDE_CONFIG_DIR={home} exec {imece} stand-in \"$@\"\n"),
+        format!("#!/bin/sh\nCLAUDE_CONFIG_DIR={home} {vars} exec {imece} stand-in \"$@\"\n"),
     )?;
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700))?;
     Ok(path)
@@ -124,6 +138,8 @@ pub struct Args {
     pub tools: Vec<String>,
     /// `--disallowedTools`.
     pub disallowed: Vec<String>,
+    /// `--allowedTools`: run without asking.
+    pub allowed: Vec<String>,
     pub permission_mode: String,
     /// `--permission-prompt-tool`: hidden from the model, as Claude Code
     /// hides it.
@@ -157,6 +173,7 @@ impl Args {
             match flag.as_str() {
                 "--tools" => a.tools = list(&value()?),
                 "--disallowedTools" => a.disallowed = list(&value()?),
+                "--allowedTools" => a.allowed = list(&value()?),
                 "--permission-mode" => a.permission_mode = value()?,
                 "--permission-prompt-tool" => a.prompt_tool = Some(value()?),
                 "--model" => a.model = Some(value()?),
@@ -173,7 +190,6 @@ impl Args {
                 | "--append-system-prompt"
                 | "--system-prompt"
                 | "--max-budget-usd"
-                | "--allowedTools"
                 | "--effort"
                 | "--settings" => {
                     value()?;
@@ -400,14 +416,23 @@ pub fn init(a: &Args, session: &str, servers: &[(String, Server)]) -> Value {
     })
 }
 
-/// What the stand-in's mind works with: the tools of imece's bus, the
-/// files of its directory, and lines of text to say.
+/// What the stand-in's mind works with: the tools of imece's bus, Claude
+/// Code's own tools on the files of its directory, lines of text to say,
+/// and its habits.
 pub trait Hands {
     /// Calls the bus's tool `tool` (its bare name).
     fn call(&mut self, tool: &str, args: Value) -> Result<String, String>;
-    /// Writes `text` to `path`, relative to the session's directory.
-    fn write(&mut self, path: &str, text: &str) -> Result<(), String>;
+    /// Whether the session has the built-in tool `tool`.
+    fn has(&self, tool: &str) -> bool;
+    /// Uses the built-in tool `tool` (its paths relative to the session's
+    /// directory), asking first when it needs a yes.
+    fn tool(&mut self, tool: &str, input: Value) -> Result<String, String>;
+    /// The files of the session's directory ([`work::files_in`]).
+    fn files(&self) -> Vec<String>;
     fn say(&mut self, text: &str);
+    /// Waits between two steps, as long as the habits say.
+    fn pause(&mut self);
+    fn habits(&self) -> &Habits;
 }
 
 /// What the stand-in has learned in its session.
@@ -417,12 +442,14 @@ pub struct Mind {
     pub me: BTreeMap<String, String>,
     /// The workers a leader hired.
     pub hired: Vec<String>,
+    /// The assigns a worker has worked on.
+    pub worked: u64,
 }
 
 impl Mind {
     /// The mind as a transcript keeps it.
     pub fn to_json(&self) -> Value {
-        json!({ "me": self.me, "hired": self.hired })
+        json!({ "me": self.me, "hired": self.hired, "worked": self.worked })
     }
 
     /// A mind a transcript kept; what is not text is left out.
@@ -435,6 +462,7 @@ impl Mind {
             hired: (v["hired"].as_array().into_iter().flatten())
                 .filter_map(text)
                 .collect(),
+            worked: v["worked"].as_u64().unwrap_or(0),
         }
     }
 
@@ -488,26 +516,6 @@ impl Mind {
                 format!("{name} has it: {}", first_line(&task))
             }
             Err(why) => format!("{name} did not get it: {why}"),
-        }
-    }
-
-    fn work(&mut self, hands: &mut impl Hands, prompt: &str) -> String {
-        let Some(task) = body_of(prompt, "assign") else {
-            return "Nothing assigned to me.".into();
-        };
-        let me = self.me.get("name").cloned().unwrap_or_default();
-        let path = format!("{OUT_DIR}/{me}.md");
-        if let Err(why) = hands.write(&path, &format!("# {}\n\n{task}\n", first_line(&task))) {
-            return format!("I could not write {path}: {why}");
-        }
-        let lead = (self.me.get("you answer to"))
-            .and_then(|o| o.strip_prefix("the leader "))
-            .unwrap_or_default()
-            .to_string();
-        let body = format!("wrote {path}");
-        match hands.call("send", json!({ "to": lead, "type": "done", "body": body })) {
-            Ok(_) => format!("Done: {body}."),
-            Err(why) => format!("{body}, but {lead} did not hear: {why}"),
         }
     }
 }
@@ -565,6 +573,8 @@ struct Stream<W: Write> {
     spent: u64,
     context: u64,
     calls: u64,
+    /// The tasks its task tools made.
+    tasks: u64,
     model: String,
 }
 
@@ -587,10 +597,16 @@ impl<W: Write> Stream<W> {
         }));
     }
 
-    fn tool(&mut self, name: &str, input: &Value, said: &Result<String, String>) {
+    /// A call of tool `name` begins: its id.
+    fn tool_use(&mut self, name: &str, input: &Value) -> String {
         self.calls += 1;
         let id = format!("toolu_{}", self.calls);
         self.assistant(json!([{ "type": "tool_use", "id": id, "name": name, "input": input }]));
+        id
+    }
+
+    /// The call `id` ends with `said`.
+    fn tool_result(&mut self, id: &str, said: &Result<String, String>) {
         let (text, error) = match said {
             Ok(t) => (t.as_str(), false),
             Err(t) => (t.as_str(), true),
@@ -620,45 +636,169 @@ impl<W: Write> Stream<W> {
     }
 }
 
-/// The hands of a running session: its bus, its directory, its stream.
+/// The hands of a running session: its bus, its directory, its stream,
+/// what its command line gives it and its habits.
 struct Busy<'a, W: Write> {
     stream: &'a mut Stream<W>,
     servers: &'a mut [(String, Server)],
     cwd: &'a Path,
+    args: &'a Args,
+    /// Its built-in tools ([`Args::built_in`]).
+    tools: &'a [String],
+    habits: &'a Habits,
+}
+
+impl<W: Write> Busy<'_, W> {
+    /// Calls tool `tool` of server `server`, nothing streamed.
+    fn server_call(&mut self, server: &str, tool: &str, args: &Value) -> Result<String, String> {
+        let found = self.servers.iter_mut().find(|(n, _)| n == server);
+        let Some((_, s)) = found else {
+            return Err(format!("no {server} MCP server"));
+        };
+        s.call(tool, args)
+    }
+
+    /// Whether built-in tool `tool` asks before it runs: the shell and the
+    /// web unless allowed outright; reading, the task tools and edits
+    /// (imece runs Claude Code under `acceptEdits`) never.
+    fn needs_yes(&self, tool: &str) -> bool {
+        (tool == SHELL_TOOL || WEB_TOOLS.contains(&tool))
+            && !self.args.allowed.iter().any(|t| t == tool)
+    }
+
+    /// The yes for call `id` of `tool` on `input`, from the permission
+    /// prompt tool, as Claude Code asks it (hidden from the stream).
+    fn permit(&mut self, tool: &str, input: &Value, id: &str) -> Result<(), String> {
+        let refused = || NOT_GRANTED.replace("{}", tool);
+        let prompt = self.args.prompt_tool.clone();
+        let Some((server, name)) = prompt
+            .as_deref()
+            .and_then(|p| p.strip_prefix("mcp__"))
+            .and_then(|p| p.split_once("__"))
+        else {
+            return Err(refused());
+        };
+        let asked = json!({ "tool_name": tool, "input": input, "tool_use_id": id });
+        let said = self.server_call(server, name, &asked)?;
+        let v: Value = serde_json::from_str(&said).map_err(|_| refused())?;
+        if v["behavior"] == "allow" {
+            Ok(())
+        } else {
+            Err(v["message"].as_str().map_or_else(refused, String::from))
+        }
+    }
+
+    /// `path` in the session's directory; a path outside it is refused.
+    fn inside(&self, path: &str) -> Result<PathBuf, String> {
+        let p = Path::new(path);
+        // A whole path stays as it is.
+        let full = self.cwd.join(p);
+        let up = p.components().any(|c| c == std::path::Component::ParentDir);
+        if up || !full.starts_with(self.cwd) {
+            return Err(format!("{path} is outside the session's directory"));
+        }
+        Ok(full)
+    }
+
+    /// What built-in tool `tool` does with `input`: files read, written
+    /// and edited in the session's directory, a command's made-up answer,
+    /// a task made or changed.
+    fn run_tool(&mut self, tool: &str, input: &Value) -> Result<String, String> {
+        let text = |k: &str| input[k].as_str().unwrap_or_default().to_string();
+        let file = || -> Result<PathBuf, String> { self.inside(&text("file_path")) };
+        match tool {
+            "Read" => {
+                let was = std::fs::read_to_string(file()?).map_err(|e| e.to_string())?;
+                Ok(work::numbered(&was))
+            }
+            "Write" => {
+                let full = file()?;
+                (full.parent())
+                    .map_or(Ok(()), std::fs::create_dir_all)
+                    .and_then(|()| std::fs::write(&full, text("content")))
+                    .map(|()| format!("File created successfully at: {}", full.display()))
+                    .map_err(|e| e.to_string())
+            }
+            "Edit" => {
+                let full = file()?;
+                let was = std::fs::read_to_string(&full).map_err(|e| e.to_string())?;
+                let now = work::edited(&was, &text("old_string"), &text("new_string"))?;
+                std::fs::write(&full, now)
+                    .map(|()| format!("The file {} has been updated successfully.", full.display()))
+                    .map_err(|e| e.to_string())
+            }
+            SHELL_TOOL => Ok(work::ran(&text("command")).to_string()),
+            "TaskCreate" => {
+                self.stream.tasks += 1;
+                Ok(format!(
+                    "Task #{} created successfully: {}",
+                    self.stream.tasks,
+                    text("subject")
+                ))
+            }
+            "TaskUpdate" => Ok(format!("Updated task #{} status", text("taskId"))),
+            _ => Err(format!("the stand-in does not run {tool}")),
+        }
+    }
 }
 
 impl<W: Write> Hands for Busy<'_, W> {
     fn call(&mut self, tool: &str, args: Value) -> Result<String, String> {
         // A session without imece's server has none of its tools to call.
-        let bus = self
+        if !self
             .servers
-            .iter_mut()
-            .find(|(n, _)| n == crate::claude::MCP_SERVER);
-        let Some((_, server)) = bus else {
+            .iter()
+            .any(|(n, _)| n == crate::claude::MCP_SERVER)
+        {
             return Err("no imece MCP server".into());
-        };
-        let said = server.call(tool, &args);
-        self.stream
-            .tool(&mcp_name(crate::claude::MCP_SERVER, tool), &args, &said);
+        }
+        let id = (self.stream).tool_use(&mcp_name(crate::claude::MCP_SERVER, tool), &args);
+        let said = self.server_call(crate::claude::MCP_SERVER, tool, &args);
+        self.stream.tool_result(&id, &said);
         said
     }
 
-    fn write(&mut self, path: &str, text: &str) -> Result<(), String> {
-        let full: PathBuf = self.cwd.join(path);
-        let input = json!({ "file_path": full.to_string_lossy(), "content": text });
-        let done = full
-            .parent()
-            .map_or(Ok(()), std::fs::create_dir_all)
-            .and_then(|()| std::fs::write(&full, text))
-            .map(|()| format!("File created successfully at: {}", full.display()))
-            .map_err(|e| e.to_string());
-        self.stream.tool("Write", &input, &done);
-        done.map(|_| ())
+    fn has(&self, tool: &str) -> bool {
+        self.tools.iter().any(|t| t == tool)
+    }
+
+    fn tool(&mut self, tool: &str, mut input: Value) -> Result<String, String> {
+        if !self.has(tool) {
+            return Err(format!("No such tool available: {tool}"));
+        }
+        // Claude Code names a file by its whole path.
+        if let Some(path) = input["file_path"].as_str() {
+            let full = self.cwd.join(path);
+            input["file_path"] = json!(full.to_string_lossy());
+        }
+        let id = self.stream.tool_use(tool, &input);
+        let said = if self.needs_yes(tool) {
+            self.permit(tool, &input, &id)
+        } else {
+            Ok(())
+        };
+        let said = said.and_then(|()| self.run_tool(tool, &input));
+        self.stream.tool_result(&id, &said);
+        said
+    }
+
+    fn files(&self) -> Vec<String> {
+        work::files_in(self.cwd)
     }
 
     fn say(&mut self, text: &str) {
         self.stream
             .assistant(json!([{ "type": "text", "text": text }]));
+    }
+
+    fn pause(&mut self) {
+        if !self.habits.pause.is_zero() {
+            std::thread::sleep(self.habits.pause);
+        }
+    }
+
+    fn habits(&self) -> &Habits {
+        self.habits
     }
 }
 
@@ -746,7 +886,14 @@ fn keep(home: &Path, cwd: &Path, id: &str, k: &Kept) {
 /// A session: its servers started in `cwd`, `init`, then a turn per
 /// prompt until stdin ends; its transcript under `home`, and a
 /// `--resume` going on from the one there (one not found: afresh).
-pub fn run(a: &Args, cwd: &Path, home: Option<&Path>, input: impl BufRead, out: impl Write) {
+pub fn run(
+    a: &Args,
+    cwd: &Path,
+    home: Option<&Path>,
+    habits: &Habits,
+    input: impl BufRead,
+    out: impl Write,
+) {
     let mut servers: Vec<(String, Server)> = (a.servers.iter())
         .map(|(n, c, args)| (n.clone(), Server::start(c, args, cwd)))
         .collect();
@@ -760,8 +907,10 @@ pub fn run(a: &Args, cwd: &Path, home: Option<&Path>, input: impl BufRead, out: 
         spent: was.spent,
         context: was.context,
         calls: 0,
+        tasks: 0,
         model: a.model.clone().unwrap_or_else(|| "stand-in".into()),
     };
+    let tools = a.built_in();
     stream.line(&init(a, &session, &servers));
     let mut mind = was.mind;
     let kept_now = |session: &str, mind: &Mind, stream: &Stream<_>| {
@@ -795,6 +944,9 @@ pub fn run(a: &Args, cwd: &Path, home: Option<&Path>, input: impl BufRead, out: 
             stream: &mut stream,
             servers: &mut servers,
             cwd,
+            args: a,
+            tools: &tools,
+            habits,
         };
         let text = mind.turn(&mut hands, &prompt);
         // Claude Code's last message is the turn's text, then its result.
@@ -809,17 +961,27 @@ pub fn run(a: &Args, cwd: &Path, home: Option<&Path>, input: impl BufRead, out: 
 mod tests {
     use super::*;
 
-    fn strings(s: &[&str]) -> Vec<String> {
+    pub(super) fn strings(s: &[&str]) -> Vec<String> {
         s.iter().map(|s| s.to_string()).collect()
     }
 
+    /// Hands on files in memory: the bus answers what `answers` says
+    /// (else nothing), the built-in tools in `tools` work on `files` as
+    /// the session's do ([`work::numbered`], [`work::edited`]), a tool in
+    /// `refuse` fails with its words.
     #[derive(Default)]
-    struct Fake {
-        calls: Vec<(String, Value)>,
-        writes: Vec<(String, String)>,
-        said: Vec<String>,
-        answers: BTreeMap<String, Result<String, String>>,
-        refuse_writes: bool,
+    pub(super) struct Fake {
+        pub calls: Vec<(String, Value)>,
+        /// The built-in tools used, with their input.
+        pub used: Vec<(String, Value)>,
+        pub said: Vec<String>,
+        pub answers: BTreeMap<String, Result<String, String>>,
+        pub tools: Vec<String>,
+        pub files: BTreeMap<String, String>,
+        pub refuse: BTreeMap<String, String>,
+        pub habits: Habits,
+        pub pauses: usize,
+        tasks: u64,
     }
 
     impl Hands for Fake {
@@ -830,26 +992,61 @@ mod tests {
                 .cloned()
                 .unwrap_or_else(|| Ok(String::new()))
         }
-        fn write(&mut self, path: &str, text: &str) -> Result<(), String> {
-            if self.refuse_writes {
-                return Err("read-only".into());
+        fn has(&self, tool: &str) -> bool {
+            self.tools.iter().any(|t| t == tool)
+        }
+        fn tool(&mut self, tool: &str, input: Value) -> Result<String, String> {
+            assert!(self.has(tool), "{tool} is not the session's");
+            self.used.push((tool.to_string(), input.clone()));
+            if let Some(why) = self.refuse.get(tool) {
+                return Err(why.clone());
             }
-            self.writes.push((path.to_string(), text.to_string()));
-            Ok(())
+            let text = |k: &str| input[k].as_str().unwrap_or_default().to_string();
+            let path = text("file_path");
+            match tool {
+                "Read" => (self.files.get(&path))
+                    .map(|t| work::numbered(t))
+                    .ok_or_else(|| "no such file".into()),
+                "Write" => {
+                    self.files.insert(path, text("content"));
+                    Ok("written".into())
+                }
+                "Edit" => {
+                    let was = self.files.get(&path).cloned().unwrap_or_default();
+                    let now = work::edited(&was, &text("old_string"), &text("new_string"))?;
+                    self.files.insert(path, now);
+                    Ok("edited".into())
+                }
+                "Bash" => Ok(work::ran(&text("command")).into()),
+                "TaskCreate" => {
+                    self.tasks += 1;
+                    Ok(format!("Task #{} created successfully: x", self.tasks))
+                }
+                _ => Ok(String::new()),
+            }
+        }
+        fn files(&self) -> Vec<String> {
+            self.files.keys().cloned().collect()
         }
         fn say(&mut self, text: &str) {
             self.said.push(text.to_string());
         }
+        fn pause(&mut self) {
+            self.pauses += 1;
+        }
+        fn habits(&self) -> &Habits {
+            &self.habits
+        }
     }
 
-    fn fake(whoami: &str) -> Fake {
+    pub(super) fn fake(whoami: &str) -> Fake {
         let mut f = Fake::default();
         f.answers.insert("whoami".into(), Ok(whoami.into()));
         f
     }
 
     const LEADER: &str = "name: lead\nrole: the leader\nproject: repo\nyou answer to: the person\n";
-    const WORKER: &str =
+    pub(super) const WORKER: &str =
         "name: claude-1\nrole: a worker\nproject: repo\nyou answer to: the leader lead\n";
 
     #[test]
@@ -882,6 +1079,8 @@ mod tests {
             config,
             "--disallowedTools",
             "Agent, Task",
+            "--allowedTools",
+            "mcp__imece__send,WebFetch",
         ]))
         .unwrap();
         assert_eq!(
@@ -889,6 +1088,7 @@ mod tests {
             Args {
                 tools: strings(&["Read", "Write"]),
                 disallowed: strings(&["Agent", "Task"]),
+                allowed: strings(&["mcp__imece__send", "WebFetch"]),
                 permission_mode: "acceptEdits".into(),
                 prompt_tool: Some("mcp__imece__approve".into()),
                 servers: vec![(
@@ -1061,20 +1261,20 @@ mod tests {
     }
 
     #[test]
-    fn a_worker_writes_its_file_and_tells_its_leader() {
+    fn a_worker_with_nothing_to_change_writes_its_file_and_tells_its_leader() {
         let mut f = fake(WORKER);
+        f.tools = strings(&["Write"]);
+        f.files.insert("data.json".into(), "{}".into());
         let mail = format!(
             "{MAIL}:\n\n[assign 3] from lead:\nWrite a greeting\nin French\n\n[inform 4] from lead:\nthanks"
         );
         let said = Mind::default().turn(&mut f, &mail);
         assert_eq!(said, "Done: wrote stand-in/claude-1.md.");
         assert_eq!(
-            f.writes,
-            vec![(
-                "stand-in/claude-1.md".to_string(),
-                "# Write a greeting\n\nWrite a greeting\nin French\n".to_string()
-            )]
+            f.files["stand-in/claude-1.md"],
+            "# Write a greeting\n\nWrite a greeting\nin French\n"
         );
+        assert_eq!(f.used.len(), 1, "one write, no list");
         assert_eq!(
             f.calls[1],
             (
@@ -1091,13 +1291,14 @@ mod tests {
         assert_eq!(m.turn(&mut f, "hello"), "Nothing assigned to me.");
         let empty = format!("{MAIL}:\n\n[assign 3] from lead:\n\n[inform] from lead:\nx");
         assert_eq!(m.turn(&mut f, &empty), "Nothing assigned to me.");
-        f.refuse_writes = true;
+        f.tools = strings(&["Write"]);
+        f.refuse.insert("Write".into(), "read-only".into());
         let mail = format!("{MAIL}:\n\n[assign] from lead:\ndo it");
         assert_eq!(
             m.turn(&mut f, &mail),
             "I could not write stand-in/claude-1.md: read-only"
         );
-        f.refuse_writes = false;
+        f.refuse.clear();
         f.answers.insert("send".into(), Err("gone".into()));
         assert_eq!(
             m.turn(&mut f, &mail),
@@ -1177,12 +1378,14 @@ mod tests {
         let mind = Mind {
             me: BTreeMap::from([("role".into(), "the leader".into())]),
             hired: vec!["claude-1".into(), "claude-2".into()],
+            worked: 3,
         };
         assert_eq!(Mind::from_json(&mind.to_json()), mind);
-        let odd = json!({ "me": { "role": 3, "name": "x" }, "hired": ["a", 4] });
+        let odd = json!({ "me": { "role": 3, "name": "x" }, "hired": ["a", 4], "worked": "2" });
         let read = Mind::from_json(&odd);
         assert_eq!(read.me, BTreeMap::from([("name".into(), "x".into())]));
         assert_eq!(read.hired, ["a"]);
+        assert_eq!(read.worked, 0);
         assert_eq!(Mind::from_json(&json!(null)), Mind::default());
     }
 
@@ -1194,7 +1397,14 @@ mod tests {
             .map(|p| crate::claude::prompt_line(p) + "\n")
             .collect();
         let mut out = Vec::new();
-        run(&a, cwd, Some(home), input.as_bytes(), &mut out);
+        run(
+            &a,
+            cwd,
+            Some(home),
+            &Habits::default(),
+            input.as_bytes(),
+            &mut out,
+        );
         let lines: Vec<Value> = (String::from_utf8(out).unwrap().lines())
             .map(|l| serde_json::from_str(l).unwrap())
             .collect();
@@ -1269,7 +1479,14 @@ mod tests {
             crate::claude::prompt_line("again"),
         );
         let mut out = Vec::new();
-        run(&a, Path::new("/work"), None, input.as_bytes(), &mut out);
+        run(
+            &a,
+            Path::new("/work"),
+            None,
+            &Habits::default(),
+            input.as_bytes(),
+            &mut out,
+        );
         let text = String::from_utf8(out).unwrap();
         let events = parsed(&text, &a);
         let done: Vec<(bool, String, u64)> = (events.iter())
@@ -1341,7 +1558,14 @@ mod tests {
             crate::claude::prompt_line("two"),
         );
         let mut out = Vec::new();
-        run(&a, Path::new("/work"), None, input.as_bytes(), &mut out);
+        run(
+            &a,
+            Path::new("/work"),
+            None,
+            &Habits::default(),
+            input.as_bytes(),
+            &mut out,
+        );
         let events = parsed(&String::from_utf8(out).unwrap(), &a);
         let said = CONTEXT_START + CONTEXT_TURN / 10;
         assert!(events.contains(&crate::Event::Context {
@@ -1357,28 +1581,40 @@ mod tests {
         assert_eq!(costs, [TURN_COST, 2 * TURN_COST]);
     }
 
+    fn stream() -> Stream<Vec<u8>> {
+        Stream {
+            out: Vec::new(),
+            spent: 0,
+            context: 0,
+            calls: 0,
+            tasks: 0,
+            model: "m".into(),
+        }
+    }
+
     #[test]
     fn its_hands_write_in_its_directory_and_stream_the_call() {
         let dir = std::env::temp_dir().join(format!("imece-stand-in-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let mut stream = Stream {
-            out: Vec::new(),
-            spent: 0,
-            context: 0,
-            calls: 0,
-            model: "m".into(),
-        };
+        let mut stream = stream();
+        let (args, tools, habits) = (Args::default(), strings(&["Write"]), Habits::default());
         let mut hands = Busy {
             stream: &mut stream,
             servers: &mut [],
             cwd: &dir,
+            args: &args,
+            tools: &tools,
+            habits: &habits,
         };
-        hands.write("a/b.md", "hi").unwrap();
+        let write = |h: &mut Busy<_>, path: &str, text: &str| {
+            h.tool("Write", json!({ "file_path": path, "content": text }))
+        };
+        write(&mut hands, "a/b.md", "hi").unwrap();
         assert_eq!(std::fs::read_to_string(dir.join("a/b.md")).unwrap(), "hi");
         std::fs::write(dir.join("file"), "").unwrap();
         assert!(
-            hands.write("file/x", "no").is_err(),
+            write(&mut hands, "file/x", "no").is_err(),
             "a file is no directory"
         );
         hands.say("words");
@@ -1420,7 +1656,12 @@ mod tests {
         .unwrap();
         std::fs::set_permissions(&imece, std::fs::Permissions::from_mode(0o700)).unwrap();
         let home = odd.join("it's home");
-        let claude = install(&dir, &imece, &home).unwrap();
+        let habits = Habits {
+            pause: std::time::Duration::from_millis(250),
+            asks: 3,
+            seed: 7,
+        };
+        let claude = install(&dir, &imece, &home, &habits).unwrap();
         assert_eq!(claude, dir.join("claude"));
         let mode = std::fs::metadata(&claude).unwrap().permissions().mode();
         assert_eq!(mode & 0o777, 0o700);
@@ -1429,6 +1670,14 @@ mod tests {
             String::from_utf8_lossy(&out.stdout),
             format!("{}|stand-in|-p|a b|", home.display())
         );
+        // Its habits reach the stand-in.
+        std::fs::write(
+            &imece,
+            "#!/bin/sh\nprintf '%s|' \"$IMECE_STAND_IN_PAUSE_MS\" \"$IMECE_STAND_IN_ASKS\" \"$IMECE_STAND_IN_SEED\"\n",
+        )
+        .unwrap();
+        let out = Command::new(&claude).output().unwrap();
+        assert_eq!(String::from_utf8_lossy(&out.stdout), "250|3|7|");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -1438,6 +1687,7 @@ mod tests {
             &strings(args),
             Path::new("/"),
             None,
+            &Habits::default(),
             input.as_bytes(),
             &mut out,
         );
@@ -1534,17 +1784,15 @@ mod tests {
                     Server::start(&script.to_string_lossy(), &[], &dir),
                 ),
             ];
-            let mut stream = Stream {
-                out: Vec::new(),
-                spent: 0,
-                context: 0,
-                calls: 0,
-                model: "m".into(),
-            };
+            let mut stream = stream();
+            let (args, habits) = (Args::default(), Habits::default());
             let mut hands = Busy {
                 stream: &mut stream,
                 servers: &mut servers,
                 cwd: &dir,
+                args: &args,
+                tools: &[],
+                habits: &habits,
             };
             assert_eq!(
                 hands.call("whoami", json!({ "a": 1 })),
@@ -1564,6 +1812,9 @@ mod tests {
                 stream: &mut stream,
                 servers: &mut alone,
                 cwd: &dir,
+                args: &args,
+                tools: &[],
+                habits: &habits,
             };
             assert_eq!(
                 hands.call("whoami", json!({})),
@@ -1573,6 +1824,289 @@ mod tests {
             drop(servers);
             let _ = std::fs::remove_dir_all(&dir);
         });
+    }
+
+    #[test]
+    fn a_tool_that_needs_a_yes_asks_the_prompt_tool_hidden_from_the_stream() {
+        within(move || {
+            let answer = |id: u32, text: &str| {
+                format!(
+                    r#"read -r l; echo "$l" >> asked.txt; echo '{{"jsonrpc":"2.0","id":{id},"result":{{"content":[{{"type":"text","text":"{text}"}}]}}}}'"#
+                )
+            };
+            let body = [
+                answer(3, r#"{\"behavior\":\"allow\",\"updatedInput\":{}}"#),
+                answer(4, r#"{\"behavior\":\"deny\",\"message\":\"no thanks\"}"#),
+                answer(5, "not json"),
+                answer(6, r#"{\"behavior\":\"deny\"}"#),
+                "read -r l".to_string(),
+            ]
+            .join("\n");
+            let (dir, script) = script_server("approve", &body);
+            let mut servers = vec![(
+                crate::claude::MCP_SERVER.to_string(),
+                Server::start(&script.to_string_lossy(), &[], &dir),
+            )];
+            let mut stream = stream();
+            let args = Args {
+                prompt_tool: Some("mcp__imece__approve".into()),
+                allowed: strings(&["WebFetch"]),
+                ..Args::default()
+            };
+            let tools = strings(&["Bash", "WebFetch", "WebSearch", "Read", "Edit"]);
+            let habits = Habits::default();
+            let mut hands = Busy {
+                stream: &mut stream,
+                servers: &mut servers,
+                cwd: &dir,
+                args: &args,
+                tools: &tools,
+                habits: &habits,
+            };
+            assert!(hands.needs_yes("Bash") && hands.needs_yes("WebSearch"));
+            assert!(!hands.needs_yes("WebFetch"), "allowed outright");
+            assert!(!hands.needs_yes("Read") && !hands.needs_yes("Edit"));
+            let bash = |h: &mut Busy<_>, c: &str| h.tool("Bash", json!({ "command": c }));
+            assert_eq!(bash(&mut hands, "make test"), Ok(work::PASSED.into()));
+            assert_eq!(bash(&mut hands, "make"), Err("no thanks".into()));
+            let refused = NOT_GRANTED.replace("{}", "Bash");
+            assert_eq!(
+                bash(&mut hands, "make"),
+                Err(refused.clone()),
+                "not understood"
+            );
+            assert_eq!(bash(&mut hands, "make"), Err(refused.clone()), "no words");
+            drop(servers);
+            let asked: Vec<Value> = (std::fs::read_to_string(dir.join("asked.txt")).unwrap())
+                .lines()
+                .map(|l| serde_json::from_str(l).unwrap())
+                .collect();
+            assert_eq!(asked.len(), 4);
+            assert_eq!(
+                asked[0]["params"],
+                json!({ "name": "approve", "arguments": {
+                    "tool_name": "Bash", "input": { "command": "make test" }, "tool_use_id": "toolu_1",
+                }})
+            );
+            assert_eq!(asked[1]["params"]["arguments"]["tool_use_id"], "toolu_2");
+            // The stream has the calls and their answers, not the asking.
+            let lines: Vec<Value> = (String::from_utf8(stream.out.clone()).unwrap())
+                .lines()
+                .map(|l| serde_json::from_str(l).unwrap())
+                .collect();
+            assert_eq!(lines.len(), 8);
+            assert_eq!(lines[0]["message"]["content"][0]["name"], "Bash");
+            assert_eq!(lines[1]["message"]["content"][0]["is_error"], false);
+            assert_eq!(lines[3]["message"]["content"][0]["content"], "no thanks");
+            assert_eq!(lines[3]["message"]["content"][0]["is_error"], true);
+            assert_eq!(stream.spent, 4 * CALL_COST);
+            // Nobody to ask: Claude Code's words, nothing asked.
+            for prompt in [None, Some("approve"), Some("mcp__imece")] {
+                let args = Args {
+                    prompt_tool: prompt.map(String::from),
+                    ..Args::default()
+                };
+                let mut hands = Busy {
+                    stream: &mut stream,
+                    servers: &mut [],
+                    cwd: &dir,
+                    args: &args,
+                    tools: &tools,
+                    habits: &habits,
+                };
+                assert_eq!(bash(&mut hands, "x"), Err(refused.clone()), "{prompt:?}");
+                let web = hands.tool("WebSearch", json!({ "query": "q" }));
+                assert_eq!(web, Err(NOT_GRANTED.replace("{}", "WebSearch")));
+            }
+            let args = Args {
+                prompt_tool: Some("mcp__other__approve".into()),
+                ..Args::default()
+            };
+            let mut hands = Busy {
+                stream: &mut stream,
+                servers: &mut [],
+                cwd: &dir,
+                args: &args,
+                tools: &tools,
+                habits: &habits,
+            };
+            assert_eq!(bash(&mut hands, "x"), Err("no other MCP server".into()));
+            let _ = std::fs::remove_dir_all(&dir);
+        });
+    }
+
+    #[test]
+    fn a_worker_s_session_works_with_its_tools_and_habits() {
+        within(move || {
+            // `printf`, not `echo`: macOS's sh reads `\n` in an echo.
+            let answer = |id: u32, text: &str| {
+                format!(
+                    r#"read -r l; printf '%s\n' '{{"jsonrpc":"2.0","id":{id},"result":{{"content":[{{"type":"text","text":"{text}"}}]}}}}'"#
+                )
+            };
+            let whoami = WORKER.replace('\n', "\\n");
+            let body = [answer(3, &whoami), answer(4, "sent"), "read -r l".into()].join("\n");
+            let (dir, script) = script_server("session", &body);
+            let cwd = dir.join("tree");
+            std::fs::create_dir_all(&cwd).unwrap();
+            std::fs::write(cwd.join("lib.rs"), "fn a() {}\n").unwrap();
+            let config = json!({ "mcpServers": { "imece": {
+                "type": "stdio", "command": script.to_string_lossy(), "args": [],
+            }}});
+            let a = Args::parse(&strings(&[
+                "--tools",
+                "default",
+                "--mcp-config",
+                &config.to_string(),
+            ]))
+            .unwrap();
+            let input =
+                crate::claude::prompt_line(&format!("{MAIL}:\n\n[assign 1] from lead:\nTidy lib"));
+            let habits = Habits {
+                pause: std::time::Duration::from_millis(5),
+                ..Habits::default()
+            };
+            let mut out = Vec::new();
+            let start = std::time::Instant::now();
+            run(
+                &a,
+                &cwd,
+                None,
+                &habits,
+                format!("{input}\n").as_bytes(),
+                &mut out,
+            );
+            assert!(start.elapsed() >= 6 * habits.pause, "a pause a step");
+            let text = String::from_utf8(out).unwrap();
+            let named: Vec<String> = (text.lines())
+                .map(|l| serde_json::from_str::<Value>(l).unwrap())
+                .filter_map(|v| {
+                    v["message"]["content"][0]["name"]
+                        .as_str()
+                        .map(String::from)
+                })
+                .collect();
+            let creates = named.iter().filter(|n| *n == "TaskCreate").count();
+            assert_eq!(creates, 5, "{named:?}");
+            assert!(named.contains(&"Edit".to_string()));
+            assert!(named.contains(&"Bash".to_string()), "cargo test");
+            assert_eq!(
+                std::fs::read_to_string(cwd.join("lib.rs")).unwrap(),
+                "fn a() {}\n// Tidy lib\n"
+            );
+            let _ = std::fs::remove_dir_all(&dir);
+        });
+    }
+
+    #[test]
+    fn its_own_tools_work_on_its_directory_only() {
+        let dir = std::env::temp_dir().join(format!("imece-stand-in-own-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("src")).unwrap();
+        std::fs::write(dir.join("src/a.rs"), "one\ntwo\n").unwrap();
+        let mut stream = stream();
+        let args = Args::default();
+        let tools = strings(&["Read", "Edit", "TaskCreate", "TaskUpdate", "Glob", "Bash"]);
+        let habits = Habits {
+            pause: std::time::Duration::from_millis(40),
+            ..Habits::default()
+        };
+        let mut hands = Busy {
+            stream: &mut stream,
+            servers: &mut [],
+            cwd: &dir,
+            args: &args,
+            tools: &tools,
+            habits: &habits,
+        };
+        let read = hands.tool("Read", json!({ "file_path": "src/a.rs" }));
+        assert_eq!(read, Ok(work::numbered("one\ntwo\n")));
+        let edit = |h: &mut Busy<_>, path: &str, old: &str| {
+            h.tool(
+                "Edit",
+                json!({ "file_path": path, "old_string": old, "new_string": "2" }),
+            )
+        };
+        let full = dir.join("src/a.rs");
+        assert_eq!(
+            edit(&mut hands, "src/a.rs", "two"),
+            Ok(format!(
+                "The file {} has been updated successfully.",
+                full.display()
+            ))
+        );
+        assert_eq!(std::fs::read_to_string(&full).unwrap(), "one\n2\n");
+        assert_eq!(
+            edit(&mut hands, &full.to_string_lossy(), "nine"),
+            Err("String to replace not found in file.".into()),
+            "a whole path inside"
+        );
+        let outside = |p: &str| Err(format!("{p} is outside the session's directory"));
+        let up = dir.join("../x").to_string_lossy().into_owned();
+        assert_eq!(edit(&mut hands, "../x", "a"), outside(&up));
+        assert_eq!(edit(&mut hands, "/etc/hosts", "a"), outside("/etc/hosts"));
+        assert_eq!(
+            hands
+                .tool("Read", json!({ "file_path": "src/none" }))
+                .unwrap_err(),
+            "No such file or directory (os error 2)"
+        );
+        // Its tasks by number, a session's own.
+        let task = |h: &mut Busy<_>, s: &str| h.tool("TaskCreate", json!({ "subject": s }));
+        assert_eq!(
+            task(&mut hands, "a"),
+            Ok("Task #1 created successfully: a".into())
+        );
+        assert_eq!(
+            task(&mut hands, "b"),
+            Ok("Task #2 created successfully: b".into())
+        );
+        assert_eq!(
+            hands.tool(
+                "TaskUpdate",
+                json!({ "taskId": "2", "status": "completed" })
+            ),
+            Ok("Updated task #2 status".into())
+        );
+        // The shell is made up, and allowed outright here.
+        let args_yes = Args {
+            allowed: strings(&["Bash"]),
+            ..Args::default()
+        };
+        hands.args = &args_yes;
+        assert_eq!(
+            hands.tool("Bash", json!({ "command": "rm -rf /" })),
+            Ok(work::RAN.into())
+        );
+        assert_eq!(
+            hands.tool("Glob", json!({})),
+            Err("the stand-in does not run Glob".into())
+        );
+        let calls = hands.stream.calls;
+        assert_eq!(
+            hands.tool("Grep", json!({})),
+            Err("No such tool available: Grep".into())
+        );
+        assert_eq!(
+            hands.stream.calls, calls,
+            "a tool it has not got is not streamed"
+        );
+        assert!(hands.has("Glob") && !hands.has("Grep"));
+        assert_eq!(hands.files(), ["src/a.rs"]);
+        assert_eq!(hands.habits(), &habits);
+        let start = std::time::Instant::now();
+        hands.pause();
+        assert!(start.elapsed() >= habits.pause);
+        // The stream names each file by its whole path.
+        let lines: Vec<Value> = (String::from_utf8(stream.out.clone()).unwrap())
+            .lines()
+            .map(|l| serde_json::from_str(l).unwrap())
+            .collect();
+        assert_eq!(
+            lines[0]["message"]["content"][0]["input"]["file_path"],
+            full.to_string_lossy().as_ref()
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

@@ -137,3 +137,66 @@ directory removed.
 Next, unchanged: the demo's behaviours from `sim.rs` into the stand-in's
 mind, Lonca's fake daemon for the demo, then `Engine::Sim` goes and
 `--demo-live` becomes `--demo`.
+
+## A worker that works (2026-11-09)
+
+The first of the simulation's behaviours moved into the stand-in's mind:
+a worker's turn on an `assign` is the one the simulation draws, made of
+real tool calls (`stand_in::work`). It makes its to-do list with
+`TaskCreate`, one task per step of `work::STEPS` (the simulation's five),
+and marks each `in_progress` then `completed` with `TaskUpdate`, so
+`Event::Plan` and the row's `≡ 3/5` come from imece's own parser. It
+`Read`s the file of its directory that names most of the task's words
+(`work::pick`: letters and digits, three at least, folded; not a test or
+JSON when another file is there; equals by the roll), adds the task to it
+as comment lines of its kind (`mark_of`: `// ` for code, `# ` for scripts
+and settings, plain for the rest) with one `Edit` of its whole text (a
+`Write` when it is empty), and notes `covers: <title>` in the test file
+whose path names that file's name (none when no test does). It runs the
+tests of the file's kind with `Bash` (`kind_of`: `dotnet test`, `gradle
+test`, `npm test`, `go test ./...`, `cargo test`; none for another file)
+and sends its leader `done`: the task's first line, then `Changed …` and
+what each command said. One assign in `asks` first runs a command imece
+holds no routine (`Kind.asks`: a shell's operators, or a program not on
+the run list), so imece asks the person through the permission prompt.
+A directory with nothing to change gets the task written in
+`stand-in/<name>.md`, as before. Its commands are never run: a test run
+says `All 12 tests passed.`, anything else `Done.`.
+
+The stand-in's own tools now act as Claude Code's do (`Busy::tool`): a
+`tool_use` streamed before the work and its `tool_result` after; a tool
+the session has not got is refused unstreamed (`No such tool available`);
+paths are named whole in the stream and must stay in the session's
+directory (no `..`, nothing outside); `Bash` and the web ask before they
+run unless `--allowedTools` names them (now read), through the
+`--permission-prompt-tool` server's tool with `tool_name`, `input` and
+`tool_use_id`, hidden from the stream as Claude Code hides it; `allow`
+runs it, `deny` is the call's error with its message, and nobody to ask
+or an answer not understood is Claude Code's `Claude requested
+permissions to use …, but you haven't granted it yet.` Edits ask nothing:
+imece runs Claude Code under `acceptEdits`.
+
+How it works comes from its program (`Habits`, written into the program
+by `install` as `IMECE_STAND_IN_PAUSE_MS`, `IMECE_STAND_IN_ASKS`,
+`IMECE_STAND_IN_SEED`): a pause between steps (at most `PAUSE_MOST` 10 s),
+one assign in how many asks first (never at 0), and the seed of its
+choices (`roll`: FNV-1a of seed, agent name and its assign's number, kept
+in the transcript as `Mind.worked`). Tests install it with none of them;
+the demo with 1.5 s, one in three and `--seed` (now `--demo-live`'s too),
+and names the kinds' test programs as its run list
+(`work::TEST_PROGRAMS`), so a test run is allowed at once and what asks
+waits in TO DECIDE. `live::end_to_end` runs it on the real `Live`: the
+change waits with the task in `a.txt` and the list all done; with `asks`
+1 the command waits for the person, nothing changes before the yes, and
+the `done` says what it heard.
+
+What it found: `World::done_why` read the newest `done` from the journal,
+where live keeps a message's first line only, so a change's "why it
+waits" was never shown on live (the simulation journals whole messages).
+It now reads the whole message from the cards' stories, by its number,
+when the journal has only its first line.
+
+Next: questions to the person with options, helpers, faults and retries,
+rate limits and context, strays and the plan gate, the leader's board
+and cards, the commit and review one-shots; then Lonca's fake daemon,
+then `Engine::Sim` goes.

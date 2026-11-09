@@ -286,7 +286,7 @@ fn parse(
     // The demo on `Live` has Live's limits, and as many projects as the
     // demo's.
     if args.demo_live {
-        demo_only.retain(|f| f != "--projects");
+        demo_only.retain(|f| f != "--projects" && f != "--seed");
     }
     if args.demo {
         if args.agents == Some(0) {
@@ -435,7 +435,7 @@ fn main() -> std::io::Result<()> {
             std::env::current_exe().unwrap_or_else(|e| fail(format!("imece's own path: {e}")));
         let agents = args.agents.unwrap_or(DEMO_LIVE_WORKERS);
         let (world, live, demo) =
-            live::demo::world(args.projects, agents, &imece).unwrap_or_else(|e| fail(e));
+            live::demo::world(args.projects, agents, args.seed, &imece).unwrap_or_else(|e| fail(e));
         let (seconds, day) = live::local_clock(world.started_at);
         model::start_clock_at(seconds, day);
         demo_dir = Some(demo);
@@ -980,10 +980,10 @@ mod tests {
         );
         let e = args(&["--demo-live", "--agents", "17"], &[]).unwrap_err();
         assert_eq!(e, "--agents: a leader hires at most 16");
-        for flag in ["--researchers", "--seed"] {
-            let e = args(&["--demo-live", flag, "2"], &[]).unwrap_err();
-            assert!(e.starts_with(&format!("{flag} is for --demo")), "{e}");
-        }
+        let e = args(&["--demo-live", "--researchers", "2"], &[]).unwrap_err();
+        assert!(e.starts_with("--researchers is for --demo"), "{e}");
+        let a = args(&["--demo-live", "--seed", "11"], &[]).unwrap();
+        assert_eq!(a.seed, 11, "the seed of the stand-ins' choices");
         let e = args(&["--projects", "2"], &[]).unwrap_err();
         assert!(e.starts_with("--projects is for --demo"), "{e}");
         let e = args(&["--demo", "--demo-live"], &[]).unwrap_err();
