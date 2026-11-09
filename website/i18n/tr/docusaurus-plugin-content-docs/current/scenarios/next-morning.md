@@ -44,7 +44,7 @@ Bir şey kımıldamadan önce bir pencere nerede kaldığınızı söyler:
  NEREDE KALMIŞTIN · 14 sa 20 dk önce
  $12.40 harcandı, bütçe $50.00; her agent kendisiyle konuşulana dek uyur
  parser: 4 agent, 2 açık kart
- 1 şey seni bekliyor:
+ 1 şey karar bekliyor:
    Δ 18:40 claude-4 bitirdi: config yükleyici (2 dosya, +30 −4)
  imece kapanırken kesilen turlar: claude-1, claude-3
  kapanmadan önceki son satırlar:
@@ -56,7 +56,7 @@ Bir şey kımıldamadan önce bir pencere nerede kaldığınızı söyler:
 
 Bütçe olduğu yerdedir: `--budget` verilmemişse korunur, `--budget 80` ayarlardı. Herhangi bir tuş pencereyi kapatır ve başka bir şey yapmaz. Yalnızca söyleyecek bir şey varken açılır; demoda hiç açılmaz.
 
-Günlükte her kesilen tur için bir satır vardır ve ekip herkesi uykuda gösterir:
+Günlükte her kesilen tur için bir satır vardır ve ana ekranın ÇALIŞAN kısmı herkesi uykuda gösterir:
 
 ```text
  09:00 ■ claude-1 turu imece kapanınca yarım kaldı; uyanınca öğrenecek
@@ -64,9 +64,8 @@ Günlükte her kesilen tur için bir satır vardır ve ekip herkesi uykuda göst
 ```
 
 ```text
-   ◦ claude-1   #3   parser: iç içe listeler   ◦ önceki çalışmadan beri uyuyor, yazınca uyanır
-   ◦ claude-3   #5   config: varsayılanlar     ◦ önceki çalışmadan beri uyuyor, yazınca uyanır
-   ◦ claude-4   #4   config yükleyici          ◦ önceki çalışmadan beri uyuyor, yazınca uyanır
+ ○ #3   parser: iç içe listeler   ◦ önceki çalışmadan beri uyuyor, yazınca uyanır
+ ○ #5   config: varsayılanlar     ◦ önceki çalışmadan beri uyuyor, yazınca uyanır
 ```
 
 Uykuda demek süreç yok, para yok demek. Bir ajanı üç şey uyandırır: ona yazarsınız, bir takım arkadaşından uyandıran türde bir mesaj gelir ya da bu çalışmada asılan bir kart ona önerilir. Yeniden başlatmayı bekleyen postalar ve kartlar kimseyi uyandırmaz. Bugünden eski bir günlük satırının üstünde bir `─ YYYY-MM-DD` satırı vardır; KARAR BEKLEYEN içinde başka günden bir öğe de öyle.
@@ -117,7 +116,7 @@ Bir süre başka pencereye geçin. Terminal odağı yarım saat ya da daha uzun 
 ```text
  SEN YOKKEN · son 12 dk
   ✓ 0 kart birleşti
-  ! 1 karar seni bekliyor
+  ! 1 karar bekliyor
   ■ 0 kez bloke olundu
   ⚑ 1 varsayım yapıldı
   ⇄ 4 konuşma
@@ -131,7 +130,7 @@ Sayılar türe göre yeni günlük satırları ve şu an sizi bekleyenlerdir; al
 Özet döndüğünüzde anlatır; `:notify` sizi çağırır. `:notify bell` terminalin zilini çalar, `:notify text` masaüstü bildirimi gönderir: siz başka penceredeyken sizi bekleyen bir şey geldiyse ve beş saniye sonra hâlâ oradaysa; bir değişiklik, bir soru, bir onay isteği, takılan bir ajan, her biri bir kez. Siz ayrılırken ekranda olan sessiz kalır, bekleme süresi içinde gelip giden de.
 
 ```text
- imece · claude-3 bitirdi: bir değişiklik seni bekliyor
+ imece · claude-3 bitirdi: değişiklik hazır
 ```
 
 Aynı anda birkaçı tek zil ya da sayıyla tek bildirimdir. Yalın `:notify` sırayla döner: off, bell, text, off; seçim hatırlanır. Özetle aynı odak bildirimlerini ister, metin için de bildirim gösteren bir terminal (iTerm2, WezTerm, Ghostty, kitty; başka yerde `bell`). kitty'de bildirime tıklayınca neyle ilgiliyse o açılır.
@@ -140,7 +139,7 @@ Makineden tümüyle uzaktayken `:notify push` aynı sözleri, projeyle birlikte,
 
 ## 6. İşaretlerle yer tutun
 
-Günlükte (ya da açık bir konuşmada) yeniden isteyeceğiniz bir satırı seçin, diyelim planı taşıyan mesajı, ve `m`ye basın: `işaretlendi: ' ona geri getirir`. Satır saatinden sonra `✱` taşır. `'` sonraki işaretli satırı seçer, başa dönerek: açık konuşmada, yoksa günlükte; başka her yerden önce ekibin günlüğüne gider. `m` yine işareti kaldırır (`işaret kaldırıldı`).
+Günlük penceresinde (`J`, ya da açık bir konuşmada) yeniden isteyeceğiniz bir satırı seçin, diyelim planı taşıyan mesajı, ve `m`ye basın: `işaretlendi: ' ona geri getirir`. Satır saatinden sonra `✱` taşır. `'` sonraki işaretli satırı seçer, başa dönerek: açık konuşmada, yoksa günlükte; başka her yerden günlük penceresini o satırda açar. `m` yine işareti kaldırır (`işaret kaldırıldı`).
 
 ```text
  09:41✱ ⇄ lead → claude-3 [görev]: #5 config: varsayılanlar, src/config.rs

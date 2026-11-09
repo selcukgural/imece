@@ -83,7 +83,7 @@ Açıkken ve herhangi bir ajan tur ortasındayken imece sistemin kendi aracını
 
 ## 6. Çalışırken `:budget 80`
 
-Başlık `$41.20 / $50.00 harcandı ($6.10/sa, ~1 sa 26 dk kaldı)` gösteriyor; yarım saatten az kalınca dikkat rengine döner ve günlük bir kez söylerdi. `:budget 80` (ya da `:b 80`) yazın ve `enter`:
+Başlık `$41.20 / $50.00` gösteriyor; `:` menüsünde `:budget` notu hızı ve bütçenin o hızla ne kadar yeteceğini ekler (`$41.20 / $50.00 · $6.10/sa, ~1 sa 26 dk kaldı`). Yarım saatten az kalınca başlığın kendisi dikkat rengine döner ve `~25 dk kaldı` ekler, günlük de bir kez söylerdi. `:budget 80` (ya da `:b 80`) yazın ve `enter`:
 
 ```text
  bütçe artık $80.00

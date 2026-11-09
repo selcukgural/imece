@@ -83,7 +83,7 @@ While it is on and any agent is mid-turn, imece runs the system's own tool as a 
 
 ## 6. `:budget 80` mid-run
 
-The header shows `spent $41.20 of $50.00 ($6.10/h, ~1 h 26 min left)`; with under half an hour left it would turn the attention colour and the journal would say so once. Type `:budget 80` (or `:b 80`) and `enter`:
+The header shows `$41.20 of $50.00`; the `:` menu's note on `:budget` adds the rate and how long the pot lasts at it (`$41.20 of $50.00 · $6.10/h, ~1 h 26 min left`). With under half an hour left the header itself would turn the attention colour and add `~25 min left`, and the journal would say so once. Type `:budget 80` (or `:b 80`) and `enter`:
 
 ```text
  the budget is $80.00 now

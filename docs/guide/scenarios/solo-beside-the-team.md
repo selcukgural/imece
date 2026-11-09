@@ -23,18 +23,19 @@ The words may come in any order; imece tells them apart by shape. `claude:opus@x
  opened notes at /Users/me/code/kule as a solo session; write to solo-notes (claude opus@xhigh)
 ```
 
-The team shows a new group beside the team, with one agent, and it is selected:
+Home's AT WORK shows a new project beside the team, with one agent, and it is selected:
 
 ```text
- ▾ kule
-   ● lead             coordinating                              $0.42
-   ● claude-1         #3 limiter: config v2     editing src/limit.rs
-   ○ claude-2         #4 limiter tests          idle
- ▾ notes
-   ○ solo-notes       opus@xhigh                idle
+ AT WORK 4 · idle 2
+ ▾ kule          ░░░░░░░░ 0/2  2 working  $0.42  ~/code/kule
+ ● kule        #3   limiter: config v2        editing src/limit.rs · 2 min
+ ○ kule        #4   limiter tests             idle
+ ● kule             lead                      coordinating
+ ▾ notes         0 working  $0.00  ~/code/kule
+▸○ notes            solo-notes                idle
 ```
 
-A solo's row says its choice. The glyph is its status, as on every row: a solo works, it does not coordinate. Nothing costs anything yet: like every agent, it has no process until you write to it.
+A solo has no card, so its row carries its name; its choice is in the flash, and in the `:` menu's notes on `:model` and `:effort`. The glyph is its status, as on every row: a solo works, it does not coordinate. Nothing costs anything yet: like every agent, it has no process until you write to it.
 
 ## 2. Tell it what to do
 
@@ -47,7 +48,7 @@ Press `/`. The command line is addressed to the selected project's head, which h
 Its first turn starts. Before it, imece makes `solo-notes` a worktree of `kule` under `~/.local/state/imece/worktrees/`, named `solo-3` after the project's id, detached at your HEAD. The solo gets what a worker gets under `--confine standard`: Claude Code's read and edit tools, its shell (what would ask comes to you as a `⚑`), the web, and imece's `run` tool. Its row shows what it does:
 
 ```text
-   ● solo-notes       opus@xhigh                reading src/limit.rs          $0.31
+ ● notes            solo-notes                reading src/limit.rs · 1 min
 ```
 
 ## 3. The answer, and the Δ with it
@@ -55,9 +56,12 @@ Its first turn starts. Before it, imece makes `solo-notes` a worktree of `kule` 
 The turn ends with an answer. It goes to the journal and TO DECIDE as any agent's answer does, and, because this is a solo, imece reads its worktree at the same moment:
 
 ```text
- TO DECIDE
- ↩ solo-notes answered: Wrote docs/limits.md from src/limit.rs: the two windows, the per-key…
- Δ solo-notes: Wrote docs/limits.md from src/limit.rs   no run on this tree
+ TO DECIDE 1 question · 1 change
+ questions
+▸! notes            solo-notes                answered: Wrote docs/limits.md from src/limit.rs:
+                                              the two windows, the per-key…
+ changes
+ ! notes            Wrote docs/limits.md fro…  nothing ran · 1 file +48 −0
 ```
 
 Nobody sends `done` for a solo. Every turn that ends with an answer shows you what its worktree holds, titled by the answer's first line. `enter` on the `Δ` opens the diff; `a` applies it to your checkout, `r` rejects it and opens `@solo-notes ` for your reasons, `c` and `n` send notes on lines, `x` chooses hunks ([changes](../concepts/changes.md)). A turn that answers a question without touching a file reads the same tree again: the `Δ` stays, retitled.
@@ -81,17 +85,18 @@ A different question, a different model. This time a path and no name:
 `~/code/kule` is a path (it has a `/`), the choice names `sonnet` at `high` effort, and the name defaults to the directory's: `kule` is taken by the team, so the project is `kule-2` and its agent `solo-kule-2`:
 
 ```text
- ▾ kule
-   ○ lead             idle
-   ○ claude-1         #3 limiter: config v2     idle
-   ○ claude-2         #4 limiter tests          idle
- ▾ notes
-   ○ solo-notes       opus@xhigh                idle                          $0.58
- ▾ kule-2
-   ○ solo-kule-2      sonnet@high               idle
+ imece  kule · notes · kule-2 │ $4.10 of $50.00  16:20
+ AT WORK 4 · idle 4
+ ▾ kule          ░░░░░░░░ 0/2  0 working  $3.52  ~/code/kule
+ ○ kule        #3   limiter: config v2        idle
+ ○ kule        #4   limiter tests             idle
+ ▾ notes         0 working  $0.58  ~/code/kule
+ ○ notes            solo-notes                idle
+ ▾ kule-2        0 working  $0.00  ~/code/kule
+▸○ kule-2           solo-kule-2               idle
 ```
 
-Three groups on one checkout: a team and two solos, each in its own worktree, your checkout untouched by all of them. One pot pays for all; the header's `$/h` counts them together. A second *team* on the same checkout would be refused (`that checkout is open already, as kule`): one team per checkout, any number of solos.
+Three groups on one checkout: a team and two solos, each in its own worktree, your checkout untouched by all of them. One pot pays for all; the header's pot and the rate in `:budget`'s note count them together. A second *team* on the same checkout would be refused (`that checkout is open already, as kule`): one team per checkout, any number of solos.
 
 A bare `:solo` asks instead of guessing: a screen lists the models, then the efforts; `j k` and `enter` pick, `esc` goes back a step. And a running solo can be re-tuned: `:effort max` makes `solo-notes` think at `max` from its next turn (the flash: `solo-notes runs on claude opus@max from its next turn; its session starts again on it`), `:model sonnet` moves it to a cheaper model for the small remaining fixes; the session starts again on the same transcript, nothing of the conversation is lost.
 

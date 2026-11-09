@@ -16,10 +16,10 @@ cd ~/code/parser
 imece
 ```
 
-Ekip, takım yalnızca liderden ibaretken açılır: `lead`, çalışma kopyanızı okur ve ona asla yazmaz. Günlüğün (ekranda DEFTER) ilk satırı ajanlara ne verildiğini söyler, çünkü varsayılan seviye `standard`:
+Ana ekran boş açılır: karar bekleyen yok, çalışan yok, ortada imece'nin işareti. Takım yalnızca liderden ibaret: `lead`, çalışma kopyanızı okur ve ona asla yazmaz; boştaki bir liderin satırı olmaz. Günlüğün ilk satırı (`J` günlüğü bir pencerede açar, ekranda DEFTER; `esc` kapatır) ajanlara ne verildiğini söyler, çünkü varsayılan seviye `standard`:
 
 ```text
- DEFTER
+ DEFTER · J hikâye
  14:00 ⚑ confine standard: işçiler Claude Code'un kabuğunu ve web'ini alır; yalıtım bir konteynerin işi, imece'nin değil
 ```
 
@@ -33,7 +33,7 @@ Henüz hiçbir şey para etmez: ona yazmadığınız sürece `lead`in bir sürec
  › lead için: parser testi boş girdide kırılıyor, düzelt
 ```
 
-Günlük satırınızı gösterir (`›` sizin yaptığınızı işaretler) ve lider ilk turuna başlar: satırı `● lead  düşünüyor…` olur, sonra ne yaptığını söyler. Testi okuma araçlarıyla okur, imece'nin `run` aracıyla `cargo test` çalıştırabilir. Dosya değiştirmez: lider her confine seviyesinde yazmaz, çünkü çalışma kopyanızda çalışır ve orada bir yazma incelemeyi atlardı.
+Günlük satırınızı gösterir (`›` sizin yaptığınızı işaretler) ve lider ilk turuna başlar: çalıştığı sürece ÇALIŞAN altında ne yaptığını söyleyen bir satırı olur. Testi okuma araçlarıyla okur, imece'nin `run` aracıyla `cargo test` çalıştırabilir. Dosya değiştirmez: lider her confine seviyesinde yazmaz, çünkü çalışma kopyanızda çalışır ve orada bir yazma incelemeyi atlardı.
 
 ## 3. Lider işe alır
 
@@ -41,32 +41,29 @@ Lider `hire` aracını bir kademeyle çağırır, asla model adıyla değil: kü
 
 ```text
  14:01 → lead işe aldı: claude-1 (varsayılan model)
- 14:01 ⇄ lead → claude-1 [görev]: parser: boş girdi boş ağaç yerine Err veriyor; src/parser.rs, test parse_empty
+ 14:01 ⇄ lead → claude-1 [görev]: parser: boş girdi boş ağaç yerine Err veriyor
 ```
 
 "varsayılan model", `standard`ın Claude için anlamı: Claude Code'unuzun çalıştığı model. Bir `strong` alım `(opus)`, bir `cheap` alım `(haiku)` derdi. Liderin araçtan aldığı yanıt `claude-1 joined (claude, the default model). Give it work with send (type assign). 3 more may be hired.` idi: `--agents` (varsayılan 4) tavandır ve takım boyutunu asla siz seçmezsiniz.
 
-`assign` mesajı bir kart açar, `#1`, başlığı mesajın ilk satırı. İşçinin satırı onu gösterir:
+`assign` mesajı bir kart açar, `#1`, başlığı mesajın ilk satırı. Ana ekranda bir satır ajan değil iştir: önce kart ve başlığı, sonra işçinin yaptığı:
 
 ```text
- ▾ parser                      1 çalışıyor  $0.09
-   ● lead       koordine ediyor                                    $0.09
-   ● claude-1   #1   parser: boş girdi      src/parser.rs okuyor
+ ÇALIŞAN 1
+ ● #1   parser: boş girdi boş a…  src/parser.rs okuyor
 ```
 
 İlk turundan önce imece `claude-1` için `~/.local/state/imece/worktrees/` altında, HEAD'inizde ayrık bir git worktree'si yapar. Çalışma kopyanıza bir ajan asla dokunmaz.
 
 ## 4. Çalışmasını izlemek
 
-İşçi ilerlerken satırında iki şey değişir.
-
-Durumu, o an yaptığı şeydir (okuyor, düzenliyor, çalıştırıyor), Claude Code'un bildirdiği sözcüklerle. İlk araç kullanımından sonra satır worktree'nin durduğu yeri de gösterir; işçi tur ortasındayken her 15 saniyede okunur:
+Satırın durumu, işçinin o an yaptığı şeydir (okuyor, düzenliyor, çalıştırıyor), Claude Code'un bildirdiği sözcüklerle; bir dakikadan sonra ne zamandır sürdüğü de:
 
 ```text
-   ● claude-1   #1   parser: boş girdi      src/parser.rs düzenliyor   $0.14  +12 −3
+ ● #1   parser: boş girdi boş a…  src/parser.rs düzenliyor · 3 dk
 ```
 
-`+12 −3`, bir sonraki `done`unun size vereceği satırlardır, yazıldıkça sayılır. `⎇ ad` yalnızca ajan bir dal yaptıysa görünür, `↑N` kendi commit'leri, `↓N` onda olmayan sizin commit'leriniz için (`?` içindeki lejant hepsini adlandırır).
+Satırda `enter` ayrıntısını açar: kart, proje, işçi, süre ve harcadığıyla bir baş satırı, sonra `diff · konuşma · log` sekmeleri; `tab` birinden ötekine geçer. log sekmesi işçinin kendi hikâyesidir: durumu, yapılacakları listesi, ne yaptığı. Kartın ekranı (`#1`) işçiyi worktree'nin durduğu yerle adlandırır; işçi tur ortasındayken her 15 saniyede okunur: `+12 −3`, bir sonraki `done`unun size vereceği satırlardır, yazıldıkça sayılır; `⎇ ad` yalnızca ajan bir dal yaptıysa görünür, `↑N` kendi commit'leri, `↓N` onda olmayan sizin commit'leriniz için. `esc` ana ekrana döner.
 
 Bir `progress` mesajı, işçinin liderini uyandırmadan gönderdiği mesajdır: başka bir şey liderin turunu başlatana dek bekler. Günlükte bir konuşma satırı olarak görünür:
 
@@ -79,14 +76,15 @@ Bir `progress` mesajı, işçinin liderini uyandırmadan gönderdiği mesajdır:
 `standard` altında Claude Code'un kendi kabuğu açıktır ve Claude Code'un kurallarının soracağı bir komut reddedilmek yerine size gelir. **Rutin** bir komut hemen çalışır: tek satır, kabuk sözdizimi yok (boru, yönlendirme, `&&`, `$` ya da glob yok) ve `run` aracının politikasının bu role izin verdiği bir program (bağımlılık değiştiren komutları olmadan cargo, git'in okuma komutları, `--run` ile adlandırdığınız programlar). `cargo test` rutindir; iz `allowed on its own: Bash: cargo test` der. Gerisi bekler:
 
 ```text
- KARAR BEKLEYEN (1)
- ⚑ 14:07 claude-1 çalıştırmak istiyor: Bash: cargo test 2>&1 | tail -20
-   a izin ver · r reddet · enter odak
+ imece  parser │  ! 1 karar bekliyor  │ $0.09 / $50.00  14:07
+ KARAR BEKLEYEN 1 izin
+ izinler                                                                 her biri tek tuş
+▸! #1   parser: boş girdi boş a…  Bash: cargo test 2>&1 | tail -20 çalışsın mı?   a  evet   r  hayır
 ```
 
-Boru komutu rutin olmaktan çıkarır. Komut bütünüyle gösterilir, asla markdown olarak okunmaz: izin verdiğiniz şey çalışan şeydir. Bu arada işçinin satırı `⚑ çalıştırmak istiyor` der ve terminalin başlığı `imece · 1 seni bekliyor` olur.
+Boru komutu rutin olmaktan çıkarır. Komut bütünüyle gösterilir, asla markdown olarak okunmaz: izin verdiğiniz şey çalışan şeydir. İstek artık işçinin satırıdır: siz yanıtlayana dek ÇALIŞAN'dan çıkar. Başlık karar bekleyenleri sayar, terminalin başlığı `imece · 1 karar bekliyor` olur. Alttaki durum satırı eldeki satırın tuşlarını söyler: `a  bir kez izin ver   r  reddet   e  bu tur evet`.
 
-`tab` (ya da `w`) ile panele geçin, ya da her yerden `W`, ve `a`. Anlık mesaj `izin verildi: claude-1 devam ediyor` der; günlük kararınızı tutar:
+Satır zaten elde (`W` sizi her yerden karar bekleyen sonraki şeye getirir). `a`ya basın. Anlık mesaj `izin verildi: claude-1 devam ediyor` der ve imleç sonraki satıra geçer; günlük kararınızı tutar:
 
 ```text
  14:07 › claude-1 için izin verdin: Bash: cargo test 2>&1 | tail -20
@@ -99,35 +97,40 @@ Boru komutu rutin olmaktan çıkarır. Komut bütünüyle gösterilir, asla mark
 İşçi işini `run` aracıyla doğrular (talimatları öyle der: yalnızca imece'nin kendi çalıştırmaları kanıt sayılır, çünkü hangi ağaçta çalıştıklarını imece bilir) ve lidere `done` gönderir, göreve yanıt olarak (`↩`). imece worktree'yi HEAD'inize karşı okur ve değişiklik sizi bekler:
 
 ```text
- 14:12 ⇄ claude-1 → lead [bitti] ↩: parse() token yokken Ok(Tree::empty()) döndürüyor; parse_empty testi eklendi
- 14:12 ! claude-1 bitirdi: değişiklik hazır · 1 dosya +14 −3
+ 14:12 ⇄ claude-1 → lead [bitti] ↩: parse() token yokken Ok(Tree::empty()) döndürüyor
+ 14:12 ! claude-1 bitirdi: değişiklik hazır · 1 dosya +14 −3 · $0.14 · 11 dk
 ```
 
 ```text
- KARAR BEKLEYEN (1)
- Δ 14:12 claude-1 bitirdi: parse() token yokken Ok(Tree::empty()) döndürüyor (1 dosya, +14 −3) · ✓ bu ağaçta temiz geçti: cargo test
-   enter diff'i gör · a onayla · r geri gönder
+ KARAR BEKLEYEN 1 değişiklik
+ değişiklikler                                                              1 onaya hazır
+▸! #1   parse() token yokken O…  ✓ cargo test · 1 dosya +14 −3     a  onayla   r  geri gönder
 ```
 
-Öğenin metni işçinin `done`unun ilk satırıdır; bundan sonra değişikliğin başlığı odur. `✓ bu ağaçta temiz geçti`, imece'nin tam bu ağaçta yaptığı çalıştırmaları adlandırır. İşçi yalnızca kendi kabuğunda test etseydi satır `bu ağaçta çalıştırma yok` derdi: Claude Code'un kabuğu, imece'nin güvenebileceği bir çıkış kodu taşımaz. Çalıştırma yok diye hiçbir şey reddedilmez; karar sizin.
+Satırın başlığı işçinin `done`unun ilk satırıdır; bundan sonra değişikliğin başlığı odur. Gerisi hükümdür: `✓ cargo test`, imece'nin tam bu ağaçta yaptığı çalıştırmayı adlandırır, sonra dosyalar ve satırlar gelir. İşçi yalnızca kendi kabuğunda test etseydi `hiçbir şey koşmadı` derdi: Claude Code'un kabuğu, imece'nin güvenebileceği bir çıkış kodu taşımaz. Temiz geçen, kartının yollarında kalan (kart yol adlandırıyorsa) ve bekleyen başka bir değişiklikle çakışmayan bir değişiklik onaya hazır sayılır; çalıştırma yok diye hiçbir şey reddedilmez, karar sizin.
 
 ## 7. Diff'i okumak
 
-`W`ye basın. Nerede olsanız sizi bekleyen sonraki öğeyi açar: burada diff görünümünü.
+Satırda `enter`a basın (ya da her yerden `W`). Değişikliğin ayrıntısı diff sekmesinde açılır:
 
 ```text
- DEĞİŞİKLİK · claude-1 · 1 dosya +14 −3 · parse() token yokken Ok(Tree::empty()) döndürüyor
- ✓ cargo test
- diff --git a/src/parser.rs b/src/parser.rs
- @@ -40,7 +40,9 @@ impl Parser {
- -    let first = tokens[0];
- +    if tokens.is_empty() {
- +        return Ok(Tree::empty());
- +    }
- j k  w  kaydır · sar   [ ]  dosya   a x  uygula · parça seç   r  reddet   >  ona alıntıla   c n  not · notları gönder   esc  geri
+#1 parser: boş girdi boş ağaç yerine Err veriyor · parser · claude-1 · $0.14 · 1 dosya +14 −3
+diff · konuşma · log                                                                       tab geçer
+┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
+│✓ onaya hazır · ✓ cargo test · 1 dosya                                                            │
+│ parse_empty testi eklendi; cargo test geçiyor                                                    │
+│ maliyet · $0.14 · 11 dk                                                                          │
+│src/parser.rs                                                                                     │
+│@@ -40,7 +40,9 @@ impl Parser {                                                                   │
+│-    let first = tokens[0];                                                                       │
+│+    if tokens.is_empty() {                                                                       │
+│+        return Ok(Tree::empty());                                                                │
+│+    }                                                                                            │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+ değişiklik · parser · #1 parser: boş girdi…    a  onayla   r  geri gönder   c  not   esc  geri   ?  yardım
 ```
 
-İlk satırlar bu ağaçtaki çalıştırmalar, sonra yama. `j k` kaydırır, `gg G` uçlara, `^d ^u ^f ^b` sayfa sayfa. `[` `]` dosyadan dosyaya gider; tek dosyada yamanın üstünde dosya listesi yoktur (iki ya da daha çok dosyalı bir değişiklik onları listeler). `w` uzun satırları altlarına sarar, `w` yine kenarda keser. `esc` geri çıkar.
+İlk satır hükümdür, tek satırda Δ kapısı: `✓ onaya hazır`, ya da `! önce bak` ve nedeni (başarısız bir çalıştırma, kartın yollarının dışında dosyalar, bekleyen başka bir değişiklikle çakışma, çalışma kopyanıza oturmayan bir yama). Altında işçinin `done`unun ilk satırının altında söyledikleri, değişikliğin maliyeti, sonra yama. `j k` kaydırır, `gg G` uçlara, `^d ^u ^f ^b` sayfa sayfa. `[` `]` dosyadan dosyaya gider; tek dosyada yamanın üstünde dosya listesi yoktur (iki ya da daha çok dosyalı bir değişiklik onları listeler). `w` uzun satırları altlarına sarar, `w` yine kenarda keser. `tab` işçiyle liderinin konuşmasını, sonra log'u gösterir. `esc` ana ekrana döner.
 
 ## 8. Uygulama
 
@@ -139,7 +142,7 @@ Boru komutu rutin olmaktan çıkarır. Komut bütünüyle gösterilir, asla mark
 
 Uygulamak, çalışma kopyanızda `git apply --index` demektir: dosyalar değişir ve stage'e girer, hiçbir şey commit edilmez. Aynı satırları siz de düzenlemiş olsaydınız uygulama git'in sözleriyle reddedilir ve hiçbir şey yarım kalmaz; çalışma kopyanız yalnızca ilerlemiş olsaydı yama önce indeksin bir kopyasında üç yollu birleştirilir ve yalnızca temiz çıkarsa uygulanır. Çakıştığında reddedilen değişiklik kırmızı bir satırla açılır ve `b` onu uymayan parçalar ve git'in sözleriyle işçiye geri gönderir; işçi worktree'sini günceller, çözer ve yeniden `done` gönderir ([değişiklik görünümü](../screen/changes.md)).
 
-İşaret: işçinin worktree'si `3f2a9c1`de `imece <imece@localhost>` olarak commit edilir, dosyalar olduğu gibi bırakılır. Böylece işçinin sonraki `done`u yalnızca sonrasında geleni gösterir ve satırdaki `+14 −3` sıfırlanır. Sonraki isteminde işçiye şu söylenir: "The person applied your change (parse() returns Ok(Tree::empty()) on no tokens) to their checkout. Your worktree is committed at 3f2a9c1 as a mark of that; your files are as you left them. Go on from here with the next task."
+İşaret: işçinin worktree'si `3f2a9c1`de `imece <imece@localhost>` olarak commit edilir, dosyalar olduğu gibi bırakılır. Böylece işçinin sonraki `done`u yalnızca sonrasında geleni gösterir ve durduğu yerdeki `+14 −3` sıfırlanır. Sonraki isteminde işçiye şu söylenir: "The person applied your change (parse() returns Ok(Tree::empty()) on no tokens) to their checkout. Your worktree is committed at 3f2a9c1 as a mark of that; your files are as you left them. Go on from here with the next task."
 
 ## 9. Kendi kabuğunuzda bakın
 

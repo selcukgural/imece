@@ -9,7 +9,7 @@ description: imece'nin aldığı her `:` komutu; argümanları, karşılığı o
 
 ## `:` satırı nasıl çalışır
 
-- `:` sonra `tab` komutları listeler. Menü her komutun ardında şu an ne durumda olduğunu ya da neye etki edeceğini ayraç içinde gösterir: `budget (spent $3.10 of $20.00)`, `theme (dark)`, `close (kule)`, `forget (claude-2)`, `next (2 waiting)`, `needs (off)`. Not çizilir, asla satıra eklenmez.
+- `:` sonra `tab` komutları listeler. Menü her komutun ardında şu an ne durumda olduğunu ya da neye etki edeceğini ayraç içinde gösterir: `budget ($3.10 / $20.00 · $2.40/sa, ~7 sa 2 dk kaldı)`, `theme (dark)`, `close (kule)`, `forget (claude-2)`, `next (2 karar bekliyor)`, `story (açık)`. Not çizilir, asla satıra eklenmez.
 - Bir komutun ardındaki `$` sonraki faturayı büyütenleri işaretler: `:open` (yeni bir lider oturumu), `:solo` (yeni bir oturum), `:forget` (bütün brifingi önbelleksiz yeniden ödeyen yeni bir oturum), `:commit` ve `:review` (ücretli çağrılar). Hiçbir `:` komutu kendi başına ücretli bir tur başlatmaz; `:budget` işaret yerine değerini gösterir.
 - Kısa adlar: `:b` budget, `:c` close, `:f` forget, `:o` open, `:q` quit, `:t` theme. Bütünüyle yazılan kısa ad zaten bir komuttur; menü bir şey sunmaz ve `enter` çalıştırır (`:q` sonra `enter` hemen sorar).
 - Argümanlar da tamamlanır: `:lang` sonra diller, `:notify` sonra dört kelimesi, `:motion` sonra üç kelimesi, `:review` ve `:plan` sonra `on off`, `:away` sonra `15m 30m 1h off`, `:health` sonra `stall idle loop` ve ardından değerleri (`5m 10m 20m off`, `2 3 5 off`), `:clear` ve `:unclear` sonra `inbox journal`, `:theme` sonra yerleşik adlar, `:close` ve `:pin` sonra açık projeler, `:restore` sonra arşivlerin başlıkları (en yenisi önce, her biri projesinin adı ve arşivlendiği günle), `:goto` sonra hiçbir şey (`&` satırının kendi menüsü var), `:history` sonra gönderilen satırlar, `:forget`, `:talk`, `:trace` ve `:peek` sonra açık projelerin ajanları (`@` ile ya da onsuz), `:open` ve `:export` sonra dizinler (`~` ev dizininiz, gizli olanlar yalnızca bir `.` sonrası, `tab` seçilenin içine adım atar).
@@ -26,7 +26,7 @@ description: imece'nin aldığı her `:` komutu; argümanları, karşılığı o
 | `:awake` | — | | | | açık / kapalı |
 | `:away [TIME\|off]` | — | | | | `30m` / `1h` / `off` |
 | `:board` | — | | | | |
-| `:budget USD` | — | `:b` | | | harcanan / bütçe |
+| `:budget USD` | — | `:b` | | | bütçe, hız, ne kadar yeteceği, en dar kullanım penceresi |
 | `:checks [NAMES\|none]` | — | | | | elinizdeki değişikliğe evetin istediği denetimler |
 | `:clear [inbox\|journal]` | — | | | | |
 | `:close [NAME]` | — | `:c` | | | eldeki proje |
@@ -124,7 +124,7 @@ Pano, ekranın üstünde bir pencerede; `esc` kapatır. Bkz. [pano ve kod harita
 
 ### `:budget USD`
 
-Ajanlar çalışırken bütçeyi artırır ya da azaltır (`:b 80`). Değer, noktadan önce en çok dört rakam ve en çok iki ondalıkla dolardır (`80`, `2.50`); başkası: `80$ dolar değil; 80 ya da 2.50 gibi yaz`. Flaş `bütçe artık $80.00` der, günlük `bütçeyi $80.00 yaptın (önce $50.00)`, ve bütçenin azaldığı uyarısı yeniden çalabilir. Süren bir tur eski sınırında biter; sonraki yeni kalanla başlar, eskisi sınırına çarpmışsa yeni bir oturumda. Bütçe bütün projeler için tektir ve çalıştırmalar arasında saklanır. Menü notu: `(spent $3.10 of $20.00)`. Bkz. [bütçe ve sınırlar](../concepts/budget-and-limits.md).
+Ajanlar çalışırken bütçeyi artırır ya da azaltır (`:b 80`). Değer, noktadan önce en çok dört rakam ve en çok iki ondalıkla dolardır (`80`, `2.50`); başkası: `80$ dolar değil; 80 ya da 2.50 gibi yaz`. Flaş `bütçe artık $80.00` der, günlük `bütçeyi $80.00 yaptın (önce $50.00)`, ve bütçenin azaldığı uyarısı yeniden çalabilir. Süren bir tur eski sınırında biter; sonraki yeni kalanla başlar, eskisi sınırına çarpmışsa yeni bir oturumda. Bütçe bütün projeler için tektir ve çalıştırmalar arasında saklanır. Menü notu başlığın artık söylemediğini söyler: bütçe, hız, bütçenin o hızla ne kadar yeteceği ve Claude Code birini söylediyse en dar kullanım penceresi: `($3.10 / $20.00 · $2.40/sa, ~7 sa 2 dk kaldı)`. Bkz. [bütçe ve sınırlar](../concepts/budget-and-limits.md).
 
 ### `:checks [NAMES|none]`
 
@@ -132,7 +132,7 @@ Lonca'daki bir projede, elinizdeki değişikliğe evetinizin Lonca'nın birleşt
 
 ### `:clear [inbox|journal]`
 
-KARAR BEKLEYEN'in listelediklerini ve günlüğün satırlarını ekibin ekranından kaldırır: yalın ikisini, `inbox` ya da `journal` birini. Hiçbir şey silinmez: depo hepsini tutar, `:export`, bir kartın ekranı ve arşivler hâlâ gösterir. `:close` gibi önce on saniye bekler (`◷ KARAR BEKLEYEN ve günlük 7 sn sonra ekrandan kalkıyor · u tutar`; `u` ekranı olduğu gibi bırakır), sonra neyin gittiğini söyler: `2 bekleyen ve 40 günlük satırı ekrandan kalktı; :unclear geri getirir`. Sizi hâlâ bekleyen bir şey kaybolmaz: açık kalır, ajanı hâlâ bekler, başlık onu sayar (`KARAR BEKLEYEN (0 · +2 gizli)`), terminalin başlığı ve sekmesi de sayar, `W` sıradakini açar ve onu listeye geri koyar. İşaretli bir satır (`m`) günlükte kalır. Sonra gelenler her zamanki gibi görünür. Temizleme depoda saklanır, böylece sonraki açılış da temiz başlar. Temizlenecek bir şey yoksa `ekranda temizlenecek bir şey yok` der; başka bir kelime: `all inbox ya da journal değil`. Bkz. [günlük](../screen/journal.md#ekranı-temizlemek).
+KARAR BEKLEYEN'in listelediklerini ve günlüğün satırlarını ekrandan kaldırır: yalın ikisini, `inbox` ya da `journal` birini. Hiçbir şey silinmez: depo hepsini tutar, `:export`, bir kartın ekranı ve arşivler hâlâ gösterir. `:close` gibi önce on saniye bekler (`◷ KARAR BEKLEYEN ve günlük 7 sn sonra ekrandan kalkıyor · u tutar`; `u` ekranı olduğu gibi bırakır), sonra neyin gittiğini söyler: `2 bekleyen ve 40 günlük satırı ekrandan kalktı; :unclear geri getirir`. Sizi hâlâ bekleyen bir şey kaybolmaz: açık kalır, ajanı hâlâ bekler, KARAR BEKLEYEN başlığı onu sayar (`2 gizli (:unclear)`), terminalin başlığı ve sekmesi de sayar, `W` sıradakini açar ve onu listeye geri koyar. İşaretli bir satır (`m`) günlükte kalır. Sonra gelenler her zamanki gibi görünür. Temizleme depoda saklanır, böylece sonraki açılış da temiz başlar. Temizlenecek bir şey yoksa `ekranda temizlenecek bir şey yok` der; başka bir kelime: `all inbox ya da journal değil`. Bkz. [günlük](../screen/journal.md#ekranı-temizlemek).
 
 ### `:close [NAME]`
 
@@ -186,7 +186,7 @@ Yalnız demo, `+` gibi: simülasyon hızlanır. Menü notu hızı gösterir (`×
 
 ### `:fold`
 
-Ekipte her projeyi ve her işçinin yardımcılarını katlar, `zM` gibi; ana ekranda satırların başındaki projeleri katlar ve orada kalır; başka bir ekrandan önce ekibe gider. Açık bir konuşma varken bunun yerine onun her mesajını tek satıra katlar, bu çalıştırmada sonra açılan konuşmalar da katlı başlar. Bkz. [ekip](../screen/salon.md) ve [konuşmalar](../screen/conversations.md).
+Ana ekranın ÇALIŞAN kısmının başındaki her projeyi katlar, `zM` gibi; başka bir ekrandan önce ana ekrana gider. Bir değişikliğin diff'inde bunun yerine değişikliğin dosyalarını başlıklarına katlar. Açık bir konuşma varken bunun yerine onun her mesajını tek satıra katlar, bu çalıştırmada sonra açılan konuşmalar da katlı başlar. Bkz. [ana ekran](../screen/home.md) ve [konuşmalar](../screen/conversations.md).
 
 ### `:forget [@NAME]`
 
@@ -198,7 +198,7 @@ Ajana oturumunu unutturur (`:f`), istendikten on saniye sonra: alt satır geri s
 
 ### `:goto [NAME]`
 
-`NAME` adlı ajana (önünde `@` olabilir), yoksa o adlı açık projeye gider: ekip, satırı seçili, projesi açılmış, bir yardımcının işçisi açılmış ve satırı gizleyecekse `f` bırakılmış; bir proje adı başlığını seçer. Büyük küçük harf ve Türkçe harfler fark etmez. O adda bir şey yoksa: `"zzz" adında gidilecek bir yer yok: bir agent ya da proje`, ve hiçbir şey kımıldamaz. Tek başına `&` satırını açar: yerler şu anki hâliyle, sizi bekleyenler önde (takılan, sonra bekleyen, sonra bitmiş ve görülmemiş), kalanlar durumuna göre (çalışan boştakinden önce), sonra açık projeler, her ajan glifi ve durum sözcükleriyle. Satır açıkken liste donar, böylece yazarken numaralar değişmez; `&` hemen ardından `1`-`9` bir rakam anında gider, `&` hemen ardından `#` kart satırına döner, `!` yalnız sizi bekleyenleri tutar, rakamlar bir numaranın başıyla eşleşir, geri kalanı adların içinde arar. `enter` imlecin altındakine, ya da yazılan ada gider. Bkz. [ekip](../screen/salon.md).
+`NAME` adlı ajana (önünde `@` olabilir), yoksa o adlı açık projeye gider: ana ekran, satırı elde, projesi açılmış, bir yardımcının işçisi açılmış; bir proje adı başlığını seçer. Büyük küçük harf ve Türkçe harfler fark etmez. O adda bir şey yoksa: `"zzz" adında gidilecek bir yer yok: bir agent ya da proje`, ve hiçbir şey kımıldamaz. Tek başına `&` satırını açar: yerler şu anki hâliyle, sizi bekleyenler önde (takılan, sonra bekleyen, sonra bitmiş ve görülmemiş), kalanlar durumuna göre (çalışan boştakinden önce), sonra açık projeler, her ajan glifi ve durum sözcükleriyle. Satır açıkken liste donar, böylece yazarken numaralar değişmez; `&` hemen ardından `1`-`9` bir rakam anında gider, `&` hemen ardından `#` kart satırına döner, `!` yalnız sizi bekleyenleri tutar, rakamlar bir numaranın başıyla eşleşir, geri kalanı adların içinde arar. `enter` imlecin altındakine, ya da yazılan ada gider. Bkz. [ekip](../screen/salon.md).
 
 ### `:health [stall|idle|loop VALUE]`
 
@@ -248,7 +248,7 @@ Eldeki solo oturumun sonraki turundan itibaren çalıştığı modeli ayarlar: b
 
 ### `:motion [off|calm|full]`
 
-Ekranda ne kadar şeyin hareket ettiği. `calm` (varsayılan): çalışan bir satırın işareti nefes alır, rengi 0,6 saniyede bir kısılır, şekli hiç değişmez (panoda da, kartının altındaki çalışan sahibinki); `başlıyor` noktalarını sayar; imece bir yanıt beklerken (`:commit`) alt satırda bir dönücü görünür, ilk açılış penceresinde hâlâ denetlenen Claude Code'un yanında da; sizi beklemeye düşen bir satır ya da kalem üç kez yanıp söner; turu biten ya da oturumu kalkan bir satır yeşil bir zeminden kendi renklerine yatışır (terminalin kendi renklerini kullanan bir temada: ters renk, sonra değişen satırların görünüşü); bir satır etkinlik çubuğunu taşır, `▁▃▅▂▁`, agent'ın son beş tikin her birinde yaptıkları (yalnızca agent bir şey yaptıkça ve tikler geçtikçe değişir); imece'nin işareti, ekrana geldiği yerde (hoş geldin ve yenilikler pencereleri, henüz işçisi olmayan bir ekip), noktalarını birer vuruşta getirir, herhangi bir tuş onu bütün gösterir. `full` biri çalışırken başlıktaki filonun yanına bir dönücü ekler ve daha hızlı döner; SSH üzerinde sakin çalışır (her kare ağdan geçer). `off`: hiçbir şey hareket etmez, hiçbir satır etkinlik çubuğu taşımaz ve işaret bütün çizilir, ekran eskisi gibidir. Başka penceredeyken hiçbir şey hareket etmez ve orada olanlar dönünce yanıp sönmez; her şey tek bir vuruşa (0,3 sn) düşer, böylece aynı anda birkaç şeyin hareket etmesi tek bir şeyinkinden fazla kareye mal olmaz ve bir kare yalnızca gösterdiği şey hareket edince çizilir (bkz. [karar](https://github.com/selcukgural/imece/blob/main/docs/decisions/84-motion.md)). Yalın `:motion` sıradakine geçer: off, calm, full, off. Flaş yenisinin ne yaptığını söyler (`sakin hareket: çalışan satır nefes alır, seni bekleyen yanıp söner`, `tam hareket: dönücüler de, daha hızlı`, `SSH üzerinde tam hareket sakin çalışır`, `ekranda hiçbir şey hareket etmez`); başka bir kelime: `wild off, calm ya da full değil`. Menü notu değeri gösterir; depoda hatırlanır.
+Ekranda ne kadar şeyin hareket ettiği. `calm` (varsayılan): çalışan bir satırın işareti nefes alır, rengi 0,6 saniyede bir kısılır, şekli hiç değişmez (panoda da, kartının altındaki çalışan sahibinki); `başlıyor` noktalarını sayar; imece bir yanıt beklerken (`:commit`) alt satırda bir dönücü görünür, ilk açılış penceresinde hâlâ denetlenen Claude Code'un yanında da; sizi beklemeye düşen bir satır ya da kalem üç kez yanıp söner; turu biten ya da oturumu kalkan bir satır yeşil bir zeminden kendi renklerine yatışır (terminalin kendi renklerini kullanan bir temada: ters renk, sonra değişen satırların görünüşü); bir satır etkinlik çubuğunu taşır, `▁▃▅▂▁`, agent'ın son beş tikin her birinde yaptıkları (yalnızca agent bir şey yaptıkça ve tikler geçtikçe değişir); imece'nin işareti, ekrana geldiği yerde (hoş geldin ve yenilikler pencereleri, henüz işçisi olmayan bir ekip), noktalarını birer vuruşta getirir, herhangi bir tuş onu bütün gösterir. `full` biri çalışırken başlıktaki projelerin önüne bir dönücü ekler ve daha hızlı döner; SSH üzerinde sakin çalışır (her kare ağdan geçer). `off`: hiçbir şey hareket etmez, hiçbir satır etkinlik çubuğu taşımaz ve işaret bütün çizilir, ekran eskisi gibidir. Başka penceredeyken hiçbir şey hareket etmez ve orada olanlar dönünce yanıp sönmez; her şey tek bir vuruşa (0,3 sn) düşer, böylece aynı anda birkaç şeyin hareket etmesi tek bir şeyinkinden fazla kareye mal olmaz ve bir kare yalnızca gösterdiği şey hareket edince çizilir (bkz. [karar](https://github.com/selcukgural/imece/blob/main/docs/decisions/84-motion.md)). Yalın `:motion` sıradakine geçer: off, calm, full, off. Flaş yenisinin ne yaptığını söyler (`sakin hareket: çalışan satır nefes alır, seni bekleyen yanıp söner`, `tam hareket: dönücüler de, daha hızlı`, `SSH üzerinde tam hareket sakin çalışır`, `ekranda hiçbir şey hareket etmez`); başka bir kelime: `wild off, calm ya da full değil`. Menü notu değeri gösterir; depoda hatırlanır.
 
 ### `:news`
 
@@ -293,7 +293,7 @@ Yalnız demo, `space` gibi: simülasyonu durdurur ya da sürdürür. Menü notu:
 
 ### `:peek [@NAME]`
 
-Ajanın odağı görünümün üstünde bir pencerede, `K` gibi; ad yoksa eldeki ajan (ekipte seçili olan, bekleyen kalemin ya da günlük satırının ardındaki, ya da yakınlaşılmış olan). Alttaki görünüm kıpırdamaz. Pencerede `j` `k` (ya da oklar) ekibin sırasında sonraki / önceki ajana geçer, `enter` odağın tamamını açar, `@` ona bir mesaj başlatır, `?` yardımı açar, `esc` ya da `K` kapatır; başka tuşlar bir şey yapmaz. Bir ajana böyle bakmak bitmiş turunu görmüş sayılır. Bkz. [ekip](../screen/salon.md).
+Ajanın odağı görünümün üstünde bir pencerede, `K` gibi; ad yoksa eldeki ajan (ana ekrandaki satırı, karar bekleyen satırın ya da günlük satırının ardındaki, ya da ayrıntısı açık olan). Alttaki görünüm kıpırdamaz. Pencerede `j` `k` (ya da oklar) ekibin sırasında sonraki / önceki ajana geçer, `enter` odağın tamamını açar, `@` ona bir mesaj başlatır, `?` yardımı açar, `esc` ya da `K` kapatır; başka tuşlar bir şey yapmaz. Bir ajana böyle bakmak bitmiş turunu görmüş sayılır. Bkz. [ekip](../screen/salon.md).
 
 ### `:pending`
 
@@ -417,10 +417,10 @@ Ana ekran, karar bekleyen ilk satırı. Menü notu kaç kalemin beklediğini sö
 
 Ajanı bu duruma neyin getirdiği, alt satırda: merdivendeki basamağı (boşta, bitti ve bakılmadı, başlıyor, çalışıyor, seni bekliyor, takıldı), ne zamandan beri ve onu oraya getiren günlük satırı, günlüğün kendi sözcükleriyle: `claude-1: takıldı · 14:02 itibarıyla · claude-1 durdu: oturum bitti`. Postası sizi bekleyen bir ajanda sonunda kaç tane olduğu yazar: `· sen yanıtlayana dek kuyrukta bekleyen mesaj: 2`. Ad yoksa `:peek`'teki gibi eldeki ajan. "İtibarıyla", en eski kaleminin seni beklemeye başladığı an, yoksa durumunun son değiştiği andır; satır o andan ya da öncesinden en yeni günlük satırıdır. Günlükte artık yoksa (toplanmış, ya da ajan önceki bir çalışmadan gelmiş) bunu söyler. Yalnız baktığı için bir arşivin görünümünde de çalışır.
 
-
 ### `:yes [@NAME]`
 
 Ajan turunu bitirene dek ne isterse evet der, sizi bekleyenlerdeki ya da odağındaki isteğinde `e` gibi; ad yoksa eldeki ajan. Beklediği istek ve diğer açık istekleri şimdi sürer, o ajanın turu (ya da oturumu) bitene dek sonraki her isteği de: komutlar, düzenlemeler, getirmeler, Claude Code'un sorduğu ne varsa. İzi `allowed by your yes for this turn: Bash: …` der, evet sürdükçe satırı ve odağı `✓ tur` der, günlük de ne zaman verildiğini ve kaç isteğe sormadan izin verip bittiğini söyler (`claude-1 turunu bitirdi, onun için evetin de bitti: 7 isteğe sormadan izin verdi`). Başka bir ajanın istekleri sizi beklemeye devam eder. Ajanın bekleyen bir isteği yoksa bunu söyler (`claude-1 şimdi bir evet istemiyor: …`). Demo da canlı oturumlar da. Bkz. [onaylar](../concepts/approvals-and-questions.md#bu-tur-evet).
+
 ## Ayrıca bkz.
 
 - [Komut satırı](cli.md): aynı şeylerin başlangıçtaki bayrakları

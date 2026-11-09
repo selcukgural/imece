@@ -10160,6 +10160,42 @@ mod tests {
     }
 
     #[test]
+    fn the_turkish_help_lists_the_keys_the_english_help_lists() {
+        // A key is the same in both languages; only the words that stand
+        // for what the person types are translated.
+        let words = [
+            ("text", "mesaj"),
+            ("name", "ad"),
+            ("NAME", "AD"),
+            ("PATH", "YOL"),
+            ("cmd", "kmt"),
+            ("word", "kelime"),
+        ];
+        let turkish = |key: &str| {
+            key.split(' ')
+                .map(|token| {
+                    (words.iter())
+                        .find_map(|(en, tr)| {
+                            let head = token.trim_end_matches(en);
+                            (head.len() < token.len() && head.chars().all(|c| "@/!#".contains(c)))
+                                .then(|| format!("{head}{tr}"))
+                        })
+                        .unwrap_or_else(|| token.to_string())
+                })
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
+        let en = overlay::help_keys(Lang::En, false);
+        let tr = overlay::help_keys(Lang::Tr, false);
+        assert_eq!(en.len(), tr.len());
+        for ((e, _), (t, _)) in en.iter().zip(&tr) {
+            assert_eq!(turkish(e), *t, "the Turkish row of {e:?}");
+        }
+        assert_eq!(turkish("@name text"), "@ad mesaj", "the words, translated");
+        assert_eq!(turkish("J  :journal"), "J  :journal", "a key stays");
+    }
+
+    #[test]
     fn the_help_filter_keeps_what_has_every_word_in_either_column() {
         let text = |k: &(&str, &str)| format!("{} {}", k.0, k.1);
         let keys = overlay::help_keys(Lang::En, false);

@@ -23,36 +23,33 @@ Type `:open ~/code/api api` and press `enter`. The flash says `opened api at /Us
 
 `:open PATH [NAME]` opens the git checkout at PATH; NAME defaults to the directory's name made safe (1 to 24 of letters, digits, `.`, `_`, `-`). The new project's leader is `lead-NAME`, with the same model and tiers. `:open ` completes directories as you type (hidden ones after a `.`, `~` works). The `:` menu marks `:open` with `$`: a new leader is a new session that costs when you first write to it. A path that is not a checkout, a name taken or a checkout already open is refused with why (`api is open already, as api`). `:o` is short for it.
 
-The team now groups agents by project, with a header line each; inbox and journal lines carry the project's name when there is more than one:
+The header names the open projects. Home's AT WORK groups its rows by project, under a heading each, and a row carries its project's name when more than one project is open. A project with nobody on the list has no heading: a leader with nothing to do has no row, so `api` and `web` show only in the header until their leaders work:
 
 ```text
- ▾ cli                        1 working  $2.10
-   ● lead       coordinating                                      $0.40
-   ● claude-1   #2   docs: man page       writing docs/imece.1     $1.70
- ▾ api                        0 working  $0.00
-   ○ lead-api   idle
- ▾ web                        0 working  $0.00
-   ○ lead-web   idle
+ imece  cli · api · web │ $2.10 of $50.00  15:00
+ AT WORK 1
+▸▾ cli           ▓▓▓▓░░░░ 1/2  1 working  $2.10  ~/code/cli
+ ● cli         #2   docs: man page            writing docs/imece.1 · 4 min
 ```
 
-`/` writes to the leader of the selected project, so select a row in `api` first (`j k`), then `/`. `@lead-web text` writes to one leader from anywhere.
+`/` writes to the leader of the project at hand: narrow Home to `api` with `]` (step 4), or select one of its rows, then `/`. `@lead-web text` writes to one leader from anywhere.
 
 ## 2. Fold and unfold
 
-Select the `web` header and press `h` (or `←`, or `enter` on the header). The project folds to one line; `l` unfolds it. `za` toggles, `zM` folds every project and worker, `zR` unfolds all (`:fold`, `:unfold`). A folded project is quiet, not deaf: its line still counts what waits for you.
+Later `lead-web` hires a worker, and `web` has a heading of its own. With a row of `web` at hand (its heading or one of its agents), press `h` (or `←`). The project folds to its heading; `l` unfolds it. `za` toggles, `zM` folds every project, `zR` unfolds all (`:fold`, `:unfold`). `enter` on a heading opens the leader's detail instead. A folded project is quiet, not deaf: its heading still counts what waits for you, and what is to decide stays in TO DECIDE above.
 
 ```text
- ▸ web                        1 working  $0.80  ! 1 waiting
+ ▸ web            ! 1 waiting   1 working  $0.80
 ```
 
-When the team is too short for everyone, calm workers fold from the bottom up into `… N agents doing fine`; the workers that need you (waiting for you, stuck, done and not seen) sort first in their project, so they fold last.
+`s` on a heading hides the whole project from AT WORK until it needs you (`:unsettle` brings it back); the AT WORK heading counts what is hidden.
 
 ## 3. Pin the one you live in
 
-Type `:pin api` and press `enter`: `api is pinned to the top of the team`. Its header wears `▴` and it stays first whatever the order of opening; it also folds last. `:pin` alone pins the project at hand; `:pin` again unpins (`api is not pinned any more`). The pin is kept in the store across runs, and a closed project keeps its pin for when it is opened again.
+Type `:pin api` and press `enter`: `api is pinned to the top of the team`. Its heading wears `▴` and it stays first whatever the order of opening; it also folds last. `:pin` alone pins the project at hand; `:pin` again unpins (`api is not pinned any more`). The pin is kept in the store across runs, and a closed project keeps its pin for when it is opened again.
 
 ```text
- ▾ ▴ api                      2 working  $3.10
+ ▾ ▴ api         2 working  $3.10
 ```
 
 A colour per project is not built yet.
@@ -104,7 +101,7 @@ Its agents' sessions and runs end, their mail, offers and changes are dropped, t
 
 ## 9. One pot for all
 
-The header has one budget line for every project: `spent $5.90 of $50.00 ($8.20/h, ~5 h 20 min left)`. `:budget 80` raises it for all of them; each project's header line shows what its own agents spent. When the pot is nearly spent, the journal says so once, under the first open project's leader:
+The header has one pot for every project: `$5.90 of $50.00`. With less than half an hour left at the current rate it turns the attention colour and adds how long it lasts (`~25 min left`); the rate itself is in the `:` menu's note on `:budget` (`$5.90 of $50.00 · $8.20/h, ~5 h 20 min left`). `:budget 80` raises it for all of them; each project's heading on Home shows what its own agents spent. When the pot is nearly spent, the journal says so once, under the first open project's leader:
 
 ```text
  15:40 ! at $8.20/h the budget lasts about 25 min more; :budget USD raises it
@@ -116,6 +113,6 @@ Once the pot is spent, nobody in any project takes another turn. One imece at a 
 
 - [Projects](../concepts/projects.md)
 - [Budget and limits](../concepts/budget-and-limits.md)
-- [The team](../screen/salon.md): folding, order, the fleet
+- [Home](../screen/home.md): TO DECIDE, AT WORK, folding, hiding
 - [Commands](../reference/commands.md)
 - [Files](../reference/files.md): where worktrees and the store live

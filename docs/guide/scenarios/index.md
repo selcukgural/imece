@@ -15,15 +15,16 @@ Every scenario is true of the real imece: the keys are the ones the `?` help lis
 | --- | --- |
 | [A failing test, one worker](one-fix.md) | From `/ fix it` to `!git commit`: the leader hires `claude-1`, a `⚑` ask, a `Δ`, apply, a suggested commit message. |
 | [Sending a change back, then taking half of it](review-with-notes.md) | Notes with `c` and `n`, the worker's answer with `↩` and `%`, hunks chosen with `x`, `>` to quote one, `r` to reject the rest. |
-| [Three checkouts, one screen](many-projects.md) | `:open`, folding, `:pin`, `f`, `:rename`, `:copy .env`, `:close`, and the one pot every project draws from. |
+| [Three checkouts, one screen](many-projects.md) | `:open`, folding, `:pin`, `[ ]` to narrow Home to one project, `:rename`, `:copy .env`, `:close`, and the one pot every project draws from. |
 | [A solo beside the team](solo-beside-the-team.md) | `:solo claude:opus@xhigh`, a session you drive yourself with no leader, the `Δ` after every answer, a second solo on another model, `--solo` the next morning. |
 | [Coming back](next-morning.md) | Quitting mid-turn, the "where you left off" window, agents asleep, how a session resumes, `:forget`, the away digest, `:notify`, marks, `:export`. |
 | [A new epic](new-epic.md) | `:archive v1 fixes`, its grace and `u`, a clean project of the same name, what the archive keeps, `:restore v1 fixes` to bring it back, the one pot. |
 | [Your shell next to the team](own-shell-and-commit.md) | `!cargo test`, `!vim`, ctrl-c, `:commit` and its ceilings, `:awake`, `:budget 80`, `:theme nord`, `L`. |
+| [When a card goes wrong](when-a-card-goes-wrong.md) | A card that waits on another (`⧗`), a failed card and its tries, the breaker after three (`a` one more, `r` fail it), a withdrawn card, a health notice to the leader, `:ps` ending a hung command, `:ledger`. |
 
 ## Trying them for free
 
-Everything a scenario does on the screen can be tried with `imece --demo`: fake agents play the same model, so the team, TO DECIDE, the diff view, notes, chosen hunks, `:open`, `:pin`, `:copy`, marks and `:export` all work the same way and cost nothing. What the demo cannot show is the part that needs an earlier run and a store: the "where you left off" window, turns cut short, agents asleep from the start. The [demo page](../getting-started/demo.md) says what else differs.
+Everything a scenario does on the screen can be tried with `imece --demo`: fake agents play the same model, so Home, TO DECIDE, a change's detail, notes, chosen hunks, `:open`, `:pin`, `:copy`, marks and `:export` all work the same way and cost nothing. What the demo cannot show is the part that needs an earlier run and a store: the "where you left off" window, turns cut short, agents asleep from the start. The [demo page](../getting-started/demo.md) says what else differs.
 
 ## A reading order
 
@@ -34,6 +35,7 @@ Everything a scenario does on the screen can be tried with `imece --demo`: fake 
 5. [A solo beside the team](solo-beside-the-team.md): when you want to drive one agent yourself.
 6. [Coming back](next-morning.md): the second day.
 7. [A new epic](new-epic.md): when a piece of work is done.
+8. [When a card goes wrong](when-a-card-goes-wrong.md): failed tries, waiting cards, a stuck worker, what it cost.
 
 ## See also
 

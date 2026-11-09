@@ -5,7 +5,7 @@ description: "Finishing a piece of work and starting the next on a clean screen:
 
 # A new epic
 
-A week of work on `kule` is done: the issues are fixed, the changes applied, the leader has nothing left to do. The team still shows the two workers who did it, the journal is full of their talk, the board of their cards. The next piece of work is unrelated, and you want to start it on a clean screen without throwing the old one away.
+A week of work on `kule` is done: the issues are fixed, the changes applied, the leader has nothing left to do. Home still shows the two workers who did it, the journal is full of their talk, the board of their cards. The next piece of work is unrelated, and you want to start it on a clean screen without throwing the old one away.
 
 ## 1. Archive the project
 
@@ -37,7 +37,7 @@ When the count ends:
  archived kule as “v1 fixes”: its agents sleep with all they had; a fresh one opens
 ```
 
-The team shows `kule` again, with its `lead` alone and idle: a fresh project on the same checkout, with the same name, the same pin and the same `:copy` list, its leader on the same model. The journal has one new line, `› you archived kule as “v1 fixes”; a fresh kule takes its place`; the old lines, the old cards on the board and in the queue, the old items in TO DECIDE are gone from the screen. `@lead` reaches the new leader.
+Home has nothing to decide and nobody at work: `kule` again, with its `lead` alone and idle, a fresh project on the same checkout, with the same name, the same pin and the same `:copy` list, its leader on the same model. The journal has one new line, `› you archived kule as “v1 fixes”; a fresh kule takes its place`; the old lines, the old cards on the board and in the queue, the old items in TO DECIDE are gone from the screen. `@lead` reaches the new leader.
 
 Write to it as on the first day:
 
@@ -59,7 +59,7 @@ None of it wakes or spends: no card is offered to its workers and nobody reaches
 To look at it again without bringing it back, press `A` and `enter` on `▸ v1 fixes`: the archive opens read-only, alone on the screen as it was put away, its whole journal there, under
 
 ```text
- ARCHIVE · kule “v1 fixes” · archived 2026-11-02 · 0 waiting for you now · esc back
+ ARCHIVE · kule “v1 fixes” · archived 2026-11-02 · 0 to decide now · esc back
 ```
 
 Its conversations, cards and changes open as anywhere and `:export` writes one out; writing to its agents says `an archive is read-only · :restore brings it back · esc goes back`. `esc` goes back to the fresh `kule`, which went on meanwhile.
