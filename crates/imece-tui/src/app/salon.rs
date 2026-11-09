@@ -995,6 +995,33 @@ mod tests {
         assert_eq!(app.at_home.at, Some(HomeRow::Project(p)));
     }
     #[test]
+    fn what_was_settled_comes_back_when_it_needs_you_and_goes_when_gone() {
+        let mut app = with_a_row_of_three();
+        app.settled.extend([1, 2]);
+        app.settled_projects.insert(0);
+        // Nothing needs the person: all stay settled.
+        app.wake_settled();
+        assert_eq!(app.settled, BTreeSet::from([1, 2]));
+        assert_eq!(app.settled_projects, BTreeSet::from([0]));
+        // Worker 1's helper waits for the person: its row comes back, and
+        // the project it is in; worker 2 stays.
+        app.world.inbox.push(item(3, true));
+        app.wake_settled();
+        assert_eq!(app.settled, BTreeSet::from([2]));
+        assert!(app.settled_projects.is_empty());
+        // A worker gone and a project closed are let go though calm.
+        app.world.inbox.clear();
+        app.settled_projects.insert(0);
+        app.world.agents[2].gone = true;
+        app.wake_settled();
+        assert!(app.settled.is_empty());
+        assert_eq!(app.settled_projects, BTreeSet::from([0]));
+        app.world.projects[0].closed = true;
+        app.wake_settled();
+        assert!(app.settled_projects.is_empty());
+    }
+
+    #[test]
     fn unsettle_and_goto_bring_back_what_was_settled() {
         let mut app = with_a_row_of_three();
         app.settled.extend([1, 2]);

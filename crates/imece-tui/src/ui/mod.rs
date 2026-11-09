@@ -6257,6 +6257,37 @@ mod tests {
     }
 
     #[test]
+    fn the_files_stand_beside_a_wide_change_only_when_there_are_two() {
+        let file = |path: &str| ChangedFile {
+            path: path.into(),
+            added: 7,
+            removed: 5,
+            binary: false,
+        };
+        let shown = |files: Vec<ChangedFile>| {
+            let mut app = app_after(1, 2, 0, Lang::En);
+            let id = app.world.agents[1].id;
+            app.world.change_ready(Change {
+                agent: id,
+                title: "Paging".into(),
+                patch: "diff --git a/src/one.rs b/src/one.rs\n+x\n".into(),
+                files,
+                runs: Vec::new(),
+                check: Check::None,
+                spend: None,
+            });
+            app.zoom = Zoom::Diff(id);
+            render(&app, 160, 30)
+        };
+        // The tree's row: the file at hand, its counts, then the rule.
+        let beside = |s: &str| s.lines().any(|l| l.contains("▸ src/one.rs +7 −5  "));
+        let two = shown(vec![file("src/one.rs"), file("src/two.rs")]);
+        assert!(beside(&two), "{two}");
+        let one = shown(vec![file("src/one.rs")]);
+        assert!(!beside(&one), "{one}");
+    }
+
+    #[test]
     fn a_change_s_footer_keeps_the_help_at_any_width() {
         let mut app = app_after(1, 2, 0, Lang::En);
         app.zoom = Zoom::Diff(app.world.agents[1].id);
