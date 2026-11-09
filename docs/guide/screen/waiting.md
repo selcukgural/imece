@@ -53,7 +53,7 @@ Home's keys; see [Home](home.md#keys) for all of them.
 | `S` (`:defer`) | put this item off and open the next |
 | `esc` | from what opened back to Home |
 
-Every row says the whole ask, and the row at hand ends with its keys (`a yes  r no` on a permission or a script, `a approve  r send back` on a change, `1-2 pick  a answer` on a question, `a answer  enter open` on a reply); a permission's command stands whole under its row, a question's answers with their digits.
+Every row says the whole ask, and the row at hand ends with its keys (`a yes  r no` on a permission or a script, `a approve  r send back` on a change, `1-2 pick  a answer` on a question, `enter open  r dismiss` on a reply); a permission's command stands whole under its row, a question's answers with their digits.
 
 ## `W` and `S`: one after the other
 

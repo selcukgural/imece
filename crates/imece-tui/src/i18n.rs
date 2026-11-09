@@ -604,6 +604,8 @@ pub struct Text {
     pub home_more: &'static str,
     pub home_read: &'static str,
     pub home_later: &'static str,
+    /// A reply's `r` on Home: it closes the reply unread.
+    pub home_dismiss: &'static str,
     pub home_answer: &'static str,
     /// The keys on a question that offers answers: `1-3 pick`.
     pub home_pick: &'static str,
@@ -1810,6 +1812,7 @@ pub const EN: Text = Text {
     home_more: "… {} more",
     home_read: "read the diff",
     home_later: "later",
+    home_dismiss: "dismiss",
     home_answer: "answer",
     home_pick: "pick",
     home_so_far: "so far:",
@@ -3150,6 +3153,7 @@ pub const TR: Text = Text {
     home_more: "… {} tane daha",
     home_read: "diff'i oku",
     home_later: "sonra",
+    home_dismiss: "kapat",
     home_answer: "yanıtla",
     home_pick: "seç",
     home_so_far: "şimdiye dek:",
