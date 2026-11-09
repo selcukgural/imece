@@ -1,6 +1,7 @@
 # imece
 
 [![latest release](https://img.shields.io/github/v/release/selcukgural/imece)](https://github.com/selcukgural/imece/releases/latest)
+[![crates.io](https://img.shields.io/crates/v/imece.svg)](https://crates.io/crates/imece)
 
 **One terminal for a team of Claude Code agents.**
 
@@ -14,15 +15,28 @@ and applied it.
 **Documentation, every key and scenario, video tours:
 <https://selcukgural.github.io/imece/>** (English · [Türkçe](https://selcukgural.github.io/imece/tr/))
 
-**Install** on macOS or Linux, x86_64 or arm64 (prebuilt, checksum
-checked, put on your PATH):
+## Install
+
+macOS (arm64, x86_64) and Linux (x86_64, arm64):
 
 ```sh
-curl -fsSL https://selcukgural.github.io/imece/install.sh | sh
+curl -fsSL https://selcukgural.github.io/imece/install.sh | sh   # ~/.local/bin
 ```
 
-or [download a release](https://github.com/selcukgural/imece/releases/latest)
-by hand (`imece-<target>.tar.gz`, with `SHA256SUMS`).
+```sh
+brew tap selcukgural/imece                                       # Homebrew
+brew install imece
+```
+
+```sh
+cargo install --locked imece                                     # crates.io, Rust 1.99+
+```
+
+Each installs the one program, `imece`; it drives
+[Claude Code](https://claude.com/claude-code), which must be on PATH and
+signed in. `imece doctor` says what else a start needs. Checking a download,
+updating and uninstalling:
+[Install](https://selcukgural.github.io/imece/docs/getting-started/install).
 
 ![imece's Home: what is to decide, grouped by what deciding costs you (permissions, questions, changes), each row with its whole ask and the keys that answer it, and the item at hand read beside the list](docs/home.png)
 
@@ -68,7 +82,7 @@ by hand (`imece-<target>.tar.gz`, with `SHA256SUMS`).
 ## Run it
 
 ```sh
-curl -fsSL https://selcukgural.github.io/imece/install.sh | sh   # macOS, Linux; needs claude on PATH
+curl -fsSL https://selcukgural.github.io/imece/install.sh | sh   # or brew, or cargo: see Install above
 cd your/checkout
 imece                                      # a leader reads the checkout and waits for you
 imece --agents 8 --budget 10               # up to 8 workers, a $10 pot

@@ -6,7 +6,9 @@ name: release
 # x86_64 and Linux x86_64 and arm64 (static, musl), SHA256SUMS, and a
 # build provenance attestation for each archive
 # (`gh attestation verify imece-….tar.gz --repo selcukgural/imece`).
-# install.sh (website/static) downloads them; record 69.
+# install.sh (website/static) downloads them, the Homebrew tap
+# (selcukgural/homebrew-imece) reads the latest release by itself, and the
+# last two jobs put the crates on crates.io; record 69.
 #
 # The builds run third-party code (crates' build scripts) and see no
 # credential; only the publish job may write the release or mint the token
@@ -64,7 +66,7 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y musl-tools
       - name: Build
-        run: cargo build --release --locked --target "$TARGET" -p imece-tui
+        run: cargo build --release --locked --target "$TARGET" -p imece
       - name: Runs and says its version
         # The x86_64 macOS build is made on Apple silicon, which may not run it.
         if: matrix.target != 'x86_64-apple-darwin'
@@ -126,4 +128,56 @@ jobs:
             --verify-tag \
             --title "imece $TAG" \
             --generate-notes \
-            --notes "Install or update: \`curl -fsSL https://selcukgural.github.io/imece/install.sh | sh\` (macOS and Linux, x86_64 and arm64). Check an archive: \`gh attestation verify imece-<target>.tar.gz --repo $REPO\`."
+            --notes "Install or update (macOS and Linux, x86_64 and arm64): \`curl -fsSL https://selcukgural.github.io/imece/install.sh | sh\`, or \`brew install selcukgural/imece/imece\`, or \`cargo install --locked imece\`. Check an archive: \`gh attestation verify imece-<target>.tar.gz --repo $REPO\`."
+
+  # crates.io (`cargo install imece`): the same version of both crates, once
+  # the release is out. Off until the repository variable PUBLISH_CRATES says
+  # `true`. These two jobs are Lonca's registries.yml (VENDORED.md), inside
+  # this workflow because a release made with the workflow's own token
+  # starts no other workflow.
+  #
+  # No registry token is kept anywhere. crates.io trusts this repository's
+  # release.yml in the `release` environment and hands out a token that
+  # lives for one job. Trusted publishing needs the crate to exist, so each
+  # crate's first version is published by hand; then, on crates.io, each
+  # crate's settings → Trusted Publishing → GitHub: selcukgural/imece,
+  # workflow release.yml, environment release.
+  #
+  # Packages and builds what would go up, as crates.io would. Building runs
+  # every dependency's build scripts, so this job can mint no token.
+  crates-check:
+    if: vars.PUBLISH_CRATES == 'true'
+    needs: publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Rust toolchain (rust-toolchain.toml)
+        run: rustup toolchain install
+      - name: Package and build the workspace, without uploading
+        run: cargo publish --workspace --locked --dry-run
+
+  # Uploads what crates-check built, from the same tag. It builds nothing
+  # (`--no-verify`), so no dependency's code runs while the token exists.
+  crates:
+    needs: crates-check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: release
+    permissions:
+      contents: read
+      id-token: write # exchanged for a crates.io token that lives for this job
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Rust toolchain (rust-toolchain.toml)
+        run: rustup toolchain install
+      - uses: rust-lang/crates-io-auth-action@3268eb413133e2960fa4ae0e963ca76380c54cd9 # v1.0.6
+        id: auth
+      - name: Publish, in dependency order
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+        run: cargo publish --workspace --locked --no-verify

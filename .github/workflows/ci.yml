@@ -45,5 +45,5 @@ jobs:
         run: shellcheck website/static/install.sh website/test-install.sh
       - name: Rust toolchain (rust-toolchain.toml)
         run: rustup toolchain install
-      - run: cargo build --locked -p imece-tui
+      - run: cargo build --locked -p imece
       - run: website/test-install.sh target/debug/imece
