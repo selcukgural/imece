@@ -700,6 +700,7 @@ impl App {
             "next" => self.next_waiting(false),
             "defer" => self.next_waiting(true),
             "waiting" => self.go_waiting(),
+            "changes" => self.go_changes(),
             "story" => {
                 self.open_window(Window::Journal);
                 self.toggle_story();
@@ -1034,6 +1035,19 @@ mod tests {
         app.command("waiting");
         assert_eq!((app.pane), (Pane::Inbox), "Home's first row to decide");
         assert_eq!(app.at_home.at, Some(HomeRow::Item(1)), "item 0 was put off");
+        // `:changes` as `gc`, from anywhere: none waits, a flash.
+        app.zoom = Zoom::Focus(0);
+        app.command("changes");
+        assert_eq!((app.zoom), (Zoom::None), "back on Home");
+        assert_eq!(said(&mut app), app.lang.text().no_change_waits);
+        let mut change = app.world.inbox[1].clone();
+        change.kind = InboxKind::Change;
+        app.world.inbox.push(change);
+        app.zoom = Zoom::Focus(0);
+        app.command("changes");
+        assert_eq!((app.zoom), (Zoom::None));
+        assert_eq!(app.at_home.at, Some(HomeRow::Item(2)), "the change");
+        assert_eq!(said(&mut app), "");
         app.go_home();
         app.command("fold");
         assert!(app.collapsed.iter().all(|&c| c));

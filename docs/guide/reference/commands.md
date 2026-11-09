@@ -27,6 +27,7 @@ A line that starts with `:` is a command to imece, not a message to an agent. Yo
 | `:away [TIME\|off]` | — | | | | `30m` / `1h` / `off` |
 | `:board` | — | | | | |
 | `:budget USD` | — | `:b` | | | spent X of Y |
+| `:changes` | `gc` | | | | |
 | `:checks [NAMES\|none]` | — | | | | the checks the yes to the change at hand asks for |
 | `:clear [inbox\|journal]` | — | | | | |
 | `:close [NAME]` | — | `:c` | | | the project at hand |
@@ -125,6 +126,10 @@ The board, in a window over the screen; `esc` closes it. See [board and code map
 ### `:budget USD`
 
 Raises or lowers the pot while agents run (`:b 80`). The value is dollars with at most two decimals, up to four digits before the point (`80`, `2.50`); anything else: `80$ is not dollars like 80 or 2.50`. The flash says `the budget is $80.00 now`, the journal `you set the budget to $80.00 (was $50.00)`, and the warning that the pot runs low may sound again. A turn under way finishes on its old cap; the next starts on the new remainder, in a new session if the old one had hit its cap. The pot is one for all projects and is kept between runs. The menu note: `(spent $3.10 of $20.00)`. See [budget and limits](../concepts/budget-and-limits.md).
+
+### `:changes`
+
+Home, its first change to decide, under the permissions and the questions, as `gc`; from a detail or a window it comes back to Home first. With no change waiting it flashes `no change waits for you` and nothing moves.
 
 ### `:checks [NAMES|none]`
 

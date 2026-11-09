@@ -301,6 +301,7 @@ pub struct Text {
     pub recall_away: &'static str,
     /// `&` or `:goto` found neither an agent nor a project of the name.
     pub no_jump: &'static str,
+    pub no_change_waits: &'static str,
     /// The `&` menu's note after a project.
     pub jump_project: &'static str,
     pub next_card: &'static str,
@@ -1330,7 +1331,7 @@ pub struct Text {
     pub help_keys: [(&'static str, &'static str); 57],
     /// What each `:` command does, in a line, in `complete::COMMANDS`'
     /// order: shown after the menu's keys once `tab` put one on the line.
-    pub command_hints: [(&'static str, &'static str); 71],
+    pub command_hints: [(&'static str, &'static str); 72],
     /// The completion menu's mark for the items after the window, and
     /// where the highlighted one is among them all.
     pub menu_more: &'static str,
@@ -1476,6 +1477,7 @@ pub const EN: Text = Text {
     recall_away: "that line is not on the screen: its project is closed, or it is older than \
                   what was loaded",
     no_jump: "nothing called \"{}\" to go to: an agent or a project",
+    no_change_waits: "no change waits for you",
     jump_project: "project",
     next_card: "next / previous card",
     no_card_found: "no card {}",
@@ -1543,6 +1545,7 @@ pub const EN: Text = Text {
         ("away", "how long away before the digest opens by itself"),
         ("board", "the board, in a window"),
         ("budget", "raise or lower the pot while agents run ($)"),
+        ("changes", "Home, its first change to decide (gc)"),
         (
             "checks",
             "the checks the yes to the change at hand asks Lonca for: NAMES | none",
@@ -2587,7 +2590,10 @@ pub const EN: Text = Text {
             ":archives, r restores · H searches every line",
         ),
         ("[ ]", "home: one project · change: file · timeline: scale"),
-        (":waiting", "home, its first row to decide"),
+        (
+            ":waiting  gc",
+            "home: first to decide · gc :changes a change",
+        ),
         ("W  S", ":next waiting, from anywhere · :defer this"),
         ("enter  %", "the conversation · % in it: reply ↔ question"),
         ("c y  C Y", "copy the message · the conversation"),
@@ -2827,6 +2833,7 @@ pub const TR: Text = Text {
     recall_failed: "hatırlama kaydı okuyamadı: {}",
     recall_away: "o satır ekranda değil: projesi kapalı ya da yüklenenden daha eski",
     no_jump: "\"{}\" adında gidilecek bir yer yok: bir agent ya da proje",
+    no_change_waits: "seni bekleyen bir değişiklik yok",
     jump_project: "proje",
     next_card: "sonraki / önceki iş",
     no_card_found: "{} diye bir iş yok",
@@ -2900,6 +2907,7 @@ pub const TR: Text = Text {
         ),
         ("board", "pano, bir pencerede"),
         ("budget", "ajanlar çalışırken bütçeyi artır ya da azalt ($)"),
+        ("changes", "ana ekran, karar bekleyen ilk değişikliği (gc)"),
         (
             "checks",
             "elindeki değişikliğe evetin Lonca'dan istediği denetimler: ADLAR | none",
@@ -3974,7 +3982,10 @@ pub const TR: Text = Text {
             "[ ]",
             "ana ekran: tek proje · değişiklik: dosya · şerit: ölçek",
         ),
-        (":waiting", "ana ekran, karar bekleyen ilk satırı"),
+        (
+            ":waiting  gc",
+            "ana ekran: ilk karar · gc :changes değişiklik",
+        ),
         ("W  S", ":next bekleyen, her yerden · :defer ertele"),
         ("enter  %", "konuşmanın tamamı · içinde %: yanıt ↔ soru"),
         ("c y  C Y", "kopyala: mesaj · konuşma"),

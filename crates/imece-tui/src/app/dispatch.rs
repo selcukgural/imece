@@ -566,6 +566,7 @@ impl App {
             ('g', KeyCode::Char('g')) if self.home_keys() => self.home_go(0),
             ('g', KeyCode::Char('d')) if self.home_keys() => self.home_go_heading(Heading::Decide),
             ('g', KeyCode::Char('w')) if self.home_keys() => self.home_go_heading(Heading::Work),
+            ('g', KeyCode::Char('c')) if self.home_keys() => self.first_change(),
             ('g', KeyCode::Char('g')) => self.jump(true),
             ('z', KeyCode::Char('a')) if self.thread.is_some() => self.toggle_fold(),
             ('z', KeyCode::Char('a')) if self.diff_zoom().is_some() => {

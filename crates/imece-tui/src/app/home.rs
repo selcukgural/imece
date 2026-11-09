@@ -322,6 +322,17 @@ impl App {
 
     /// `gd` `gw`: the first row under a heading, TO DECIDE or AT WORK;
     /// nothing stands under it, the list does not move.
+    /// `gc`: the first change waiting, under the permissions and the
+    /// questions; whether there was one (none: nothing moves).
+    pub(super) fn home_go_group(&mut self, group: HomeGroup) -> bool {
+        let rows = self.home_rows();
+        let Some(row) = rows.iter().position(|r| r.0 == group) else {
+            return false;
+        };
+        self.home_go(row);
+        true
+    }
+
     pub(super) fn home_go_heading(&mut self, heading: Heading) {
         let rows = self.home_rows();
         if let Some(row) = rows.iter().position(|r| r.0.heading() == heading) {
@@ -1010,6 +1021,35 @@ mod triage_tests {
         keys(&mut app, "gd");
         assert_eq!(app.at_home.row, 1);
         assert_eq!(app.pending, None);
+    }
+
+    #[test]
+    fn gc_goes_to_the_first_change_under_the_asks_and_says_when_none_waits() {
+        let mut app = quiet();
+        let w = workers(&app);
+        app.world.inbox.push(item(InboxKind::Approval, w[0]));
+        app.world.inbox.push(item(InboxKind::Question, w[1]));
+        app.world.inbox.push(item(InboxKind::Change, w[2]));
+        app.world.inbox.push(item(InboxKind::Change, w[3]));
+        keys(&mut app, "gd");
+        assert_eq!(app.at_home.row, 0, "the permission first");
+        keys(&mut app, "gc");
+        assert_eq!(app.at_home.at, Some(HomeRow::Item(2)), "the first change");
+        assert_eq!(app.at_home.row, 2);
+        assert_eq!(app.pending, None);
+        assert!(app.flash.is_none(), "{:?}", app.flash);
+        // From the next change, back to the first.
+        keys(&mut app, "jgc");
+        assert_eq!(app.at_home.at, Some(HomeRow::Item(2)));
+        // None waits: nothing moves, and a flash says why.
+        app.world.inbox.retain(|i| i.kind != InboxKind::Change);
+        keys(&mut app, "gdjgc");
+        assert_eq!(app.at_home.row, 1);
+        let t = app.lang.text();
+        assert_eq!(
+            app.flash.as_ref().map(|f| f.0.as_str()),
+            Some(t.no_change_waits)
+        );
     }
 
     #[test]

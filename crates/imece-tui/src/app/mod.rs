@@ -109,8 +109,8 @@ pub struct Viewed {
 /// `:restore` asks the screen behind to bring the archive back.
 const VIEW_COMMANDS: &[&str] = &[
     "goto", "history", "export", "salon", "board", "code", "timeline", "lang", "theme", "help",
-    "quit", "next", "defer", "waiting", "fold", "unfold", "trace", "peek", "news", "settle",
-    "unsettle", "talk", "why", "story", "journal", "ledger",
+    "quit", "next", "defer", "waiting", "changes", "fold", "unfold", "trace", "peek", "news",
+    "settle", "unsettle", "talk", "why", "story", "journal", "ledger",
 ];
 
 /// Whether a line sent is one `↑` and `^r` bring back: a message, a

@@ -9160,12 +9160,12 @@ mod tests {
             (
                 Lang::En,
                 "cmd in your shell; O quotes it; ^x^e $EDITOR",
-                "home, its first row to decide",
+                "home: first to decide · gc :changes a change",
             ),
             (
                 Lang::Tr,
                 "kmt kabuğunda; O alıntılar; ^x^e $EDITOR'da",
-                "ana ekran, karar bekleyen ilk satırı",
+                "ana ekran: ilk karar · gc :changes değişiklik",
             ),
         ] {
             app.lang = lang;
