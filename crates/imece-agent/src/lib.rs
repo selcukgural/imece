@@ -64,7 +64,12 @@ fn uuid_of(mut b: [u8; 16]) -> String {
 /// without spending ([`claude::login`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Login {
-    Yes,
+    /// Signed in; `subscription` when through a claude.ai plan (Pro, Max,
+    /// Team), whose turns Claude Code prices at API rates though the plan
+    /// is what is paid: its figures are API-equivalent (record 132).
+    Yes {
+        subscription: bool,
+    },
     No,
     /// It did not say: its first session tells.
     Unknown,
@@ -565,6 +570,12 @@ pub enum Event {
     /// [`Event::TurnDone`] with `ok: false` follows at once. A failure of
     /// another kind (a refused request, a full context) comes without it.
     Failed(Fault),
+    /// The turn about to end did not say all it cost (record 132): its
+    /// result had no figure, or a model it ran on was priced at nothing
+    /// though it used tokens (named here), or an earlier conversation of
+    /// the session that was not priced was cleared. The
+    /// [`Event::TurnDone`] follows at once, with the last total known.
+    Unpriced(Option<String>),
     /// A turn ended. `cost` is the session's total so far, in millionths of
     /// a dollar; `denied` counts tool calls Claude Code refused.
     TurnDone {
@@ -583,7 +594,9 @@ pub enum Event {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Said {
     pub text: String,
-    pub cost: u64,
+    /// None when Claude Code did not say it ([`Event::Unpriced`]): the
+    /// caller keeps what it reserved.
+    pub cost: Option<u64>,
 }
 
 /// Why a one-shot call said nothing, and what it cost when that is

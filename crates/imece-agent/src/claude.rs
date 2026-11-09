@@ -68,7 +68,9 @@ fn own_notes_in(config: Option<OsString>, home: Option<OsString>) -> Option<Path
 }
 
 /// Whether Claude Code is signed in, a subscription or an API key: `claude
-/// auth status --json` answers offline with `loggedIn`.
+/// auth status --json` answers offline with `loggedIn`, and `authMethod`
+/// `claude.ai` for a plan's login (an API key in the environment says
+/// otherwise, a stored plan login notwithstanding).
 pub fn login(program: &str) -> crate::Login {
     let mut cmd = child::command(program, &std::env::temp_dir(), ENV);
     cmd.args(["auth", "status", "--json"]);
@@ -86,7 +88,11 @@ fn login_in(said: &str) -> crate::Login {
         .and_then(|v| v.get("loggedIn"))
         .and_then(Value::as_bool)
     {
-        Some(true) => crate::Login::Yes,
+        Some(true) => crate::Login::Yes {
+            subscription: status
+                .as_ref()
+                .is_some_and(|v| v["authMethod"] == "claude.ai"),
+        },
         Some(false) => crate::Login::No,
         None => crate::Login::Unknown,
     }
@@ -594,6 +600,10 @@ pub struct Parser {
     /// cost, and the last total seen.
     cost_base: u64,
     cost_last: u64,
+    /// The last result left something unpriced; a reset after it leaves
+    /// it so for good (`cleared_unpriced`), see [`unpriced`].
+    unpriced_last: bool,
+    cleared_unpriced: bool,
     /// The slash commands the last `init` listed, to report a change.
     commands: Vec<String>,
     /// An `init` came without its `slash_commands` field, and it was said.
@@ -666,6 +676,8 @@ impl Parser {
             // A resumed session reports its whole cost: what it had
             // reported before is the floor the new turns count from.
             cost_last: spec.resume.as_ref().map_or(0, |r| r.spent),
+            unpriced_last: false,
+            cleared_unpriced: false,
             floor: spec.resume.as_ref().map_or(0, |r| r.spent),
             resuming: spec
                 .resume
@@ -754,16 +766,28 @@ impl Parser {
         }
         out.extend(fault(v).map(Event::Failed));
         let mut e = result(v);
+        let mut gap = unpriced(v);
         if let Event::TurnDone { cost, .. } = &mut e {
-            if *cost < self.cost_last {
-                self.cost_base += self.cost_last;
+            // No figure is no reset: the total stays the last one known.
+            if let Some(said) = figure(v) {
+                if said < self.cost_last {
+                    self.cost_base += self.cost_last;
+                    // A conversation cleared while it was not priced
+                    // whole stays so: no later total covers it.
+                    self.cleared_unpriced |= self.unpriced_last;
+                }
+                self.cost_last = said;
             }
-            self.cost_last = *cost;
+            self.unpriced_last = gap.is_some();
+            if self.cleared_unpriced {
+                gap.get_or_insert(None);
+            }
             // Above the resumed session's floor, which `cost_base` holds
             // once a reset or a process that counts only itself passed
             // under it (then the reported cost is the new spending).
-            *cost = (*cost + self.cost_base).saturating_sub(self.floor);
+            *cost = (self.cost_last + self.cost_base).saturating_sub(self.floor);
         }
+        out.extend(gap.map(Event::Unpriced));
         out.push(e);
         out
     }
@@ -1069,16 +1093,46 @@ fn result(v: &Value) -> Event {
         Some(r) if ok || (v["is_error"] == true && !r.is_empty()) => r.to_string(),
         _ => v["subtype"].as_str().unwrap_or("error").to_string(),
     };
-    // JSON carries no infinity or NaN; a negative figure counts as nothing
-    // (the cast saturates at zero).
-    let usd = v["total_cost_usd"].as_f64().unwrap_or(0.0);
-    let cost = (usd.max(0.0) * 1_000_000.0).round() as u64;
     Event::TurnDone {
         ok,
         text,
-        cost,
+        cost: figure(v).unwrap_or(0),
         denied: v["permission_denials"].as_array().map_or(0, Vec::len),
     }
+}
+
+/// The session's total a result says, in millionths of a dollar; None
+/// when it says none. JSON carries no infinity or NaN; a negative figure
+/// counts as nothing (the cast saturates at zero).
+fn figure(v: &Value) -> Option<u64> {
+    let usd = v["total_cost_usd"].as_f64()?;
+    Some((usd.max(0.0) * 1_000_000.0).round() as u64)
+}
+
+/// What a result leaves unpriced (record 132): `Some(None)` when it says
+/// no total, `Some(Some(model))` when a model it names used tokens and was
+/// priced at nothing (one Claude Code has no price for), None when the
+/// figure is whole. A model without a `costUSD` at all is not taken as
+/// unpriced: an older Claude Code may say only the window.
+fn unpriced(v: &Value) -> Option<Option<String>> {
+    if figure(v).is_none() {
+        return Some(None);
+    }
+    let models = v["modelUsage"].as_object()?;
+    models
+        .iter()
+        .find(|(_, m)| {
+            let used = [
+                "inputTokens",
+                "outputTokens",
+                "cacheReadInputTokens",
+                "cacheCreationInputTokens",
+            ]
+            .iter()
+            .any(|k| m[*k].as_u64().is_some_and(|n| n > 0));
+            used && m["costUSD"].as_f64() == Some(0.0)
+        })
+        .map(|(name, _)| Some(name.clone()))
 }
 
 /// What a tool call touches, in a few characters: a path relative to the
@@ -1241,19 +1295,27 @@ pub fn once(spec: &Spec, prompt: &str, deadline: Duration) -> Result<Said, Unsai
         .prompt(prompt)
         .map_err(|e| unknown(format!("the prompt did not reach it: {e}")))?;
     let end = Instant::now() + deadline;
+    // A figure the result did not say whole is no figure.
+    let mut priced = true;
     loop {
         let left = end.saturating_duration_since(Instant::now());
         match rx.recv_timeout(left) {
+            Ok(Event::Unpriced(_)) => priced = false,
             Ok(Event::TurnDone {
                 ok: true,
                 text,
                 cost,
                 ..
-            }) => return Ok(Said { text, cost }),
+            }) => {
+                return Ok(Said {
+                    text,
+                    cost: priced.then_some(cost),
+                });
+            }
             Ok(Event::TurnDone { text, cost, .. }) => {
                 return Err(Unsaid {
                     why: text,
-                    cost: Some(cost),
+                    cost: priced.then_some(cost),
                 });
             }
             Ok(Event::Stopped(why)) => return Err(unknown(why)),
@@ -1501,10 +1563,20 @@ mod tests {
     #[test]
     fn signed_in_is_what_auth_status_says_of_logged_in() {
         use crate::Login::*;
+        let plan = Yes { subscription: true };
+        let key = Yes {
+            subscription: false,
+        };
         assert_eq!(
             login_in(r#"{"loggedIn": true, "authMethod": "claude.ai"}"#),
-            Yes
+            plan
         );
+        // A key in the environment pays though a plan's login is stored.
+        assert_eq!(
+            login_in(r#"{"loggedIn": true, "authMethod": "api_key", "subscriptionType": "max"}"#),
+            key
+        );
+        assert_eq!(login_in(r#"{"loggedIn": true}"#), key);
         assert_eq!(login_in("warning\n{\n  \"loggedIn\": false\n}\nbye"), No);
         assert_eq!(login_in(r#"{"loggedIn": "yes"}"#), Unknown);
         assert_eq!(login_in(r#"{"authMethod": "none"}"#), Unknown);
@@ -1525,7 +1597,7 @@ mod tests {
             "yes",
             r#"[ "$*" = "auth status --json" ] && echo '{"loggedIn": true}' && exit 0; exit 9"#,
         );
-        assert_eq!(login(&yes), Yes);
+        assert_eq!(login(&yes), key);
         let no = fake("no", r#"echo '{"loggedIn": false}'; exit 1"#);
         assert_eq!(login(&no), No);
         assert_eq!(login(&dir.join("gone").display().to_string()), Unknown);
@@ -2789,7 +2861,42 @@ sleep 5"#
             got,
             Ok(Said {
                 text: "Fix the parser".into(),
-                cost: 4_000
+                cost: Some(4_000)
+            })
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_once_call_that_does_not_say_all_it_cost_has_no_figure() {
+        let dir = std::env::temp_dir().join(format!("imece-once-unpriced-{}", std::process::id()));
+        let init = init("[]", "acceptEdits", "[]");
+        let run = |name: &str, result: &str| {
+            let body = format!("read line\necho '{init}'\necho '{result}'\nsleep 5");
+            let dir = dir.join(name);
+            once(
+                &once_spec(fake(&dir, &body), &dir),
+                "x",
+                Duration::from_secs(10),
+            )
+        };
+        let said = run(
+            "bare",
+            r#"{"type":"result","subtype":"success","result":"ok"}"#,
+        );
+        assert_eq!(
+            said,
+            Ok(Said {
+                text: "ok".into(),
+                cost: None
+            })
+        );
+        let free = r#"{"type":"result","subtype":"error_during_execution","is_error":true,"result":"no","total_cost_usd":0.5,"modelUsage":{"m":{"outputTokens":7,"costUSD":0}}}"#;
+        assert_eq!(
+            run("free", free),
+            Err(Unsaid {
+                why: "no".into(),
+                cost: None
             })
         );
         let _ = std::fs::remove_dir_all(&dir);
@@ -2990,6 +3097,99 @@ sleep 5"#
     }
 
     #[test]
+    fn a_result_that_does_not_say_all_it_cost_is_said_unpriced_and_never_a_reset() {
+        use serde_json::json;
+        let mut p = Parser::new(&spec(EDIT_TOOLS));
+        p.line(&init(GOOD_INIT, "acceptEdits", "[]")).unwrap();
+        let turn = |p: &mut Parser, v: serde_json::Value| -> (Option<Option<String>>, u64) {
+            let mut v = v;
+            v["type"] = json!("result");
+            v["subtype"] = json!("success");
+            v["result"] = json!("");
+            match p.line(&v.to_string()).unwrap().as_slice() {
+                [Event::TurnDone { cost, .. }] => (None, *cost),
+                [Event::Unpriced(m), Event::TurnDone { cost, .. }] => (Some(m.clone()), *cost),
+                other => panic!("{other:?}"),
+            }
+        };
+        let priced = |m: &str, input: u64, usd: f64| json!({m: {"inputTokens": input, "outputTokens": 0, "costUSD": usd}});
+        assert_eq!(
+            turn(
+                &mut p,
+                json!({"total_cost_usd": 0.0007, "modelUsage": priced("a", 9, 0.0007)})
+            ),
+            (None, 700)
+        );
+        // No figure: the total stays the last known, and the next figure,
+        // the session's whole, is no reset counted twice.
+        assert_eq!(turn(&mut p, json!({})), (Some(None), 700));
+        assert_eq!(
+            turn(&mut p, json!({"total_cost_usd": 0.0012})),
+            (None, 1200)
+        );
+        // Tokens priced at nothing: that model is named, each of its
+        // token counts alone enough.
+        for k in [
+            "inputTokens",
+            "outputTokens",
+            "cacheReadInputTokens",
+            "cacheCreationInputTokens",
+        ] {
+            let usage =
+                json!({"a": {"costUSD": 0.0012, "inputTokens": 3}, "new": {k: 1, "costUSD": 0}});
+            assert_eq!(
+                turn(
+                    &mut p,
+                    json!({"total_cost_usd": 0.0012, "modelUsage": usage})
+                ),
+                (Some(Some("new".into())), 1200),
+                "{k}"
+            );
+        }
+        // Nothing used, or no price said at all: nothing unpriced.
+        for usage in [priced("new", 0, 0.0), json!({"new": {"inputTokens": 5}})] {
+            assert_eq!(
+                turn(
+                    &mut p,
+                    json!({"total_cost_usd": 0.0013, "modelUsage": usage})
+                ),
+                (None, 1300)
+            );
+        }
+        // A clear after an unpriced turn leaves the session unpriced for
+        // good; one after a priced turn does not.
+        assert_eq!(
+            turn(
+                &mut p,
+                json!({"total_cost_usd": 0.0014, "modelUsage": priced("new", 2, 0.0)})
+            )
+            .0,
+            Some(Some("new".into()))
+        );
+        assert_eq!(
+            turn(&mut p, json!({"total_cost_usd": 0.0001})),
+            (Some(None), 1500)
+        );
+        assert_eq!(
+            turn(&mut p, json!({"total_cost_usd": 0.0002})),
+            (Some(None), 1600)
+        );
+        // Another clear after another unpriced turn: still so.
+        let usage = priced("new", 1, 0.0);
+        let free = json!({"total_cost_usd": 0.0003, "modelUsage": usage});
+        assert_eq!(turn(&mut p, free).0, Some(Some("new".into())));
+        assert_eq!(
+            turn(&mut p, json!({"total_cost_usd": 0.0001})),
+            (Some(None), 1800)
+        );
+        let mut q = Parser::new(&spec(EDIT_TOOLS));
+        q.line(&init(GOOD_INIT, "acceptEdits", "[]")).unwrap();
+        assert_eq!(turn(&mut q, json!({"total_cost_usd": 0.0005})), (None, 500));
+        assert_eq!(turn(&mut q, json!({"total_cost_usd": 0.0001})), (None, 600));
+        assert_eq!(turn(&mut q, json!({"total_cost_usd": 0.0002})), (None, 700));
+    }
+
+    #[test]
     fn the_cost_keeps_going_up_across_a_clear() {
         use serde_json::json;
         let mut p = Parser::new(&spec(EDIT_TOOLS));
@@ -3088,7 +3288,7 @@ sleep 5"#
         let mut p = Parser::new(&spec(EDIT_TOOLS));
         assert_eq!(p.line(r#"{"type":"rate_limit_event"}"#).unwrap(), []);
         p.line(&init(GOOD_INIT, "acceptEdits", "[]")).unwrap();
-        let done = r#"{"type":"result","subtype":"success","result":"ok"}"#;
+        let done = r#"{"type":"result","subtype":"success","result":"ok","total_cost_usd":0}"#;
         assert!(matches!(
             p.line(done).unwrap()[..],
             [Event::TurnDone { .. }]

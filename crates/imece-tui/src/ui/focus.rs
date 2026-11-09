@@ -69,7 +69,7 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, id: AgentId, framed: bool) {
         format!(" · {}", clean(&a.name)),
         fg(pal().agent),
     ));
-    title.push(Span::styled(format!(" · {}", dollars(a.cost)), dim()));
+    title.push(Span::styled(format!(" · {}", w.spent_by(a.id)), dim()));
     if !framed {
         head.push(Line::from(title));
     }

@@ -44,6 +44,7 @@ pub(crate) fn team(workers: usize) -> World {
         journal: Vec::new(),
         inbox: Vec::new(),
         budget: 10_000,
+        estimated: false,
         max_researchers: 0,
         research_queue: Default::default(),
         plans: Vec::new(),

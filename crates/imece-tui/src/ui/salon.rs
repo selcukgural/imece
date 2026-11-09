@@ -53,7 +53,6 @@ pub(crate) fn project_line(app: &App, p: ProjectId, rungs: &[Rung]) -> Line<'sta
             matches!(a.role, Role::Worker | Role::Helper | Role::Solo) && a.status != Status::Idle
         })
         .count();
-    let cost: u64 = w.agents.iter().filter(in_project).map(|a| a.cost).sum();
     let waiting = w
         .open_inbox()
         .iter()
@@ -117,7 +116,10 @@ pub(crate) fn project_line(app: &App, p: ProjectId, rungs: &[Rung]) -> Line<'sta
         format!("  {}", fill(t.group_working, &[&working.to_string()])),
         dim(),
     ));
-    spans.push(Span::styled(format!("  {}", dollars(cost)), dim()));
+    spans.push(Span::styled(
+        format!("  {}", w.project_spent(project.id)),
+        dim(),
+    ));
     if let Some(on) = &project.lonca {
         spans.push(store_span(on, t));
     }
@@ -225,7 +227,7 @@ impl RowColumns {
             c.since = c.since.max(columns(&since_spans(app, a)));
             c.plan = c.plan.max(columns(&plan_spans(a)));
             c.context = c.context.max(columns(&context_spans(a)));
-            c.cost = c.cost.max(columns(&cost_spans(a)));
+            c.cost = c.cost.max(columns(&cost_spans(w, a)));
         }
         c
     }
@@ -239,12 +241,13 @@ fn padding(room: &mut usize, used: usize, width: usize) -> Span<'static> {
     Span::raw(" ".repeat(blanks))
 }
 
-/// What the agent has spent, `  $2.29`, once it has.
-fn cost_spans(a: &Agent) -> Vec<Span<'static>> {
-    if a.cost == 0 {
+/// What the agent has spent, `  $2.29`, once it has or once some of it
+/// is unknown (record 132).
+fn cost_spans(w: &World, a: &Agent) -> Vec<Span<'static>> {
+    if a.cost == 0 && !a.unpriced.any() {
         return Vec::new();
     }
-    vec![Span::styled(format!("  {}", dollars(a.cost)), dim())]
+    vec![Span::styled(format!("  {}", w.spent_by(a.id)), dim())]
 }
 
 /// An agent's row, `width` columns wide: its status, its newest exchange,
@@ -297,7 +300,7 @@ pub(super) fn agent_line(
     spans.push(Span::raw(" "));
     let since = since_spans(app, a);
 
-    let cost = cost_spans(a);
+    let cost = cost_spans(w, a);
     let mut tail = Vec::new();
     if matches!(a.role, Role::Worker | Role::Solo) {
         tail.extend(stand_spans(&a.stand, a.start.as_deref()));
@@ -869,6 +872,25 @@ mod tests {
                 re: None,
             },
         }
+    }
+
+    #[test]
+    fn a_row_s_cost_shows_once_spent_or_unknown_and_never_zero_for_what_is_not_known() {
+        let mut w = crate::live::testing::team(1);
+        let shown = |w: &World| -> String {
+            cost_spans(w, &w.agents[1])
+                .iter()
+                .map(|s| s.content.to_string())
+                .collect()
+        };
+        w.agents[1].cost = 0;
+        assert_eq!(shown(&w), "", "nothing spent");
+        w.agents[1].unpriced.gaps = 1;
+        assert_eq!(shown(&w), "  ?", "nothing known");
+        w.agents[1].cost = 22_900;
+        assert_eq!(shown(&w), "  $2.29+?");
+        w.agents[1].unpriced.gaps = 0;
+        assert_eq!(shown(&w), "  $2.29");
     }
 
     #[test]

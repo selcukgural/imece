@@ -720,6 +720,7 @@ mod tests {
             cost: 7,
             ticks: 8,
             rounds: 1,
+            unpriced: false,
         };
         w.agents[1].task.carried = carried;
         w.agents[1].task.last = Some(carried);
@@ -2157,6 +2158,7 @@ mod tests {
             cost: 40,
             ticks: 3,
             rounds: 1,
+            unpriced: false,
         };
         w.agents[1].task.carried = carried;
         let (reply, answer) = mpsc::channel();

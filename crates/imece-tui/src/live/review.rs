@@ -246,9 +246,9 @@ impl Live {
             any = true;
             self.reviewing = None;
             // Millionths of a dollar to the pot's ten-thousandths; a call
-            // that never said keeps its cap.
+            // that never said, or not all (record 132), keeps its cap.
             let cost = match &r.said {
-                Ok(said) => said.cost / 100,
+                Ok(said) => said.cost.map_or(r.cap, |c| c / 100),
                 Err(u) => u.cost.map_or(r.cap, |c| c / 100),
             };
             let store = self.store.as_mut();
@@ -350,7 +350,7 @@ mod tests {
     fn ok(text: &str, cost: u64) -> Said {
         Said(Ok(imece_agent::Said {
             text: text.into(),
-            cost,
+            cost: Some(cost),
         }))
     }
 

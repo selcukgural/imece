@@ -94,7 +94,9 @@ use crate::recall::{Hit, Line};
 /// event, record 126).
 /// 32 (2026-11-08): the checks a card asks for (`cards.checks`, record
 /// 127), an assign's until it is delivered (`mail.checks`).
-pub const SCHEMA_VERSION: i64 = 32;
+/// 33 (2026-11-09): an agent's spending Claude Code never priced
+/// (`agents.unpriced`, record 132).
+pub const SCHEMA_VERSION: i64 = 33;
 /// Trace lines kept per agent, as the world keeps them.
 const TRACE_KEEP: usize = 200;
 /// The file's name under the state directory.
@@ -126,7 +128,7 @@ CREATE TABLE IF NOT EXISTS agents (
     changed_at INTEGER NOT NULL, traced INTEGER NOT NULL, commands TEXT NOT NULL,
     model TEXT, tiered INTEGER NOT NULL, woken INTEGER NOT NULL, posted INTEGER NOT NULL,
     session TEXT, session_spent INTEGER NOT NULL DEFAULT 0, start TEXT, fork_of INTEGER,
-    task TEXT NOT NULL DEFAULT '');
+    task TEXT NOT NULL DEFAULT '', unpriced INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS cards (
     id INTEGER PRIMARY KEY, project INTEGER NOT NULL, title TEXT NOT NULL,
     owner INTEGER, col TEXT NOT NULL, started INTEGER NOT NULL, finished INTEGER NOT NULL,
@@ -670,6 +672,12 @@ impl Store {
                 "ALTER TABLE cards ADD COLUMN waits_on TEXT NOT NULL DEFAULT '[]';",
             )?;
         }
+        if !self.has_column("agents", "unpriced")? {
+            // Nothing was known unpriced before: a missing figure was $0.
+            self.conn.execute_batch(
+                "ALTER TABLE agents ADD COLUMN unpriced INTEGER NOT NULL DEFAULT 0;",
+            )?;
+        }
         if !self.has_column("cards", "checks")? {
             // No card asked for a check before.
             self.conn.execute_batch(
@@ -1022,9 +1030,9 @@ impl Store {
             tx.execute(
                 "INSERT OR REPLACE INTO agents (id, project, name, role, parent, card, \
                  cost, taint, gone, changed_at, traced, commands, model, tiered, woken, posted, \
-                 session, session_spent, start, fork_of, task) \
+                 session, session_spent, start, fork_of, task, unpriced) \
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, \
-                 ?17, ?18, ?19, ?20, ?21)",
+                 ?17, ?18, ?19, ?20, ?21, ?22)",
                 params![
                     n(a.id),
                     n(a.project),
@@ -1052,6 +1060,8 @@ impl Store {
                     a.start,
                     opt(k.forks.get(id).copied().flatten()),
                     serde_json::to_string(&a.task).unwrap_or_default(),
+                    // What it never priced (record 132).
+                    a.unpriced.count(),
                 ],
             )?;
         }
@@ -1386,6 +1396,7 @@ impl Store {
                     &a.commands,
                     &a.start,
                     a.task,
+                    a.unpriced.count(),
                 )),
                 hash(&(
                     k.models.get(id),
@@ -1597,6 +1608,7 @@ impl Store {
             journal: Vec::new(),
             inbox: Vec::new(),
             budget,
+            estimated: false,
             max_researchers: 0,
             research_queue: VecDeque::new(),
             plans: Vec::new(),
@@ -1682,7 +1694,7 @@ impl Store {
         let mut st = conn.prepare(
             "SELECT id, project, name, role, parent, card, cost, taint, gone, \
              changed_at, traced, commands, model, tiered, woken, posted, session, session_spent, \
-             start, fork_of, task FROM agents ORDER BY id",
+             start, fork_of, task, unpriced FROM agents ORDER BY id",
         )?;
         for row in st.query_map([], |r| {
             let id = u(r.get(0)?);
@@ -1704,6 +1716,7 @@ impl Store {
             a.start = r.get(18)?;
             // An older file has no column: no round open, nothing carried.
             a.task = serde_json::from_str(&r.get::<_, String>(20)?).unwrap_or_default();
+            a.unpriced.gaps = r.get(21)?;
             if a.gone {
                 a.status = Status::Idle;
             }
@@ -2455,6 +2468,7 @@ mod tests {
                 },
             ],
             budget: 123_400,
+            estimated: false,
             max_researchers: 0,
             research_queue: VecDeque::new(),
             plans: Vec::new(),
@@ -2477,9 +2491,19 @@ mod tests {
                 cost: 500,
                 ticks: 20,
                 rounds: 1,
+                unpriced: true,
             },
             last: Some(spend()),
+            gaps: 2,
         };
+        // A session's unpriced turn stays so in the next session.
+        w.agents[1].unpriced = Unpriced {
+            said: false,
+            session: true,
+            gaps: 3,
+        };
+        w.agents[2].unpriced.said = true;
+        w.agents[2].unpriced.gaps = 5;
         w.agents[1].taint = Taint::Soft;
         w.agents[1].commands = vec!["/compact".into(), "/clear".into()];
         w.agents[1].changed_at = 66;
@@ -2700,6 +2724,7 @@ mod tests {
             cost: 8_400,
             ticks: 144,
             rounds: 2,
+            unpriced: false,
         }
     }
 
@@ -2758,6 +2783,9 @@ mod tests {
         );
         for (a, b) in w.agents.iter().zip(&back.agents) {
             assert_eq!(agent_view(b), agent_view(a), "agent {}", a.id);
+            // A session's unpriced turn comes back as one gap more.
+            assert_eq!(b.unpriced.gaps, a.unpriced.count(), "agent {}", a.id);
+            assert!(!b.unpriced.session && !b.unpriced.said);
         }
         assert_eq!(back.agents.len(), w.agents.len());
         for (a, b) in w.cards.iter().zip(&back.cards) {
@@ -2963,6 +2991,11 @@ mod tests {
         let back = store.load(100).unwrap().expect("a world");
         assert_eq!(back.skipped, 0);
         same(&w, &back.world);
+        // 3 gaps and its session's, 5 and one said (record 132).
+        let gaps: Vec<u32> = (back.world.agents.iter())
+            .map(|a| a.unpriced.gaps)
+            .collect();
+        assert_eq!(gaps[1..3], [4, 6]);
         assert_eq!(back.found, k.found());
         let b = &back.world;
         assert_eq!(
@@ -3047,6 +3080,7 @@ mod tests {
                         cost: 9_900,
                         ticks: 92,
                         rounds: 3,
+                        unpriced: false,
                     };
                     w.changes[0].spend = Some(s);
                     k.spends.insert(1, s);
@@ -3708,7 +3742,7 @@ mod tests {
             .execute_batch(
                 "INSERT INTO meta VALUES ('started_at', '1'); \
                  INSERT INTO agents VALUES (0, 0, 'x', 'Clod', NULL, NULL, 0, 'Clean', \
-                 0, 0, 0, '[]', NULL, 0, 0, 0, NULL, 0, NULL, NULL, '');",
+                 0, 0, 0, '[]', NULL, 0, 0, 0, NULL, 0, NULL, NULL, '', 0);",
             )
             .unwrap();
         let e = store.load(100).err().expect("refused").to_string();
@@ -4263,14 +4297,14 @@ mod tests {
                 )
                 .unwrap();
             assert_eq!(
-                version, "32",
+                version, "33",
                 "the sent table, the Fault kind, archives, restores, start points, standing yes, the \
                  recall index, forks, paid kinds, reviews, no vendor, the check on a change, what \
                  it cost, the paths a card owns, the plan gate, a project's Lonca repository, \
                  a card's attempts, its breaker, what it waits on, a card withdrawn and the \
-                 checks it asks for: an older imece knows none"
+                 checks it asks for, what was never priced: an older imece knows none"
             );
-            assert_eq!(SCHEMA_VERSION, 32);
+            assert_eq!(SCHEMA_VERSION, 33);
         }
         let back = Store::open(&path)
             .unwrap()
@@ -5181,6 +5215,7 @@ mod tests {
             round: Some((4_000, 70)),
             carried: Spend::default(),
             last: Some(spend()),
+            gaps: 0,
         };
         assert!(store.save(&w, &k.kept()).unwrap());
         let back = store.load(100).unwrap().expect("a world");

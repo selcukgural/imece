@@ -423,13 +423,16 @@ fn main() -> std::io::Result<()> {
     let mut app = if args.demo {
         // The simulation's clock says 14:00 at its start, on today's date.
         model::start_clock_at(14 * 3600, live::today());
-        app::App::new(
+        let mut app = app::App::new(
             args.projects,
             args.agents.unwrap_or(24),
             args.researchers,
             args.seed,
             args.lang,
-        )
+        );
+        // The demo signs in through a plan, as most do: `≈` (record 132).
+        app.take_plan();
+        app
     } else if args.demo_live {
         let imece =
             std::env::current_exe().unwrap_or_else(|e| fail(format!("imece's own path: {e}")));
@@ -504,7 +507,7 @@ fn main() -> std::io::Result<()> {
     app.persist();
     // What is left in the terminal once the screen is gone (record 101),
     // read before the sessions end.
-    let spent = app.world.spent().saturating_sub(app.spent_at_start);
+    let spent = app.spent_this_run();
     let bye = ui::words::farewell(app.lang, &app.world, spent, app.demo() || args.demo_live);
     app.leave();
     screen::restore();

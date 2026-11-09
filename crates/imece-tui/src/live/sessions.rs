@@ -43,6 +43,8 @@ pub fn apply(w: &mut World, id: AgentId, e: AgentEvent, before: u64) {
             a.trace(t, format!("text {text:?}"));
         }
         AgentEvent::Note(text) => w.agents[id].trace(t, format!("note {text}")),
+        // Its `TurnDone` comes next and takes it (record 132).
+        AgentEvent::Unpriced(model) => w.turn_unpriced(id, model.as_deref()),
         // The account's windows, not the agent's.
         AgentEvent::Limits(limits) => {
             for l in limits {
@@ -133,6 +135,7 @@ pub fn apply(w: &mut World, id: AgentId, e: AgentEvent, before: u64) {
             denied,
         } => {
             w.agents[id].cost = before + cost / 100;
+            w.turn_priced(id);
             // A done's change waited for this: what the turn cost is known.
             w.settle_change(id);
             let a = &mut w.agents[id];
@@ -211,6 +214,11 @@ impl Live {
         w.agents[id].retry = None;
         w.agents[id].tries = 0;
         w.agents[id].fault = None;
+        // A turn its process had and did not end will never say what it
+        // cost (record 132); one still waiting for the process to start
+        // spent nothing.
+        let cut = self.turns[id] > 0 && matches!(self.slots[id], Slot::Running(_));
+        w.session_over(id, cut);
         self.spent_before[id] = w.agents[id].cost;
         self.slots[id] = Slot::None;
         self.cwds[id] = None;
@@ -333,6 +341,8 @@ impl Live {
     /// given, the first as it was before imece's notes.
     pub(super) fn restart(&mut self, w: &mut World, id: AgentId, a: Attempt, why: &str) {
         let mut texts = std::mem::take(&mut self.inflight[id]);
+        // The session asked for never started: nothing it was given ran.
+        self.turns[id] = 0;
         self.end(w, id);
         self.sessions[id] = None;
         self.notes[id] = a.notes;
@@ -1547,6 +1557,9 @@ mod tests {
             spend: None,
         });
         assert_eq!(w.change_of(1).unwrap().spend, None);
+        // A model priced at nothing in it: the change's figure is what it
+        // came to at least (record 132).
+        hear(&live, 1, AgentEvent::Unpriced(Some("claude-new".into())));
         hear(
             &live,
             1,
@@ -1560,7 +1573,7 @@ mod tests {
         live.step(&mut w);
         assert_eq!(w.agents[1].cost, 2_500);
         let s = w.change_of(1).unwrap().spend.unwrap();
-        assert_eq!((s.cost, s.rounds), (1_800, 1));
+        assert_eq!((s.cost, s.rounds, s.unpriced), (1_800, 1, true));
         assert!((12..=13).contains(&s.ticks), "{s:?}");
         assert_eq!(w.agents[1].task.round, None);
         // A failed turn's end settles too: what it cost is spent.
@@ -1909,6 +1922,61 @@ mod tests {
         );
         assert_ne!(w.cards[c].column, Column::Done);
         assert!(w.agents[1].talk.is_none());
+    }
+
+    #[test]
+    fn a_turn_that_did_not_say_its_cost_leaves_its_agent_unpriced_until_one_says_the_whole() {
+        let mut w = team(1);
+        let done = |cost| AgentEvent::TurnDone {
+            ok: true,
+            text: "ok".into(),
+            cost,
+            denied: 0,
+        };
+        apply(&mut w, 1, AgentEvent::Unpriced(None), 0);
+        assert!(w.agents[1].unpriced.said);
+        let last = w.agents[1].trace.back().unwrap();
+        assert!(
+            last.ends_with("cost unknown: the turn's result said none"),
+            "{last}"
+        );
+        apply(&mut w, 1, done(500_000), 100);
+        assert_eq!(w.agents[1].cost, 5_100);
+        assert_eq!(
+            (w.agents[1].unpriced.said, w.agents[1].unpriced.session),
+            (false, true)
+        );
+        apply(&mut w, 1, done(600_000), 100);
+        assert!(!w.agents[1].unpriced.any(), "the session's whole said");
+    }
+
+    #[test]
+    fn a_session_ended_mid_turn_leaves_a_gap_and_one_not_started_or_that_said_its_cost_none() {
+        let mut w = team(1);
+        let mut live = idle_live(2);
+        // Mid-turn in a running process: that turn never says its cost.
+        live.slots[1] = Slot::Running(Box::new(Stub));
+        live.turns[1] = 1;
+        live.end(&mut w, 1);
+        assert_eq!(w.agents[1].unpriced.gaps, 1);
+        // Between turns: nothing.
+        live.slots[1] = Slot::Running(Box::new(Stub));
+        live.end(&mut w, 1);
+        assert_eq!(w.agents[1].unpriced.gaps, 1);
+        // Its process still starting: nothing ran.
+        live.slots[1] = Slot::Starting(vec!["x".into()]);
+        live.turns[1] = 1;
+        live.end(&mut w, 1);
+        assert_eq!(w.agents[1].unpriced.gaps, 1);
+        // A turn at the cap said its cost before its session was renewed.
+        w.budget = 100 * 10_000;
+        live.slots[0] = Slot::Running(Box::new(Stub));
+        live.inflight[0] = vec!["hello".into()];
+        live.turns[0] = 1;
+        capped(&live, 0, 20);
+        live.step(&mut w);
+        assert_eq!(live.generation[0], 1, "renewed");
+        assert_eq!(w.agents[0].unpriced.gaps, 0);
     }
 
     #[test]

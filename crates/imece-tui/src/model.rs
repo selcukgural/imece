@@ -804,6 +804,8 @@ pub struct Agent {
     pub fault: Option<Fault>,
     /// Where its spend on the change at hand stands (record 113).
     pub task: Task,
+    /// What of its spending Claude Code did not price (record 132).
+    pub unpriced: Unpriced,
     /// Which attempt at its card its turn works on (record 126): set as
     /// it takes the card, so a `done` of a turn that began before the
     /// card was handed again is told apart. Memory only: a load sets it
@@ -825,6 +827,10 @@ pub struct Spend {
     pub cost: u64,
     pub ticks: u64,
     pub rounds: u32,
+    /// Part of it Claude Code did not price (record 132): `cost` is what
+    /// it came to at least.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub unpriced: bool,
 }
 
 impl Spend {
@@ -834,7 +840,40 @@ impl Spend {
             cost: self.cost + other.cost,
             ticks: self.ticks + other.ticks,
             rounds: self.rounds + other.rounds,
+            unpriced: self.unpriced || other.unpriced,
         }
+    }
+}
+
+/// What of an agent's spending Claude Code did not price (record 132):
+/// a turn's result without its figure, a model priced at nothing though
+/// it used tokens, a session that ended mid-turn. Its `cost` is then what
+/// it spent at least, never all.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Unpriced {
+    /// The turn ending now said so (`imece_agent::Event::Unpriced`); its
+    /// `TurnDone` takes it.
+    pub said: bool,
+    /// The session's last turn left something unpriced. Claude Code's
+    /// figure is the session's whole, so a later turn priced whole covers
+    /// it.
+    pub session: bool,
+    /// Gaps no later figure covers: a session that ended mid-turn or
+    /// unpriced. Kept in the store (a session open at quit counted in).
+    pub gaps: u32,
+}
+
+impl Unpriced {
+    /// Whether any of its spending is unpriced.
+    pub fn any(&self) -> bool {
+        self.session || self.gaps > 0
+    }
+
+    /// Its gaps, and what its session left unpriced as one more, since a
+    /// resumed session's figure may or may not cover it: what the store
+    /// keeps.
+    pub fn count(&self) -> u32 {
+        self.gaps + u32::from(self.session || self.said)
     }
 }
 
@@ -855,6 +894,14 @@ pub struct Task {
     /// The newest change settled: what the leader's mail says a `done`
     /// cost.
     pub last: Option<Spend>,
+    /// The agent's unpriced gaps when the round opened (record 132): more
+    /// at its close leave the round unpriced.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub gaps: u32,
+}
+
+fn is_zero(n: &u32) -> bool {
+    *n == 0
 }
 
 /// A failed turn imece tries again (record 79).
@@ -974,6 +1021,7 @@ impl Agent {
             held_mail: 0,
             fault: None,
             task: Task::default(),
+            unpriced: Unpriced::default(),
             attempt: 0,
             watch: Default::default(),
             gone: false,
@@ -3061,6 +3109,10 @@ pub struct World {
     /// What all agents together may spend, in ten-thousandths of a dollar;
     /// one pot, kept between runs.
     pub budget: u64,
+    /// Claude Code is signed in through a plan (record 132): its figures
+    /// are API-equivalent, said with `≈`. Memory only, from each start's
+    /// look.
+    pub estimated: bool,
     /// Researchers that may run at once, across all projects.
     pub max_researchers: usize,
     /// Blocked workers waiting for a free researcher slot.
@@ -3288,6 +3340,79 @@ impl World {
     /// calls.
     pub fn spent(&self) -> u64 {
         self.agents.iter().map(|a| a.cost).sum::<u64>() + self.paid
+    }
+
+    /// Whether some of what the pot paid was never priced (record 132):
+    /// [`World::spent`] is then what it paid at least.
+    pub fn unpriced(&self) -> bool {
+        self.agents.iter().any(|a| a.unpriced.any())
+    }
+
+    /// A figure of Claude Code's as the person reads it (record 132): `≈`
+    /// first on a plan's login, whose figures are API-equivalent; `+?`
+    /// after it when part of it was never priced, `?` alone when nothing
+    /// of it was. Never `$0.00` for what is not known.
+    pub fn money(&self, cost: u64, unpriced: bool) -> String {
+        money(cost, unpriced, self.estimated)
+    }
+
+    /// What agent `id` spent, as [`World::money`] says it.
+    pub fn spent_by(&self, id: AgentId) -> String {
+        let a = &self.agents[id];
+        self.money(a.cost, a.unpriced.any())
+    }
+
+    /// What the agents of project `p` spent, as [`World::money`] says it.
+    pub fn project_spent(&self, p: ProjectId) -> String {
+        let of = || self.agents.iter().filter(|a| a.project == p);
+        let cost = of().map(|a| a.cost).sum();
+        self.money(cost, of().any(|a| a.unpriced.any()))
+    }
+
+    /// Every agent's [`Unpriced::count`] together.
+    pub fn unpriced_count(&self) -> u32 {
+        self.agents.iter().map(|a| a.unpriced.count()).sum()
+    }
+
+    /// What the pot paid, as [`World::money`] says it.
+    pub fn spent_words(&self) -> String {
+        self.money(self.spent(), self.unpriced())
+    }
+
+    /// Agent `id`'s turn about to end did not say all it cost (record
+    /// 132): `model` priced at nothing though it used tokens, or no figure
+    /// at all. Its end ([`World::turn_priced`]) takes it.
+    pub fn turn_unpriced(&mut self, id: AgentId, model: Option<&str>) {
+        let t = self.tick;
+        let a = &mut self.agents[id];
+        a.unpriced.said = true;
+        a.trace(
+            t,
+            match model {
+                Some(m) => format!("cost unknown: {m} used tokens priced at nothing"),
+                None => "cost unknown: the turn's result said none".to_string(),
+            },
+        );
+    }
+
+    /// Agent `id`'s turn ended with its figure booked: the session's
+    /// figure is its whole, so priced now, what an earlier turn of it left
+    /// unpriced is too; else the session stays unpriced (record 132).
+    pub fn turn_priced(&mut self, id: AgentId) {
+        let u = &mut self.agents[id].unpriced;
+        u.session = std::mem::take(&mut u.said);
+    }
+
+    /// Agent `id`'s session is over (record 132); `cut` when it ended
+    /// mid-turn, whose spending no figure will say. What it left unpriced
+    /// becomes a gap for good.
+    pub fn session_over(&mut self, id: AgentId, cut: bool) {
+        let u = &mut self.agents[id].unpriced;
+        if cut || u.session || u.said {
+            u.gaps += 1;
+        }
+        u.session = false;
+        u.said = false;
     }
 
     /// The projects that are open, in id order.
@@ -3707,6 +3832,7 @@ impl World {
             journal,
             inbox: self.inbox.clone(),
             budget: self.budget,
+            estimated: self.estimated,
             max_researchers: self.max_researchers,
             research_queue: VecDeque::new(),
             plans: self.plans.clone(),
@@ -4402,6 +4528,7 @@ impl World {
         let a = &mut self.agents[id];
         if a.role != Role::Leader && a.task.round.is_none() {
             a.task.round = Some((a.cost, tick));
+            a.task.gaps = a.unpriced.gaps;
         }
     }
 
@@ -4423,6 +4550,7 @@ impl World {
             let a = &mut self.agents[h];
             if let Some((from, began)) = a.task.round.take() {
                 round.cost += a.cost.saturating_sub(from);
+                round.unpriced |= a.unpriced.session || a.unpriced.gaps > a.task.gaps;
                 if h == id {
                     round.ticks = tick.saturating_sub(began);
                     round.rounds = 1;
@@ -5348,6 +5476,16 @@ pub fn parse_dollars(s: &str) -> Option<u64> {
     Some(whole.parse::<u64>().ok()? * 10_000 + cents * 100)
 }
 
+/// [`World::money`], `estimated` said apart.
+pub fn money(cost: u64, unpriced: bool, estimated: bool) -> String {
+    let about = if estimated { "≈" } else { "" };
+    match (unpriced, cost) {
+        (true, 0) => "?".to_string(),
+        (true, _) => format!("{about}{}+?", dollars(cost)),
+        (false, _) => format!("{about}{}", dollars(cost)),
+    }
+}
+
 pub fn dollars(cost: u64) -> String {
     if (1..100).contains(&cost) {
         return "<$0.01".to_string();
@@ -5656,6 +5794,7 @@ mod tests {
             journal: Vec::new(),
             inbox: Vec::new(),
             budget: 10_000,
+            estimated: false,
             max_researchers: 0,
             research_queue: Default::default(),
             changes: Vec::new(),
@@ -7128,6 +7267,134 @@ mod tests {
     }
 
     #[test]
+    fn a_figure_reads_api_equivalent_on_a_plan_and_never_zero_when_unknown() {
+        assert_eq!(money(12_300, false, false), "$1.23");
+        assert_eq!(money(12_300, false, true), "≈$1.23");
+        assert_eq!(money(12_300, true, false), "$1.23+?");
+        assert_eq!(money(12_300, true, true), "≈$1.23+?");
+        assert_eq!(money(0, true, true), "?", "nothing known");
+        assert_eq!(money(0, false, false), "$0.00", "nothing spent");
+        let mut w = crate::live::testing::team(2);
+        w.agents[1].cost = 10_000;
+        w.agents[2].cost = 2_000;
+        assert_eq!(w.money(5_000, false), "$0.50");
+        w.estimated = true;
+        assert_eq!(w.money(5_000, false), "≈$0.50");
+        assert_eq!(
+            (w.spent_by(1), w.spent_words()),
+            ("≈$1.00".into(), "≈$1.20".into())
+        );
+        assert!(!w.unpriced());
+        // One agent's gap makes its figure, its project's and the pot's
+        // what they came to at least; the others' stay whole.
+        w.agents[2].unpriced.gaps = 1;
+        assert!(w.unpriced());
+        assert_eq!(w.spent_by(1), "≈$1.00");
+        assert_eq!(w.spent_by(2), "≈$0.20+?");
+        assert_eq!(w.spent_words(), "≈$1.20+?");
+        assert_eq!(w.project_spent(0), "≈$1.20+?");
+        w.agents[2].unpriced = Unpriced::default();
+        w.agents[2].unpriced.session = true;
+        assert_eq!(w.spent_by(2), "≈$0.20+?", "a session's own gap too");
+        // An agent of another project counts in its own alone.
+        w.agents[2].project = 1;
+        w.agents[2].cost = 0;
+        assert_eq!(w.project_spent(0), "≈$1.00");
+        assert_eq!(w.project_spent(1), "?");
+    }
+
+    #[test]
+    fn a_turn_unpriced_stays_so_until_a_whole_figure_and_a_session_s_gap_is_kept_at_its_end() {
+        let mut w = crate::live::testing::team(1);
+        w.turn_unpriced(1, Some("claude-new"));
+        assert_eq!(
+            w.agents[1].unpriced,
+            Unpriced {
+                said: true,
+                session: false,
+                gaps: 0
+            }
+        );
+        assert!(
+            (w.agents[1].trace.back().unwrap())
+                .ends_with("cost unknown: claude-new used tokens priced at nothing")
+        );
+        w.turn_priced(1);
+        assert_eq!(
+            w.agents[1].unpriced,
+            Unpriced {
+                said: false,
+                session: true,
+                gaps: 0
+            }
+        );
+        // A whole figure: the session's figure covers what came before.
+        w.turn_priced(1);
+        assert!(!w.agents[1].unpriced.any());
+        // A session ends: whole and not cut, nothing; cut, or with its
+        // last turn unpriced, or one said and not yet booked, a gap each.
+        w.session_over(1, false);
+        assert_eq!(w.agents[1].unpriced.gaps, 0);
+        w.session_over(1, true);
+        assert_eq!(w.agents[1].unpriced.gaps, 1);
+        w.agents[1].unpriced.session = true;
+        w.session_over(1, false);
+        w.agents[1].unpriced.said = true;
+        w.session_over(1, false);
+        assert_eq!(
+            w.agents[1].unpriced,
+            Unpriced {
+                said: false,
+                session: false,
+                gaps: 3
+            }
+        );
+    }
+
+    #[test]
+    fn a_round_is_unpriced_when_its_agent_or_a_helper_left_a_gap_since_it_opened() {
+        use crate::live::testing::{team, with_helper};
+        let mut w = team(1);
+        let h = with_helper(&mut w, 1);
+        let settle = |w: &mut World| {
+            w.change_ready(change(1, "Fix", &[("a.rs", 1, 0)]));
+            w.settle_change(1);
+            let s = w.change_of(1).unwrap().spend.unwrap();
+            w.change_applied(1, "m".into(), true);
+            s.unpriced
+        };
+        // Gaps from before the round are not its own.
+        w.agents[1].unpriced.gaps = 2;
+        w.round_opens(1);
+        assert_eq!(w.agents[1].task.gaps, 2);
+        assert!(!settle(&mut w), "as many as when it opened");
+        w.round_opens(1);
+        w.agents[1].unpriced.gaps = 3;
+        assert!(settle(&mut w), "one more since");
+        w.round_opens(1);
+        w.agents[1].unpriced.session = true;
+        assert!(settle(&mut w), "its session's last turn");
+        w.agents[1].unpriced.session = false;
+        w.round_opens(1);
+        w.round_opens(h);
+        w.agents[h].unpriced.gaps = 1;
+        assert!(settle(&mut w), "its helper's");
+        // Both: still unpriced.
+        w.round_opens(1);
+        w.round_opens(h);
+        w.agents[1].unpriced.session = true;
+        w.agents[h].unpriced.gaps = 2;
+        assert!(settle(&mut w), "both");
+        w.agents[1].unpriced.session = false;
+        w.round_opens(1);
+        w.agents[h].unpriced.session = true;
+        assert!(
+            !settle(&mut w),
+            "a helper with no round open is not counted"
+        );
+    }
+
+    #[test]
     fn a_change_s_cost_is_settled_at_the_turn_s_end_carried_unapplied_and_dropped_once_applied() {
         use crate::live::testing::{team, with_helper};
         let mut w = team(1);
@@ -7171,6 +7438,7 @@ mod tests {
             cost: 9_000 + 300,
             ticks: 60,
             rounds: 1,
+            unpriced: false,
         };
         assert_eq!(w.change_of(1).unwrap().spend, Some(s));
         let last = w.journal.last().unwrap();
@@ -7196,6 +7464,7 @@ mod tests {
             cost: 9_800,
             ticks: 90,
             rounds: 2,
+            unpriced: false,
         };
         assert_eq!(w.change_of(1).unwrap().spend, Some(again));
         assert_eq!(w.journal.len(), journaled + 1);
@@ -7213,6 +7482,7 @@ mod tests {
             cost: 9_900,
             ticks: 92,
             rounds: 3,
+            unpriced: false,
         };
         assert_eq!(w.change_of(1).unwrap().spend, Some(more));
         // Part applied: the rest, read again, costs what the whole did.
@@ -7236,18 +7506,22 @@ mod tests {
             Spend {
                 cost: 1,
                 ticks: 2,
-                rounds: 3
+                rounds: 3,
+                unpriced: false,
             }
             .plus(Spend {
                 cost: 10,
                 ticks: 20,
-                rounds: 30
+                rounds: 30,
+                unpriced: true,
             }),
             Spend {
                 cost: 11,
                 ticks: 22,
-                rounds: 33
-            }
+                rounds: 33,
+                unpriced: true,
+            },
+            "a part unpriced leaves the whole unpriced"
         );
     }
 
@@ -9474,6 +9748,7 @@ mod tests {
             cost: 40,
             ticks: 3,
             rounds: 1,
+            unpriced: false,
         };
         let mut w = crate::live::testing::team(1);
         w.change_proposed(change(1, "T", &[("a", 1, 0)]), a_store_proposal(5));

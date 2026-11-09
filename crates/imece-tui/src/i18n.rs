@@ -1364,6 +1364,8 @@ pub struct Text {
     pub seen_checking: &'static str,
     pub seen_missing: &'static str,
     pub login_yes: &'static str,
+    /// Signed in through a plan: the figures are API-equivalent (record 132).
+    pub login_plan: &'static str,
     /// The command that signs it in.
     pub login_no: &'static str,
     /// It did not say.
@@ -2645,6 +2647,7 @@ pub const EN: Text = Text {
     seen_checking: "checking…",
     seen_missing: "not on PATH",
     login_yes: "signed in",
+    login_plan: "signed in, a plan · ≈ API prices",
     login_no: "not signed in: run {}",
     login_unknown: "its sign-in is checked when it first starts",
     welcome_keys_title: "Keys to start with:",
@@ -3997,6 +4000,7 @@ pub const TR: Text = Text {
     seen_checking: "bakılıyor…",
     seen_missing: "PATH'te yok",
     login_yes: "giriş yapılmış",
+    login_plan: "giriş yapılmış, plan · ≈ API fiyatı",
     login_no: "giriş yapılmamış: {} çalıştır",
     login_unknown: "girişi ilk açıldığında denetlenir",
     welcome_keys_title: "Başlamak için tuşlar:",

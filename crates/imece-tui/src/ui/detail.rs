@@ -79,7 +79,7 @@ pub(crate) fn head_line(app: &App, id: AgentId, tab: Tab, width: usize) -> Line<
             dim(),
         ));
     }
-    spans.push(Span::styled(format!(" · {}", dollars(a.cost)), dim()));
+    spans.push(Span::styled(format!(" · {}", w.spent_by(a.id)), dim()));
     if tab == Tab::Diff
         && let Some(c) = w.change_of(id)
     {

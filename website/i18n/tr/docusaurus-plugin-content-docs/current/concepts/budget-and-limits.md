@@ -40,6 +40,14 @@ Bir tur bütçeye Claude Code'un bildirdiği dolarları yazar (`total_cost_usd`)
 
 Harcanan, her başlangıçta depodan geri okunur; ajanlar ve imece'nin kendi çağrıları birlikte.
 
+## Bir rakam ne der
+
+Her dolar rakamı Claude Code'undur: her turu kendi fiyat tablosuyla fiyatlar, imece onun dediğini yazar. Bir rakamın okunuşunu iki şey değiştirir:
+
+- **Planda `≈`.** claude.ai planıyla (Pro, Max, Team) giriş yapılmışsa Claude Code turları yine API fiyatıyla fiyatlar, ama ödediğiniz plandır. O zaman Claude Code'un verdiği her rakam `≈` ile başlar, API eşdeğeri: `≈$3.10 of $20.00`, `≈$0.84 · 12 min`. Sizin koyduğunuz bütçe düz kalır. imece girişi her başlangıçta okur (`claude auth status --json`: `authMethod` `claude.ai`); ortamdaki bir API anahtarı token başına öder, rakamları düzdür. `:welcome` hangisi olduğunu söyler: `giriş yapılmış, plan · ≈ API fiyatı`.
+- **Hiç fiyatlanmayan için `+?`.** Kimsenin fiyatlamadığı harcama için bir rakam asla `$0.00` olmaz. Sonucu maliyet söylemeyen bir tur, token kullandığı halde Claude Code'un sıfır fiyatladığı bir model (fiyatını bilmediği bir model) ve turun ortasında biten bir oturum (bir çıkış, `:close`, `:forget`, bir çökme) bir ajanın harcamasının bir kısmını bilinmez bırakır. Rakamı o zaman `$2.29+?` olur, en az harcadığı; hiçbiri bilinmiyorsa yalnız `?`. Üzerinde çalıştığı değişiklik, projesinin toplamı, bütçe ve vedadaki `spent this run` da aynı okunur. Rakamsız bir tur sonucunu oturumun bir sonraki sonucu yeniden kapsar, çünkü o bütün oturumu söyler; turun ortasında biten bir oturum ise kalıcı olarak `+?` kalır, depoda tutulur. Ajanın izi nedenini söyler: `cost unknown: the turn's result said none`. Bütçe sınırı bilinen kısımla çalışır.
+- Maliyetinin hepsini söylemeyen `:commit` ve `:review` ayırdığını tutar, rakamsız duran bir çağrı gibi.
+
 ## `:` menüsünde `$`
 
 `:` menüsü her komutun değerini ardında gösterir, `budget (spent $3.10 of $20.00)`, ve sonraki faturayı büyüten komutları `$` ile işaretler:
@@ -80,7 +88,7 @@ Bütçe takımın ne harcadığını söyler; her değişiklik tek başına neye
 
 ## Demo
 
-`--demo` uydurma bir bütçeyi aynı yolla harcar: başlık, hız, azalan bütçe satırı, `:budget`, kullanım pencereleri (harcamadan doldurulur), her değişikliğin maliyeti ve `:commit` ile `:review`'un birkaç kuruşu canlıdaki gibi görünür.
+`--demo` uydurma bir bütçeyi aynı yolla harcar: başlık, hız, azalan bütçe satırı, `:budget`, kullanım pencereleri (harcamadan doldurulur), her değişikliğin maliyeti ve `:commit` ile `:review`'un birkaç kuruşu canlıdaki gibi görünür. Demo bir planla giriş yapar, bu yüzden rakamları `≈` ile okunur; okuduğu her beşinci değişiklik maliyet söylemeyen bir turla biter (`+?`), o işçinin bir sonraki turuna dek.
 
 ## Ayrıca bakınız
 

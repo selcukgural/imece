@@ -384,6 +384,19 @@ impl App {
         !self.news.is_empty() || self.welcome || self.digest.is_some() || self.left_off.is_some()
     }
 
+    /// What Claude Code said of its sign-in decides how its figures read:
+    /// a plan's are API-equivalent, said `≈` (record 132). Unknown or not
+    /// signed in leaves them as they were.
+    pub fn take_plan(&mut self) {
+        if let Seen::Here {
+            login: Login::Yes { subscription },
+            ..
+        } = &self.seen
+        {
+            self.world.estimated = *subscription;
+        }
+    }
+
     /// `:welcome`: the first-run window, Claude Code asked again (live).
     pub fn open_welcome(&mut self) {
         self.welcome = true;
@@ -437,6 +450,7 @@ impl App {
             }
         );
         self.seen = seen;
+        self.take_plan();
         if !std::mem::take(&mut self.lead_check) || !out {
             return;
         }
@@ -575,7 +589,7 @@ mod tests {
         assert!(app.welcome);
         assert!(!app.lead_check, "the window is open already");
         app.looked();
-        assert_eq!(app.seen, here("2.1.3", Login::Yes));
+        assert_eq!(app.seen, here("2.1.3", Login::Yes { subscription: true }));
         assert!(app.looking.is_none(), "the answer came");
         // Any key closes it and does nothing else.
         app.on_key(key(KeyCode::Char('?')));
@@ -588,7 +602,35 @@ mod tests {
         assert!(app.welcome);
         assert_eq!(app.seen, Seen::Checking);
         app.looked();
-        assert_eq!(app.seen, here("2.1.3", Login::Yes));
+        assert_eq!(app.seen, here("2.1.3", Login::Yes { subscription: true }));
+    }
+
+    #[test]
+    fn a_plan_s_sign_in_makes_the_figures_api_equivalent_and_a_key_s_plain() {
+        fn answer(subscription: bool) -> welcome::Answers {
+            let (tx, rx) = std::sync::mpsc::channel();
+            tx.send(here("2.1.3", Login::Yes { subscription })).unwrap();
+            rx
+        }
+        let mut app = live_welcome(|| answer(true));
+        assert!(!app.world.estimated);
+        app.start_welcome(false);
+        app.looked();
+        assert!(app.world.estimated, "a plan");
+        app.look = Some(|| answer(false));
+        app.start_welcome(false);
+        app.looked();
+        assert!(!app.world.estimated, "an API key");
+        // Signed out or not said: as it was.
+        app.world.estimated = true;
+        for login in [Login::No, Login::Unknown] {
+            app.seen = here("2.1.3", login);
+            app.take_plan();
+            assert!(app.world.estimated);
+        }
+        app.seen = Seen::Missing;
+        app.take_plan();
+        assert!(app.world.estimated);
     }
 
     #[test]
@@ -601,7 +643,7 @@ mod tests {
         app.looked();
         assert!(!app.welcome);
         assert!(!app.lead_check);
-        assert_eq!(app.seen, here("2.1.3", Login::Yes));
+        assert_eq!(app.seen, here("2.1.3", Login::Yes { subscription: true }));
         // Not signed in: the window opens.
         let mut app = live_welcome(signed_out);
         app.start_welcome(false);
@@ -638,7 +680,7 @@ mod tests {
             panic!("{:?}", app.seen);
         };
         assert!(version.ends_with("· demo"), "{version}");
-        assert_eq!(*login, Login::Yes);
+        assert_eq!(*login, Login::Yes { subscription: true });
         assert!(!app.welcome && app.news.is_empty() && app.look.is_none());
         app.input = ":welcome".into();
         app.typing = true;
