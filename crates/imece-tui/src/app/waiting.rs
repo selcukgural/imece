@@ -617,6 +617,17 @@ mod tests {
         app.command("allow a && b");
         assert!(flash(&app).starts_with("this line runs more than plain commands"));
         assert_eq!(app.world.projects[p].allowed.len(), 1);
+        // A Python module by its interpreter and -m (record 136).
+        app.command("allow python3 -m pip");
+        assert_eq!(
+            flash(&app),
+            format!("{name}: yes from now on to python3 -m pip …")
+        );
+        app.command("allow python3 -m pip");
+        assert_eq!(
+            flash(&app),
+            format!("{name}: no yes from now on to python3 -m pip … any more")
+        );
         // A in waiting for you on a line no rule can hold: that line alone,
         // its ask goes on; `:allow` with the line, as listed or bare, takes
         // it back, and never adds one.

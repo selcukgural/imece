@@ -155,7 +155,7 @@ It costs: each call at most $0.05 (the call's own hard cap), a day (UTC) at most
 
 ### `:allow [PROGRAM [WORD]]`
 
-The project at hand's yes from now on: commands its agents run without asking you (see [approvals](../concepts/approvals-and-questions.md#a-yes-from-now-on)). `:allow` alone says the list (`kule: yes from now on to make, npm run …`, or `kule: no yes from now on; A on an ask, or :allow PROGRAM [WORD]`); `:allow npm run` adds one (the project's open asks it covers go on), and the same again takes it out (`kule: no yes from now on to npm run … any more`). A program and at most one word, not an option first: `:allow rm -rf` is refused. `A` on an ask in TO DECIDE adds what that ask runs, or that line alone when no such yes can hold it; `:allow` with the line takes that one out. Kept with the project between runs.
+The project at hand's yes from now on: commands its agents run without asking you (see [approvals](../concepts/approvals-and-questions.md#a-yes-from-now-on)). `:allow` alone says the list (`kule: yes from now on to make, npm run …`, or `kule: no yes from now on; A on an ask, or :allow PROGRAM [WORD]`); `:allow npm run` adds one (the project's open asks it covers go on), and the same again takes it out (`kule: no yes from now on to npm run … any more`). A program and at most one word, not an option first: `:allow rm -rf` is refused; a Python interpreter's `-m` with its module is the one option first that names one (`:allow python3 -m pip`). `A` on an ask in TO DECIDE adds what that ask runs, or that line alone when no such yes can hold it; `:allow` with the line takes that one out. Kept with the project between runs.
 
 ### `:copy [PATH]`
 

@@ -111,7 +111,8 @@ pub(super) fn system_prompt(
         .map(|o| o.name.as_str())
         .collect();
     let leader = &w.agents[w.projects[a.project].leader].name;
-    match a.role {
+    let tests = tests_note(&w.projects[a.project].runners);
+    let text = match a.role {
         Role::Leader => {
             let team = if max_workers == 0 {
                 "The person runs you without workers: answer from what you read, and \
@@ -337,7 +338,27 @@ pub(super) fn system_prompt(
                 abilities(Role::Worker, confine)
             )
         }
+    };
+    text + &tests
+}
+
+/// What an agent is told of the tests its project's files call for
+/// (record 136): which run at once, and to run them as one program so a
+/// worker's run shows on its change. Nothing when there are none (cargo's
+/// are said in [`abilities`]).
+pub(super) fn tests_note(tests: &Runners) -> String {
+    if !tests.any() {
+        return String::new();
     }
+    format!(
+        "\n\nThis repository's tests run at once, through the run tool or your shell: {} \
+         (python as well as python3; for npm, pnpm or yarn, words for the test script go \
+         after --). Run them as one program with its arguments, with no pipe (| tail) \
+         and no redirection: anything more waits for the person's yes. Prefer the run \
+         tool: it tidies the output, and a worker's run through it shows on the change \
+         the person reads.",
+        tests.lines().join(", ")
+    )
 }
 
 /// The file Claude Code's own loader reads in a directory it is given
@@ -883,6 +904,34 @@ mod tests {
             "{from}"
         );
         assert!(!system_prompt(&w, 2, 4, 2, Confine::Standard).contains("started from"));
+    }
+
+    #[test]
+    fn every_agent_is_told_the_tests_its_project_s_files_call_for_last() {
+        let mut w = team(2);
+        let helper = with_helper(&mut w, 1);
+        for id in [0, 1, helper] {
+            let p = system_prompt(&w, id, 4, 2, Confine::Standard);
+            assert!(!p.contains("This repository's tests"), "{p}");
+        }
+        assert_eq!(tests_note(&crate::runners::Runners::default()), "");
+        w.projects[0].runners = crate::runners::Runners {
+            python: true,
+            node: Some(crate::runners::Node::Yarn),
+            go: false,
+        };
+        let note = "\n\nThis repository's tests run at once, through the run tool or your \
+                    shell: python3 -m pytest …, python3 -m unittest …, pytest …, yarn test, \
+                    yarn run test (python as well as python3; for npm, pnpm or yarn, words for \
+                    the test script go after --). Run them as one program with its arguments, \
+                    with no pipe (| tail) and no redirection: anything more waits for the \
+                    person's yes. Prefer the run tool: it tidies the output, and a worker's \
+                    run through it shows on the change the person reads.";
+        assert_eq!(tests_note(&w.projects[0].runners), note);
+        for id in [0, 1, helper] {
+            let p = system_prompt(&w, id, 4, 2, Confine::Standard);
+            assert!(p.ends_with(note), "{p}");
+        }
     }
 
     #[test]

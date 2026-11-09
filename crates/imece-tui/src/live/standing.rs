@@ -4,7 +4,10 @@
 //! program and its first argument (`npm run`, `dotnet ef`), as Claude
 //! Code's `Bash(npm run:*)`; it never matches a command with an option
 //! before that argument, and git's options that start a program
-//! (`tools::git_denied`) never match at all. A line of several commands
+//! (`tools::git_denied`) never match at all. One option first is a rule's
+//! too: a Python interpreter's `-m` with the module it runs (`python3 -m
+//! pip`, record 136), the module being what the person reads and says yes
+//! to; the interpreter alone or with any other option first has none. A line of several commands
 //! (`&&`, `||`, `;`, `|`, a new line) is allowed when each of them is
 //! routine or has its rule.
 //!
@@ -196,10 +199,49 @@ fn commands_in(line: &str, nested: usize) -> Option<Vec<Vec<String>>> {
     Some(all)
 }
 
+/// Whether `program` names a Python interpreter (`python`, `python3`,
+/// `python3.12`).
+pub(crate) fn python(program: &str) -> bool {
+    program
+        .strip_prefix("python")
+        .is_some_and(|v| v.chars().all(|c| c.is_ascii_digit() || c == '.') && !v.starts_with('.'))
+}
+
+/// Whether `word` names a Python module as `-m` takes it: names of
+/// letters, digits and `_` joined by dots, none starting with a digit.
+fn module(word: &str) -> bool {
+    word.split('.').all(|part| {
+        let mut chars = part.chars();
+        chars
+            .next()
+            .is_some_and(|c| c == '_' || c.is_ascii_alphabetic())
+            && chars.all(|c| c == '_' || c.is_ascii_alphanumeric())
+    })
+}
+
+/// The first argument of a rule for a Python interpreter's `-m MODULE`.
+const MODULE: &str = "-m ";
+
 /// The rule a yes from now on to the command `argv` makes: its program
-/// and first argument, or the program alone when it has none. Those two
-/// are words a person can read, never what a shell makes of them.
+/// and first argument, or the program alone when it has none; for a
+/// Python interpreter's `-m MODULE`, the program and those two. Those
+/// words are a person can read, never what a shell makes of them.
 pub(crate) fn rule_of(argv: &[String]) -> Result<Standing, Why> {
+    if let [program, m, name, ..] = argv
+        && python(program)
+        && m == "-m"
+    {
+        if expanded(name) {
+            return Err(Why::NotPlain);
+        }
+        if module(name) {
+            return Ok(Standing {
+                program: program.clone(),
+                sub: Some(format!("{MODULE}{name}")),
+                whole: false,
+            });
+        }
+    }
     if argv.iter().take(2).any(|w| expanded(w)) {
         return Err(Why::NotPlain);
     }
@@ -225,9 +267,15 @@ pub(crate) fn rule_of(argv: &[String]) -> Result<Standing, Why> {
 /// ([`covered`]).
 pub(crate) fn matches(rule: &Standing, argv: &[String]) -> bool {
     let denied = |a: &String| git_denied(a) || expanded(a);
+    let first = match rule.sub.as_deref().and_then(|s| s.strip_prefix(MODULE)) {
+        Some(name) => {
+            argv.get(1).is_some_and(|m| m == "-m") && argv.get(2).is_some_and(|n| n == name)
+        }
+        None => argv.get(1) == rule.sub.as_ref(),
+    };
     !rule.whole
         && argv.first() == Some(&rule.program)
-        && argv.get(1) == rule.sub.as_ref()
+        && first
         && !(rule.program == "git" && argv.iter().any(denied))
 }
 
@@ -291,6 +339,7 @@ pub(crate) fn named(words: &str) -> Result<Standing, Why> {
     match commands(words).as_deref() {
         Some(all) if all.iter().flatten().any(|w| expanded(w)) => Err(Why::NotPlain),
         Some([argv]) if argv.len() <= 2 => rule_of(argv),
+        Some([argv]) if argv.len() == 3 && python(&argv[0]) && argv[1] == "-m" => rule_of(argv),
         Some([argv]) => Err(Why::OptionFirst(argv.join(" "))),
         _ => Err(Why::NotPlain),
     }
@@ -659,6 +708,105 @@ mod tests {
         assert!(!covered("'foo bar'", routine, std::slice::from_ref(&rule)));
         assert!(!matches(&rule, &["foo bar".to_string()]));
         assert!(!covered("cargo", |_| false, &[whole("cargo x")]));
+    }
+
+    #[test]
+    fn a_python_module_is_a_rule_with_its_dash_m() {
+        let pip = rule("python3", Some("-m pip"));
+        assert_eq!(rule_of(&words("python3 -m pip install x")), Ok(pip.clone()));
+        assert_eq!(rule_of(&words("python3 -m pip")), Ok(pip.clone()));
+        assert_eq!(pip.line(), "python3 -m pip …");
+        assert_eq!(
+            rule_of(&words("python -m http.server 8000")),
+            Ok(rule("python", Some("-m http.server")))
+        );
+        assert_eq!(
+            rule_of(&words("python3.12 -m _x.y2")),
+            Ok(rule("python3.12", Some("-m _x.y2")))
+        );
+        assert_eq!(
+            rule_of(&words("python3 -m pre_commit run")),
+            Ok(rule("python3", Some("-m pre_commit")))
+        );
+        // The interpreter alone, another option first, a word no module
+        // is, another program's `-m`: as before.
+        for line in [
+            "python3 -c x",
+            "python3 -m",
+            "python3 -I -m pip",
+            "python3 -m 2x",
+            "python3 -m a..b",
+            "python3 -m .a",
+            "python3 -m a-b",
+            "python3 -m a/b",
+            "git -m x",
+            "pythonx -m pip",
+            "python.3 -m pip",
+            "py -m pip",
+        ] {
+            assert_eq!(
+                rule_of(&words(line)),
+                Err(Why::OptionFirst(line.into())),
+                "{line}"
+            );
+        }
+        assert_eq!(
+            rule_of(&words("python3 x.py")),
+            Ok(rule("python3", Some("x.py")))
+        );
+        let open = |w: &[&str]| {
+            let words: Vec<String> = w
+                .iter()
+                .map(|w| w.replace('?', &EXPANDED.to_string()))
+                .collect();
+            rule_of(&words)
+        };
+        assert_eq!(open(&["python3", "-m", "?"]), Err(Why::NotPlain));
+        assert_eq!(open(&["python3", "-m", "pip", "?"]), Ok(pip.clone()));
+        // It matches that module run by that interpreter, whatever follows.
+        assert!(matches(&pip, &words("python3 -m pip install -U x")));
+        assert!(matches(&pip, &words("python3 -m pip")));
+        assert!(!matches(&pip, &words("python3 -m pipx")));
+        assert!(!matches(&pip, &words("python3 -m")));
+        assert!(!matches(&pip, &words("python3 -c pip")));
+        assert!(!matches(&pip, &words("python3 -I -m pip")));
+        assert!(!matches(&pip, &words("python -m pip")));
+        assert!(!matches(&pip, &words("python3 pip")));
+        assert!(covered(
+            "python3 -m pip list 2>&1",
+            |_| false,
+            std::slice::from_ref(&pip)
+        ));
+        assert_eq!(
+            needed("python3 -m mypy src && python3 -m pip list", |_| false, &[]),
+            Ok(vec![
+                rule("python3", Some("-m mypy")),
+                rule("python3", Some("-m pip"))
+            ])
+        );
+        assert_eq!(named("python3 -m pip"), Ok(pip));
+        assert_eq!(
+            named("python3 -m pip install"),
+            Err(Why::OptionFirst("python3 -m pip install".into()))
+        );
+        assert_eq!(
+            named("npm run x"),
+            Err(Why::OptionFirst("npm run x".into())),
+            "three words only for -m"
+        );
+        assert_eq!(
+            named("python3 -c x"),
+            Err(Why::OptionFirst("python3 -c x".into()))
+        );
+        assert_eq!(named("python3 -m $X"), Err(Why::NotPlain));
+        for yes in ["python", "python3", "python3.12", "python2"] {
+            assert!(python(yes), "{yes}");
+        }
+        for no in [
+            "py", "pythonx", "python.3", "python-3", "ipython", "Python3", "",
+        ] {
+            assert!(!python(no), "{no}");
+        }
     }
 
     #[test]

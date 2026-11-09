@@ -15,7 +15,7 @@ Claude Code `--permission-prompts host --permission-prompt-tool mcp__imece__appr
 
 ### Rutin komutlar hemen çalışır
 
-Bir kabuk komutu **rutin**dir: tek satırsa, argümanlarıyla tek bir programsa (kabuğun başka türlü okuyacağı hiçbir şey yok: boru, yönlendirme, `&&`, `$`, glob yok) ve `run` aracının politikası role onu çalıştırmaya izin veriyorsa (aşağıda). Rutin bir komuta kendi başına izin verilir, izde "allowed on its own" satırıyla; derleme, testler ve git'in okuma komutları sizi asla beklemez.
+Bir kabuk komutu **rutin**dir: tek satırsa, argümanlarıyla tek bir programsa (kabuğun başka türlü okuyacağı hiçbir şey yok: boru, yönlendirme, `&&`, `$`, glob yok) ve `run` aracının politikası role onu çalıştırmaya izin veriyorsa (aşağıda). Rutin bir komuta kendi başına izin verilir, izde "allowed on its own" satırıyla; derleme, testler ve git'in okuma komutları sizi asla beklemez. Bu bir Python, JavaScript ya da Go checkout'unun kendi testleri için de geçerlidir ([aşağıda](#bir-checkoutun-istediği-testler)): `python3 -m unittest -v` hemen çalışır, `python3 -m unittest 2>&1 | tail -5` sorar, `cargo test | tail` gibi.
 
 ### Kalan her şey bekler
 
@@ -40,7 +40,7 @@ Bir istek ne gösterir: kabuk komutu için komutu; başka bir araç için dokund
 
 ### Artık hep evet
 
-Bir istekte `A`, o projenin bütün ajanları için isteğin komutlarına artık hep evet der: `npm run build` `npm run …` verir (program ve ilk argümanı), `make` `make` verir. İstek sürer, projenin artık kapsanan diğer açık istekleri de; yalnız böyle komutlar (ve rutin olanlar) çalıştıran sonraki bir istek size sormadan sürer, izi `allowed by your yes from now on: Bash: …` der. Birkaç komutlu bir satır (`&&`, `||`, `;`, `|`) her biri rutinse ya da hep eveti varsa sürer. Bir hep evetin iki kelimesinden sonra satırda `$NAME`, glob ya da `$(…)` olabilir; `$(…)` içinde çalışan da kendi hep evetini ister: `gh pr view "$(git branch --show-current)"` üzerinde `A`, `gh pr …` ve `git branch …` verir. `2>&1` ve `>/dev/null` bir şey değiştirmez. Bunlar rutin bir komut ya da git için asla sayılmaz, çünkü kabuk yasaklı kelimeleri gizleyebilir (`cargo $X`, `git grep $X`). Böyle bir hep evetin tutamayacağı satır (`rm -rf target` gibi önce seçenek, dosyaya yönlendirme, ters tırnak) yalnız o satıra hep evet alır, `` `rm -rf target` `` diye gösterilir: yalnız o baytlar sürer, `rm -rf /` yine sorar. Bir dosya düzenlemenin ya da bir getirmenin hep eveti olamaz: `A` nedenini söyler, `a` bir kez izin verir. Liste çalıştırmalar arasında projeyle saklanır; `:allow` gösterir, `:allow npm run` adıyla ekler (başından kalkmadan önce), yeniden `:allow npm run` çıkarır; `:allow rm -rf target` o satırın hep evetini çıkarır. Günlük `shop-api: artık hep evet diyorsun: npm run …` der.
+Bir istekte `A`, o projenin bütün ajanları için isteğin komutlarına artık hep evet der: `npm run build` `npm run …` verir (program ve ilk argümanı), `make` `make` verir. Bir Python yorumlayıcısının `-m`'i modülüyle okunur: `python3 -m pip install x` `python3 -m pip …` verir; bu, o modül için ardından gelen her kelimeyle geçerlidir, başka modül için ya da `python3`'ün kendisi için değil (`python3 -c …`, `python3 x.py` yine sorar). İstek sürer, projenin artık kapsanan diğer açık istekleri de; yalnız böyle komutlar (ve rutin olanlar) çalıştıran sonraki bir istek size sormadan sürer, izi `allowed by your yes from now on: Bash: …` der. Birkaç komutlu bir satır (`&&`, `||`, `;`, `|`) her biri rutinse ya da hep eveti varsa sürer. Bir hep evetin iki kelimesinden sonra satırda `$NAME`, glob ya da `$(…)` olabilir; `$(…)` içinde çalışan da kendi hep evetini ister: `gh pr view "$(git branch --show-current)"` üzerinde `A`, `gh pr …` ve `git branch …` verir. `2>&1` ve `>/dev/null` bir şey değiştirmez. Bunlar rutin bir komut ya da git için asla sayılmaz, çünkü kabuk yasaklı kelimeleri gizleyebilir (`cargo $X`, `git grep $X`). Böyle bir hep evetin tutamayacağı satır (`rm -rf target` gibi önce seçenek, dosyaya yönlendirme, ters tırnak) yalnız o satıra hep evet alır, `` `rm -rf target` `` diye gösterilir: yalnız o baytlar sürer, `rm -rf /` yine sorar. Bir dosya düzenlemenin ya da bir getirmenin hep eveti olamaz: `A` nedenini söyler, `a` bir kez izin verir. Liste çalıştırmalar arasında projeyle saklanır; `:allow` gösterir, `:allow npm run` adıyla ekler (başından kalkmadan önce), yeniden `:allow npm run` çıkarır; `:allow rm -rf target` o satırın hep evetini çıkarır. Günlük `shop-api: artık hep evet diyorsun: npm run …` der.
 
 ### Bu tur evet
 
@@ -80,6 +80,7 @@ Her ajanın bus'ta bir `run` aracı vardır: argümanlarıyla tek bir program, k
 | --- | --- |
 | `cargo` | bağımlılıkları değiştiren ya da projenin dışına uzanan komutlar dışında hepsi: `add`, `remove`, `rm`, `install`, `uninstall`, `publish`, `login`, `logout`, `owner`, `yank` yok. Lider için dosya değiştirenler de yok (`--check`'siz `fmt`, `fix`, `clean`, `init`, `new`). |
 | `git` | yalnız okuma komutları: `blame`, `diff`, `grep`, `log`, `ls-files`, `rev-parse`, `show`, `status`. Komuttan önce seçenek yok (`-c`, `-C`, `--git-dir`), pager başlatan ya da dosya yazan yok (`-O…`, `--open-files-in-pager…`, `--output…`); kısa seçenekler birleşik yazılsa da (`-iO…`), uzun ad kısaltılsa da (`--open=…`). |
+| checkout'un testleri | dosyalarının istediği test komutları ([aşağıda](#bir-checkoutun-istediği-testler)), her rol için, `cargo test` gibi. |
 | `--run PROG[,..]` | adını verdiğiniz programlar (`--run npm,make`), yalnız işçiler ve yardımcılar için; yinelenebilir. |
 | başka her şey | reddedilir; izinli olanların listesi ve nasıl ekleneceğiyle. |
 
@@ -89,6 +90,20 @@ Her ajanın bus'ta bir `run` aracı vardır: argümanlarıyla tek bir program, k
 - `run`'ın kendi ağ engeli yoktur; lockfile uygun değilse cargo registry'ye uzanabilir.
 
 Hangi kabuk komutlarının rutin olduğuna aynı politika karar verir; `standard` altında bir işçinin `cargo test`'i `run`'dan da Claude Code'un kabuğundan da geçse çalışır; yalnız bir `run` sonucunu çalıştığı ağaca bağlar ve değişiklikte gösterir ([değişiklikler](../concepts/changes.md)).
+
+### Bir checkout'un istediği testler
+
+imece bir projenin hangi testleri olduğunu checkout'unuzun dosyalarından okur, git'in dosyalarıyla birlikte listelediği gibi (kendi iş parçacığında, proje açılırken ve ajanlar çalışırken yeniden), ve bu test komutlarını `cargo test`'i çalıştırdığı gibi çalıştırır: rutin, `run` üzerinden; böylece bir çalıştırma değişikliğin kararında sayılır. Yalnız bu biçimler, asla programın bütünü değil:
+
+| Checkout'ta şu varsa | Hemen çalışır |
+| --- | --- |
+| üstünde `pyproject.toml`, `setup.py`, `setup.cfg`, `tox.ini`, `pytest.ini` ya da bir `requirements*.txt`, ya da herhangi bir yerde bir `test_*.py` / `*_test.py` | `python3 -m pytest …`, `python3 -m unittest …` (ya da `python` ile), `pytest …` |
+| üstünde `package.json` | `npm test`, `npm run test`, test betiğine giden kelimeler `--`'dan sonra; bir `pnpm-lock.yaml` için `npm` yerine `pnpm`, bir `yarn.lock` için `yarn` |
+| üstünde `go.mod` | `go test …` |
+
+Biçimden sonra gelen de denetlenir: pytest ve unittest yalnız testleri seçen, gösteren ya da durduran seçenekleri alır (`-k`, `-m`, `-x`, `-v`, `-q`, `-s`, `--lf`, `--tb`, `--maxfail`, `-n`, `discover -s -p -t`, …), `go test` yalnız `-run`, `-count`, `-race`, `-v`, `-timeout`, `-short`, `-cover`, `-json`, `-tags` ve benzerlerini, paketleri `./…` olarak. Bir eklenti yükleyen, seçenekleri ya da argümanları bir dosyadan okuyan, bir dosya yazan ya da başka bir program çalıştıran seçenek reddedilir (`pytest -p`, `-c`, `-o`, `@args`, `--basetemp`, `--junitxml`; `go test -exec`, `-o`, `-toolexec`, `-coverprofile`, `-args`), paket yöneticisinin `--`'dan önceki kendi seçenekleri de (`npm test --prefix …`). Hiçbir kelime ajanın dizininin dışında bir yol adlandıramaz: `/…`, `~…` ya da bir `..` parçası, `=`'den sonra da. `python3 -c …`, `python3 script.py`, `npm run build`, `node x.js`, `go build` yine sorar; bir hep evet (`A`) onları tutar.
+
+Günlük, imece bir projenin dosyalarını ilk okuduğunda ve her değiştiğinde neyi istediğini söyler (`web projesinin dosyaları şu testleri gösteriyor; artık sana sormadan, run aracıyla da çalışırlar: npm test, npm run test`), `whoami` onları bir ajana adlandırır ve her ajanın yönergeleri onları adlandırır; böylece ajan onları bir boru üzerinden değil tek program olarak çalıştırır. Bu testler deponun kodunu çalıştırır (bir `conftest.py`, `package.json`'daki bir test betiği), `cargo test`'in bir `build.rs`'i çalıştırması gibi: depoya yazabilen bir ajan onlara zaten her şeyi yaptırabilir ve sayılan evet sizindir, değişikliğin üzerinde. Komutlar sizin checkout'unuzdan okunur; bir işçinin kendi yeni `package.json`'ı siz onu uygulayana kadar hiçbir şeyin kilidini açmaz. Git'siz bir klasör hiçbirini okumaz.
 
 ## Ayrıca bakınız
 

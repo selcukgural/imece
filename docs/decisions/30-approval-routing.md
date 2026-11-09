@@ -153,3 +153,5 @@ routine; an
 `Write` outside the directory shows the path, not the content); no
 "allow for the session" rule, every non-routine ask waits; Claude Code's
 own read-only rules decide what never reaches imece.
+
+Since record 136 a routine command may also be one of the test commands its project's files call for (`python3 -m unittest -v`, `npm test`, `go test ./...`), with the same one-line, one-program checks: `python3 -m unittest 2>&1 | tail -5` still asks.

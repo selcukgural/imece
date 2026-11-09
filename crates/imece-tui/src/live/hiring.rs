@@ -227,8 +227,9 @@ impl Live {
     }
 
     /// `whoami`'s answer for agent `from`: its name, role and project, who
-    /// it answers to, what is left of the pot, and whether it may hire
-    /// (as `hire` would answer).
+    /// it answers to, what is left of the pot, whether it may hire (as
+    /// `hire` would answer), and the tests its project's files call for
+    /// (record 136), when they call for any.
     pub(super) fn whoami(&self, w: &World, from: AgentId) -> String {
         let a = &w.agents[from];
         let project = &w.projects[a.project];
@@ -259,14 +260,21 @@ impl Live {
             }
             Err(why) => format!("no: {why}"),
         };
-        format!(
+        let mut out = format!(
             "name: {}\nrole: {role}\nproject: {}\nyou answer to: {over}\nbudget left: {} of \
              {} (one pot for every agent)\nmay hire: {hiring}",
             a.name,
             project.name,
             dollars(left),
             dollars(w.budget),
-        )
+        );
+        if project.runners.any() {
+            out.push_str(&format!(
+                "\ntests that run at once, through the run tool too: {}",
+                project.runners.lines().join(", ")
+            ));
+        }
+        out
     }
 
     /// The leader `from` adds a worker, or the worker `from` adds a helper
@@ -1027,6 +1035,18 @@ mod tests {
         assert_eq!(live.hire_room(&w, 2), Ok((0, 1)), "the other worker's own");
         live.max_helpers = 0;
         assert!(live.whoami(&w, 2).contains("without helpers"));
+        // The tests the project's files call for, last, when there are any.
+        assert!(!live.whoami(&w, 2).contains("tests"));
+        w.projects[0].runners = crate::runners::Runners {
+            go: true,
+            ..Default::default()
+        };
+        assert!(
+            live.whoami(&w, 2)
+                .ends_with("\ntests that run at once, through the run tool too: go test …"),
+            "{}",
+            live.whoami(&w, 2)
+        );
         // Spent past the pot: nothing left, never below.
         w.paid = 20_000;
         assert!(live.whoami(&w, 2).contains("budget left: $0.00 of $1.00"));
