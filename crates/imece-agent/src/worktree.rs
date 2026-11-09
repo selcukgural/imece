@@ -681,6 +681,9 @@ pub struct Stand {
     /// included: what a done would hand the person now.
     pub added: u32,
     pub removed: u32,
+    /// Whether it holds a change against its HEAD (its mark): what
+    /// [`change`] would read, a binary file or a mode included.
+    pub holds: bool,
 }
 
 /// Where the worktree at `path` stands next to the checkout `repo`. The
@@ -694,12 +697,13 @@ pub fn stand(repo: &Path, path: &Path) -> io::Result<Stand> {
     let own = git(path, &["log", "--format=%ae", &format!("{head}..HEAD")])?;
     let ahead = own.lines().filter(|l| *l != IMECE_EMAIL).count();
     let behind = git(path, &["rev-list", "--count", &format!("HEAD..{head}")])?;
-    let (added, removed) = staged(path, &own_index("stand"), |env, _| {
+    let (added, removed, holds) = staged(path, &own_index("stand"), |env, tree| {
+        let holds = tree != git(path, &["rev-parse", "HEAD^{tree}"])?;
         let stat = git_env(path, env, &["diff", "--cached", "--numstat", "HEAD"])?;
-        Ok(stat
-            .lines()
+        let (added, removed) = (stat.lines())
             .filter_map(file_change)
-            .fold((0, 0), |(a, r), f| (a + f.added, r + f.removed)))
+            .fold((0, 0), |(a, r), f| (a + f.added, r + f.removed));
+        Ok((added, removed, holds))
     })?;
     Ok(Stand {
         branch,
@@ -707,6 +711,7 @@ pub fn stand(repo: &Path, path: &Path) -> io::Result<Stand> {
         behind: behind.parse().unwrap_or(0),
         added,
         removed,
+        holds,
     })
 }
 
@@ -2263,6 +2268,7 @@ mod tests {
             Stand {
                 added: 8,
                 removed: 1,
+                holds: true,
                 ..Stand::default()
             },
             "untracked lines count"
@@ -2271,6 +2277,11 @@ mod tests {
         let c = change(&w, 1 << 20).unwrap().unwrap();
         applied(&c, "applied").unwrap();
         assert_eq!(stand(r, &w).unwrap(), Stand::default());
+        // A binary file has no lines, and the worktree holds it.
+        std::fs::write(w.join("blob.bin"), [0u8, 1, 2, 0]).unwrap();
+        let blob = stand(r, &w).unwrap();
+        assert_eq!((blob.added, blob.removed, blob.holds), (0, 0, true));
+        std::fs::remove_file(w.join("blob.bin")).unwrap();
         std::fs::write(w.join("mine.txt"), "m\n").unwrap();
         commit(&w, "mine");
         std::fs::write(r.join("b.txt"), "b").unwrap();

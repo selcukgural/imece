@@ -327,10 +327,30 @@ impl Live {
                     added: s.added,
                     removed: s.removed,
                 };
+                // The last read after a turn's end with a line waiting for
+                // its change (record 126), read as that turn left the tree
+                // (a later line's turn may be under way now): nothing
+                // there, the line opens no card; a done being read decides
+                // by itself.
+                if !again && w.own_asked(id) && self.reading[id] == 0 {
+                    self.own_checked(w, id, s.holds);
+                }
             }
             Err(e) => w.agents[id].trace(w.tick, format!("stand: {e}")),
         }
         if again {
+            self.stand(w, id);
+        }
+    }
+
+    /// The answer for worker `id`'s line with no card (record 126): its
+    /// tree `holds` a change or not. A later line that is the task now
+    /// asks again when its turn is over too.
+    pub(super) fn own_checked(&mut self, w: &mut World, id: AgentId, holds: bool) {
+        if !holds {
+            w.agents[id].trace(w.tick, "nothing to show: the line opens no card");
+        }
+        if w.own_checked(id, holds) && self.turns[id] == 0 && w.own_ended(id) {
             self.stand(w, id);
         }
     }
@@ -1837,6 +1857,7 @@ mod tests {
             behind: 2,
             added: 3,
             removed: 4,
+            holds: true,
         };
         live.stood(&mut w, 1, Ok(read));
         assert_eq!(
@@ -2171,6 +2192,7 @@ mod tests {
             checks: &[],
             card: None,
             person: false,
+            lazy: false,
         };
         live.prompt(&mut w, 1, "Add b".into(), Some(opening))
             .unwrap();
@@ -2214,6 +2236,107 @@ mod tests {
             "{}",
             queued(&live, 0)[0]
         );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_line_whose_turn_leaves_the_worktree_as_it_was_goes_and_the_next_one_names_the_card() {
+        let repo = checkout("own-end-repo");
+        let root = trees("own-end");
+        let mut w = team(1);
+        let mut live = Live::new(
+            2,
+            claude_at("/nonexistent/claude"),
+            repo.clone(),
+            root.clone(),
+        );
+        let tree = worker_in(&mut live, &mut w, 1, &repo, &root);
+        let (cut, _) = mpsc::channel();
+        live.ready_tx = cut;
+        let turn_done = |live: &mut Live, w: &mut World| {
+            let done = AgentEvent::TurnDone {
+                ok: true,
+                text: "Yes.".into(),
+                cost: 0,
+                denied: 0,
+            };
+            hear(live, 1, done);
+            live.step(w);
+        };
+        let own = |w: &World| w.agents[1].task.own.as_ref().map(|o| o.title.clone());
+        // Talk: its turn ends and the worktree holds nothing, so the line
+        // goes (record 126); git said so, not the screen's thread.
+        w.agents[1].status = Status::Idle;
+        live.told(&mut w, 1, "are you there?").unwrap();
+        turn_done(&mut live, &mut w);
+        assert!(w.own_asked(1), "asked at the turn's end");
+        assert_eq!(own(&w).as_deref(), Some("are you there?"), "until git says");
+        settle(&mut live, &mut w);
+        assert_eq!(own(&w), None);
+        assert!(w.cards.is_empty());
+        // Work: a follow-up while its turn goes on is part of it, and a
+        // turn that wrote something keeps the first line.
+        live.told(&mut w, 1, "fix the footer").unwrap();
+        live.told(&mut w, 1, "and its test").unwrap();
+        std::fs::write(tree.join("a.txt"), "a\nfooter\n").unwrap();
+        turn_done(&mut live, &mut w);
+        assert!(!w.own_asked(1), "one turn is still to end");
+        turn_done(&mut live, &mut w);
+        settle(&mut live, &mut w);
+        assert_eq!(own(&w).as_deref(), Some("fix the footer"));
+        assert!(!w.own_asked(1));
+        // The change shows at its done: the card is the first line's.
+        live.told(&mut w, 1, "say done").unwrap();
+        sent(&mut live, &mut w, 1, &msg("lead", "done", "Footer")).unwrap();
+        assert_eq!(w.cards.len(), 1);
+        assert_eq!(w.cards[0].title, "fix the footer");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_line_written_while_git_is_asked_is_the_task_once_the_first_came_to_nothing() {
+        let repo = checkout("own-later-repo");
+        let root = trees("own-later");
+        let mut w = team(1);
+        let mut live = Live::new(
+            2,
+            claude_at("/nonexistent/claude"),
+            repo.clone(),
+            root.clone(),
+        );
+        let tree = worker_in(&mut live, &mut w, 1, &repo, &root);
+        let (cut, _) = mpsc::channel();
+        live.ready_tx = cut;
+        let turn_done = |live: &mut Live, w: &mut World| {
+            let done = AgentEvent::TurnDone {
+                ok: true,
+                text: "ok".into(),
+                cost: 0,
+                denied: 0,
+            };
+            hear(live, 1, done);
+            live.step(w);
+        };
+        let own = |w: &World| w.agents[1].task.own.as_ref().map(|o| o.title.clone());
+        w.agents[1].status = Status::Idle;
+        live.told(&mut w, 1, "hello").unwrap();
+        turn_done(&mut live, &mut w);
+        // Written before git answered for the first: kept apart.
+        w.agents[1].status = Status::Idle;
+        live.told(&mut w, 1, "add b").unwrap();
+        assert_eq!(own(&w).as_deref(), Some("hello"));
+        // Git read the tree as the first line's turn left it: nothing, so
+        // the line written meanwhile is the task, its turn under way.
+        settle(&mut live, &mut w);
+        assert_eq!(own(&w).as_deref(), Some("add b"));
+        assert!(!w.own_asked(1), "asked when its own turn ends");
+        std::fs::write(tree.join("a.txt"), "a\nb\n").unwrap();
+        turn_done(&mut live, &mut w);
+        assert!(w.own_asked(1));
+        settle(&mut live, &mut w);
+        assert_eq!(own(&w).as_deref(), Some("add b"), "the tree holds b");
+        sent(&mut live, &mut w, 1, &msg("lead", "done", "Added b")).unwrap();
+        assert_eq!(w.cards[0].title, "add b");
         let _ = std::fs::remove_dir_all(&root);
     }
 

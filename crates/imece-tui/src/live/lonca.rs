@@ -38,8 +38,10 @@ const AGAIN_MOST: u8 = 3;
 /// The repositories to look at, each with its project and, where git is,
 /// its checkout.
 type Repos = Vec<(ProjectId, String, Option<PathBuf>)>;
-/// One look: the repositories, and the changes whose end is to be read.
-type Asked = (Repos, Vec<String>);
+/// One look: the repositories, the changes whose end is to be read, and
+/// the workspaces of the workers whose line with no card waits to hear
+/// whether its turn left anything (record 126).
+type Asked = (Repos, Vec<String>, Vec<(AgentId, PathBuf)>);
 /// What a look found of them.
 type Found = Vec<(ProjectId, String, StoreSeen)>;
 
@@ -131,6 +133,9 @@ struct Looked {
     pending: Vec<(ProjectId, String, String, Vec<lonca::Pending>)>,
     /// The checks each repository's policy defines, when Lonca says.
     policy_checks: Vec<(ProjectId, String, Option<Vec<String>>)>,
+    /// How many files each asked worker's workspace holds that no
+    /// proposal carries; none when Lonca did not say.
+    left_in: Vec<(AgentId, Option<usize>)>,
 }
 
 /// What the looks keep: the store does not change what it said.
@@ -580,11 +585,12 @@ impl Watch {
         let kept = place.clone();
         thread::spawn(move || {
             let mut kept = Kept::default();
-            for (repos, watched) in asked {
-                if answer
-                    .send(look(&place, &repos, &watched, &mut kept))
-                    .is_err()
-                {
+            for (repos, watched, lines) in asked {
+                let mut looked = look(&place, &repos, &watched, &mut kept);
+                looked.left_in = (lines.iter())
+                    .map(|(id, tree)| (*id, place.left_in(tree)))
+                    .collect();
+                if answer.send(looked).is_err() {
                     return;
                 }
             }
@@ -792,10 +798,11 @@ fn down_of(down: Down) -> StoreDown {
 impl Live {
     /// The store is asked when a project is on Lonca and it is time.
     pub(super) fn lonca_due(&mut self, w: &World, now: Instant) {
-        let watch = &mut self.lonca;
-        if watch.out || watch.next.is_some_and(|at| now < at) {
+        if self.lonca.out || self.lonca.next.is_some_and(|at| now < at) {
             return;
         }
+        let lines = self.lonca_lines(w);
+        let watch = &mut self.lonca;
         let repos: Repos = (w.stores().into_iter())
             .map(|(p, repo)| {
                 let place = self.places.get(p).filter(|place| place.git);
@@ -804,10 +811,20 @@ impl Live {
             .collect();
         let shown = w.proposals.values().map(|p| p.change.clone());
         let watched = shown.chain(watch.queued.keys().cloned()).collect();
-        if !repos.is_empty() && watch.ask.send((repos, watched)).is_ok() {
+        if !repos.is_empty() && watch.ask.send((repos, watched, lines)).is_ok() {
             watch.out = true;
             watch.next = Some(now + LOOK_EVERY);
         }
+    }
+
+    /// The workspaces a look asks about (record 126): a worker's whose
+    /// line with no card waits to hear whether its turn left anything,
+    /// once that turn is over.
+    fn lonca_lines(&self, w: &World) -> Vec<(AgentId, PathBuf)> {
+        (w.agents.iter())
+            .filter(|a| a.workspace.is_some() && w.own_asked(a.id) && self.turns[a.id] == 0)
+            .filter_map(|a| Some((a.id, self.cwds[a.id].clone()?)))
+            .collect()
     }
 
     /// What the person is asked before project `p`'s checkout goes into
@@ -996,7 +1013,31 @@ impl Live {
         for (p, offer) in &looked.offers {
             changed |= self.offered(w, *p, offer);
         }
+        for (id, left) in looked.left_in {
+            changed |= self.left_in(w, id, left);
+        }
         changed
+    }
+
+    /// What Lonca said worker `id`'s workspace holds that no proposal
+    /// carries, for its line with no card (record 126): nothing, and no
+    /// proposal of its waiting, and the line came to nothing; something,
+    /// or a proposal of it on its way, and the line goes on. Lonca saying
+    /// nothing keeps it asked, at the next look. Whether it went.
+    fn left_in(&mut self, w: &mut World, id: AgentId, left: Option<usize>) -> bool {
+        let Some(left) = left else {
+            return false;
+        };
+        if !w.own_asked(id) {
+            return false;
+        }
+        let p = w.agents[id].project;
+        let proposed = w.proposal_of(id).is_some()
+            || (w.projects[p].lonca.as_ref())
+                .is_some_and(|on| on.pending.iter().any(|q| q.holder == Some(id)));
+        let holds = left > 0 || proposed;
+        self.own_checked(w, id, holds);
+        !holds
     }
 
     /// The owner of proposals of `agent`, a name as Lonca took it, in
@@ -3922,6 +3963,110 @@ mod tests {
         *names.lock().unwrap() = serde_json::Value::Null;
         assert!(look(&mut live, &mut w), "Lonca no longer says");
         assert_eq!(w.policy_checks(0), None);
+    }
+
+    /// A worker of `demo` in a workspace whose `lonca diff` runs `diff`,
+    /// a line of the person's waiting for its turn's answer (record 126),
+    /// with the daemon saying `pending` waits.
+    fn own_on_lonca(diff: &str, pending: &'static [u64]) -> (World, Live, Daemon, PathBuf) {
+        let d = Daemon::start(PROTOCOL, move |asked| {
+            if asked["repo"] == "demo" {
+                Ok(status(pending))
+            } else {
+                Err("not_found")
+            }
+        });
+        d.sign_in();
+        let (stub, tree) =
+            imece_agent::lonca_fake::program(&format!("case \"$*\" in diff) {diff};; esac"));
+        std::fs::create_dir_all(tree.join(".lonca")).unwrap();
+        std::fs::write(tree.join(".lonca/workspace.json"), r#"{"repo":"demo"}"#).unwrap();
+        let mut place = d.place.clone();
+        place.program = stub.program.clone();
+        let mut w = team(1);
+        w.on_lonca(0, Some("demo".into()));
+        w.agents[1].workspace = Some("demo".into());
+        let mut live = idle_live(2);
+        live.lonca = Watch::start(place);
+        live.cwds[1] = Some(tree.clone());
+        w.own_line(1, "are you there?");
+        assert!(w.own_ended(1), "its turn is over");
+        (w, live, d, tree)
+    }
+
+    #[test]
+    fn a_line_whose_turn_left_nothing_lonca_says_is_unproposed_goes() {
+        let (mut w, mut live, _d, tree) = own_on_lonca("echo 'no local changes'", &[]);
+        live.lonca_due(&w, Instant::now());
+        settle(&mut live, &mut w);
+        assert_eq!(w.agents[1].task.own, None, "nothing, and nothing proposed");
+        assert!(w.cards.is_empty());
+        assert!(imece_agent::lonca_fake::seen(&tree).contains("|diff|"));
+        // A done with nothing to propose comes to the same: its turn is
+        // over, and the look says nothing is there.
+        w.own_line(1, "fix the footer");
+        w.own_ended(1);
+        live.look_now();
+        live.lonca_due(&w, Instant::now());
+        settle(&mut live, &mut w);
+        assert_eq!(w.agents[1].task.own, None);
+        let _ = std::fs::remove_dir_all(&tree);
+    }
+
+    #[test]
+    fn a_line_whose_workspace_holds_files_goes_on_and_lonca_silent_keeps_it_asked() {
+        let two = r#"echo '{"added_files":["a"],"modified_files":["b"],"deleted_files":[]}'"#;
+        let (mut w, mut live, _d, tree) = own_on_lonca(two, &[]);
+        live.lonca_due(&w, Instant::now());
+        settle(&mut live, &mut w);
+        let own = w.agents[1].task.own.clone().unwrap();
+        assert_eq!(own.title, "are you there?");
+        assert!(!w.own_asked(1), "answered: it goes on");
+        let _ = std::fs::remove_dir_all(&tree);
+        // Lonca does not answer: the line waits, asked again at the next look.
+        let refused = "echo 'lonca: unauthenticated' >&2; exit 1";
+        let (mut w, mut live, _d, tree) = own_on_lonca(refused, &[]);
+        live.lonca_due(&w, Instant::now());
+        settle(&mut live, &mut w);
+        assert!(w.own_asked(1), "kept until Lonca says");
+        assert!(w.agents[1].task.own.is_some());
+        // Mid-turn it is not asked about: only a turn that is over.
+        live.turns[1] = 1;
+        assert!(live.lonca_lines(&w).is_empty());
+        live.turns[1] = 0;
+        assert_eq!(live.lonca_lines(&w), [(1, tree.clone())]);
+        let _ = std::fs::remove_dir_all(&tree);
+    }
+
+    #[test]
+    fn a_line_with_a_proposal_of_its_worker_waiting_goes_on() {
+        let (mut w, mut live, _d, tree) = own_on_lonca("echo 'no local changes'", &[7]);
+        // Someone else's proposal is no part of it.
+        live.lonca_due(&w, Instant::now());
+        settle(&mut live, &mut w);
+        assert_eq!(w.agents[1].task.own, None, "the proposal is a's");
+        // Its own, on its way to the screen: the line goes on, and its
+        // card opens once the proposal shows.
+        let (mut w, mut live, _d, tree2) = own_on_lonca("echo 'no local changes'", &[7]);
+        w.agents[1].name = "a".into();
+        assert!(
+            live.left_in(&mut w, 1, Some(0)),
+            "nothing pending known yet: it goes"
+        );
+        w.own_line(1, "again");
+        w.own_ended(1);
+        live.lonca_due(&w, Instant::now());
+        settle(&mut live, &mut w);
+        assert!(w.proposal_of(1).is_none(), "not shown by this look");
+        assert_eq!(
+            w.agents[1].task.own.as_ref().map(|o| o.title.as_str()),
+            Some("again"),
+            "its proposal waits"
+        );
+        assert!(!w.own_asked(1));
+        for t in [tree, tree2] {
+            let _ = std::fs::remove_dir_all(&t);
+        }
     }
 
     #[test]

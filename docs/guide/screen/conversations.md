@@ -36,7 +36,7 @@ The title names the two parties and where the selection stands, `4/5`, then `✎
 
 `a` and `r` decide nothing while a conversation is open: what is selected under it is not what you see. `esc` first, then open the change.
 
-A message to an idle worker opens no card by itself: the line waits as the worker's own task, and only when the work comes to a change does a card open for it, titled by the line's first line, waiting for you with the change. A line that comes to nothing (a question, a one-word answer) never becomes a card; the answer comes to you as ever.
+A message to an idle worker opens no card by itself: the line waits as the worker's own task, and only when the work comes to a change does a card open for it, titled by the line's first line, waiting for you with the change. A line that comes to nothing (a question, a one-word answer) never becomes a card; the answer comes to you as ever. Once its turn ends with the worktree as it was, the line is through, so the next thing you ask names the card; a line written while that turn still runs is part of it.
 
 ## Reading
 

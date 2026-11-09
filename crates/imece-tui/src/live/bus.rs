@@ -962,6 +962,9 @@ impl Live {
             checks: &first.checks,
             card: first.card,
             person: false,
+            // Mail that is no assign opens no card by itself (record 126):
+            // it waits as the worker's own task, as the person's line.
+            lazy: first.kind != MsgKind::Assign,
         };
         if let Err(why) = self.prompt(w, id, mail_prompt(w, &mail), Some(opening)) {
             apply(w, id, AgentEvent::Stopped(why), self.spent_before[id]);
@@ -1477,6 +1480,40 @@ mod tests {
         assert_eq!(to, [2], "the one called so");
         assert_eq!(Group::parse("claude"), None);
         assert_eq!(Group::parse("Workers"), None);
+    }
+
+    #[test]
+    fn mail_that_is_no_assign_opens_no_card_until_a_change_of_it_shows() {
+        let mut w = team(2);
+        w.agents[1].status = Status::Idle;
+        let mut live = idle_live(3);
+        // A teammate's question wakes the worker, but is no task of a card
+        // (record 126): it waits as its own, as the person's line does.
+        sent(
+            &mut live,
+            &mut w,
+            2,
+            &msg("claude-1", "ask", "Which parser do you use?\nThe old one?"),
+        )
+        .unwrap();
+        live.step(&mut w);
+        assert_eq!(queued(&live, 1).len(), 1, "it starts its turn");
+        assert!(w.cards.is_empty(), "no card for an ask");
+        assert_eq!(w.agents[1].card, None);
+        let own = w.agents[1].task.own.clone().unwrap();
+        assert_eq!(own.title, "Which parser do you use?");
+        // A change of it opens the card, titled by the mail.
+        w.change_ready(Change {
+            agent: 1,
+            title: "Parser".into(),
+            files: Vec::new(),
+            patch: String::new(),
+            runs: Vec::new(),
+            check: Check::None,
+            spend: None,
+        });
+        assert_eq!(w.cards.len(), 1);
+        assert_eq!(w.cards[0].title, "Which parser do you use?");
     }
 
     #[test]

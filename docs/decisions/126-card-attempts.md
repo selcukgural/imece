@@ -381,7 +381,11 @@ shows.
 - The line to a worker with no card at work (none, or one that is through
   or handed on) is the worker's own task, `Task.own: Option<Own>` (its
   first line and the tick), set by `World::own_line` from `Live::prompt`
-  (`Opening.person`) and `Sim::told`. The card it last had is not its own
+  (`Opening.lazy`) and `Sim::told`. A teammate's mail that is no `assign`
+  (an ask, an answer, an inform, a handoff, a helper's done…) waking a
+  worker between cards is the same (`deliver`'s `lazy`, the user,
+  2026-11-09): titled by its body's first line once a change of it shows;
+  the leader's `assign`, `post`, plan and the board open cards as ever. The card it last had is not its own
   now: `Agent.card` goes, and its spending goes on a ledger row with no
   card again (record 133). A line while one waits is part of it: the
   first line's title stays. A worker with a card at work (or whose change
@@ -398,8 +402,28 @@ shows.
   own at work already holds a change; the line is part of it then, and
   no other card opens. A card taken (`World::takes`: an assign, a claim,
   a card handed) takes the line in too.
-- A turn that ends with nothing to show opens no card: the answer goes to
-  the person as ever (TO DECIDE's replies). A `done` with nothing in the
+- A turn that ends with nothing to show ends the line (the user,
+  2026-11-09: "are you there?" then "fix the footer" names the card by the
+  footer): the answer goes to the person as ever (TO DECIDE's replies),
+  and no card ever opens for that line. At the end of the turn the line
+  started or joined (`Live::step`, `World::own_ended`) imece asks off the
+  screen's thread whether the turn left anything: on the git path the
+  stand read at every turn's end, `worktree::Stand.holds` (the tree
+  against its HEAD, the mark, as `worktree::change` reads it; a binary
+  file counts) in `changes::stood`, only the last read asked after the
+  turn's end; on Lonca the next look runs `Place::left_in` for the
+  worker's workspace once its turn is over (`Live::lonca_lines`, the
+  look's `left_in`: a session over says `status.sessions[].unproposed`,
+  else `lonca diff`), and `Live::left_in` takes nothing there with no
+  proposal of the worker's waiting (`proposal_of`, the look's `pending`)
+  as nothing to show; Lonca not answering (`None`) keeps the line asked
+  until a look does. Something there keeps the line (`own_checked`), so a
+  follow-up mid-turn, or a turn that wrote and said no done yet, keeps the
+  first line's title. A line written while the answer is out
+  (`Own.later`) is part of the line when something was there, else the
+  task in its place, asked about at its own turn's end. A `done` with
+  nothing to propose on Lonca comes to the same once the look says so. A
+  `done` with nothing in the
   worktree (`change_none`) or one that says it failed with no card
   (`DoneFor::Nothing`, `Outcome::Failed(None)`) ends the line: no card
   ever. A `done` from such a worker is for nothing (`DoneFor::Nothing`),
@@ -415,21 +439,23 @@ shows.
   `task` reads with no line (`serde(default)`).
 
 The demo mirrors it: `Sim::told` keeps the line, the worker answers and
-goes idle as a solo does, and every `OWN_CHANGE_EVERY` (2)th answer to a
-line comes with a change, which opens its card.
+goes idle as a solo does once no other answer of it is due, and every
+`OWN_CHANGE_EVERY` (2)th such answer comes with a change, which opens its
+card; the rest have nothing to show and end the line. The demo's mail
+opens no cards (its cards come from the leader), as before.
 
 - **Growth**: one `Own` a worker at most, gone when a card opens or the
   line ends.
 - **Concurrency**: on the main loop, as every tool.
 - **Migration**: `Task` gains a field skipped when empty; nothing else.
+  `Own.ended` and `Own.later` are memory only: a restart between a
+  turn's end and its answer keeps the line, asked again at the next
+  turn's end.
+- **Read cost**: one more `rev-parse` in the stand read a turn's end
+  already makes; on Lonca one `lonca diff` a look per worker whose line
+  waits for its answer, on the look's thread.
+- **Failure**: a read that fails, or Lonca down, keeps the line.
 
-Gaps. The first line names the card even when it was talk and the work
-came at a later line before any change showed (`are you there?` and then
-`fix the footer` opens `are you there?` once the footer's change shows):
-the line goes only at a `done` with nothing, a card taken, or the card it
-opens; a turn's end alone does not end it, since a Lonca proposal shows
-after the turn and a git read may come after it too. On Lonca a `done`
-with nothing to propose leaves the line until the next proposal. Mail
-from another agent (not an assign) to a worker between cards still opens
-a card titled by it, as before. A worker woken after a restart with a
-line and no card is briefed `You had no task in hand`.
+A worker woken after a restart with a line and no card is briefed with
+it (`remember::brief`: `Your task: fix the footer (no card yet; one opens
+when a change of it shows).`), not `You had no task in hand`.

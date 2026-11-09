@@ -2620,6 +2620,7 @@ mod tests {
             own: Some(Own {
                 title: "are you there?".into(),
                 tick: 66,
+                ..Own::default()
             }),
         };
         // A session's unpriced turn stays so in the next session.

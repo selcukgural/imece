@@ -82,7 +82,7 @@ KARAR BEKLEYEN'de iki şey hiçbir şeyi tutmaz: okunmayı bekleyen bir yanıt v
 
 ## Bus'ta siz
 
-Komut satırındaki düz metin eldeki projenin liderine gider; `@ad mesaj` tek bir ajana. Boşta bir işçiye mesaj kendiliğinden kart açmaz: başlığı o mesaj olan bir kart yalnız işi bir değişikliğe varınca açılır ve o değişiklik onu kapatır ([kartın denemeleri](#kartın-denemeleri)); hiçbir şeye varmayan bir satır (bir soru, bir selam) asla kart olmaz, böylece pano ve sayıları yalnız işi tutar. Mesajlarınızın numarası yoktur. Bir ajanın size yanıtı KARAR BEKLEYEN'de bekler ("claude-1 yanıt verdi: …"); açarsınız (`enter`), kapatırsınız (`r`) ya da doğrudan yanıt yazarsınız.
+Komut satırındaki düz metin eldeki projenin liderine gider; `@ad mesaj` tek bir ajana. Boşta bir işçiye mesaj kendiliğinden kart açmaz: başlığı o mesaj olan bir kart yalnız işi bir değişikliğe varınca açılır ve o değişiklik onu kapatır ([kartın denemeleri](#kartın-denemeleri)); hiçbir şeye varmayan bir satır (bir soru, bir selam) asla kart olmaz, böylece pano ve sayıları yalnız işi tutar. Bir takım arkadaşının `assign` olmayan mesajı da öyledir; liderin `assign`'ı, `post`'u ve planı her zamanki gibi kart açar. Mesajlarınızın numarası yoktur. Bir ajanın size yanıtı KARAR BEKLEYEN'de bekler ("claude-1 yanıt verdi: …"); açarsınız (`enter`), kapatırsınız (`r`) ya da doğrudan yanıt yazarsınız.
 
 ## Pano
 

@@ -384,6 +384,12 @@ impl Live {
                     line(format!("  {} {text}", clock(s.tick)));
                 }
             }
+        } else if let Some(own) = &w.agents[id].task.own {
+            // A line with no card yet (record 126): the task in hand.
+            line(format!(
+                "Your task: {} (no card yet; one opens when a change of it shows).",
+                own.title
+            ));
         } else {
             line("You had no task in hand.".to_string());
         }
@@ -1145,6 +1151,35 @@ mod tests {
     }
 
     #[test]
+    fn a_worker_woken_with_a_line_and_no_card_is_told_that_line() {
+        let mut w = team(1);
+        let mut live = idle_live(2);
+        // Kept from the last run with its round (record 126).
+        w.agents[1].card = None;
+        w.agents[1].task.own = Some(Own {
+            title: "fix the footer".into(),
+            tick: 3,
+            ..Own::default()
+        });
+        live.remembered[1] = true;
+        w.agents[1].status = Status::Asleep;
+        live.told(&mut w, 1, "go on").unwrap();
+        let text = &queued(&live, 1)[0];
+        assert!(
+            text.contains(
+                "Your task: fix the footer (no card yet; one opens when a change of it shows)."
+            ),
+            "{text}"
+        );
+        assert!(!text.contains("no task in hand"), "{text}");
+        assert_eq!(
+            w.agents[1].task.own.as_ref().map(|o| o.title.as_str()),
+            Some("fix the footer"),
+            "go on is part of it"
+        );
+    }
+
+    #[test]
     fn a_briefing_is_capped_line_by_line_and_as_a_whole() {
         let mut w = team(1);
         let mut live = idle_live(2);
@@ -1207,6 +1242,7 @@ mod tests {
             Some(Own {
                 title: "are you there?".into(),
                 tick: 40,
+                ..Own::default()
             })
         );
         // Its turn ends with an answer and nothing to show: no card ever.

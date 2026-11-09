@@ -1674,7 +1674,7 @@ mod tests {
         // 126): the row says the line.
         app.world.agents[a].task.own = Some(crate::model::Own {
             title: "fix the footer\u{1b}[2J".into(),
-            tick: 0,
+            ..crate::model::Own::default()
         });
         assert_eq!(
             title_of(&app.world, HomeRow::Agent(a)),

@@ -1409,6 +1409,12 @@ impl Live {
                 }
             }
             if turn_done {
+                // The turn a line with no card started or joined is over:
+                // the stand read now (or Lonca's next look) says whether
+                // it left anything to show (record 126).
+                if self.turns[id].saturating_sub(ends) == 0 {
+                    w.own_ended(id);
+                }
                 self.stand(w, id);
                 self.turns[id] = self.turns[id].saturating_sub(ends);
                 self.took[id] = 0;
