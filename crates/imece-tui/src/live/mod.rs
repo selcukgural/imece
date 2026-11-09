@@ -52,6 +52,7 @@ use crate::welcome::{Answers, Seen};
 
 mod bus;
 mod changes;
+pub mod demo;
 #[cfg(test)]
 mod end_to_end;
 mod health;
@@ -121,6 +122,20 @@ pub struct Options {
     /// `[MODEL][@EFFORT]` choice (inner none: the standard rung); an open
     /// one of the same choice is gone on with.
     pub solo: Option<Option<String>>,
+    /// What plays Claude Code, when not Claude Code on PATH with its own
+    /// configuration directory: the demo's stand-in (record 130).
+    pub claude: Option<StandIn>,
+}
+
+/// A program that plays Claude Code, the configuration directory it
+/// keeps its transcripts in (`CLAUDE_CONFIG_DIR`), and the imece whose
+/// `mcp-relay` its sessions start (imece's own binary, which a test is
+/// not).
+#[derive(Clone, Debug)]
+pub struct StandIn {
+    pub program: PathBuf,
+    pub home: PathBuf,
+    pub relay: PathBuf,
 }
 
 /// The efforts Claude Code can be asked for.
@@ -769,7 +784,8 @@ pub fn world(o: Options) -> Result<(World, Live), String> {
     if !git && o.solo.is_none() {
         return Err(no_git_team(&repo.display().to_string()));
     }
-    let claude = Hireable::new(claude::PROGRAM, &o.tiers);
+    let program = o.claude.as_ref().map(|c| c.program.to_string_lossy());
+    let claude = Hireable::new(program.as_deref().unwrap_or(claude::PROGRAM), &o.tiers);
     let file = o.state.join(store::FILE);
     let mut store = Store::open(&file)?;
     let loaded = store
@@ -830,6 +846,13 @@ pub fn world(o: Options) -> Result<(World, Live), String> {
         .map_err(|e| store::unreadable(&file, e))?;
     w.run_spent = w.spent();
     let mut live = Live::bare(claude);
+    let relay = match o.claude {
+        Some(c) => {
+            live.claude_home = c.home;
+            c.relay
+        }
+        None => std::env::current_exe().map_err(|e| format!("imece's own path: {e}"))?,
+    };
     live.state = o.state;
     live.max_workers = o.max_workers;
     live.max_helpers = o.max_helpers;
@@ -880,7 +903,6 @@ pub fn world(o: Options) -> Result<(World, Live), String> {
             level: live.confine.wire().to_string(),
         });
     }
-    let relay = std::env::current_exe().map_err(|e| format!("imece's own path: {e}"))?;
     live.open_bus(&w, relay.to_string_lossy().into_owned())
         .map_err(|e| format!("the agents' message bus: {e}"))?;
     live.store = Some(store);

@@ -848,6 +848,7 @@ mod tests {
             own_notes: None,
             confine: Confine::Standard,
             solo: solo.then_some(None),
+            claude: None,
         };
         assert_eq!(
             // A program every runner has that answers `--version` (dash's
@@ -885,6 +886,7 @@ mod tests {
             own_notes: None,
             confine: Confine::Standard,
             solo: solo.map(|c| c.map(str::to_string)),
+            claude: None,
         };
         let name = project_name_of(&repo);
         // A solo start on a fresh checkout: the solo is project 0, `solo`.
