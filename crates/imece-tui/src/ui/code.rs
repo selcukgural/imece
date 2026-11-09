@@ -439,6 +439,7 @@ mod tests {
             seen: StoreSeen::Asking,
             leases,
             pending: Vec::new(),
+            policy_checks: None,
         });
         app
     }
@@ -519,6 +520,7 @@ mod tests {
             seen: StoreSeen::Asking,
             leases: vec![lease("elsewhere.rs", "f", None, "x")],
             pending: Vec::new(),
+            policy_checks: None,
         });
         let rows = render(&app, 160, 50).join("\n");
         assert!(!rows.contains("elsewhere.rs"), "{rows}");

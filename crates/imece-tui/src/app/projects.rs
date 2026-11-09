@@ -286,7 +286,7 @@ impl App {
         }
     }
 
-    /// The menus of `:solo`, `:effort` and `:model`.
+    /// The menus of `:solo`, `:effort`, `:model` and `:checks`.
     pub(super) fn choice_menu(&self) -> Option<Menu> {
         let rest = self.input.strip_prefix(':')?;
         let (cmd, arg) = rest.split_once(' ')?;
@@ -307,6 +307,12 @@ impl App {
             "model" => {
                 self.solo_at_hand()?;
                 complete::choice_words(start, arg, &live::aliases())
+            }
+            // The policy's checks, once Lonca says them (#390).
+            "checks" => {
+                let agent = self.change_at_hand()?;
+                let known = self.world.policy_checks(self.world.agents[agent].project)?;
+                complete::check_words(self.input.len() - arg.len(), arg, known)
             }
             _ => None,
         }

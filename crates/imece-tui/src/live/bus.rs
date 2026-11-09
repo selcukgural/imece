@@ -965,7 +965,9 @@ impl Live {
 
 /// Refuses `checks` for a project not on Lonca (record 127): they run
 /// in Lonca's merge queue after the person's yes, and nothing runs them
-/// elsewhere.
+/// elsewhere. Once Lonca says which checks its policy defines, a name it
+/// lacks is refused too, with the names there are and the nearest
+/// (#390); while it has not said, the yes judges them.
 pub(super) fn checks_run(w: &World, project: ProjectId, checks: &[String]) -> Result<(), String> {
     if !checks.is_empty() && w.projects[project].lonca.is_none() {
         return Err(
@@ -974,7 +976,10 @@ pub(super) fn checks_run(w: &World, project: ProjectId, checks: &[String]) -> Re
                 .into(),
         );
     }
-    Ok(())
+    match w.policy_checks(project) {
+        Some(known) => checks::against(checks, known),
+        None => Ok(()),
+    }
 }
 
 /// What a card's checks add to the task a worker is handed (record
@@ -3244,6 +3249,58 @@ in p.rs",
         // On Lonca it goes, and its mail carries them until delivered.
         sent(&mut live, &mut w, 0, &assign).unwrap();
         assert_eq!(live.mail[1].last().unwrap().checks, ["api"]);
+    }
+
+    #[test]
+    fn a_check_the_policy_lacks_is_refused_on_an_assign_a_post_and_a_card_handed_again() {
+        let mut w = team(1);
+        w.agents[1].status = Status::Idle;
+        let mut live = idle_live(2);
+        w.on_lonca(0, Some("demo".into()));
+        let policy = |w: &mut World, names: Option<&[&str]>| {
+            let names = names.map(|n| n.iter().map(|c| c.to_string()).collect());
+            w.store_checks(0, "demo", names);
+        };
+        let typo = "\"apii\" is not a check of Lonca's policy; it has api, e2e. Did you mean api?";
+        let assign = |checks: Value| with_checks(msg("claude-1", "assign", "Fix"), checks);
+        // While Lonca has not said, the yes judges them, as before.
+        sent(&mut live, &mut w, 0, &assign(json!(["apii"]))).unwrap();
+        assert_eq!(live.mail[1].len(), 1);
+        policy(&mut w, Some(&["api", "e2e"]));
+        let err = sent(&mut live, &mut w, 0, &assign(json!(["apii"]))).unwrap_err();
+        assert_eq!(err, typo);
+        assert_eq!(live.mail[1].len(), 1, "nothing sent");
+        sent(&mut live, &mut w, 0, &assign(json!(["e2e", "api"]))).unwrap();
+        assert_eq!(live.mail[1].last().unwrap().checks, ["api", "e2e"]);
+        // A post the same, and one that names none passes.
+        let post = |checks: Value| with_checks(card("Add a test", "Cover sub()."), checks);
+        assert_eq!(
+            live.post(&mut w, 0, &post(json!(["apii"]))).unwrap_err(),
+            typo
+        );
+        assert!(w.cards.is_empty(), "nothing posted");
+        live.post(&mut w, 0, &post(json!([]))).unwrap();
+        // A card handed again with checks the policy lacks keeps its own.
+        let c = w.cards.len() - 1;
+        w.cards[c].owner = Some(1);
+        w.cards[c].column = Column::Failed;
+        w.cards[c].checks = vec!["api".into()];
+        let mut again = assign(json!(["apii"]));
+        again["card"] = json!(c + 1);
+        assert_eq!(sent(&mut live, &mut w, 0, &again).unwrap_err(), typo);
+        assert_eq!(
+            (w.cards[c].checks.as_slice(), w.cards[c].attempt),
+            (&["api".to_string()][..], 0)
+        );
+        // A policy with none refuses any.
+        policy(&mut w, Some(&[]));
+        let err = sent(&mut live, &mut w, 0, &assign(json!(["api"]))).unwrap_err();
+        assert!(
+            err.ends_with("which names none: leave checks out, and say in the body what to run"),
+            "{err}"
+        );
+        policy(&mut w, None);
+        sent(&mut live, &mut w, 0, &assign(json!(["api"]))).unwrap();
     }
 
     #[test]

@@ -381,6 +381,29 @@ pub fn choice_words(start: usize, arg: &str, items: &[&str]) -> Option<Menu> {
     menu(start, arg, matching(arg, all), "")
 }
 
+/// What `:checks` could complete `arg` (from `start` in the line) with
+/// (#390): the last name being written, after a space or a comma, to one
+/// of the policy's `known` checks not named already; `none` too while it
+/// is the first.
+pub fn check_words(start: usize, arg: &str, known: &[String]) -> Option<Menu> {
+    let (before, word) = match arg.rfind([' ', ',']) {
+        Some(at) => (&arg[..at], &arg[at + 1..]),
+        None => ("", arg),
+    };
+    let named: Vec<&str> = (before.split([' ', ',']))
+        .filter(|n| !n.is_empty())
+        .collect();
+    let none = named.is_empty().then_some("none");
+    let left = (known.iter().map(String::as_str)).filter(|k| !named.contains(k));
+    let start = start + arg.len() - word.len();
+    menu(
+        start,
+        word,
+        matching(word, none.into_iter().chain(left)),
+        " ",
+    )
+}
+
 /// What the composer could complete `input` with. `project` is the one
 /// at hand: its agents come first, and a `/` alone goes to its leader;
 /// `home` stands for `~` in a path.
@@ -611,6 +634,43 @@ mod tests {
         assert_eq!(items(solo(".")), [".hidden"]);
         let m = solo("c").unwrap();
         assert_eq!((m.start, m.tail), (6, ""));
+    }
+
+    #[test]
+    fn check_words_offer_the_policy_s_names_not_named_yet_and_none_first() {
+        let known: Vec<String> = ["api", "e2e", "unit"].map(String::from).to_vec();
+        let m = check_words(8, "", &known).unwrap();
+        assert_eq!(
+            (m.items.as_slice(), m.start, m.tail),
+            (
+                &["none", "api", "e2e", "unit"].map(String::from)[..],
+                8,
+                " "
+            )
+        );
+        assert_eq!(check_words(8, "e", &known).unwrap().items, ["e2e"]);
+        let m = check_words(8, "api,u", &known).unwrap();
+        assert_eq!(
+            (m.items.as_slice(), m.start),
+            (&["unit".to_string()][..], 12)
+        );
+        let m = check_words(8, "api e2e ", &known).unwrap();
+        assert_eq!(
+            (m.items.as_slice(), m.start),
+            (&["unit".to_string()][..], 16)
+        );
+        assert_eq!(
+            check_words(8, "e2e, ", &known).unwrap().items,
+            ["api", "unit"]
+        );
+        assert!(check_words(8, "api n", &known).is_none(), "none only first");
+        assert!(check_words(8, "x", &known).is_none());
+        assert!(check_words(8, "unit", &known).is_none(), "typed whole");
+        assert!(
+            check_words(8, "api unit e2e ", &known).is_none(),
+            "all named"
+        );
+        assert_eq!(check_words(8, "", &[]).unwrap().items, ["none"]);
     }
 
     #[test]

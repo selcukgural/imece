@@ -710,7 +710,8 @@ pub(crate) fn named(names: &[String]) -> String {
 /// ` · `: its head (`✓ ready to approve` / `! look first`) when `head`,
 /// what proved it (`✓ check`, `✗ cargo test: exit 101`, or `nothing
 /// ran`), its files and where they stand to the card's paths, what it
-/// overlaps, a clash, a patch not whole, what Lonca runs after the yes.
+/// overlaps, a clash, a patch not whole, what Lonca runs after the yes,
+/// the card's checks the yes asks for and those the policy lacks.
 /// Each part in its own colour: good, bad, a warning, or dim for a fact.
 /// With `counts` the files part carries the lines added and removed
 /// (a row's; the change view's title has them).
@@ -817,6 +818,13 @@ pub(crate) fn verdict_spans(
     if !v.asks.is_empty() {
         let said = fill(t.verdict_asks, &[&clean(&crate::checks::listed(&v.asks))]);
         parts.push(Span::styled(said, dim()));
+    }
+    if !v.unknown.is_empty() {
+        let said = fill(
+            t.verdict_unknown,
+            &[&clean(&crate::checks::listed(&v.unknown))],
+        );
+        parts.push(Span::styled(said, fg(pal().bad)));
     }
     let mut spans = Vec::with_capacity(parts.len() * 2);
     for (n, part) in parts.into_iter().enumerate() {
@@ -1794,6 +1802,7 @@ diff --git a/c.rs b/c.rs
             stale: false,
             verifies: None,
             asks: Vec::new(),
+            unknown: Vec::new(),
         }
     }
 
@@ -2147,6 +2156,26 @@ diff --git a/c.rs b/c.rs
                 "Lonca did not say what runs after your yes · the card also asks for api"
             )
         );
+        // A check the policy dropped, last and loud (#390).
+        let dropped = Verdict {
+            ready: false,
+            verifies: Some(Runs::These(vec!["build".into()])),
+            asks: vec!["api".into()],
+            unknown: vec!["e2e".into(), "smoke".into()],
+            ..a_verdict()
+        };
+        assert_eq!(
+            said(&dropped),
+            "! look first · ✓ cargo test · 2 files, both inside #6 · \
+             after your yes Lonca runs: build, api · the card also asks for api · \
+             Lonca's policy no longer has e2e, smoke: :checks changes what the card asks for"
+        );
+        let spans = verdict_spans(Lang::En, &dropped, true, None);
+        assert_eq!((spans.len(), spans[10].style), (11, fg(pal().bad)));
+        assert!(worded(Lang::Tr, &dropped, true, None).ends_with(
+            "Lonca'nın politikasında artık e2e, smoke yok: :checks kartın istediklerini \
+                 değiştirir"
+        ));
     }
 
     #[test]

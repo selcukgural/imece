@@ -1673,6 +1673,7 @@ impl Store {
                     seen: StoreSeen::Asking,
                     leases: Vec::new(),
                     pending: Vec::new(),
+                    policy_checks: None,
                 }),
                 archived,
             });
@@ -5667,6 +5668,7 @@ mod tests {
                     seen: StoreSeen::Asking,
                     leases: Vec::new(),
                     pending: Vec::new(),
+                    policy_checks: None,
                 }
             );
             // As schema 26 wrote it: on no store.

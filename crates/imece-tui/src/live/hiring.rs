@@ -1855,6 +1855,15 @@ mod tests {
             live.plan(&mut w, 0, &plan_args(bad, json!(1))).unwrap_err(),
             "card 1: checks lists \"api\" twice"
         );
+        // Once Lonca says what its policy has, a name it lacks is refused.
+        w.store_checks(0, "demo", Some(vec!["api".into(), "e2e".into()]));
+        let typo =
+            json!([{ "title": "t", "body": "b" }, { "title": "u", "body": "b", "checks": ["e2"] }]);
+        assert_eq!(
+            live.plan(&mut w, 0, &plan_args(typo, json!(1)))
+                .unwrap_err(),
+            "card 2: \"e2\" is not a check of Lonca's policy; it has api, e2e. Did you mean e2e?"
+        );
     }
 
     #[test]

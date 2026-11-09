@@ -465,7 +465,7 @@ fn checks_schema() -> Value {
                         Lonca policy defines (verification.checks, e.g. api, e2e) that \
                         the card's change must pass too; the person's yes asks Lonca's \
                         merge queue to run them. Lonca's own (build, tests) run anyway. \
-                        A name the policy lacks stops the yes, so name only those it has. \
+                        A name the policy lacks is refused here, with the names it has. \
                         With card (handing one again): they take the place of the card's \
                         checks, [] for none; left out, the card keeps its own.",
     })

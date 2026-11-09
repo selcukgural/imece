@@ -25,6 +25,28 @@ fn checks_named(t: &crate::i18n::Text, arg: &str) -> Result<Vec<String>, String>
     Ok(names)
 }
 
+/// Refuses those of `checks` that the policy's `known` checks lack (#390),
+/// in the person's words: which, the names it has, the nearest when one
+/// was lacking.
+fn checks_known(t: &crate::i18n::Text, checks: &[String], known: &[String]) -> Result<(), String> {
+    let lacking = crate::checks::unknown(checks, known);
+    let [first, ..] = lacking.as_slice() else {
+        return Ok(());
+    };
+    let names = crate::checks::listed(&lacking);
+    if known.is_empty() {
+        return Err(fill(t.checks_policy_none, &[&names]));
+    }
+    let mut why = fill(
+        t.checks_not_policy,
+        &[&names, &crate::checks::listed(known)],
+    );
+    if let (1, Some(near)) = (lacking.len(), crate::checks::nearest(first, known)) {
+        why += &fill(t.checks_near, &[near]);
+    }
+    Err(why)
+}
+
 impl App {
     /// A key for the open change of worker `id`; `false` leaves it to the
     /// rest of the screen (typing, switching views, quitting).
@@ -283,7 +305,8 @@ impl App {
     /// (commas or spaces between) or `none` set first. The person signs
     /// the yes, so the person may change them at it: a name the policy
     /// lacks need not make the change a reject. Refused off Lonca (nothing
-    /// would run them) and for a change made for no card.
+    /// would run them), for a change made for no card, and for a name the
+    /// policy in force lacks once Lonca says what it has (#390).
     pub(super) fn checks_command(&mut self, arg: &str) {
         let t = self.lang.text();
         let refused = |app: &mut App, why: &str| app.flash(fill(t.checks_refused, &[why]));
@@ -301,7 +324,12 @@ impl App {
             return refused(self, &fill(t.checks_no_card, &[&name]));
         };
         if !arg.is_empty() {
-            match checks_named(t, arg) {
+            let known = self.world.policy_checks(project);
+            let named = checks_named(t, arg).and_then(|checks| {
+                known.map_or(Ok(()), |known| checks_known(t, &checks, known))?;
+                Ok(checks)
+            });
+            match named {
                 Ok(checks) => self.world.set_checks(card, checks, None),
                 Err(why) => return refused(self, &why),
             }
@@ -1090,6 +1118,54 @@ mod tests {
         // `none` takes them all away.
         app.command("checks none");
         assert!(app.world.cards[c].checks.is_empty());
+        // Once Lonca says what its policy has, a name it lacks is refused
+        // with the names there are, and the nearest when one is lacking.
+        let names = |n: &[&str]| Some(n.iter().map(|c| c.to_string()).collect());
+        app.world.store_checks(0, "demo", names(&["api", "e2e"]));
+        app.command("checks e2e apii");
+        assert_eq!(
+            flash(&app),
+            "the checks stay as they were: Lonca's policy has no apii; it has api, e2e · did \
+             you mean api?"
+        );
+        app.command("checks zzzz e2");
+        assert_eq!(
+            flash(&app),
+            "the checks stay as they were: Lonca's policy has no e2, zzzz; it has api, e2e"
+        );
+        assert!(app.world.cards[c].checks.is_empty());
+        app.command("checks e2e");
+        assert_eq!(app.world.cards[c].checks, ["e2e"]);
+        app.command("checks none");
+        assert!(app.world.cards[c].checks.is_empty(), "none is no name");
+        app.world.store_checks(0, "demo", names(&[]));
+        app.command("checks api");
+        assert_eq!(
+            flash(&app),
+            "the checks stay as they were: Lonca's policy has no api; it names no checks"
+        );
+        app.lang = Lang::Tr;
+        app.world.store_checks(0, "demo", names(&["api"]));
+        app.command("checks apx");
+        assert_eq!(
+            flash(&app),
+            "denetimler olduğu gibi kaldı: Lonca'nın politikasında apx yok; olanlar: api · api \
+             mi demek istedin?"
+        );
+        app.lang = Lang::En;
+        // The menu after `:checks ` offers the policy's names.
+        app.world.store_checks(0, "demo", names(&["api", "e2e"]));
+        app.input = ":checks api ".into();
+        let m = app.suggest().expect("a menu");
+        assert_eq!(
+            (m.items.as_slice(), m.start),
+            (&["e2e".to_string()][..], 12)
+        );
+        app.input = ":checks ".into();
+        assert_eq!(app.suggest().unwrap().items, ["none", "api", "e2e"]);
+        app.world.store_checks(0, "demo", None);
+        assert!(app.suggest().is_none(), "Lonca has not said");
+        app.input.clear();
         // No change at hand: refused.
         app.zoom = Zoom::None;
         app.world.inbox.clear();

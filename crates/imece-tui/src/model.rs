@@ -516,6 +516,10 @@ pub struct OnLonca {
     /// it (record 125, step 4): the verdict on a change counts the ones
     /// that are no change shown here.
     pub pending: Vec<StorePending>,
+    /// The names of the checks its policy in force defines, as the last
+    /// look read them (lonca#203); none while Lonca has not said, when a
+    /// card's checks are judged at the yes, as before.
+    pub policy_checks: Option<Vec<String>>,
 }
 
 /// A proposal waiting in a Lonca repository, anyone's: what the verdict on
@@ -2750,6 +2754,11 @@ pub struct Verdict {
     /// The checks its card asks for that `verifies` does not list (record
     /// 127): the yes asks Lonca to run them too. None off Lonca.
     pub asks: Vec<String>,
+    /// The checks its card asks for that the policy in force no longer
+    /// defines (#390: a newer policy was signed after the card was
+    /// written): Lonca would refuse the yes, so it is not ready. None
+    /// while Lonca has not said what the policy has.
+    pub unknown: Vec<String>,
 }
 
 /// What Lonca's merge queue runs on a proposal after the person's yes, as
@@ -3409,6 +3418,7 @@ impl World {
             seen: StoreSeen::Asking,
             leases: Vec::new(),
             pending: Vec::new(),
+            policy_checks: None,
         });
     }
 
@@ -3474,6 +3484,7 @@ impl World {
         if matches!(seen, StoreSeen::Down(_)) {
             on.leases.clear();
             on.pending.clear();
+            on.policy_checks = None;
         }
         let repo = repo.to_string();
         match seen {
@@ -3503,6 +3514,23 @@ impl World {
         };
         on.pending = pending;
         true
+    }
+
+    /// The checks the policy in force of project `p`'s repository `repo`
+    /// defines, or that Lonca did not say. Whether it moved.
+    pub fn store_checks(&mut self, p: ProjectId, repo: &str, checks: Option<Vec<String>>) -> bool {
+        let on = self.projects[p].lonca.as_mut().filter(|l| l.repo == repo);
+        let Some(on) = on.filter(|l| l.policy_checks != checks) else {
+            return false;
+        };
+        on.policy_checks = checks;
+        true
+    }
+
+    /// The checks the policy of project `p`'s repository defines; none off
+    /// Lonca or while Lonca has not said.
+    pub fn policy_checks(&self, p: ProjectId) -> Option<&[String]> {
+        self.projects[p].lonca.as_ref()?.policy_checks.as_deref()
     }
 
     /// Why project `p` is closed to hires and Δ decisions: it is on Lonca
@@ -4190,18 +4218,26 @@ impl World {
         }));
         let proposal = self.proposal_of(id);
         let asked = self.asked_checks(id);
+        let unknown = match proposal.and(self.policy_checks(project)) {
+            Some(known) => crate::checks::unknown(asked, known),
+            None => Vec::new(),
+        };
         let asks = match proposal.map(|p| &p.verifies) {
             Some(Runs::These(runs)) => (asked.iter())
-                .filter(|c| !runs.contains(c))
+                .filter(|c| !runs.contains(c) && !unknown.contains(c))
                 .cloned()
                 .collect(),
-            Some(Runs::Unsaid) => asked.to_vec(),
+            Some(Runs::Unsaid) => crate::checks::unknown(asked, &unknown),
             None => Vec::new(),
         };
         let clashes = self.clashes_of(id).is_some();
         let partial = proposal.is_some_and(|p| !p.redacted.is_empty() || p.cut);
         Some(Verdict {
-            ready: c.easy(card) && overlaps.is_empty() && !clashes && !partial,
+            ready: c.easy(card)
+                && overlaps.is_empty()
+                && !clashes
+                && !partial
+                && unknown.is_empty(),
             proof: c.proofs(),
             files: c.files.len(),
             card: card.filter(|c| !c.paths.is_empty()).map(|c| c.id),
@@ -4213,6 +4249,7 @@ impl World {
             stale: proposal.is_some_and(|p| !p.on_trunk),
             verifies: proposal.map(|p| p.verifies.clone()),
             asks,
+            unknown,
         })
     }
 
@@ -8922,6 +8959,28 @@ mod tests {
     }
 
     #[test]
+    fn the_policy_s_checks_are_of_its_repository_and_unsaid_with_a_store_that_is_down() {
+        let mut w = world(vec![lead(0)]);
+        let names = |n: &[&str]| Some(n.iter().map(|c| c.to_string()).collect::<Vec<_>>());
+        assert!(!w.store_checks(0, "r", names(&["api"])), "on no repository");
+        assert_eq!(w.policy_checks(0), None, "off Lonca");
+        w.on_lonca(0, Some("r".into()));
+        assert!(!w.store_checks(0, "other", names(&["api"])), "not its");
+        assert_eq!(w.policy_checks(0), None, "not said yet");
+        assert!(w.store_checks(0, "r", names(&["api"])));
+        assert!(!w.store_checks(0, "r", names(&["api"])), "the same");
+        assert!(w.store_checks(0, "r", names(&[])));
+        assert_eq!(w.policy_checks(0), Some(&[][..]), "a policy with none");
+        assert!(w.store_checks(0, "r", names(&["api", "e2e"])));
+        assert_eq!(
+            w.policy_checks(0),
+            Some(&["api".to_string(), "e2e".into()][..])
+        );
+        w.store_seen(0, "r", StoreSeen::Down(StoreDown::NoDaemon));
+        assert_eq!(w.policy_checks(0), None);
+    }
+
+    #[test]
     fn what_waits_in_the_repository_is_of_it_and_goes_with_a_store_that_is_down() {
         let mut w = world(vec![lead(0)]);
         let waits = |seq| vec![a_pending(seq, "x", None, &["a"])];
@@ -9127,6 +9186,7 @@ mod tests {
                 stale: false,
                 verifies: None,
                 asks: Vec::new(),
+                unknown: Vec::new(),
             }
         );
         // Not proved clean: not ready.
@@ -9356,8 +9416,56 @@ mod tests {
         w.change_proposed(c.clone(), p.clone());
         assert!(w.verdict(1).unwrap().asks.is_empty(), "both run anyway");
         p.verifies = Runs::Unsaid;
-        w.change_proposed(c, p);
+        w.change_proposed(c.clone(), p.clone());
         assert_eq!(w.verdict(1).unwrap().asks, ["api", "e2e"]);
+        assert!(
+            w.verdict(1).unwrap().unknown.is_empty(),
+            "Lonca has not said"
+        );
+    }
+
+    #[test]
+    fn a_check_its_card_asks_for_that_the_policy_dropped_keeps_a_change_from_ready() {
+        let mut w = crate::live::testing::team(2);
+        let names = |n: &[&str]| n.iter().map(|s| s.to_string()).collect::<Vec<String>>();
+        let mut c = change(1, "T", &[("a", 1, 0)]);
+        c.runs = vec![Ran {
+            line: "cargo test".into(),
+            code: Some(0),
+            timed_out: false,
+        }];
+        w.cards.push(card(0, Some(1), Vec::new()));
+        w.cards[0].checks = names(&["api", "e2e"]);
+        w.agents[1].card = Some(0);
+        // Off Lonca the policy says nothing.
+        w.change_ready(c.clone());
+        assert!(w.verdict(1).unwrap().unknown.is_empty());
+        w.on_lonca(0, Some("demo".into()));
+        w.store_checks(0, "demo", Some(names(&["api"])));
+        assert!(w.verdict(1).unwrap().unknown.is_empty(), "no proposal");
+        let mut p = a_store_proposal(5);
+        p.verifies = Runs::These(names(&["build"]));
+        w.change_proposed(c.clone(), p.clone());
+        let v = w.verdict(1).unwrap();
+        assert_eq!(
+            (v.unknown.as_slice(), v.asks.as_slice()),
+            (&names(&["e2e"])[..], &names(&["api"])[..])
+        );
+        assert!(!v.ready, "Lonca would refuse the yes");
+        p.verifies = Runs::Unsaid;
+        w.change_proposed(c.clone(), p.clone());
+        let v = w.verdict(1).unwrap();
+        assert_eq!(
+            (v.unknown.as_slice(), v.asks.as_slice()),
+            (&names(&["e2e"])[..], &names(&["api"])[..])
+        );
+        // The policy has both again: ready, both asked for.
+        w.store_checks(0, "demo", Some(names(&["api", "e2e"])));
+        p.verifies = Runs::These(names(&["build"]));
+        w.change_proposed(c, p);
+        let v = w.verdict(1).unwrap();
+        assert!(v.unknown.is_empty() && v.ready, "{v:?}");
+        assert_eq!(v.asks, names(&["api", "e2e"]));
     }
 
     #[test]
