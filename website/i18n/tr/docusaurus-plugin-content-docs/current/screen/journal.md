@@ -1,6 +1,6 @@
 ---
 title: Günlük
-description: Günlük paneli - imece'nin neyi yazdığı, satırların nasıl katlandığı ve gününü taşıdığı, işaretler, uzaktayken özeti, nerede kalmıştın penceresi ve bir satırdan konuşma açmak.
+description: Günlük penceresi - imece'nin neyi yazdığı, satırların nasıl katlandığı ve gününü taşıdığı, işaretler, uzaktayken özeti, nerede kalmıştın penceresi ve bir satırdan konuşma açmak.
 ---
 
 # Günlük
@@ -8,7 +8,7 @@ description: Günlük paneli - imece'nin neyi yazdığı, satırların nasıl ka
 Günlük (ekrandaki adı DEFTER) ekranın üstünde bir pencerede açılır, `J` ya da `:journal` (varsayılan olarak [hikâye](#hikâye) olarak anlatılır; penceredeki `J` hikâyeyi açıp kapatır): ne olduğu, en yeni önce, olay başına bir satır. `esc` ya da `q` pencereyi kapatır. Bir agent'ın ya da sizin yaptığınız anlamlı her şey oradadır; olağan görev dağıtımları panoya ve liderin izine bırakılır. Depoda saklanır, böylece sonraki `imece` aynı günlükle açılır; uzaktayken özeti ve "nerede kalmıştın" penceresi ondan kurulur.
 
 ```text
-┌ DEFTER ─────────────────────────────────────────────────┐
+┌ DEFTER · J hikâye ──────────────────────────────────────┐
 │14:07 › sen → claude-1: boş dosya denetimi `read` içinde …│
 │14:05 ✓ claude-1 değişikliğini (3 dosya) checkout'a uyguladın, stage'de; çalışma ağacı işareti 7f3a2c1
 │13:58 ! claude-1 bitirdi: değişiklik hazır · 3 dosya +41 −6
@@ -22,7 +22,7 @@ Günlük (ekrandaki adı DEFTER) ekranın üstünde bir pencerede açılır, `J`
 
 ## Hikâye
 
-Günlüğün penceresi varsayılan olarak günlüğü satır satır göstermez, hikâyeyi anlatır: aynı satırları karta göre gruplar. `J` (ya da `:story`) ikisi arasında geçer; seçim hatırlanır ve defterin başlığı o zaman geri dönüş tuşunu söyler: `DEFTER · J hikâye`. Bir kartın ayrıntısında log her zaman o kartın günlüğüdür.
+Günlüğün penceresi varsayılan olarak günlüğü satır satır göstermez, hikâyeyi anlatır: aynı satırları karta göre gruplar. `J` (ya da `:story`) ikisi arasında geçer; seçim hatırlanır ve defterin başlığı o zaman geri dönüş tuşunu söyler: `DEFTER · J hikâye`. Bir kartın kendi hikâyesi [ekranındadır](cards.md), detayının log sekmesinde.
 
 ```text
 ┌ HİKÂYE · J defter ─────────────────────────────────────────┐
@@ -43,7 +43,7 @@ Günlüğün penceresi varsayılan olarak günlüğü satır satır göstermez, 
 - **Kart başına bir blok**, günlüğün son zamanda sözünü ettiği her kart için; en yeni satırı olan kart önce. Başlığı: numara ve başlık, sahibi, sonra ne kadar ilerlediği (`≡ 4/5` yapılacaklar listesi, `✓ bitti`, o kartın bir değişikliği bekliyorsa `değişiklik hazır`). Altında kartın en yeni üç satırı, en eskisi önce: onunla ilgili söylenenler, sahibinin değişikliği, bir durma, bir hata, bir uygulama. Bir satır, agent'ının yazıldığı anda üzerinde olduğu karta aittir; başka karta geçen bir işçi eski satırlarını yanında götürmez; söylenen bir şey soranın kartına aittir. Yanıt almamış bir soru bunu söyler: `henüz yanıt yok`, sonra `yanıt yok · 2 dk`. En sonda, kart bitmemişken, `şimdi` ve sahibinin şu an yaptığı: adımı ve ne kadar süredir.
 - **Başka**: hiçbir karta ait olmayan satırlar (liderin işe alması, bir worktree'nin kurulması, bir API çağrısının yeniden denemesi); her tür bir kez, en yeni satırıyla ve kaç tane olduğuyla (`×12`). Bir görev ataması kartını adlandırır, bu yüzden o kartın bloğunda anlatılır.
 
-Hikâye her karede en çok en yeni 2.000 günlük satırını okur ve paneli dolduracak kadar kart gösterir; daha eskiler için `J` ve günlük. `:clear`'ın kaldırdığı satırlar anlatılmaz (işaretli olan anlatılır) ve bir arşivin satırları arşivde bekler.
+Hikâye her karede en çok en yeni 2.000 günlük satırını okur ve pencereyi dolduracak kadar kart gösterir; daha eskiler için `J` ve günlük. `:clear`'ın kaldırdığı satırlar anlatılmaz (işaretli olan anlatılır) ve bir arşivin satırları arşivde bekler.
 
 | Tuş | Ne yapar |
 | --- | --- |
@@ -59,7 +59,7 @@ Her satırda saat, türü için bir işaret, birden çok proje açıksa projenin
 | İşaret | Satırlar |
 | --- | --- |
 | `⇄` | iki taraf arasında bir mesaj, `kimden → kime [tür]: ilk satır`; başka bir mesaja yanıtsa türden sonra `↩`. Kendi mesajlarınız, `sen → claude-1: …`, ve bir agent'ın size kapanış metni, `claude-1 yanıt verdi: …` |
-| `→` | liderin işleri: asılan bir kart, işe alınan bir işçi (`lead işe aldı: claude-1 (varsayılan model)`), işini bitirip ayrılan bir işçi. Görev dağıtımı ve panodan almalar panelde gösterilmez (pano ve kartın ekranında vardır) |
+| `→` | liderin işleri: asılan bir kart, işe alınan bir işçi (`lead işe aldı: claude-1 (varsayılan model)`), işini bitirip ayrılan bir işçi. Görev dağıtımı ve panodan almalar günlükte gösterilmez (pano ve kartın ekranında vardır) |
 | `!` | sizin için bir şey: bir işçi bitirdi (`claude-1 bitirdi: değişiklik hazır · 3 dosya +41 −6`), `:commit`'in önerisi geldi, bütçe azalıyor |
 | `✓` | bir değişiklik uyguladınız: `claude-1 değişikliğini (3 dosya) checkout'a uyguladın, stage'de; çalışma ağacı işareti 7f3a2c1` |
 | `⚑` | bir agent'ın varsaydığı ve oturumun notları: `bildiği her şeyle, eski oturumunda devam ediyor`, `yeni bir oturumla başlıyor, kaldığı yer anlatıldı`, burada olmayan bir model (`varsayılanla devam`), confine düzeyi, HEAD'inize taşınan ya da yerinde kalan bir worktree, bir worktree'ye kopyalanan bir yol, komut listelemeyen bir oturum |
@@ -102,7 +102,7 @@ Seçili satırın altında soluk bir satır tuşlarını söyler: `enter konuşm
 
 ## İşaretler
 
-`m` eldeki satırı sonra dönmek için işaretler: açık konuşmanın seçili satırını, yoksa seçili günlük satırını (bir kartın ekranında kartınkini); yine `m` işareti kaldırır ve flaş hangisi olduğunu söyler. Eldeki satır yoksa (pencere kapalı ya da içinde hikâye) flaş `m`'nin nerede çalıştığını söyler. `'` sonraki işaretli satıra gider, ilke dönerek; hiç yoksa söyler. İşaret sizindir, çalıştırmayı aşar: depoda satırıyla tutulur, bir yükleme işaretli satırları ne kadar eski olsa da hep getirir ve temizlik hiçbirini bırakmaz. Demonun deposu yok, bu yüzden işaretleri çalıştırmayla biter. İşaretler `:export`'ta görünmez ve bütün işaretlerin bir listesi yok: `'` ile günlük onun yerine geçer.
+`m` eldeki satırı sonra dönmek için işaretler: açık konuşmanın seçili satırını, yoksa günlüğün penceresinde seçili satırı; yine `m` işareti kaldırır ve flaş hangisi olduğunu söyler. Eldeki satır yoksa (pencere kapalı ya da içinde hikâye) flaş `m`'nin nerede çalıştığını söyler. `'` sonraki işaretli satıra gider, ilke dönerek; hiç yoksa söyler. İşaret sizindir, çalıştırmayı aşar: depoda satırıyla tutulur, bir yükleme işaretli satırları ne kadar eski olsa da hep getirir ve temizlik hiçbirini bırakmaz. Demonun deposu yok, bu yüzden işaretleri çalıştırmayla biter. İşaretler `:export`'ta görünmez ve bütün işaretlerin bir listesi yok: `'` ile günlük onun yerine geçer.
 
 ## Sen yokken
 
@@ -114,11 +114,11 @@ Başka bir pencerede yarım saat ya da daha uzun kaldıktan sonra terminale dön
 
 ## Ekranı temizlemek
 
-`:clear` günlüğün satırlarını ve KARAR BEKLEYEN'in listelediklerini ekibin ekranından kaldırır; `:clear journal` ve `:clear inbox` birini. Önce on saniye bekler, `u` ekranı olduğu gibi bırakır. Hiçbir şey silinmez: depo her satırı tutar, `:export`, bir kartın ekranı ve arşivler hâlâ gösterir, temizlemenin kendisi de saklanır, böylece sonraki açılış da temiz başlar. İşaretli bir satır kalır. Sizi hâlâ bekleyen açık kalır ve başlıkta sayılır, `KARAR BEKLEYEN (0 · +2 gizli)`, `W` sıradakini açar ve listeye geri koyar. `:unclear` (ya da `:unclear journal`, `:unclear inbox`) hepsini geri getirir.
+`:clear` günlüğün satırlarını ve KARAR BEKLEYEN'in listelediklerini ekrandan kaldırır; `:clear journal` ve `:clear inbox` birini. Önce on saniye bekler, `u` ekranı olduğu gibi bırakır. Hiçbir şey silinmez: depo her satırı tutar, `:export` ve arşivler hâlâ gösterir, temizlemenin kendisi de saklanır, böylece sonraki açılış da temiz başlar. İşaretli bir satır kalır. Sizi hâlâ bekleyen açık kalır, terminalin başlığında ve KARAR BEKLEYEN başlığında sayılır, `KARAR BEKLEYEN 1 değişiklik · 2 gizli (:unclear)`, `W` sıradakini açar ve listeye geri koyar. `:unclear` (ya da `:unclear journal`, `:unclear inbox`) hepsini geri getirir.
 
 ## Nerede kalmıştın
 
-Önceki bir çalıştırmayı hatırlayan canlı bir başlangıç, bir şey kımıldamadan önce NEREDE KALMIŞTIN · 2 sa 10 dk önce penceresini açar: bütçe (`$3.10 harcandı, bütçe $20.00; her agent kendisiyle konuşulana dek uyur`), açık proje başına bir satır (agent'lar, açık kartlar), panelin listelediği gibi sizi bekleyen en eski ögeler (en çok altı, sonra `… ve N daha`), önceki çalıştırmanın yarıda kestiği turlar ve önceki çalıştırmanın son altı günlük satırı, gün değiştiği yerde bir gün satırıyla. Herhangi bir tuş kapatır ve başka bir şey yapmaz. Anlatılacak bir şey yoksa pencere açılmaz; demoda hiç olmaz.
+Önceki bir çalıştırmayı hatırlayan canlı bir başlangıç, bir şey kımıldamadan önce NEREDE KALMIŞTIN · 2 sa 10 dk önce penceresini açar: bütçe (`$3.10 harcandı, bütçe $20.00; her agent kendisiyle konuşulana dek uyur`), açık proje başına bir satır (agent'lar, açık kartlar), karar bekleyen en eski ögeler (`3 şey karar bekliyor:`, en çok altı, sonra `… ve N daha`), önceki çalıştırmanın yarıda kestiği turlar ve önceki çalıştırmanın son altı günlük satırı, gün değiştiği yerde bir gün satırıyla. Herhangi bir tuş kapatır ve başka bir şey yapmaz. Anlatılacak bir şey yoksa pencere açılmaz; demoda hiç olmaz.
 
 ## Dışa aktarma
 

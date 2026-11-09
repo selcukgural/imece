@@ -1,28 +1,36 @@
 ---
 title: Bir kartın ekranı
-description: Bir kartın her şeyi tek ekranda - kim çalıştı, hikâyesi, ondan sizi bekleyenler ve günlüğü - # ile kartın numarası ya da başlığından bir sözcükle açılır.
+description: Bir kartın her şeyi tek ekranda - nerede durduğu, kim çalıştı, denemeleri ve hikâyesi - # ile kartın numarası ya da başlığından bir sözcükle açılır.
 ---
 
 # Bir kartın ekranı
 
-Bir kart tek bir iş birimidir: lider asar (ya da boşta bir işçiye mesajınız açar), bir işçi alır, bir `done` ile biter. Numarası, `#3`, ekipte işçisinin satırında, panoda ve günlükte görünür. `#` bir kartın ekranını açar: [detayının](changes.md#detay) log sekmesi (iş sahibinindir, yoksa ilk pay alanın), detayın başlığı altında kartın durumu, kimlerin payı olduğu ve hikâyesi; `tab` sahibinin diff'ine ve konuşmasına geçer, `esc` ana ekrana döner. Onunla, bütün günlüğü okumadan tek bir işe ne olduğunu öğrenmek istediğinizde karşılaşırsınız. Türkçe ekran karta `#` menüsünde "iş" der.
+Bir kart tek bir iş birimidir: lider asar (ya da boşta bir işçiye mesajınız açar), bir işçi alır, bir `done` ile biter. Numarası, `#3`, ana ekranda işçisinin satırında, panoda ve günlükte görünür. `#` bir kartın ekranını açar: [detayının](changes.md#detay) log sekmesi (iş sahibinindir, yoksa ilk pay alanın), detayın başlığı altında kartın durumu, kimlerin payı olduğu ve hikâyesi; `tab` sahibinin diff'ine ve konuşmasına geçer, `esc` ana ekrana döner. Onunla, bütün günlüğü okumadan tek bir işe ne olduğunu öğrenmek istediğinizde karşılaşırsınız. Türkçe ekran karta `#` menüsünde "iş" der.
 
 ```text
-┌ #3 Parse the manifest ──────────────────────────────┐┌ KARAR BEKLEYEN · #3 (1) ──────────────┐
-│shop-api · ÜZERİNDE · 23 dk                           ││Δ 13:58 claude-1 bitirdi: parser (3 dosya, +41 −6)
-│                                                      │└───────────────────────────────────────┘
-│KİM                                                   │┌ DEFTER · #3 (4) ──────────────────────┐
-│astı      ● ▎lead      koordine ediyor│14:01 ⇄ lead → claude-1 [cevap] ↩: #3 için manifest::read …
-│sahibi    ● ▎claude-1  #3   Parse the manifest  testleri yazıyor
-│yardımcı  ● ▎claude-1.1                  düşünüyor…   ││13:57 ⇄ claude-1 → lead [soru]: #3 için hangi parser? …
-│                                                      ││13:55 → lead → claude-1: #3 Parse the manifest
-│HİKÂYE                                                ││13:50 → lead panoya astı: #3 Parse the manifest
-│13:55 ◎ niyet       Manifest paniklemeden okunsun     ││                                       │
-│13:57 ⇄ konuşma     → lead [soru] Hangi parser? …     ││                                       │
-│14:01 ⚖ karar       manifest::read, eskisi sonra      ││                                       │
-│14:10 • kanıt       ✓ cargo test                      ││                                       │
-└──────────────────────────────────────────────────────┘└───────────────────────────────────────┘
-  tab diff · konuşma  enter iz  n p sonraki / önceki iş  # başka iş  esc geri  ? yardım
+#1 Kargo ücret hesabı · shop-api · claude-1 · 27 dk · $0.30
+
+diff · konuşma · log                                                                       tab geçer
+┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
+│shop-api · İNCELENECEK · 33 dk                                                                    │
+│sahibi src/Auth/TokenService.cs, src/Catalog/ProductQuery.cs, src/Orders/Money.cs                 │
+│                                                                                                  │
+│KİM                                                                                               │
+│astı      ○ ▎lead                                         koordine ediyor · 33 dk                 │
+│sahibi    ! ▎claude-1          #17  Fiyat listesi önbell… ▸ Çevresi…  $0.30  +6 −3  ↗ localhost:50│
+│konuştu   ! ▎claude-2          #16  Arama sonuç sıralama… ▸ Değişik…  $0.26  +2 −1  ↗ localhost:│
+│                                                                                                  │
+│DENEMELER                                                                                         │
+│#1 deneme 1  claude-1  claude-opus-5-5  4 Δ  $0.05  33 dk  sürüyor  2026-11-09                    │
+│  modele göre: claude-opus-5-5 $0.04 · claude-haiku-5-5 <$0.01                                    │
+│                                                                                                  │
+│HİKÂYE                                                                                            │
+│14:00 ◎ niyet      lead panoya astı: Kargo ücret hesabı                                           │
+│14:00 ⇄ konuşma    lead → claude-1 [görev]: #1 Kargo ücret hesabı                                 │
+│14:00 Δ değişiklik değiştirdi: src/Auth/TokenService.cs                                           │
+│14:04 ⇄ konuşma    claude-2 → claude-1 [soru]: Bölge kodları enum mu olsun?                       │
+│14:05 ⇄ konuşma    claude-1 → claude-2 [cevap] ↩: Hayır, ayrı kuyruk                              │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Bir kartı açmak
@@ -35,24 +43,22 @@ Bir kart tek bir iş birimidir: lider asar (ya da boşta bir işçiye mesajını
 
 ## Ekran ne gösterir
 
-Solda, ekibin yerinde:
+Detayın başlığı (kart ve başlığı, projesi, işin sahibi olan agent, ne zamandır ve neye mal olduğu) ve sekme çubuğu altında:
 
-- Başlık satırı: `#3` ve kartın başlığı; sonra projesi, panonun sözcükleriyle sütunu (YAPILACAK, ÜZERİNDE, İNCELENECEK, DOĞRULANIYOR, BİTTİ, ya da başarısız olan için BAŞARISIZ, liderin geri çektiği için GERİ ÇEKİLDİ), ikinci denemesinden itibaren ` · 2. deneme`, ve dakikaları, bitmiş ya da başarısızsa bitişine kadar.
+- İlk satır: projesi, panonun sözcükleriyle sütunu (YAPILACAK, ÜZERİNDE, İNCELENECEK, DOĞRULANIYOR, BİTTİ, ya da başarısız olan için BAŞARISIZ, liderin geri çektiği için GERİ ÇEKİLDİ), ikinci denemesinden itibaren ` · 2. deneme`, ve dakikaları, bitmiş ya da başarısızsa bitişine kadar.
 - Varsa neyi düzenlediği (lease'leri; yalnız demoda; sembol lease'leri canlıda yapılmadı).
 - `assign` ya da `post`'u verdiyse sahip olduğu yollar (`sahibi src/parser.rs, docs (shared)`; [kartın sahip olduğu yollar](../concepts/messages-and-board.md#kartın-sahip-olduğu-yollar)); dışına bir yazma hikâyesinin bir `değişiklik` satırıdır: `değiştirdi: src/other.rs; kartın yollarının dışında`.
 - Lonca'daki bir projede istediği denetimler (`denetim api, e2e`; [kartın istediği denetimler](../concepts/messages-and-board.md#kartın-istediği-denetimler)).
-- **KİM**: kim astı, sahibi, hâlâ sahibinin kartıyken sahibinin yardımcıları, sonra hikâyesinin hakkında konuştuğunu söylediği herkes; her biri bir kez, ilk aldığı rolle. Ekibin agent satırları gibi çizilirler, böylece durumları canlıdır; `j` `k` aralarında seçer ve `enter` seçilenin odağını ekipteki gibi açar.
+- Beklediği kartlar, her biri nasıl durduğuyla (`sonra  #2 ✓, #5 ⧗`): `✓` bitti, `✕` başarısız ya da geri çekildi, `⧗` henüz değil ([başka kartları bekleyen kartlar](../concepts/messages-and-board.md#başka-kartları-bekleyen-kartlar)).
+- **KİM**: kim astı, sahibi, hâlâ sahibinin kartıyken sahibinin yardımcıları, sonra hikâyesinin hakkında konuştuğunu söylediği herkes; her biri bir kez, ilk aldığı rolle. [Uzun satır](salon.md#uzun-satır) olarak çizilirler, böylece durumları canlıdır.
 - **DENEMELER**: karta her deneme, eskiden yeniye, [harcamaların](../concepts/budget-and-limits.md#harcamalar) listelediği gibi: deneme, işçi, model, değişiklikler ve geri dönenler, neye mal olduğu, ne kadar sürdüğü ve nasıl bittiği, altında da her modelin bundan ne harcadığı. Bir deneme bir şey harcadığında görünür.
 - **HİKÂYE**: kartın hikâyesi, olay başına bir satır, eskiden yeniye, sahibinin gördüğü gibi anlatılır. Her satırda bir işaret ve bir etiket vardır: `◎` niyet, `⚑` varsayım, `⚖` karar, `⇄` konuşma (bir mesaj, türüyle), `•` kanıt (bir çalıştırma ve nasıl bittiği), `Δ` değişiklik, `›` sen (onun hakkında söylediğiniz). Henüz kimsenin almadığı bir kart `Henüz hikâye yok.` der.
 
-Altlarında, yalnız bu kart için:
-
-- **KARAR BEKLEYEN · #3**: bu kartta gelen açık ögeler. Bir öge geldiğinde agent'ının üzerinde çalıştığı kartı tutar, böylece bir işçinin `Δ`'sı işçi sonraki kartı aldıktan sonra da bitirdiği kartta kalır.
-- **DEFTER · #3**: kartı adlandıran satırlar (asıldı, alındı, görev verildi) ve metninde `#3` geçen her söylenmiş satır (ardında rakam yoksa; `#30`, `#3` değildir), günlük gibi katlanmış, en yeni önce; numara geçtiği her yerde vurgu renginde işaretlenir.
+Karttan sizi bekleyenler ana ekrandadır, satırları kartı adlandırır; günlüğün onunla ilgili satırları `:export`'a girer (aşağıda).
 
 ## Kart ekranındaki tuşlar
 
-Her tuş ana ekranda yaptığını yapar: `tab` `⇧tab` sahibinin öbür sekmelerine geçer (diff'i, konuşması), bir günlük satırında `enter` konuşmayı açar, `a` `r` seçili ögeyi yanıtlar, `c` kopyalar, `t` ve `v` seçili agent'ın izini ya da konuşmasını açar, `m` işaretler, `W` her yerdeki bekleyen sıradakine gider.
+Her tuş sahibinin odağında yaptığını yapar: `tab` `⇧tab` öbür sekmelerine geçer (diff'i, konuşması), `enter` ham akışını açar, `a` `e` `A` `r` açık isteğine karar verir, `t` ve `v` izini ya da konuşmasını açar, `@` ona yazar, `W` her yerdeki bekleyen sıradakine gider.
 
 | Tuş | Ne yapar |
 | --- | --- |
@@ -61,17 +67,17 @@ Her tuş ana ekranda yaptığını yapar: `tab` `⇧tab` sahibinin öbür sekmel
 | `esc` | buradan açılan bir iz ya da diff'ten karta geri; kartta ana ekrana geri |
 | `^o` | olduğunuz yere geri; kart ekranı da yerlerden biridir |
 | `:export [YOL]` | kartın ekranı Markdown dosyası olarak |
-| `:home` `:salon` | kartı bırakıp ana ekrana ya da ekibe |
+| `:home` `:salon` | kartı bırakıp ana ekrana ya da onun ÇALIŞAN'ına |
 
 Ana ekranın katlama tuşları (`h` `l`, `za` `zM` `zR`) burada bir şey yapmaz.
 
 ## Dışa aktarma
 
-Bir kartın ekranında (üstünde konuşma açık değilken) `:export` şunu yazar: `# #3 Parse the manifest`, projesi, sütunu ve dakikaları, lease'leri, `## KİM`, `## HİKÂYE` (satır başına bir madde), `## Seni bekleyenler` ve `## Defter`: kartın her satırı, eskiden yeniye, hiçbiri katlanmamış. Her saat gününü taşır, çünkü dosya ekranı terk eder. Varsayılan ad imece'nin başlatıldığı dizinde `imece-card-3-20261031-1401.md`; var olan bir dosyanın üzerine asla yazılmaz.
+Bir kartın ekranında (üstünde konuşma açık değilken) `:export` şunu yazar: `# #3 Parse the manifest`, projesi, sütunu ve dakikaları, lease'leri, `## KİM`, `## HİKÂYE` (satır başına bir madde), `## Karar bekleyenler` ve `## Defter`: kartın her satırı, eskiden yeniye, hiçbiri katlanmamış. Her saat gününü taşır, çünkü dosya ekranı terk eder. Varsayılan ad imece'nin başlatıldığı dizinde `imece-card-3-20261031-1401.md`; var olan bir dosyanın üzerine asla yazılmaz.
 
 ## Henüz yok
 
-Günlükte serbest metin arama yok; menü kartları yalnız numara ve başlıkla bulur. Bir kartın kendi `Δ` satırı günlükte (bitirdi, uygulandı) kartı adlandırmaz, bu yüzden kartın ekranına yalnız KARAR BEKLEYEN yoluyla düşer.
+`#` menüsü kartları yalnız numara ve başlıkla bulur; `H` (`:recall`) her günlük ve iz satırının sözcüklerinde arar. Bir kartın kendi `Δ` satırı günlükte (bitirdi, uygulandı) kartı adlandırmaz, bu yüzden kartın dışa aktarımına yalnız karar bekleyen ögeleri yoluyla girer.
 
 ## Ayrıca bakınız
 

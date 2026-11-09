@@ -8,12 +8,17 @@ description: "The footer line where you write - to the leader or one agent, Clau
 The footer is where you write. `/` (or `i`, as in vim) opens it to the leader of the selected project, `@` to one agent, `:` to imece, `!` to your own shell, `#` to a card. Until you type, a hint says what `enter` does and how to add a line, and that `esc` cancels; it goes away with the first character and comes back when the line is empty again.
 
 ```text
- › to lead: █   enter send · ⇧enter new line · esc cancel
+ › to lead:    enter send · ⇧enter new line · esc cancel
 ```
 
 ```text
- budget (spent $3.10 of $20.00)   board   close (shop-api)   code   commit   copy (shop-api)
- › command: :b█                                       tab next · enter take · esc hide
+ allow  archive  archives  awake (off)  away (30m)  board  +65 more ›
+ › command: :   tab next · enter take · esc hide · 1 of 71
+```
+
+```text
+ budget ($3.10 of $20.00 · $2.40/h, ~6 h 25 min left)
+ › command: :bu   tab next · enter take · esc hide
 ```
 
 ## Where a line goes
@@ -45,11 +50,11 @@ A message can run over lines; the first line of one that opens a card is the car
 | `:export [PATH]` | | the open conversation, else the card's screen, as Markdown |
 | `:commit` | | a cheap model suggests a commit message for what is staged, put on the line as `!git commit -m '…'` |
 | `:copy PATH` | | copy a path git ignores (`.env`, `target`) into workers' worktrees at their start; again stops |
-| `:pin [NAME]` | | pin a project to the top of the team; again unpins |
+| `:pin [NAME]` | | pin a project to the top of the list; again unpins |
 | `:awake` | | keep the machine awake while an agent is mid-turn; again turns it off |
 | `:notify [off\|bell\|text\|push]` | | in another window, a bell or a desktop note when something comes to wait for you; `push`: to your phone through ntfy when you are away; bare, the next one round |
 | `:motion [off\|calm\|full]` | | what moves on the screen: a working row breathes, what comes to wait blinks; full adds spinners; bare, the next one round |
-| `:salon` `:home` | | the two views |
+| `:home` `:salon` | | Home · Home's AT WORK |
 | `:board` `:code` `:timeline` | | windows over the screen; `esc` closes them |
 | `:lang [en\|tr]` | `L` | the other language, or the one named |
 | `:theme [NAME\|FILE]` (`:t`) | `T` | the next built-in theme, or the one named |
@@ -57,11 +62,12 @@ A message can run over lines; the first line of one that opens a card is the car
 | `:quit` (`:q`) | `q` | quit; it asks first, as `q` does |
 | `:pending` | `q` `s` | before quitting: the agents mid-turn and the changes not reviewed |
 | `:next` / `:defer` | `W` / `S` | open the next item waiting / put this one off |
-| `:waiting` | `w` | the waiting panel |
+| `:waiting` | | Home, its first row to decide |
 | `:settle` / `:unsettle` | `s` / — | hide the selected row until it needs you again / bring everything hidden back |
-| `:fold` / `:unfold` | `zM` / `zR` | fold / unfold every project and every worker's helpers |
+| `:fold` / `:unfold` | `zM` / `zR` | fold / unfold every project on Home; in a conversation its messages, in a change its files |
 | `:trace [@NAME]` / `:talk [@NAME]` | `t` / `v` | the raw stream / the conversation of the named agent, else the one at hand |
-| `:peek [@NAME]` | `K` | the focus of the named agent, else the one at hand, in a window over the view |
+| `:peek [@NAME]` | `K` | the focus of the named agent, else the one at hand, in a window over the screen |
+| `:journal` | `J` | the journal in a window |
 | `:mark` | `m` | mark the line at hand |
 | `:pause`, `:faster`, `:slower` | `space`, `+`, `-` | the demo only; live they say so and are left out of the menu |
 
@@ -69,7 +75,7 @@ The commands that work on Home's list (`:waiting`, `:fold`, `:unfold`, `:settle`
 
 ### The menu and its values
 
-The menu shows each command's value after it, in brackets, drawn but never inserted: `budget (spent $3.10 of $20.00)`, `theme (dark)`, `lang (English)`, `close` and `rename` with the project at hand, `forget` `talk` `trace` with the agent at hand, `next` and `waiting` with how many items wait, `needs` and `pause` on or off, `faster` `slower` the speed, `pin` the project (with `▴` when pinned), `export` what it would write (`the conversation`, `#12`). `$` marks what raises the next bill: `:open` (a new leader session), `:forget` (the next message starts a new session that pays the whole briefing again) and `:commit` (it asks a model for the message). No other `:` command starts a paid turn by itself.
+The menu shows each command's value after it, in brackets, drawn but never inserted: `budget ($3.10 of $20.00 · $2.40/h, ~6 h 25 min left)` (the pot, its rate, how long it lasts, and a usage window when there is one), `theme (dark)`, `lang (English)`, `close` and `rename` with the project at hand, `forget` `talk` `trace` with the agent at hand, `next` and `waiting` with how many items wait (`4 to decide`), `story` `review` `awake` `pause` on or off, `faster` `slower` the speed, `pin` the project (with `▴` when pinned), `export` what it would write (`the conversation`, `#12`). `$` marks what raises the next bill: `:open` and `:solo` (a new session), `:fork` (a new worker), `:forget` (the next message starts a new session that pays the whole briefing again), `:commit` and `:review` (each asks a model). No other `:` command starts a paid turn by itself.
 
 ### Short names
 
@@ -116,7 +122,7 @@ There is one cut, not a ring: each cut that takes something replaces it. The cur
 
 The footer takes one row per row of text, at most eight and a third of the screen: a line too long for the screen goes on in the next row (cut cell by cell; a wide character that does not fit moves down whole), so what you type is always in sight. The first row carries who the text goes to, the others are indented under it. When not all rows fit, the cursor's row stays in view and the last row says where it is, `3/12`. `^a` `^e`, home/end and `^u` `^k` keep to the line the cursor is on; `↑` `↓` go between lines, keeping the column (while the menu is shown they step through it instead); backspace at a line's start joins it to the one above. `@name` ends at a space or a new line, so `@name` `⇧enter` text goes to that agent.
 
-A paste goes into the line whole (bracketed paste): line ends become new lines, tabs are kept, other control characters are left out, and nothing is sent by it. Before this a paste's first line end sent half a request. A paste while not writing is left out, and the footer says to start writing first. The journal and the team show a message of several lines on one line; the conversation shows its lines.
+A paste goes into the line whole (bracketed paste): line ends become new lines, tabs are kept, other control characters are left out, and nothing is sent by it. Before this a paste's first line end sent half a request. A paste while not writing is left out, and the footer says to start writing first. The journal and Home show a message of several lines on one line; the conversation shows its lines.
 
 ## Your own shell
 

@@ -8,12 +8,17 @@ description: "Yazdığınız alt satır - lidere ya da tek bir agent'a, Claude C
 Alt satır yazdığınız yerdir. `/` (ya da vim'deki gibi `i`) onu seçili projenin liderine açar, `@` tek bir agent'a, `:` imece'ye, `!` kendi kabuğunuza, `#` bir karta. Siz yazana dek bir ipucu `enter`'ın ne yaptığını, satır nasıl ekleneceğini ve `esc`'in vazgeçtiğini söyler; ilk karakterle kaybolur, satır yeniden boşalınca geri gelir.
 
 ```text
- › lead için: █   enter gönder · ⇧enter yeni satır · esc vazgeç
+ › lead için:    enter gönder · ⇧enter yeni satır · esc vazgeç
 ```
 
 ```text
- budget ($3.10 / $20.00 harcandı)   board   close (shop-api)   code   commit   copy (shop-api)
- › komut: :b█                                       tab sonraki · enter al · esc gizle
+ allow  archive  archives  awake (kapalı)  away (30m)  board  +65 tane daha ›
+ › komut: :   tab sonraki · enter al · esc gizle · 1/71
+```
+
+```text
+ budget ($3.10 / $20.00 · $2.40/sa, ~6 sa 25 dk kaldı)
+ › komut: :bu   tab sonraki · enter al · esc gizle
 ```
 
 ## Bir satır nereye gider
@@ -45,11 +50,11 @@ Bir mesaj birkaç satıra yayılabilir; kart açan bir mesajın ilk satırı kar
 | `:export [PATH]` | | açık konuşma, yoksa kartın ekranı, Markdown olarak (`:export YOL`) |
 | `:commit` | | ucuz bir model stage'dekiler için commit mesajı önerir, satıra `!git commit -m '…'` olarak konur |
 | `:copy PATH` | | git'in yok saydığı bir yolu (`.env`, `target`) işçilerin worktree'lerine başlarken kopyala; yine basılınca bırakır (`:copy YOL`) |
-| `:pin [NAME]` | | projeyi ekibin en üstüne sabitle; yine basılınca bırakır (`:pin AD`) |
+| `:pin [NAME]` | | projeyi listenin en üstüne sabitle; yine basılınca bırakır (`:pin AD`) |
 | `:awake` | | bir agent tur ortasındayken makineyi uyanık tut; yine basılınca kapatır |
 | `:notify [off\|bell\|text\|push]` | | başka penceredeyken sizi bekleyen bir şey gelirse zil ya da masaüstü bildirimi; `push`: uzaktayken ntfy üzerinden telefonunuza; yalın yazılınca sıradaki |
 | `:motion [off\|calm\|full]` | | ekranda ne hareket eder: çalışan satır nefes alır, bekleyen yanıp söner; full dönücüleri de ekler; yalın yazılınca sıradaki |
-| `:salon` `:home` | | iki görünüm |
+| `:home` `:salon` | | ana ekran · ana ekranın ÇALIŞAN'ı |
 | `:board` `:code` `:timeline` | | ekranın üstünde pencereler; `esc` kapatır |
 | `:lang [en\|tr]` | `L` | diğer dil, ya da adı verilen |
 | `:theme [NAME\|FILE]` (`:t`) | `T` | sonraki yerleşik tema, ya da adı verilen (`:theme AD ya da DOSYA`) |
@@ -57,11 +62,12 @@ Bir mesaj birkaç satıra yayılabilir; kart açan bir mesajın ilk satırı kar
 | `:quit` (`:q`) | `q` | çık; `q` gibi önce sorar |
 | `:pending` | `q` `s` | çıkmadan önce: tur ortasındaki agent'lar ve incelenmemiş değişiklikler |
 | `:next` / `:defer` | `W` / `S` | bekleyen sıradaki ögeyi aç / bunu ertele |
-| `:waiting` | `w` | bekleyenler paneli |
+| `:waiting` | | ana ekran, karar bekleyen ilk satırı |
 | `:settle` / `:unsettle` | `s` / — | seçili satırı size yeniden ihtiyacı olana dek gizle / gizlenen her şeyi geri getir |
-| `:fold` / `:unfold` | `zM` / `zR` | her projeyi ve her işçinin yardımcılarını katla / aç |
+| `:fold` / `:unfold` | `zM` / `zR` | ana ekranda her projeyi katla / aç; konuşmada mesajlarını, değişiklikte dosyalarını |
 | `:trace [@NAME]` / `:talk [@NAME]` | `t` / `v` | adı verilen, yoksa eldeki agent'ın ham akışı / konuşması |
-| `:peek [@NAME]` | `K` | adı verilen, yoksa eldeki agent'ın odağı görünümün üstünde bir pencerede |
+| `:peek [@NAME]` | `K` | adı verilen, yoksa eldeki agent'ın odağı ekranın üstünde bir pencerede |
+| `:journal` | `J` | günlük bir pencerede |
 | `:mark` | `m` | eldeki satırı işaretle |
 | `:pause`, `:faster`, `:slower` | `space`, `+`, `-` | yalnız demo; canlıda bunu söyler ve menüde yer almaz |
 
@@ -69,7 +75,7 @@ Ana ekranın listesinde çalışan komutlar (`:waiting`, `:fold`, `:unfold`, `:s
 
 ### Menü ve değerler
 
-Menü her komutun değerini ardında, ayraç içinde gösterir; çizilir, asla eklenmez: `budget ($3.10 / $20.00 harcandı)`, `theme (dark)`, `lang (Türkçe)`, `close` ve `rename` eldeki projeyle, `forget` `talk` `trace` eldeki agent'la, `next` ve `waiting` kaç öge beklediğiyle, `needs` ve `pause` açık ya da kapalı, `faster` `slower` hızla, `pin` projeyle (sabitse `▴` ile), `export` ne yazacağıyla (`konuşma`, `#12`). `$` sonraki faturayı büyüteni işaretler: `:open` (yeni bir lider oturumu), `:forget` (sonraki mesaj, bütün brifingi yeniden ödeyen yeni bir oturum başlatır) ve `:commit` (mesajı bir modele sorar). Başka hiçbir `:` komutu kendi başına ücretli bir tur başlatmaz.
+Menü her komutun değerini ardında, ayraç içinde gösterir; çizilir, asla eklenmez: `budget ($3.10 / $20.00 · $2.40/sa, ~6 sa 25 dk kaldı)` (kese, hızı, ne kadar yeteceği, varsa bir kullanım penceresi), `theme (dark)`, `lang (Türkçe)`, `close` ve `rename` eldeki projeyle, `forget` `talk` `trace` eldeki agent'la, `next` ve `waiting` kaç öge beklediğiyle (`4 karar bekliyor`), `story` `review` `awake` `pause` açık ya da kapalı, `faster` `slower` hızla, `pin` projeyle (sabitse `▴` ile), `export` ne yazacağıyla (`konuşma`, `#12`). `$` sonraki faturayı büyüteni işaretler: `:open` ve `:solo` (yeni bir oturum), `:fork` (yeni bir işçi), `:forget` (sonraki mesaj, bütün brifingi yeniden ödeyen yeni bir oturum başlatır), `:commit` ve `:review` (her biri bir modele sorar). Başka hiçbir `:` komutu kendi başına ücretli bir tur başlatmaz.
 
 ### Kısa adlar
 
@@ -116,7 +122,7 @@ Tek bir kesik vardır, halka değil: bir şey alan her kesme öncekinin yerini a
 
 Alt satır metnin her sırası için bir sıra alır, en çok sekiz ve ekranın üçte biri: ekrana sığmayacak kadar uzun bir satır sonraki sırada sürer (hücre hücre kesilir; sığmayan geniş bir karakter bütün olarak aşağı iner), yani yazdığınız hep görünür. İlk sıra metnin kime gittiğini taşır, diğerleri altında içeriden gelir. Bütün sıralar sığmadığında imlecin sırası görünür kalır ve son sıra nerede olduğunu söyler, `3/12`. `^a` `^e`, home/end ve `^u` `^k` imlecin olduğu satırda kalır; `↑` `↓` satırlar arasında gider, sütunu koruyarak (menü gösterilirken onun yerine menüde ilerler); satır başında backspace üsttekiyle birleştirir. `@name` bir boşlukta ya da yeni satırda biter, yani `@name` `⇧enter` metin o agent'a gider.
 
-Yapıştırılan satıra bütünüyle girer (bracketed paste): satır sonları yeni satır olur, sekmeler korunur, diğer kontrol karakterleri atılır ve hiçbir şey onunla gönderilmez. Bundan önce bir yapıştırmanın ilk satır sonu yarım bir isteği gönderiyordu. Yazmıyorken yapıştırılan atılır ve alt satır önce yazmaya başlamanızı söyler. Günlük ve ekip çok satırlı bir mesajı tek satırda gösterir; konuşma satırlarıyla.
+Yapıştırılan satıra bütünüyle girer (bracketed paste): satır sonları yeni satır olur, sekmeler korunur, diğer kontrol karakterleri atılır ve hiçbir şey onunla gönderilmez. Bundan önce bir yapıştırmanın ilk satır sonu yarım bir isteği gönderiyordu. Yazmıyorken yapıştırılan atılır ve alt satır önce yazmaya başlamanızı söyler. Günlük ve ana ekran çok satırlı bir mesajı tek satırda gösterir; konuşma satırlarıyla.
 
 ## Kendi kabuğunuz
 
