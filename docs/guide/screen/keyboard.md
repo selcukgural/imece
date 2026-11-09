@@ -180,7 +180,7 @@ The focus's `folder` line says where the agent works: the checkout for a leader,
 | Glyph | Meaning |
 | --- | --- |
 | `!` waiting for you  `●` working  `○` idle  `✓` done, not seen  `■` stuck | an agent's state: the five glyphs |
-| `⇄` conversation  `▾` `▸` project / helpers / a folded message  `▴` pinned | |
+| `⇄` conversation  `▾` `▸` project / a folded message  `▴` pinned | |
 | `≈` tainted (reads the outside world) | demo only: researchers are not built live |
 | `⎇` branch  `↑` own commits  `↓` the checkout's new commits  `+N −M` lines not yet handed over | a worker's worktree |
 | `↗` a local address the worker wrote (localhost), a link the terminal opens | |

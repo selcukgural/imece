@@ -69,7 +69,7 @@ The row at hand has `▸` before it and the selection colour. `enter` opens the 
 A [card's screen](cards.md) lists who had a part in the card with the long row, every figure of an agent on one line:
 
 ```text
-owner     ● ▎claude-1  #3   Parse the manifest  ▸ Write the tests  Edit tests/parse.rs · 2 min  $1.10  ⎇ fix-parser ↑2 ↓1 +12 −3  ▾ 1 helpers  ↗ localhost:5173/
+owner     ● ▎claude-1  #3   Parse the manifest  ▸ Write the tests  Edit tests/parse.rs · 2 min  $1.10  ⎇ fix-parser ↑2 ↓1 +12 −3  1 helpers  ↗ localhost:5173/
 ```
 
 - The state glyph: where the agent stands on the [state ladder](#the-state-ladder). The five glyphs again, with two more meanings: `!` when something of its waits for you, whatever it does meanwhile, and `✓` for a worker that finished a turn you have not opened since.
@@ -83,7 +83,7 @@ owner     ● ▎claude-1  #3   Parse the manifest  ▸ Write the tests  Edit te
 - `≡ 3/7`: how far its own to-do list is, the steps done and all of them, when its planning tool keeps one (Claude Code's tasks). The step in progress is the row's status (`▸`); the focus lists them all. The mark gives way after the quote and the time when the row is narrow. Gone with the session.
 - `◔ 72%`: how full its context window is, from 70% on, in the attention colour from 90%, as Claude Code last said (its message usage and the window its result names). The focus has the figure whatever it is, `context: 22% · 45k of 200k`, or the tokens alone when the window's size is not said. It stays on a narrow row longer than the to-do mark. Gone with the session.
 - A worker's worktree stand, `⎇ fix-parser ↑2 ↓1 +12 −3`: the branch the agent made (none while the worktree is detached, as imece makes it; a worker hired from a start point shows that point instead, `⎇ #41`), its own commits the checkout does not have (imece's marks of applied changes are not counted), the checkout's commits it does not have, and the lines added and removed against its own HEAD, untracked files included: what its next `done` would hand you. Each part shows only when there is something to say. Read on imece's git thread as the session starts, when a turn ends, after an apply and every 15 seconds while the worker or a helper is mid-turn; not kept between runs.
-- `▾ 1 helpers` or `▸ 1 helpers  ● claude-1.1`: a worker's helpers, listed or folded away, with the loudest of them when folded.
+- `1 helpers`: how many helpers the worker has; Home lists them under it (`└`).
 - `↗ localhost:5173/`: the newest loopback address the worker or helper wrote in its own text, as a link the terminal opens (OSC 8). Only `http`/`https` on `localhost`, `127.0.0.1` or `[::1]` counts, the query and fragment are dropped, and an address over 60 characters is not shown. Gone with the session.
 
 The time, the quote and the activity bar take only what the row has left once its cost, stand, helpers and link are on it, so a narrow screen drops the bar first, the quote next and then the time.
@@ -104,7 +104,7 @@ Every glyph the `?` help lists, as the screen draws them:
 | `✓` | done, not seen: finished a turn you have not opened since |
 | `■` | stuck: blocked (`BLOCKED` as its status), or its session ended (`■ stopped`; writing to it starts a new one); also a count of stuck agents on a project header |
 | `⇄` | a conversation line |
-| `▾` `▸` | a project or a worker's helpers, open or folded |
+| `▾` `▸` | a project, open or folded |
 | `▴` | a pinned project |
 | `~` | soft-tainted: read a research report (demo only) |
 | `≈` | tainted: reads the outside world (demo only) |

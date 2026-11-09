@@ -307,20 +307,14 @@ pub(super) fn agent_line(
     }
     let helpers = w.helpers_of(a.id).count();
     if helpers > 0 {
-        // Its helpers are under it, or folded away: the mark says which,
-        // and a folded group shows its loudest member.
-        let folded = app.folded_workers.contains(&a.id);
-        let mark = if folded { "▸" } else { "▾" };
+        // How many helpers it has; they are listed under it.
         tail.push(Span::styled(
             format!(
-                "  {mark} {}",
+                "  {}",
                 fill(app.lang.text().helpers, &[&helpers.to_string()])
             ),
             dim(),
         ));
-        if folded && let Some(loud) = app.loudest(w.helpers_of(a.id).map(|h| h.id)) {
-            tail.extend(member(app, loud, rungs));
-        }
     }
     // Last, so the screen knows where the text it links starts.
     tail.extend(local_spans(a));
