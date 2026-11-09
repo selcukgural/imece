@@ -22,46 +22,15 @@
 cargo fmt --all
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
-cargo mutants --in-diff <(git diff main...HEAD)   # what the change touched; CI does this on every PR (below)
-cargo mutants                                      # everything (slow); CI does this nightly
 ```
 
-- Mutation tests: a mutant that survives is a test that is missing, so a
-  change comes with the tests that kill its mutants (`cargo-mutants` 27.1.0,
-  pinned in `.github/workflows/mutants.yml`; exclusions with their reasons
-  in `.cargo/mutants.toml`). Running them is CI's job, never local (user,
-  2026-10-29: too slow on a laptop too); before a push run fmt, clippy
-  and the tests. BUT before opening a PR, make sure the tests that kill
-  the change's mutants are written (user, 2026-10-29: each push that
-  comes back with missed mutants costs a CI round of 10+ minutes, and a
-  big change came back twice). So write the tests with the mutants in
-  mind from the start, and before the PR go over the diff once more for
-  what a mutant would change: the equal case of every comparison, each
-  operand of an arithmetic expression (with the number in the test, not
-  the constant), every field a constructor sets, every arm of a match,
-  every function with the same shape in a sibling file, with values that
-  tell the variants apart. The full run is nightly only (19:17 UTC when
-  main changed, or `gh workflow run mutants.yml`: 16 shards round robin, under 5
-  hours; a survivor makes its shard red and holds nothing). Before the
-  day's first piece of work look at last night's run (`gh run list
-  --workflow=mutants.yml --event schedule --limit 1`): what survived is
-  fixed first.
-  The PR job also fails on a timeout, so never write
-  a loop a mutated operator could make endless (search a range instead).
-  What holds a PR (user, 2026-11-03): only the mutants in the paths
-  `.cargo/mutants-boundary` lists, imece's own boundaries (the Claude Code
-  adapter, the bus and its tools, the Δ gate, approved scripts and
-  standing yeses, session checks, the pot, worktree removal, `clean`, the
-  store, push, the editor's draft, the pty). Those run as `boundary` and
-  `changed` waits for them; the rest of a change's mutants run as
-  `report`, red on a miss, and nothing waits for them: merge on green
-  tests, fmt, clippy and `changed`, then fix a `report` miss in a
-  follow-up PR the same day. A round after the first runs with
-  `--iterate` over what the earlier round of the same PR caught (its
-  artifacts), so it tries only what was missed and what changed. A file
-  that becomes a boundary goes on the
-  list in the PR that makes it one. The tests are still written with the
-  mutants in mind before the push, everywhere.
+- No mutation tests in imece (user, 2026-11-09): `cargo-mutants`, its
+  workflow (PR job and nightly) and its config are gone; this project is
+  the exception to the global rule that every project runs them. CI runs
+  fmt, clippy, the tests, the installer test and cargo-deny on every PR;
+  before a push run fmt, clippy and the tests. Tests still pin every
+  boundary (CLAUDE.md "Security"): a change comes with the tests that
+  fail without it.
 
 - Keyboard first (user, 2026-10-29): everything is done with keys, vim
   style (hjkl, g/G, PgUp/PgDn, Esc back, / to type) next to the arrows; a
