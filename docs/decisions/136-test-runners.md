@@ -124,8 +124,16 @@ as live's do (`crate::live::routine`).
 Not done: a folder without git reads no runners (record 73 has no file
 list there); `uv run pytest`, `poetry run pytest`, `tox`, `.venv/bin/python`
 (a path), `bun test`, `deno test`, `npx vitest`, `make test`: those still
-need `--run` or a yes; a pipe into `tail` or `head` still asks, as it
-does for cargo (the agents are told to run one program); the npm script's
+need `--run` or a yes; the npm script's
 own options after `--` are not judged (the script is the repository's);
 a `package.json` or `go.mod` below the top (a monorepo's packages) is not
 read.
+
+**A cut of the output** (the same day, after the field run): every agent of that run piped its
+tests (`python3 -m unittest 2>&1 | tail -5`), and each such line asked. A routine line may now
+end in a cut of its output, `| tail` or `| head`, bare or with a count of lines (`-20`,
+`-n 20`, at most six digits), with `2>&1` before the bar or not (`tools::uncut`); what is
+left is judged as any line. `tail -f` (never ends), `-c`, a second pipe, `||`, a word after
+the count, or a cut after a line that is not routine still ask. The cut only shortens what
+the agent reads; `tail` and `head` are the PATH's, which the line cannot change (`$` and an
+assignment are refused).

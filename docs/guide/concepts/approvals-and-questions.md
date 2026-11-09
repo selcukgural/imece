@@ -15,7 +15,7 @@ Claude Code runs `--permission-prompts host --permission-prompt-tool mcp__imece_
 
 ### Routine commands run at once
 
-A shell command is **routine** when it is one line, one program with its arguments (nothing a shell would read otherwise: no pipes, redirections, `&&`, `$`, globs), and the `run` tool's policy would let the role run it (below). A routine command is allowed on its own, with a trace line "allowed on its own"; the build, the tests and git's reading commands never wait for you. That holds for a Python, JavaScript or Go checkout's own tests too ([below](#the-tests-a-checkout-calls-for)): `python3 -m unittest -v` runs at once, `python3 -m unittest 2>&1 | tail -5` asks, as `cargo test | tail` does.
+A shell command is **routine** when it is one line, one program with its arguments (nothing a shell would read otherwise: no pipes, redirections, `&&`, `$`, globs), and the `run` tool's policy would let the role run it (below). A routine command is allowed on its own, with a trace line "allowed on its own"; the build, the tests and git's reading commands never wait for you. That holds for a Python, JavaScript or Go checkout's own tests too ([below](#the-tests-a-checkout-calls-for)): `python3 -m unittest -v` runs at once. A routine command may have its output cut at its end, to its last or first lines: `cargo test 2>&1 | tail -20`, `python3 -m unittest | head -n 5` and a bare `| tail` run at once as well, since the cut only shortens what the agent reads; `tail -f`, `tail -c`, a second pipe or anything after the count still ask.
 
 ### Everything else waits
 
