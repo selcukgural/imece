@@ -87,9 +87,9 @@
     {
       "id": "card",
       "chapter": "A card's detail",
-      "narration": "Hash and a number, or hash and a word of its title, opens a card's detail: who works on it, its story, the lines about it; tab turns to its owner's diff and conversation. n and p step to the next and the previous card.",
+      "narration": "Hash opens the card line with the card at hand already in it; a number or a word of a title names another. Enter opens its detail: who works on it, its story, the lines about it; tab turns to its owner's diff and conversation. n and p step to the next and the previous card.",
       "steps": [
-        { "action": "type", "target": "#corner", "text": "#3", "delayMs": 300 },
+        { "action": "type", "target": "#corner", "text": "#", "delayMs": 0 },
         { "action": "wait", "seconds": 1 },
         { "action": "press", "key": "Enter" },
         { "action": "wait", "seconds": 6 },
