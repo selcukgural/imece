@@ -145,7 +145,7 @@ Closes the project `NAME`, or the one at hand (`:c`), ten seconds after it is as
 
 ### `:code`
 
-The code map, in a window over the screen; `esc` closes it. Live it says there is no shared trunk yet (each agent works in its own worktree, so there is nothing to show of who edits what); symbol leases are not built. See [board and code map](../screen/board-and-code-map.md).
+The code map, in a window over the screen; `esc` closes it. On a project on [Lonca](../concepts/projects.md#on-lonca) it shows what the daemon says is held: the files someone holds a lease in, and who. Off Lonca it says there is no shared trunk yet (each agent works in its own worktree, so there is nothing to show of who edits what). See [board and code map](../screen/board-and-code-map.md).
 
 ### `:commit`
 

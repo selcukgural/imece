@@ -76,6 +76,7 @@ Every behaviour on this site comes from a decision record in [`docs/decisions/`]
 - [Install](getting-started/install.md): the toolchain, Claude Code and where state lives.
 - [First run](getting-started/first-run.md): a walkthrough from `imece` to the first applied change.
 - [The demo](getting-started/demo.md): `imece --demo`, the whole screen at work, for free.
+- [Cheat sheet](cheat-sheet.md): the keys and commands of a first week, on one printable page.
 - [Scenarios](scenarios/index.md): one fix, a review with notes, many projects, the next morning.
 - [Keyboard](screen/keyboard.md): every key and every `:` command.
 - [Videos](videos.mdx): the screen moving.
