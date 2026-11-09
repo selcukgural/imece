@@ -1049,6 +1049,10 @@ pub struct App {
     /// it left room for: lines in sight and the first line at most.
     pub help_scroll: usize,
     pub help_room: Cell<(usize, usize)>,
+    /// The terminal's size when the screen was last drawn (columns,
+    /// rows); none before the first drawing. Under the floor (record
+    /// 131) no key acts but `ctrl-c`: what was not shown is not decided.
+    pub drawn_size: Cell<Option<(u16, u16)>>,
     /// The person's own keys (`keys.rs`): the key file's, else imece's.
     pub keys: Keymap,
     /// Where the key file is; none without a home.
@@ -1304,6 +1308,7 @@ impl App {
             help_all: false,
             help_scroll: 0,
             help_room: Cell::new((1, 0)),
+            drawn_size: Cell::new(None),
             keys: Keymap::default(),
             keys_file: None,
             keys_good: None,

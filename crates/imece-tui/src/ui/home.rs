@@ -46,7 +46,7 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     }
     let at = app.home_at();
     if body.width < WIDE {
-        let drawn = list_drawn(app, usize::from(body.width), at);
+        let drawn = list_drawn(app, usize::from(body.width), body.width < NARROW, at);
         let scroll = drawn.scroll.min(drawn.lines.len().saturating_sub(1) as u16);
         let used = drawn.lines.len() as u16;
         note_breath(app, &drawn.lines, &drawn.spots, scroll, body);
@@ -60,7 +60,7 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
         Constraint::Min(0),
     ])
     .areas(body);
-    let drawn = list_drawn(app, usize::from(list.width), at);
+    let drawn = list_drawn(app, usize::from(list.width), false, at);
     let scroll = drawn.scroll.min(drawn.lines.len().saturating_sub(1) as u16);
     let used = drawn.lines.len() as u16;
     note_breath(app, &drawn.lines, &drawn.spots, scroll, list);
@@ -242,16 +242,17 @@ struct Drawn {
     spots: Vec<(usize, usize, AgentId)>,
 }
 
-/// The list in rows `width` wide and how far to scroll it for the row at
-/// hand to show.
+/// The list in rows `width` wide, on a screen as wide, and how far to
+/// scroll it for the row at hand to show.
 #[cfg(test)]
 fn list_lines(app: &App, width: usize, at: Option<HomeRow>) -> (Vec<Line<'static>>, u16) {
-    let drawn = list_drawn(app, width, at);
+    let drawn = list_drawn(app, width, width < usize::from(NARROW), at);
     (drawn.lines, drawn.scroll)
 }
 
-/// The list drawn: see [`Drawn`].
-fn list_drawn(app: &App, width: usize, at: Option<HomeRow>) -> Drawn {
+/// The list drawn: see [`Drawn`]. `stacked` on a narrow screen (record
+/// 131), not where the list is narrow beside the preview.
+fn list_drawn(app: &App, width: usize, stacked: bool, at: Option<HomeRow>) -> Drawn {
     let t = app.lang.text();
     let listed = Listed {
         rows: app.home_rows(),
@@ -282,7 +283,7 @@ fn list_drawn(app: &App, width: usize, at: Option<HomeRow>) -> Drawn {
             scroll = lines.len().saturating_sub(4) as u16;
         }
         spots.extend(glyph_spots(app, lines.len(), row));
-        lines.extend(row_lines(app, row, width, here));
+        lines.extend(row_lines(app, row, width, stacked, here));
     }
     // Nothing to decide but what `:clear` hid: the heading says so.
     if !listed.rows.iter().any(|r| r.0.heading() == Heading::Decide) && app.world.hidden_inbox() > 0
@@ -541,8 +542,16 @@ fn row_keys(app: &App) -> Vec<Span<'static>> {
 /// The rows of one entry of the list: its glyph, project (when several
 /// are open and the list is not narrowed), card and title, then what it
 /// asks or says, whole: the words wrap under their own column, and the
-/// row at hand ends with the keys that decide it.
-fn row_lines(app: &App, row: HomeRow, width: usize, here: bool) -> Vec<Line<'static>> {
+/// row at hand ends with the keys that decide it. `narrow` (record 131):
+/// the words stand under the title instead, the keys are the status
+/// line's alone.
+fn row_lines(
+    app: &App,
+    row: HomeRow,
+    width: usize,
+    narrow: bool,
+    here: bool,
+) -> Vec<Line<'static>> {
     let w = &app.world;
     if let HomeRow::Project(p) = row {
         return vec![project_row(app, p, here)];
@@ -574,6 +583,9 @@ fn row_lines(app: &App, row: HomeRow, width: usize, here: bool) -> Vec<Line<'sta
     };
     head.push(Span::styled(glyph, glyph_style));
     head.push(Span::raw(" "));
+    // On a narrow screen (record 131) the words stand under the title,
+    // from where the card starts.
+    let lead: usize = head.iter().map(Span::width).sum();
     let many = w.open_projects().count() > 1;
     if many && app.at_home.scope.is_none() {
         head.push(Span::styled(
@@ -593,12 +605,51 @@ fn row_lines(app: &App, row: HomeRow, width: usize, here: bool) -> Vec<Line<'sta
     } else {
         Style::new()
     };
-    head.push(Span::styled(
-        format!("{:<title_width$}  ", fit(&title_of(w, row), title_width)),
-        style,
-    ));
+    let mut lines = Vec::new();
+    let selection = |line: Line<'static>| {
+        if here {
+            line.style(Style::new().bg(pal().selection))
+        } else {
+            line
+        }
+    };
+    if narrow {
+        let title = clean(&title_of(w, row));
+        let before: usize = head.iter().map(Span::width).sum();
+        // A row that says only what it does keeps one line when it fits.
+        let said = match &tail {
+            Tail::Cut(text) => Some(vec![Span::raw(text.clone())]),
+            Tail::Spans(spans) => Some(spans.clone()),
+            Tail::Words(_) | Tail::Asked(..) => None,
+        };
+        if let Some(said) = said {
+            let said_width: usize = said.iter().map(Span::width).sum();
+            if before + title.width() + 2 + said_width < width {
+                head.push(Span::styled(format!("{title}  "), style));
+                head.extend(said);
+                return vec![selection(Line::from(head))];
+            }
+        }
+        let room = width.saturating_sub(before + 1);
+        head.push(Span::styled(
+            fit(&title, room).trim_end().to_string(),
+            style,
+        ));
+        lines.push(selection(Line::from(std::mem::take(&mut head))));
+        head.push(Span::raw(" ".repeat(lead)));
+    } else {
+        head.push(Span::styled(
+            format!("{:<title_width$}  ", fit(&title_of(w, row), title_width)),
+            style,
+        ));
+    }
     let used: usize = head.iter().map(Span::width).sum();
-    let keys = if here { row_keys(app) } else { Vec::new() };
+    // A narrow row's keys are the status line's alone.
+    let keys = if here && !narrow {
+        row_keys(app)
+    } else {
+        Vec::new()
+    };
     let keys_width: usize = keys.iter().map(Span::width).sum();
     // The ask gets at least `ASK_MIN` on the first line: when the keys
     // would leave less, they go, the status line still has them.
@@ -609,14 +660,6 @@ fn row_lines(app: &App, row: HomeRow, width: usize, here: bool) -> Vec<Line<'sta
     };
     let keys_width: usize = keys.iter().map(Span::width).sum();
     let first_room = width.saturating_sub(used + keys_width + if keys_width > 0 { 2 } else { 1 });
-    let mut lines = Vec::new();
-    let selection = |line: Line<'static>| {
-        if here {
-            line.style(Style::new().bg(pal().selection))
-        } else {
-            line
-        }
-    };
     let end_first = |mut spans: Vec<Span<'static>>, lines: &mut Vec<Line<'static>>| {
         if !keys.is_empty() {
             let filled: usize = spans.iter().map(Span::width).sum();
@@ -670,7 +713,9 @@ fn row_lines(app: &App, row: HomeRow, width: usize, here: bool) -> Vec<Line<'sta
             let mut first = true;
             for s in spans {
                 let n = s.width();
-                if n > room && !(first && line.len() == 3) {
+                // A narrow row's first line under its title holds only
+                // its lead: a part goes on it, cut if need be.
+                if n > room && !(first && line.len() == 3) && !(narrow && line.len() == 1) {
                     if first {
                         end_first(std::mem::take(&mut line), &mut lines);
                         first = false;
@@ -1025,6 +1070,16 @@ mod tests {
     fn lines(app: &App, width: usize) -> Vec<String> {
         list_lines(app, width, app.home_at())
             .0
+            .iter()
+            .map(text)
+            .collect()
+    }
+
+    /// The list `width` wide in columns, as it stands beside the preview
+    /// on a wide screen.
+    fn beside(app: &App, width: usize) -> Vec<String> {
+        list_drawn(app, width, false, app.home_at())
+            .lines
             .iter()
             .map(text)
             .collect()
@@ -1576,7 +1631,7 @@ mod tests {
         let wide = lines(&app, 100);
         let row = wide.iter().position(|l| l.contains("+19 −6")).unwrap();
         assert!(wide[row].contains("✓ dotnet build · ✓ dotnet test · 1 file +19 −6"));
-        let narrow = lines(&app, 66);
+        let narrow = beside(&app, 66);
         assert!(
             narrow[row].ends_with("✓ dotnet build · ✓ dotnet test"),
             "{}",
@@ -1593,7 +1648,7 @@ mod tests {
         );
         assert_eq!(next[cells], '1', "{}", narrow[row + 1]);
         // A part wider than a whole line is cut, never dropped.
-        let tiny = lines(&app, 50);
+        let tiny = beside(&app, 50);
         assert!(
             tiny[row + 1].trim().starts_with("✓ dotnet test"),
             "{}",
@@ -1652,7 +1707,7 @@ mod tests {
         // Too narrow for the ask beside them: the keys go, the status line
         // still has them.
         app.home_go(0);
-        let narrow = lines(&app, 62);
+        let narrow = beside(&app, 62);
         assert!(!narrow[2].contains("yes"), "{}", narrow[2]);
         assert!(narrow[2].contains("run cargo test?"), "{}", narrow[2]);
         assert!(render(&app, 62, 20).contains("allow once"));
@@ -1752,7 +1807,7 @@ mod tests {
         }];
         app.world.tick = 36;
         app.world.agents[a].changed_at = 0;
-        let got = lines(&app, 70);
+        let got = beside(&app, 70);
         let row = got.iter().find(|l| l.contains("● ")).unwrap();
         assert!(row.contains("Write the tests for"), "{row}");
         assert!(row.contains("…  enter  open"), "cut, then the keys: {row}");
@@ -2047,7 +2102,7 @@ mod tests {
         let a = worker(&app);
         let name = clean(&app.world.projects[app.world.agents[a].project].name);
         let row = |app: &App| {
-            let line = row_lines(app, HomeRow::Agent(a), 100, false);
+            let line = row_lines(app, HomeRow::Agent(a), 100, false, false);
             text(&line[0])
         };
         assert!(row(&app).contains(&name));
@@ -2068,7 +2123,7 @@ mod tests {
         app.world.cards[0].title = "A title long enough to be cut at every width".into();
         app.world.inbox.push(item(InboxKind::Question, a, "Which?"));
         let title = |width| {
-            let line = row_lines(&app, HomeRow::Item(0), width, false);
+            let line = row_lines(&app, HomeRow::Item(0), width, false, false);
             let s = text(&line[0]);
             let at = s.find("A title").unwrap();
             let end = s[at..].find("  ").unwrap();
@@ -2089,5 +2144,93 @@ mod tests {
         app.at_home.scope = Some(1);
         let s = render(&app, 100, 20);
         assert!(!s.contains("lonca demo"), "{s}");
+    }
+
+    #[test]
+    fn a_narrow_screen_stacks_an_entry_s_words_under_its_title_without_keys() {
+        let mut app = home(Lang::En);
+        let a = worker(&app);
+        app.at_home.scope = Some(app.world.agents[a].project);
+        app.world.agents[a].card = Some(0);
+        app.world.cards[0].title = "Paging".into();
+        app.world.inbox.push(item(
+            InboxKind::Question,
+            a,
+            "Which parser should the tests use?",
+        ));
+        app.home_settle();
+        let row = |app: &App, width: usize, narrow: bool| -> Vec<String> {
+            row_lines(app, HomeRow::Item(0), width, narrow, true)
+                .iter()
+                .map(text)
+                .collect()
+        };
+        let wide = row(&app, 100, false);
+        assert!(wide[0].contains("Paging") && wide[0].contains("Which parser"));
+        assert!(wide[0].contains("answer"), "keys beside: {}", wide[0]);
+        let narrow = row(&app, 100, true);
+        assert_eq!(narrow[0].trim_end(), "▸! #1   Paging", "{narrow:?}");
+        assert!(
+            narrow[1].starts_with("   Which parser should the tests use?"),
+            "under the card, from the fourth column: {narrow:?}"
+        );
+        assert!(!narrow.iter().any(|l| l.contains("answer")), "{narrow:?}");
+        // `lines` stacks under eighty columns, not at eighty.
+        let at = |width| lines(&app, width).iter().position(|l| l.contains("Paging"));
+        let (stacked, beside) = (lines(&app, 79), lines(&app, 80));
+        assert!(!stacked[at(79).unwrap()].contains("Which"), "{stacked:?}");
+        assert!(beside[at(80).unwrap()].contains("Which"), "{beside:?}");
+        // A title too long for the row is cut to it.
+        app.world.cards[0].title = "A title long enough to be cut at forty columns".into();
+        let narrow = row(&app, 40, true);
+        assert_eq!(narrow[0].chars().count(), 39, "{narrow:?}");
+        assert!(narrow[0].ends_with('…'), "{narrow:?}");
+    }
+
+    #[test]
+    fn a_narrow_row_that_says_what_it_does_keeps_one_line_while_it_fits() {
+        let mut app = home(Lang::En);
+        let a = worker(&app);
+        app.at_home.scope = Some(app.world.agents[a].project);
+        app.world.agents[a].card = Some(0);
+        app.world.cards[0].title = "Paging".into();
+        let row = |width: usize| -> Vec<String> {
+            row_lines(&app, HomeRow::Agent(a), width, true, false)
+                .iter()
+                .map(text)
+                .collect()
+        };
+        let one = row(79);
+        assert_eq!(one.len(), 1, "{one:?}");
+        assert!(one[0].contains("Paging  idle"), "{one:?}");
+        // Exactly as wide as the screen is too wide: the edge cell stays
+        // free.
+        let whole = one[0].chars().count();
+        assert_eq!(row(whole + 1).len(), 1, "{:?}", row(whole + 1));
+        let two = row(whole);
+        assert_eq!(two.len(), 2, "{two:?}");
+        assert_eq!(two[1].trim(), "idle", "{two:?}");
+    }
+
+    #[test]
+    fn a_narrow_row_s_part_wider_than_a_line_is_cut_on_the_line_under_the_title() {
+        let mut app = home(Lang::En);
+        let a = worker(&app);
+        app.at_home.scope = Some(app.world.agents[a].project);
+        app.world.agents[a].card = None;
+        let long = "dotnet test --filter Category=Integration --no-build --verbosity quiet";
+        app.world.changes.push(change(a, vec![ran(long, 0)]));
+        app.world.inbox.push(item(InboxKind::Change, a, ""));
+        let got: Vec<String> = row_lines(&app, HomeRow::Item(0), 40, true, false)
+            .iter()
+            .map(text)
+            .collect();
+        assert!(got[0].contains("Paging in product search"), "{got:?}");
+        assert!(
+            got[1].starts_with("   ✓ dotnet test"),
+            "no blank line: {got:?}"
+        );
+        assert!(got[1].chars().count() <= 40, "{got:?}");
+        assert!(got.iter().all(|l| l.chars().count() <= 40), "{got:?}");
     }
 }
