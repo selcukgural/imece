@@ -142,7 +142,7 @@ Her 5 saniyede bir projenin satırı nerede durduğunu söyler:
 | `lonca kule …` | az önce adlandırıldı, henüz yanıt yok |
 | `⌀ lonca yok` | okunamıyor; günlük nedenini bir kez söyler |
 
-Nedenler: hiçbir daemon yanıt vermiyor, soketteki senin daemon'ın değil, başka bir protokol, Lonca 0.2.1'den eski bir daemon, oturum açmamışsın, ya da bu adda bir depoya kayıtlı değilsin (daemon olmayan bir depo için de aynısını söyler, adı denetle ya da `:lonca import` ile oluştur).
+Nedenler: hiçbir daemon yanıt vermiyor, soketteki senin daemon'ın değil, başka bir protokol, Lonca 0.2.1'den eski bir daemon, bu makinede sertleştirilmiş (hardened) kurulu bir Lonca (imece henüz onunla çalışmıyor), oturum açmamışsın, ya da bu adda bir depoya kayıtlı değilsin (daemon olmayan bir depo için de aynısını söyler, adı denetle ya da `:lonca import` ile oluştur).
 
 Yanıt verene dek proje kapalıdır: kimse işe alınmaz, `:fork` reddedilir, hiçbir Δ uygulanmaz, reddedilmez, geri gönderilmez. Ajanlar çalışmayı sürdürür, Δ'leri bekler. Hiçbir depoda olmayan bir proje sokete hiç dokunmaz. Bkz. [`:lonca`](../reference/commands.md#lonca-nameoffloginimport).
 

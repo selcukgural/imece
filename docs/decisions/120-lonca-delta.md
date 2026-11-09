@@ -65,7 +65,7 @@ daemon gone does: no hire, no Δ decision, `⌀ no lonca` and why. An inline tab
 or a dotted key is not read, so it is off: a setting imece can not see is one it
 does not trust. No file means Lonca's defaults, which hold. Not covered: a session
 whose level is above `unobserved` (root-managed hooks) integrates a clean change
-unseen with the flag on. imece refuses a hardened daemon (record 116) and
+unseen with the flag on. imece refuses a hardened install (record 116, `Down::Hardened`) and
 `level_for` gives `unobserved` otherwise, so that needs root on the person's own
 machine; when Lonca's hardened mode comes in, this check has to look at the level
 too.

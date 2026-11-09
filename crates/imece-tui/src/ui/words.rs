@@ -1343,6 +1343,7 @@ pub fn store_down(t: &Text, why: StoreDown) -> &'static str {
         StoreDown::NotTheDaemon => t.store_not_the_daemon,
         StoreDown::Protocol => t.store_protocol,
         StoreDown::Old => t.store_old,
+        StoreDown::Hardened => t.store_hardened,
         StoreDown::SignedOut => t.store_signed_out,
         StoreDown::Forbidden => t.store_forbidden,
         StoreDown::NoRepo => t.store_no_repo,

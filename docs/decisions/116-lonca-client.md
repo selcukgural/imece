@@ -10,7 +10,15 @@ checkout: nothing here moves work onto Lonca.
 the screen never sees one; the engine's half (who is asked, when, what it
 closes) is `live/lonca.rs`. Written from the protocol document, which says a
 client copies nothing from Lonca's crates, so `VENDORED.md` records the
-number instead of a copy. `ping`, `status`, `tree` (the manifest),
+number instead of a copy. Since 2026-11-09 (user, 2026-11-08: once it is on
+crates.io, as a version dependency) the socket half is Lonca's own
+`lonca-client` (`=0.2.1`): connecting through `Trust` (the socket a socket,
+not a link, of the expected uid; the peer that uid), the framing, the
+timeout (`set_timeout`, 5 s, a held `log` longer), a request sent again once
+on a new connection when the daemon closed a quiet one before reading it,
+and the session file (`session::read_session`). What the answers mean stays
+here (`Status::of` and the rest, `down_of` over `ErrorKind`: the client's
+`io` and `timed_out` are `NoDaemon`). `ping`, `status`, `tree` (the manifest),
 `change.get`, `log` (with `wait_ms`); `pending` is a field of `status`, as
 the protocol has it. `tree`, `change.get` and `log` have no caller yet: the
 boxes that read them come next, and they are tried against a real daemon.
@@ -18,20 +26,26 @@ boxes that read them come next, and they are tried against a real daemon.
 **Who is talked to.** Lonca's own clients do not check the daemon yet
 (lonca#52), and the epic says imece must. The socket is `LONCA_SOCKET`, else
 `$LONCA_HOME/lonca.sock`, else `~/.lonca/lonca.sock`. It must be a socket
-(no link) owned by the person, the peer listening on it must be the person
-(`getpeereid`, `SO_PEERCRED`), and `ping` must say protocol 1 and a `version`
+(no link) owned by the uid the machine's install names (`Trust::load()`:
+root-owned `daemon.toml` of a hardened install, else the person), the peer
+listening on it must be that uid, and `ping` must say protocol 1 and a `version`
 of at least `LEAST`, 0.2.1 (`new_enough`: its three numbers, a suffix not
 counted; none, or older, is `Down::Old`, worded `the daemon is older than Lonca
 0.2.1, which imece needs`; 2026-11-09, record 120 says why): all of that
-before the token leaves. So imece runs against cooperative mode; a hardened
-daemon runs as its own user and is refused (`not your daemon`) until #52
-says where a client reads the expected uid.
+before the token leaves. So imece runs against cooperative mode. lonca#52
+answered where a client reads a hardened daemon's uid, and `lonca-client`
+reads it; imece still refuses a hardened install before connecting
+(`Down::Hardened`, `Lonca is installed hardened on this machine; imece does
+not work with a hardened daemon yet`): its sessions can count as observed and
+a change integrate with no person's yes, which the Δ gate does not look at
+yet (record 120). An install file that is not what the installer left
+trusts nobody (`Place.trust` none: `NotTheDaemon`).
 
 **The person's session.** Since lonca#51 a read needs a credential. The
 token is read from `$LONCA_HUMANS/<name>.session`, the interface the
 protocol documents (`LONCA_HUMANS` else `~/.config/lonca/humans`; `name` is
 `LONCA_HUMAN` else the `default` file): the person's own plain file, 0600,
-not a link, 4 KiB at most, not ended. imece does **not** run `lonca human
+not a link, 64 KiB at most (`lonca-client`'s cap), not ended. imece does **not** run `lonca human
 login` by itself, though the protocol allows it: with a Secure Enclave key
 that is a Touch ID at a moment the person did not choose, from a thread that
 gives calls five seconds. `⌀ no lonca` and the journal say to sign in; the
