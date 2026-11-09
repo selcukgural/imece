@@ -133,6 +133,11 @@ tests it on macOS and Linux, and commits it with its own token. imece's
 repository holds no token for the tap. The formula installs the same
 archive the installer does; the tab's icon stays the installer's.
 
+Homebrew 7 loads a formula of a tap that is not its own only after
+`brew trust --formula selcukgural/imece/imece` (found on the person's
+machine the day the tap was made, 2026-11-10); the README and the install
+page say so. The tap's own test in CI passed without it.
+
 Growth: one formula, two crates a release. Failure: a release whose
 crates did not go up is still a release (the archives and the installer
 do not wait for them); `cargo publish` again from the tag finishes it,

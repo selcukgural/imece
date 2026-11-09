@@ -35,8 +35,11 @@ Kaldırmak için: `rm ~/.local/bin/imece` ve başlangıç dosyasındaki `# imece
 
 ```sh
 brew tap selcukgural/imece
+brew trust --formula selcukgural/imece/imece
 brew install imece
 ```
+
+Ortadaki satır Homebrew 7 ve sonrası içindir: Homebrew, kendisine ait olmayan bir tap'in formülünü ancak siz ona güvendiğinizi söyledikten sonra yükler; bu satır olmadan `brew install`, `Refusing to load formula selcukgural/imece/imece from untrusted tap` diyerek durur. Daha eski bir Homebrew'da `brew trust` yoktur ve gerekmez: satırı atlayın.
 
 [Tap](https://github.com/selcukgural/homebrew-imece), kurulum betiğinin kurduğu aynı önceden derlenmiş imece'yi kurar: macOS (arm64, x86_64) ve Linux (x86_64, arm64). Formülü son sürüm için bir iş akışı yazar: her arşiv sürümün `SHA256SUMS` dosyasına ve derleme kaynağı kanıtına (attestation) karşı denetlenir; formül commit edilmeden önce macOS ve Linux'ta kurulup sınanır. `brew upgrade imece` günceller, `brew uninstall imece` kaldırır. Homebrew sekme ikonunu ayarlamaz; onu kurulum betiği yapar.
 

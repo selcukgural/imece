@@ -35,8 +35,11 @@ To uninstall: `rm ~/.local/bin/imece`, and the lines under `# imece` in the star
 
 ```sh
 brew tap selcukgural/imece
+brew trust --formula selcukgural/imece/imece
 brew install imece
 ```
+
+The middle line is for Homebrew 7 and newer, which loads a formula of a tap that is not its own only once you have said you trust it; without it `brew install` stops with `Refusing to load formula selcukgural/imece/imece from untrusted tap`. An older Homebrew has no `brew trust` and does not need it: leave the line out.
 
 The [tap](https://github.com/selcukgural/homebrew-imece) installs the same prebuilt imece as the installer, for macOS (arm64, x86_64) and Linux (x86_64, arm64). Its formula is written by a workflow for the latest release: every archive is checked against the release's `SHA256SUMS` and its build provenance attestation, and the formula is installed and tested on macOS and Linux before it is committed. `brew upgrade imece` updates it, `brew uninstall imece` removes it. Homebrew does not set the tab's icon; the installer does.
 
