@@ -24,7 +24,7 @@ curl -fsSL https://selcukgural.github.io/imece/install.sh | sh
 or [download a release](https://github.com/selcukgural/imece/releases/latest)
 by hand (`imece-<target>.tar.gz`, with `SHA256SUMS`).
 
-![imece's salon: two projects, their leaders and workers, what waits for you, and the journal](docs/salon.png)
+![imece's Home: what is to decide, grouped by what deciding costs you (permissions, questions, changes), each row with its whole ask and the keys that answer it, and the item at hand read beside the list](docs/home.png)
 
 ## What it does
 

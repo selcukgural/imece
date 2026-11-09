@@ -1,154 +1,166 @@
 WEBVTT
 
 1
-00:00:04.905 --> 00:00:09.086
+00:00:04.904 --> 00:00:09.085
 Plain text goes to the leader of the project at hand.
 
 2
-00:00:09.086 --> 00:00:15.554
+00:00:09.085 --> 00:00:15.553
 It reads the checkout, splits your request into cards and posts them on the board;
 
 3
-00:00:15.554 --> 00:00:17.290
+00:00:15.553 --> 00:00:17.289
 the workers take them.
 
 4
-00:00:17.290 --> 00:00:21.076
+00:00:17.289 --> 00:00:21.075
 Its reply comes back as an item waiting for you.
 
 5
-00:00:22.294 --> 00:00:24.720
+00:00:22.275 --> 00:00:24.616
 At-name writes to one agent.
 
 6
-00:00:24.720 --> 00:00:30.787
+00:00:24.616 --> 00:00:30.470
 After the at sign, tab completes the names, the project at hand first.
 
 7
-00:00:30.787 --> 00:00:36.246
+00:00:30.470 --> 00:00:35.738
 A message to an idle worker opens a card; its answer closes it.
 
 8
-00:00:36.246 --> 00:00:43.092
+00:00:35.738 --> 00:00:42.345
 A line that starts with a slash is the agent's own command line: slash compact,
 
 9
-00:00:43.092 --> 00:00:46.905
-slash cost, whatever the vendor's CLI knows.
+00:00:42.345 --> 00:00:45.606
+slash cost, whatever Claude Code knows.
 
 10
-00:00:48.106 --> 00:00:53.395
+00:00:46.807 --> 00:00:52.036
 v opens your conversation with the agent at hand, here the leader.
 
 11
-00:00:53.395 --> 00:00:59.485
+00:00:52.036 --> 00:00:58.058
 Every message on the bus has a number, and a reply names the one it answers.
 
 12
-00:00:59.485 --> 00:01:05.816
-Enter on a line of the journal opens the conversation it belongs to; a reply is
+00:00:58.058 --> 00:01:04.397
+Capital J opens the journal; enter on one of its lines opens the conversation it
 
 13
-00:01:05.816 --> 00:01:11.826
-marked with an arrow, and the percent key goes to what it answers and back.
+00:01:04.397 --> 00:01:05.268
+belongs to.
 
 14
-00:01:11.826 --> 00:01:18.557
-The brackets go from turn to turn: the lines one side says before the other answers.
+00:01:05.268 --> 00:01:11.607
+A reply is marked with an arrow, and the percent key goes to what it answers and
 
 15
-00:01:24.483 --> 00:01:32.238
-Hash and a number, or hash and a word of its title, opens a card's screen: who works
+00:01:11.607 --> 00:01:12.003
+back.
 
 16
-00:01:32.238 --> 00:01:37.316
-on it, its story, the inbox and journal lines about it.
+00:01:12.003 --> 00:01:18.658
+The brackets go from turn to turn: the lines one side says before the other answers.
 
 17
-00:01:37.316 --> 00:01:41.654
-n and p step to the next and the previous card.
+00:01:26.201 --> 00:01:33.312
+Hash opens the card line with the card at hand already in it; a number or a word of
 
 18
-00:01:45.497 --> 00:01:49.655
-Every key that acts has a colon name too.
+00:01:33.312 --> 00:01:35.197
+a title names another.
 
 19
-00:01:49.655 --> 00:01:58.073
-Colon and tab show the commands with what each stands at now: the theme, the budget
+00:01:35.197 --> 00:01:42.393
+Enter opens its detail: who works on it, its story, the lines about it; tab turns to
 
 20
-00:01:58.073 --> 00:02:03.246
-spent and left, the project a bare command acts on.
+00:01:42.393 --> 00:01:45.306
+its owner's diff and conversation.
 
 21
-00:02:03.246 --> 00:02:08.722
-A dollar sign marks the ones that raise the next bill.
+00:01:45.306 --> 00:01:49.332
+n and p step to the next and the previous card.
 
 22
-00:02:08.722 --> 00:02:13.388
-Colon budget changes the pot while agents run.
+00:01:50.533 --> 00:01:54.691
+Every key that acts has a colon name too.
 
 23
-00:02:14.589 --> 00:02:20.966
-Colon theme wears each theme while its name is written: the built-in ones, base16
+00:01:54.691 --> 00:02:03.109
+Colon and tab show the commands with what each stands at now: the theme, the budget
 
 24
-00:02:20.966 --> 00:02:25.453
-schemes, or a colour file in Ghostty's or Kitty's format.
+00:02:03.109 --> 00:02:08.281
+spent and left, the project a bare command acts on.
 
 25
-00:02:25.453 --> 00:02:28.209
-Enter keeps it, escape gives it up.
+00:02:08.281 --> 00:02:13.758
+A dollar sign marks the ones that raise the next bill.
 
 26
-00:02:28.209 --> 00:02:33.720
-The terminal theme follows your terminal's own colours, light or dark.
+00:02:13.758 --> 00:02:18.424
+Colon budget changes the pot while agents run.
 
 27
-00:02:34.922 --> 00:02:38.919
-Capital L turns the screen Turkish, and back.
+00:02:19.625 --> 00:02:26.002
+Colon theme wears each theme while its name is written: the built-in ones, base16
 
 28
-00:02:38.919 --> 00:02:46.026
-Every word on the screen lives in both languages; what an agent wrote is cleaned
+00:02:26.002 --> 00:02:30.489
+schemes, or a colour file in Ghostty's or Kitty's format.
 
 29
-00:02:46.026 --> 00:02:53.133
-before it is drawn, control characters removed and secret-looking tokens hidden.
+00:02:30.489 --> 00:02:33.245
+Enter keeps it, escape gives it up.
 
 30
-00:02:54.334 --> 00:02:58.227
-Question mark lists every key and every command.
+00:02:33.245 --> 00:02:38.756
+The terminal theme follows your terminal's own colours, light or dark.
 
 31
-00:02:58.227 --> 00:03:04.878
-Slash filters them by every word you type, Turkish letters or not; enter keeps the
+00:02:39.956 --> 00:02:43.954
+Capital L turns the screen Turkish, and back.
 
 32
-00:03:04.878 --> 00:03:06.825
-filter, escape drops it.
+00:02:43.954 --> 00:02:51.061
+Every word on the screen lives in both languages; what an agent wrote is cleaned
 
 33
-00:03:09.559 --> 00:03:17.998
-f shows only what needs you: waiting for you, stuck, done and not yet seen, in that
+00:02:51.061 --> 00:02:58.168
+before it is drawn, control characters removed and secret-looking tokens hidden.
 
 34
-00:03:17.998 --> 00:03:20.946
-order; calm agents fold away.
+00:02:59.368 --> 00:03:05.905
+Question mark lists the keys of the screen you are on; again, every key.
 
 35
-00:03:20.946 --> 00:03:29.081
-h and l fold and unfold a project; a folded project is one line that still shows
+00:03:05.905 --> 00:03:13.441
+Slash finds any key by every word you type, Turkish letters or not; enter keeps the
 
 36
-00:03:29.081 --> 00:03:30.199
-what waits.
+00:03:13.441 --> 00:03:15.620
+filter, escape drops it.
 
 37
-00:03:30.199 --> 00:03:38.130
-Colon open adds another checkout as a project of its own, with its own leader.
+00:03:19.543 --> 00:03:25.946
+h and l fold a project to its heading; a folded project is one line that still shows
 
 38
-00:03:39.331 --> 00:03:43.822
+00:03:25.946 --> 00:03:26.785
+what waits.
+
+39
+00:03:26.785 --> 00:03:32.808
+The brackets narrow Home to one project, then the next, then all of them again.
+
+40
+00:03:32.808 --> 00:03:38.754
+Colon open adds another checkout as a project of its own, with its own leader.
+
+41
+00:03:46.413 --> 00:03:50.905
 One line to the leader, and a key for everything else.
 
