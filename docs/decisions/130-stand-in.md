@@ -200,3 +200,38 @@ Next: questions to the person with options, helpers, faults and retries,
 rate limits and context, strays and the plan gate, the leader's board
 and cards, the commit and review one-shots; then Lonca's fake daemon,
 then `Engine::Sim` goes.
+
+## A worker that asks the person (2026-11-09)
+
+One assign in `Habits.questions` (`IMECE_STAND_IN_QUESTIONS`, never at
+0; by the roll's bits from the 16th, so it falls apart from `asks`) has
+the worker ask the person once it has read the code: `send` to `you`,
+type `ask`, one of `work::QUESTIONS` about the file it read (by the
+roll's bits from the 24th), every other with the answers it offers as
+`options` (record 125), the rest none. It ends its turn there, nothing
+changed: the card stays its own and working, its mail waits (record
+107), and the question waits in TO DECIDE with its answers as digits.
+The task and its to-do list's tasks wait in `Mind.waiting`
+(`work::Waiting`, kept in the transcript, so a resumed session still
+waits). The next prompt with the person's words (`work::heard`: its last
+paragraph before the mail that came with it, at most `TASK_MAX`) goes on
+from the list's second task, as before, and the `done` says `The person
+said: …` after what changed; a prompt of mail alone keeps it waiting. A
+question the bus refuses is not waited for: the work goes on in that
+turn. The demo asks in one assign of four (`QUESTIONS` 4). The test
+`a_worker_s_question_waits_with_its_answers_and_the_answer_goes_into_its_change`
+runs it on the real `Live`: the question's text and options from the
+journal (`World::question_of`), no change before the answer, the answer
+given as a digit gives it, and the change waits on the same card with it
+in its "why".
+
+`Sim` also has its worker go on with what does not depend on the answer
+after `QUESTION_WAIT`; a live session waits until it is told, so the
+stand-in does too, and that goes with `Sim`. What the person is told
+without a question (`Sim`'s assumptions, an `inform` to `you`) is not
+moved yet.
+
+Next: helpers, faults and retries, rate limits and context, strays and
+the plan gate, the leader's board and cards, informs to the person, the
+commit and review one-shots; then Lonca's fake daemon, then `Engine::Sim`
+goes.

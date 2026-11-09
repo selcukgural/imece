@@ -4,6 +4,8 @@
 //! test file next to it, runs the tests of the project's kind, sometimes
 //! first a command imece holds no routine (so the person is asked through
 //! the permission prompt), and tells its leader `done` with what it did.
+//! Sometimes it asks the person a question once it has read the code, ends
+//! its turn, and goes on with the person's answer in the next.
 //! A directory with nothing to change gets the task written in a file of
 //! its own. Its commands are never run: what they say is made up.
 
@@ -34,6 +36,29 @@ pub const PAUSE_MOST: u64 = 10_000;
 pub const PAUSE_VAR: &str = "IMECE_STAND_IN_PAUSE_MS";
 pub const ASKS_VAR: &str = "IMECE_STAND_IN_ASKS";
 pub const SEED_VAR: &str = "IMECE_STAND_IN_SEED";
+pub const QUESTIONS_VAR: &str = "IMECE_STAND_IN_QUESTIONS";
+
+/// What a worker asks the person about the file it read (`{}`), with the
+/// answers it offers: every other one offers some, as live agents are
+/// told to when the answers are few (record 125); the rest take words.
+pub const QUESTIONS: [(&str, &[&str]); 4] = [
+    (
+        "Should {} keep its old behaviour behind a flag, or change outright?",
+        &["behind a flag", "change outright"],
+    ),
+    (
+        "May I change what {} returns, or do callers depend on its shape?",
+        &[],
+    ),
+    (
+        "Does the change to {} need a line in the release notes?",
+        &["yes, a line", "no, it is internal", "ask the leader"],
+    ),
+    (
+        "Is there anything in {} you would rather I left alone?",
+        &[],
+    ),
+];
 
 /// What a test run says: the stand-in runs nothing.
 pub const PASSED: &str = "All 12 tests passed.";
@@ -42,11 +67,13 @@ pub const RAN: &str = "Done.";
 
 /// How a stand-in works: the pause between its steps, how often a worker
 /// runs a command that needs the person's yes first (one assign in
-/// `asks`, never at 0), and the seed of its choices.
+/// `asks`, never at 0), how often it asks the person a question (one
+/// assign in `questions`, never at 0), and the seed of its choices.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Habits {
     pub pause: Duration,
     pub asks: u64,
+    pub questions: u64,
     pub seed: u64,
 }
 
@@ -62,6 +89,7 @@ impl Habits {
         Habits {
             pause: Duration::from_millis(n(PAUSE_VAR).min(PAUSE_MOST)),
             asks: n(ASKS_VAR),
+            questions: n(QUESTIONS_VAR),
             seed: n(SEED_VAR),
         }
     }
@@ -69,9 +97,10 @@ impl Habits {
     /// The variables that give these habits, for a shell's command line.
     pub fn vars(&self) -> String {
         format!(
-            "{PAUSE_VAR}={} {ASKS_VAR}={} {SEED_VAR}={}",
+            "{PAUSE_VAR}={} {ASKS_VAR}={} {QUESTIONS_VAR}={} {SEED_VAR}={}",
             self.pause.as_millis(),
             self.asks,
+            self.questions,
             self.seed
         )
     }
@@ -81,6 +110,52 @@ impl Habits {
     pub fn asks_now(&self, roll: u64) -> bool {
         self.asks > 0 && roll.is_multiple_of(self.asks)
     }
+
+    /// Whether the assign `roll` stands for asks the person a question,
+    /// by other bits of it than [`Habits::asks_now`]'s.
+    pub fn questions_now(&self, roll: u64) -> bool {
+        self.questions > 0 && (roll >> 16).is_multiple_of(self.questions)
+    }
+}
+
+/// The question the assign `roll` stands for asks about file `path`, and
+/// the answers it offers.
+pub fn question(path: &str, roll: u64) -> (String, &'static [&'static str]) {
+    let (text, options) = QUESTIONS[((roll >> 24) % QUESTIONS.len() as u64) as usize];
+    (text.replace("{}", path), options)
+}
+
+/// A worker's task while it waits for the person's answer: the task, and
+/// its to-do list's tasks by step.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Waiting {
+    pub task: String,
+    pub list: Vec<Option<u64>>,
+}
+
+impl Waiting {
+    pub fn to_json(&self) -> serde_json::Value {
+        json!({ "task": self.task, "list": self.list })
+    }
+
+    /// What a transcript kept; none without a task.
+    pub fn from_json(v: &serde_json::Value) -> Option<Waiting> {
+        Some(Waiting {
+            task: v["task"].as_str()?.to_string(),
+            list: (v["list"].as_array().into_iter().flatten())
+                .map(serde_json::Value::as_u64)
+                .collect(),
+        })
+    }
+}
+
+/// The person's words in prompt `prompt`: its last paragraph before the
+/// mail that came with it (imece puts its own notes first), at most
+/// [`super::TASK_MAX`] characters; none when only mail came.
+pub fn heard(prompt: &str) -> Option<String> {
+    let words = prompt.split(super::MAIL).next().unwrap_or_default();
+    let last = (words.rsplit("\n\n").map(str::trim)).find(|p| !p.is_empty())?;
+    Some(last.chars().take(super::TASK_MAX).collect())
 }
 
 /// A number for agent `name`'s `n`th assign under `seed`, the same every
@@ -387,21 +462,26 @@ fn append(hands: &mut impl Hands, path: &str, text: &str) -> Result<(), String> 
 
 impl Mind {
     /// A worker's turn: the first `assign` of its mail done, else
-    /// nothing.
+    /// nothing; when it waits for the person's answer, the task goes on
+    /// with the person's words.
     pub(super) fn work(&mut self, hands: &mut impl Hands, prompt: &str) -> String {
+        if let Some(waiting) = self.waiting.take() {
+            let Some(said) = heard(prompt) else {
+                self.waiting = Some(waiting);
+                return "I still wait for the person's answer.".into();
+            };
+            return self.go_on(hands, &waiting.task, List(waiting.list), Some(&said));
+        }
         let Some(task) = body_of(prompt, "assign") else {
             return "Nothing assigned to me.".into();
         };
         self.worked += 1;
         let me = self.me.get("name").cloned().unwrap_or_default();
-        let lead = (self.me.get("you answer to"))
-            .and_then(|o| o.strip_prefix("the leader "))
-            .unwrap_or_default()
-            .to_string();
+        let lead = self.lead_of();
         let habits = *hands.habits();
         let roll = roll(habits.seed, &me, self.worked);
         let files = hands.files();
-        let Some((main, test)) = pick(&files, &task, roll) else {
+        let Some((main, _)) = pick(&files, &task, roll) else {
             return write_up(hands, &me, &lead, &task);
         };
         let list = List::made(hands);
@@ -411,16 +491,55 @@ impl Mind {
             return format!("I could not read {main}: {why}");
         }
         list.mark(hands, 0, "completed");
+        if habits.questions_now(roll) {
+            let (q, options) = question(main, roll);
+            let ask = json!({ "to": "you", "type": "ask", "body": q, "options": options });
+            if hands.call("send", ask).is_ok() {
+                self.waiting = Some(Waiting { task, list: list.0 });
+                return format!("I asked you: {q}");
+            }
+        }
+        self.go_on(hands, &task, list, None)
+    }
+
+    /// Whom a worker answers to: its leader's name.
+    fn lead_of(&self) -> String {
+        (self.me.get("you answer to"))
+            .and_then(|o| o.strip_prefix("the leader "))
+            .unwrap_or_default()
+            .to_string()
+    }
+
+    /// The task after its code was read: the change, its tests, a run of
+    /// them and `done`, with what the person said when it asked them.
+    fn go_on(
+        &mut self,
+        hands: &mut impl Hands,
+        task: &str,
+        list: List,
+        said: Option<&str>,
+    ) -> String {
+        let me = self.me.get("name").cloned().unwrap_or_default();
+        let lead = self.lead_of();
+        let habits = *hands.habits();
+        let roll = roll(habits.seed, &me, self.worked);
+        let files = hands.files();
+        let Some((main, test)) = pick(&files, task, roll) else {
+            return write_up(hands, &me, &lead, task);
+        };
         list.begin(hands, 1);
-        if let Err(why) = append(hands, main, &task) {
+        if let Err(why) = append(hands, main, task) {
             return format!("I could not change {main}: {why}");
         }
         list.mark(hands, 1, "completed");
         list.begin(hands, 2);
         let mut changed = vec![main.to_string()];
-        let mut notes = Vec::new();
+        let mut notes: Vec<String> = said
+            .map(|s| format!("The person said: {s}"))
+            .into_iter()
+            .collect();
         if let Some(t) = test {
-            match append(hands, t, &format!("covers: {}", first_line(&task))) {
+            match append(hands, t, &format!("covers: {}", first_line(task))) {
                 Ok(()) => changed.push(t.to_string()),
                 Err(why) => notes.push(format!("{t} not changed: {why}")),
             }
@@ -432,7 +551,7 @@ impl Mind {
             let asked = (habits.asks_now(roll) && !kind.asks.is_empty())
                 .then(|| kind.asks[((roll >> 8) % kind.asks.len() as u64) as usize]);
             for command in asked.into_iter().chain(kind.test) {
-                let input = json!({ "command": command, "description": first_line(&task) });
+                let input = json!({ "command": command, "description": first_line(task) });
                 match hands.tool(crate::claude::SHELL_TOOL, input) {
                     Ok(out) => notes.push(format!("{command}: {}", first_line(&out))),
                     Err(why) => notes.push(format!("{command} did not run: {why}")),
@@ -441,7 +560,7 @@ impl Mind {
         }
         list.mark(hands, 3, "completed");
         list.begin(hands, 4);
-        let mut body = format!("{}\n\nChanged {}.", first_line(&task), changed.join(", "));
+        let mut body = format!("{}\n\nChanged {}.", first_line(task), changed.join(", "));
         for n in &notes {
             body.push_str(&format!("\n{n}"));
         }
@@ -480,33 +599,42 @@ mod tests {
 
     #[test]
     fn habits_come_from_their_variables_and_go_back_to_them() {
-        let vars = |pause: &str, asks: &str, seed: &str| {
-            let (pause, asks, seed) = (pause.to_string(), asks.to_string(), seed.to_string());
+        let vars = |pause: &str, asks: &str, questions: &str, seed: &str| {
+            let [pause, asks, questions, seed] = [pause, asks, questions, seed].map(String::from);
             Habits::of(move |k| match k {
                 PAUSE_VAR => Some(pause.clone()),
                 ASKS_VAR => Some(asks.clone()),
+                QUESTIONS_VAR => Some(questions.clone()),
                 SEED_VAR => Some(seed.clone()),
                 _ => None,
             })
         };
-        let h = vars(" 1500 ", "3", "42");
+        let h = vars(" 1500 ", "3", "4", "42");
         assert_eq!(
             h,
             Habits {
                 pause: Duration::from_millis(1500),
                 asks: 3,
+                questions: 4,
                 seed: 42
             }
         );
         assert_eq!(
             h.vars(),
-            "IMECE_STAND_IN_PAUSE_MS=1500 IMECE_STAND_IN_ASKS=3 IMECE_STAND_IN_SEED=42"
+            "IMECE_STAND_IN_PAUSE_MS=1500 IMECE_STAND_IN_ASKS=3 IMECE_STAND_IN_QUESTIONS=4 IMECE_STAND_IN_SEED=42"
         );
         assert_eq!(Habits::of(|_| None), Habits::default());
-        assert_eq!(vars("x", "-1", ""), Habits::default(), "not numbers: 0");
-        assert_eq!(vars("10000", "0", "0").pause, Duration::from_millis(10_000));
         assert_eq!(
-            vars("10001", "0", "0").pause,
+            vars("x", "-1", "y", ""),
+            Habits::default(),
+            "not numbers: 0"
+        );
+        assert_eq!(
+            vars("10000", "0", "0", "0").pause,
+            Duration::from_millis(10_000)
+        );
+        assert_eq!(
+            vars("10001", "0", "0", "0").pause,
             Duration::from_millis(PAUSE_MOST),
             "at most"
         );
@@ -863,6 +991,159 @@ mod tests {
         let first = used(&f).into_iter().find(|(t, _)| t == "Bash").unwrap().1;
         assert_ne!(first, asked);
         assert!(kind_of("a.go").asks.contains(&first.as_str()));
+    }
+
+    #[test]
+    fn one_assign_in_questions_asks_the_person_by_other_bits_never_at_0() {
+        let h = |questions| Habits {
+            questions,
+            ..Habits::default()
+        };
+        assert!(!h(0).questions_now(0));
+        assert!(h(1).questions_now(5));
+        assert!(h(3).questions_now(6 << 16) && !h(3).questions_now(7 << 16));
+        assert!(!h(3).questions_now(8 << 16));
+        assert!(!h(2).questions_now(1 << 16), "the upper bits, not the roll");
+        assert!(h(2).questions_now(1), "below them nothing counts");
+    }
+
+    #[test]
+    fn a_question_names_the_file_and_is_chosen_by_the_roll() {
+        let (q, options) = question("src/Money.cs", 6 << 24);
+        assert_eq!(
+            q,
+            "Does the change to src/Money.cs need a line in the release notes?"
+        );
+        assert_eq!(options, QUESTIONS[2].1);
+        assert_eq!(question("a", 3 << 24).0, QUESTIONS[3].0.replace("{}", "a"));
+        assert_eq!(question("a", 4 << 24).0, QUESTIONS[0].0.replace("{}", "a"));
+        assert!(question("a", 1 << 24).1.is_empty());
+        // Every other offers answers, each as a bus takes them.
+        for (i, (text, options)) in QUESTIONS.iter().enumerate() {
+            assert!(text.contains("{}"), "{text}");
+            assert_eq!(options.is_empty(), i % 2 == 1, "{text}");
+            assert!(options.len() <= 4 && options.iter().all(|o| o.len() <= 60));
+        }
+    }
+
+    #[test]
+    fn the_person_s_words_are_the_last_paragraph_before_the_mail() {
+        assert_eq!(heard("behind a flag").as_deref(), Some("behind a flag"));
+        assert_eq!(
+            heard(&format!(
+                "A note of imece's.\n\n  my words \n\n{MAIL}:\n\n[ask 2] from lead:\nx"
+            ))
+            .as_deref(),
+            Some("my words")
+        );
+        assert_eq!(heard(&format!("{MAIL}:\n\n[inform 2] from lead:\nx")), None);
+        assert_eq!(heard(" \n\n "), None);
+        let long = "y".repeat(super::super::TASK_MAX + 1);
+        assert_eq!(heard(&long).unwrap().len(), super::super::TASK_MAX);
+    }
+
+    /// A seed under which `claude-1`'s `n`th assign asks the question
+    /// `want` (by its index).
+    fn seed_asking(n: u64, want: usize) -> u64 {
+        (0..1_000u64)
+            .find(|&s| (roll(s, "claude-1", n) >> 24) % 4 == want as u64)
+            .unwrap()
+    }
+
+    #[test]
+    fn a_worker_asks_the_person_ends_its_turn_and_goes_on_with_the_answer() {
+        let mut f = worker(&[
+            ("src/Money.cs", "// Money\n"),
+            ("tests/MoneyTests.cs", "// MoneyTests\n"),
+        ]);
+        f.habits = Habits {
+            questions: 1,
+            seed: seed_asking(1, 0),
+            ..Habits::default()
+        };
+        let mut m = Mind::default();
+        let said = m.turn(&mut f, &assign("Round money half up"));
+        let q = QUESTIONS[0].0.replace("{}", "src/Money.cs");
+        assert_eq!(said, format!("I asked you: {q}"));
+        assert_eq!(
+            f.calls[1],
+            (
+                "send".to_string(),
+                json!({ "to": "you", "type": "ask", "body": q,
+                    "options": ["behind a flag", "change outright"] })
+            )
+        );
+        assert_eq!(f.calls.len(), 2, "nothing else is sent");
+        assert_eq!(f.files["src/Money.cs"], "// Money\n", "nothing changed yet");
+        assert_eq!(
+            m.waiting,
+            Some(Waiting {
+                task: "Round money half up".into(),
+                list: vec![Some(1), Some(2), Some(3), Some(4), Some(5)],
+            })
+        );
+        let last = used(&f).pop().unwrap();
+        assert_eq!(last, ("TaskUpdate".to_string(), "completed".to_string()));
+        assert_eq!(f.pauses, 2, "after the list, then the first step");
+        // Mail alone is no answer: it still waits.
+        f.used.clear();
+        let mail = format!("{MAIL}:\n\n[inform 4] from lead:\nHow is it going?\n");
+        assert_eq!(
+            m.turn(&mut f, &mail),
+            "I still wait for the person's answer."
+        );
+        assert!(f.used.is_empty() && m.waiting.is_some());
+        // The answer: the list goes on from its second task, the work
+        // as ever, and the done says what the person said.
+        let said = m.turn(&mut f, "behind a flag");
+        assert_eq!(said, "Done: changed src/Money.cs, tests/MoneyTests.cs.");
+        assert_eq!(m.waiting, None);
+        assert_eq!(m.worked, 1, "the same assign");
+        assert_eq!(
+            f.used[0],
+            (
+                "TaskUpdate".to_string(),
+                json!({ "taskId": "2", "status": "in_progress" })
+            )
+        );
+        assert!(
+            used(&f).iter().all(|(t, _)| t != "TaskCreate"),
+            "no list again"
+        );
+        assert_eq!(
+            f.files["src/Money.cs"],
+            "// Money\n// Round money half up\n",
+        );
+        let done = f.calls.last().unwrap();
+        assert_eq!(
+            done.1,
+            json!({ "to": "lead", "type": "done", "body":
+                "Round money half up\n\nChanged src/Money.cs, tests/MoneyTests.cs.\nThe person said: behind a flag\ndotnet test: All 12 tests passed." })
+        );
+        // The next assign asks again, and a question without answers
+        // offers none.
+        f.habits.seed = seed_asking(2, 1);
+        f.calls.clear();
+        m.turn(&mut f, &assign("Again"));
+        assert_eq!(f.calls[0].1["options"], json!([]));
+        assert!(m.waiting.is_some());
+    }
+
+    #[test]
+    fn a_question_that_can_not_be_sent_is_not_waited_for() {
+        let mut f = worker(&[("src/money.go", "package money\n")]);
+        f.habits.questions = 1;
+        f.answers
+            .insert("send".into(), Err("the person is away".into()));
+        let mut m = Mind::default();
+        let said = m.turn(&mut f, &assign("Money in cents"));
+        assert!(
+            said.starts_with("Changed src/money.go, but lead did not hear"),
+            "{said}"
+        );
+        assert_eq!(m.waiting, None);
+        assert_eq!(f.calls[1].1["to"], "you");
+        assert_eq!(f.calls[2].1["type"], "done");
     }
 
     #[test]

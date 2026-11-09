@@ -444,12 +444,15 @@ pub struct Mind {
     pub hired: Vec<String>,
     /// The assigns a worker has worked on.
     pub worked: u64,
+    /// The task a worker asked the person about, waiting for the answer.
+    pub waiting: Option<work::Waiting>,
 }
 
 impl Mind {
     /// The mind as a transcript keeps it.
     pub fn to_json(&self) -> Value {
-        json!({ "me": self.me, "hired": self.hired, "worked": self.worked })
+        let waiting = self.waiting.as_ref().map(work::Waiting::to_json);
+        json!({ "me": self.me, "hired": self.hired, "worked": self.worked, "waiting": waiting })
     }
 
     /// A mind a transcript kept; what is not text is left out.
@@ -463,6 +466,7 @@ impl Mind {
                 .filter_map(text)
                 .collect(),
             worked: v["worked"].as_u64().unwrap_or(0),
+            waiting: work::Waiting::from_json(&v["waiting"]),
         }
     }
 
@@ -1379,13 +1383,33 @@ mod tests {
             me: BTreeMap::from([("role".into(), "the leader".into())]),
             hired: vec!["claude-1".into(), "claude-2".into()],
             worked: 3,
+            waiting: Some(work::Waiting {
+                task: "Round up".into(),
+                list: vec![Some(6), None, Some(8)],
+            }),
         };
         assert_eq!(Mind::from_json(&mind.to_json()), mind);
-        let odd = json!({ "me": { "role": 3, "name": "x" }, "hired": ["a", 4], "worked": "2" });
+        let odd = json!({ "me": { "role": 3, "name": "x" }, "hired": ["a", 4], "worked": "2",
+            "waiting": { "task": "t", "list": ["1", 2] } });
         let read = Mind::from_json(&odd);
         assert_eq!(read.me, BTreeMap::from([("name".into(), "x".into())]));
         assert_eq!(read.hired, ["a"]);
         assert_eq!(read.worked, 0);
+        let waiting = read.waiting.unwrap();
+        assert_eq!(
+            (waiting.task.as_str(), waiting.list),
+            ("t", vec![None, Some(2)])
+        );
+        let no_task = json!({ "waiting": { "task": 1, "list": [1] } });
+        assert_eq!(Mind::from_json(&no_task).waiting, None);
+        assert_eq!(
+            Mind {
+                waiting: None,
+                ..mind
+            }
+            .to_json()["waiting"],
+            json!(null)
+        );
         assert_eq!(Mind::from_json(&json!(null)), Mind::default());
     }
 
@@ -1659,6 +1683,7 @@ mod tests {
         let habits = Habits {
             pause: std::time::Duration::from_millis(250),
             asks: 3,
+            questions: 5,
             seed: 7,
         };
         let claude = install(&dir, &imece, &home, &habits).unwrap();
@@ -1673,11 +1698,11 @@ mod tests {
         // Its habits reach the stand-in.
         std::fs::write(
             &imece,
-            "#!/bin/sh\nprintf '%s|' \"$IMECE_STAND_IN_PAUSE_MS\" \"$IMECE_STAND_IN_ASKS\" \"$IMECE_STAND_IN_SEED\"\n",
+            "#!/bin/sh\nprintf '%s|' \"$IMECE_STAND_IN_PAUSE_MS\" \"$IMECE_STAND_IN_ASKS\" \"$IMECE_STAND_IN_QUESTIONS\" \"$IMECE_STAND_IN_SEED\"\n",
         )
         .unwrap();
         let out = Command::new(&claude).output().unwrap();
-        assert_eq!(String::from_utf8_lossy(&out.stdout), "250|3|7|");
+        assert_eq!(String::from_utf8_lossy(&out.stdout), "250|3|5|7|");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

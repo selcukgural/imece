@@ -210,3 +210,79 @@ fn a_worker_s_command_that_is_no_routine_waits_for_the_person_s_yes() {
     let _ = std::fs::remove_dir_all(&dir);
     let _ = std::fs::remove_dir_all(&repo);
 }
+
+#[test]
+fn a_worker_s_question_waits_with_its_answers_and_the_answer_goes_into_its_change() {
+    use imece_agent::stand_in::work;
+    let dir = std::env::temp_dir().join(format!("imece-e2e-question-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let repo = checkout("e2e-question-repo");
+    // Every assign asks the person, under a seed whose question offers
+    // answers.
+    let seed = (0..1_000u64)
+        .find(|&s| {
+            !work::question("a.txt", work::roll(s, "claude-1", 1))
+                .1
+                .is_empty()
+        })
+        .unwrap();
+    let (question, options) = work::question("a.txt", work::roll(seed, "claude-1", 1));
+    let habits = imece_agent::stand_in::Habits {
+        questions: 1,
+        seed,
+        ..Default::default()
+    };
+    let claude =
+        imece_agent::stand_in::install(&dir, &imece(), &dir.join("home"), &habits).unwrap();
+    let mut w = team(0);
+    let mut live = Live::new(
+        1,
+        claude_at(&claude.to_string_lossy()),
+        repo.clone(),
+        dir.join("trees"),
+    );
+    live.open_bus(&w, imece().to_string_lossy().into_owned())
+        .unwrap();
+    live.told(&mut w, 0, "Say hello").unwrap();
+    let until = |w: &mut World, live: &mut Live, done: &dyn Fn(&World) -> bool| {
+        let start = std::time::Instant::now();
+        while !done(w) {
+            assert!(
+                start.elapsed().as_secs() < 30,
+                "timed out: {:#?}",
+                w.journal
+            );
+            live.step(w);
+            thread::sleep(Duration::from_millis(20));
+        }
+    };
+    until(&mut w, &mut live, &|w| {
+        w.question_of(1).is_some() && w.agents[1].status == Status::Idle
+    });
+    // The question waits for the person with its answers; the worker
+    // changed nothing and holds its card.
+    let q = w.question_of(1).unwrap();
+    assert_eq!(q.text, question);
+    assert_eq!(q.options, options);
+    assert!(w.changes.is_empty(), "nothing done before the answer");
+    let card = w.agents[1].card.unwrap();
+    assert_eq!(w.cards[card].column, Column::Working);
+    // The person answers with the first of them, as a digit on Home does.
+    let answer = options[0];
+    live.told(&mut w, 1, answer).unwrap();
+    w.said(1, answer);
+    assert!(w.question_of(1).is_none());
+    until(&mut w, &mut live, &|w| {
+        w.changes.iter().any(|c| c.agent == 1) && w.agents.iter().all(|a| a.status == Status::Idle)
+    });
+    // The same card, and the answer in the done under its title.
+    assert_eq!(w.agents[1].card, Some(card));
+    assert_eq!(
+        w.done_why(1),
+        Some(format!("Changed a.txt.\nThe person said: {answer}").as_str())
+    );
+    drop(live);
+    let _ = std::fs::remove_dir_all(&dir);
+    let _ = std::fs::remove_dir_all(&repo);
+}

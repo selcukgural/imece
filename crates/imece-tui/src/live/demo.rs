@@ -18,16 +18,19 @@ use imece_agent::stand_in::{Habits, work};
 const HELPERS: usize = 2;
 
 /// How long a demo worker takes over each step of its list, in
-/// milliseconds, and one assign in how many runs a command that waits
-/// for the person's yes first.
+/// milliseconds; one assign in how many runs a command that waits for
+/// the person's yes first, and one in how many asks the person a
+/// question.
 const PAUSE: u64 = 1_500;
 const ASKS: u64 = 3;
+const QUESTIONS: u64 = 4;
 
 /// How the demo's stand-ins work, their choices seeded by `seed`.
 fn habits(seed: u64) -> Habits {
     Habits {
         pause: std::time::Duration::from_millis(PAUSE),
         asks: ASKS,
+        questions: QUESTIONS,
         seed,
     }
 }
@@ -285,6 +288,7 @@ mod tests {
             Habits {
                 pause: Duration::from_millis(1_500),
                 asks: 3,
+                questions: 4,
                 seed: 9
             }
         );
