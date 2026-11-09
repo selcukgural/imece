@@ -53,7 +53,7 @@ Ana ekranın tuşları; hepsi için bkz. [ana ekran](home.md#tuşlar).
 | `S` (`:defer`) | bu ögeyi ertele ve sıradakini aç |
 | `esc` | açılandan ana ekrana geri |
 
-Her satır isteğin tamamını söyler ve eldeki satır tuşlarıyla biter (bir izinde ya da betikte `a evet  r hayır`, bir değişiklikte `a onayla  r geri gönder`, bir soruda `1-2 seç  a yanıtla`, bir yanıtta `a yanıtla  enter aç`); bir iznin komutu satırının altında bütünüyle durur, bir sorunun yanıtları rakamlarıyla.
+Her satır isteğin tamamını söyler ve eldeki satır tuşlarıyla biter (bir izinde ya da betikte `a evet  r hayır`, bir değişiklikte `a onayla  r geri gönder`, bir soruda `1-2 seç  a yanıtla`, bir yanıtta `enter aç  r kapat`); bir iznin komutu satırının altında bütünüyle durur, bir sorunun yanıtları rakamlarıyla.
 
 ## `W` ve `S`: birbiri ardına
 

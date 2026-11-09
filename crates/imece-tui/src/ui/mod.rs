@@ -2077,6 +2077,11 @@ pub(crate) fn home_hints(app: &App) -> Vec<(&'static str, &'static str)> {
             ("s", t.home_later),
         ],
         Some(InboxKind::Approval) => vec![("a", t.allow_once), ("r", t.refuse), ("e", t.this_turn)],
+        Some(InboxKind::Reply) => vec![
+            ("enter", t.home_open),
+            ("r", t.home_dismiss),
+            ("s", t.home_later),
+        ],
         Some(InboxKind::Tries | InboxKind::Rounds) => vec![
             ("enter", t.home_open),
             ("a", t.home_once_more),
@@ -6167,6 +6172,10 @@ mod tests {
         assert!(
             row(&mut app, InboxKind::Approval)
                 .contains("   a  allow once   r  refuse   e  yes this turn   ?  help")
+        );
+        assert!(
+            row(&mut app, InboxKind::Reply)
+                .contains("   enter  open   r  dismiss   s  later   ?  help")
         );
         assert!(
             row(&mut app, InboxKind::Plan).contains("   enter  open   a  yes   r  no   ?  help")

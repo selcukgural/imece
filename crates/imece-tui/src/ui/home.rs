@@ -515,9 +515,11 @@ fn row_keys(app: &App) -> Vec<Span<'static>> {
             InboxKind::Question if !pick.is_empty() => {
                 vec![(pick.as_str(), t.home_pick), ("a", t.home_answer)]
             }
-            InboxKind::Question | InboxKind::Fault | InboxKind::Reply => {
+            InboxKind::Question | InboxKind::Fault => {
                 vec![("a", t.home_answer), ("enter", t.home_open)]
             }
+            // A reply asks for nothing: `enter` reads it, `r` puts it away.
+            InboxKind::Reply => vec![("enter", t.home_open), ("r", t.home_dismiss)],
             InboxKind::Tries | InboxKind::Rounds => {
                 vec![("a", t.home_once_more), ("r", t.home_fail)]
             }
@@ -1686,7 +1688,7 @@ mod tests {
             at(&app, exact - 1)
         );
         for (kind, want) in [
-            (InboxKind::Reply, " a  answer   enter  open  "),
+            (InboxKind::Reply, " enter  open   r  dismiss  "),
             (InboxKind::Plan, " a  yes   r  no  "),
             (InboxKind::Sensitive, " a  yes   r  no  "),
             (InboxKind::Script, " a  yes   r  no  "),
