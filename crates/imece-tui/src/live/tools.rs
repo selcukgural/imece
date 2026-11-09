@@ -92,17 +92,42 @@ pub(super) fn approve_tool() -> Tool {
 /// read otherwise, no second line), which the run tool would run for
 /// `role`: the build, the tests (cargo's and those its project's files
 /// call for, `tests`), git's reading commands, the programs the person
-/// named.
+/// named. Its output may be cut to its last or first lines
+/// (`2>&1 | tail -20`, `| head -n 5`): that only shortens what the agent
+/// reads (record 136).
 pub(crate) fn routine(role: Role, what: &Ask, programs: &[String], tests: &Runners) -> bool {
     match what {
         Ask::Command { command, .. } => {
             let line = command.trim();
+            let line = uncut(line).unwrap_or(line);
             // A shell runs each line as a command of its own.
             !line.contains(['\n', '\r'])
                 && run::split(line).is_ok_and(|argv| allowed(role, &argv, programs, tests).is_ok())
         }
         Ask::Other { .. } => false,
     }
+}
+
+/// `line` without a cut of its output at its end: `| tail`, `| head`, with
+/// a count (`-20`, `-n 20`) or none, `2>&1` before the bar or not. None
+/// when it ends in no such cut. What is left is checked as any line.
+fn uncut(line: &str) -> Option<&str> {
+    let (before, after) = line.rsplit_once('|')?;
+    let words: Vec<&str> = after.split_whitespace().collect();
+    let count = |w: &str| (1..=6).contains(&w.len()) && w.bytes().all(|b| b.is_ascii_digit());
+    let cut = match words.as_slice() {
+        ["tail" | "head"] => true,
+        ["tail" | "head", n] => n.strip_prefix('-').is_some_and(count),
+        ["tail" | "head", "-n", n] => count(n),
+        _ => false,
+    };
+    if !cut {
+        return None;
+    }
+    // `||` is a second command, not a pipe.
+    let before = before.strip_suffix('|').map_or(Some(before), |_| None)?;
+    let before = before.trim_end();
+    Some(before.strip_suffix("2>&1").unwrap_or(before).trim_end())
 }
 
 /// imece's tools for an agent of `role`: workers alone take cards, the
@@ -1116,6 +1141,11 @@ mod tests {
             "  cargo build --release\n",
             "git log --oneline -5",
             "npm test",
+            "cargo test | tail",
+            "cargo test 2>&1 | tail -20",
+            "cargo test 2>&1|tail -n 5",
+            "git log | head -3",
+            "cargo test | head -n 100000",
         ] {
             assert!(
                 routine(Role::Worker, &bash(yes), &extra, &NO_TESTS),
@@ -1123,7 +1153,6 @@ mod tests {
             );
         }
         for no in [
-            "cargo test | tail",
             "cargo test 2>&1",
             "cargo test && rm -rf x",
             "cargo test\nrm -rf x",
@@ -1136,6 +1165,23 @@ mod tests {
             "git grep --open=sh x",
             "ls",
             "",
+            // Only a count of lines, the last cut, after a routine line.
+            "cargo test | tail -f",
+            "cargo test | tail -c 5",
+            "cargo test | tail -1000000",
+            "cargo test | tail -",
+            "cargo test | tail -n",
+            "cargo test | tail 5",
+            "cargo test | tail -5 x",
+            "cargo test | sh",
+            "cargo test | tail -5 | sh",
+            "cargo test | sh | tail -5",
+            "cargo test || tail -5",
+            "cargo test; rm x | tail",
+            "cargo test 2>&1 2>&1 | tail",
+            "ls | tail",
+            "| tail",
+            "cargo test | tail $N",
         ] {
             assert!(
                 !routine(Role::Worker, &bash(no), &extra, &NO_TESTS),
@@ -1190,9 +1236,17 @@ mod tests {
                 ),
                 "{e}"
             );
-            // Anything more a shell reads still asks.
+            // A cut of its output is no more than the line; anything
+            // else a shell reads still asks.
+            assert!(routine(
+                role,
+                &bash("python3 -m unittest 2>&1 | tail -5"),
+                &[],
+                &PY
+            ));
             for no in [
-                "python3 -m unittest 2>&1 | tail -5",
+                "python3 -m unittest 2>&1 | tail -5 > out",
+                "python3 -c x | tail -5",
                 "python3 -m unittest > out",
                 "pytest \"$X\"",
                 "pytest\nrm -rf x",

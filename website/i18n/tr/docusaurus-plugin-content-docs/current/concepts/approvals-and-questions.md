@@ -15,7 +15,7 @@ Claude Code `--permission-prompts host --permission-prompt-tool mcp__imece__appr
 
 ### Rutin komutlar hemen çalışır
 
-Bir kabuk komutu **rutin**dir: tek satırsa, argümanlarıyla tek bir programsa (kabuğun başka türlü okuyacağı hiçbir şey yok: boru, yönlendirme, `&&`, `$`, glob yok) ve `run` aracının politikası role onu çalıştırmaya izin veriyorsa (aşağıda). Rutin bir komuta kendi başına izin verilir, izde "allowed on its own" satırıyla; derleme, testler ve git'in okuma komutları sizi asla beklemez. Bu bir Python, JavaScript ya da Go checkout'unun kendi testleri için de geçerlidir ([aşağıda](#bir-checkoutun-istediği-testler)): `python3 -m unittest -v` hemen çalışır, `python3 -m unittest 2>&1 | tail -5` sorar, `cargo test | tail` gibi.
+Bir kabuk komutu **rutin**dir: tek satırsa, argümanlarıyla tek bir programsa (kabuğun başka türlü okuyacağı hiçbir şey yok: boru, yönlendirme, `&&`, `$`, glob yok) ve `run` aracının politikası role onu çalıştırmaya izin veriyorsa (aşağıda). Rutin bir komuta kendi başına izin verilir, izde "allowed on its own" satırıyla; derleme, testler ve git'in okuma komutları sizi asla beklemez. Bu bir Python, JavaScript ya da Go checkout'unun kendi testleri için de geçerlidir ([aşağıda](#bir-checkoutun-istediği-testler)): `python3 -m unittest -v` hemen çalışır. Rutin bir komutun çıktısı sonunda son ya da ilk satırlarına kesilebilir: `cargo test 2>&1 | tail -20`, `python3 -m unittest | head -n 5` ve sayısız bir `| tail` de hemen çalışır, çünkü kesim yalnızca ajanın okuduğunu kısaltır; `tail -f`, `tail -c`, ikinci bir boru ya da sayıdan sonra gelen her şey yine sorar.
 
 ### Kalan her şey bekler
 
