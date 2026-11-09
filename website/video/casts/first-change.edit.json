@@ -1,0 +1,115 @@
+{
+ "cast": "first-change.raw.cast",
+ "speed": [
+  [
+   0,
+   2.753,
+   0
+  ],
+  [
+   39.51,
+   43.965,
+   2
+  ]
+ ],
+ "markers": [
+  [
+   2.753,
+   "intro"
+  ],
+  [
+   9.35,
+   "start"
+  ],
+  [
+   27.074,
+   "task"
+  ],
+  [
+   43.993,
+   "worker"
+  ],
+  [
+   52.132,
+   "change"
+  ],
+  [
+   76.66,
+   "approve"
+  ],
+  [
+   87.846,
+   "commit"
+  ],
+  [
+   107.909,
+   "quit"
+  ],
+  [
+   117.889,
+   "end"
+  ]
+ ],
+ "keys": [
+  [
+   24.533,
+   "esc",
+   "close the welcome"
+  ],
+  [
+   27.102,
+   "/",
+   "write to the leader"
+  ],
+  [
+   35.466,
+   "enter",
+   "send it"
+  ],
+  [
+   61.851,
+   "enter",
+   "read the change"
+  ],
+  [
+   65.897,
+   "j k",
+   "scroll"
+  ],
+  [
+   71.638,
+   "tab",
+   "its talk and log"
+  ],
+  [
+   76.685,
+   "a",
+   "approve: it lands staged"
+  ],
+  [
+   87.874,
+   ":",
+   "a command to imece"
+  ],
+  [
+   89.237,
+   "enter",
+   "suggest a commit message"
+  ],
+  [
+   96.416,
+   "enter",
+   "commit, in your own shell"
+  ],
+  [
+   107.935,
+   "q",
+   "quit"
+  ],
+  [
+   109.486,
+   "q",
+   "the agents sleep until next time"
+  ]
+ ]
+}

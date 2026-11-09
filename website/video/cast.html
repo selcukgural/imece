@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>imece</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@500;600&display=block">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/asciinema-player@3.10.0/dist/bundle/asciinema-player.css">
+<style>
+  :root { --ground: #15161b; --ink: #e6e6ea; --accent: #e3a93f; }
+  html, body { margin: 0; height: 100%; background: var(--ground); overflow: hidden; }
+  #stage { position: absolute; inset: 24px 36px 112px 36px; display: flex; align-items: center; justify-content: center; }
+  #term { width: 100%; height: 100%; }
+  .ap-wrapper, .ap-player { background: var(--ground) !important; }
+  /* The player's start/loading overlays (logo, play button) never show. */
+  .ap-overlay, .ap-overlay-start, .ap-overlay-loading, .ap-overlay-error { display: none !important; }
+  .ap-terminal { font-family: 'JetBrains Mono', ui-monospace, monospace !important; }
+  #badge {
+    position: absolute; left: 50%; bottom: 30px; transform: translate(-50%, 12px);
+    display: flex; align-items: center; gap: 14px; padding: 12px 22px 12px 14px;
+    background: rgba(24, 25, 31, 0.94); border: 1px solid rgba(227, 169, 63, 0.55);
+    border-radius: 14px; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.55);
+    font: 600 26px/1 Inter, system-ui, sans-serif; color: var(--ink);
+    opacity: 0; transition: opacity 160ms ease, transform 160ms ease; pointer-events: none;
+  }
+  #badge.on { opacity: 1; transform: translate(-50%, 0); }
+  #badge kbd {
+    font: 700 26px/1 'JetBrains Mono', monospace; color: #15161b; background: var(--accent);
+    border-radius: 8px; padding: 8px 12px; min-width: 22px; text-align: center;
+    box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.25);
+  }
+  #speed {
+    position: absolute; right: 48px; top: 40px; padding: 8px 14px; border-radius: 10px;
+    font: 600 22px/1 Inter, system-ui, sans-serif; color: var(--ground); background: var(--ink);
+    opacity: 0; transition: opacity 200ms ease;
+  }
+  #speed.on { opacity: 0.9; }
+</style>
+<style>#__promo_cursor{display:none !important}</style>
+</head>
+<body>
+<div id="stage"><div id="term"></div></div>
+<div id="badge"><kbd id="key"></kbd><span id="says"></span></div>
+<div id="speed"></div>
+<div id="corner" style="position:absolute;right:0;bottom:0;width:4px;height:4px"></div>
+<script src="https://cdn.jsdelivr.net/npm/asciinema-player@3.10.0/dist/bundle/asciinema-player.min.js"></script>
+<script>
+  // ?cast=NAME.cast : the cut recording (cut.py). The tour presses
+  // ArrowDown to play to the next marker; markers pause it.
+  const q = new URLSearchParams(location.search);
+  const player = AsciinemaPlayer.create(q.get('cast'), document.getElementById('term'), {
+    autoPlay: false,
+    preload: true,
+    poster: 'npt:0:0.05',
+    pauseOnMarkers: true,
+    controls: false,
+    fit: 'both',
+    terminalFontFamily: "'JetBrains Mono', ui-monospace, monospace",
+    terminalLineHeight: 1.18,
+    theme: 'asciinema',
+  });
+  const badge = document.getElementById('badge');
+  const key = document.getElementById('key');
+  const says = document.getElementById('says');
+  let hide = 0;
+  player.addEventListener('input', ({ data }) => {
+    const [k, meaning] = data.split('\t');
+    if (k === '' && meaning === '') return;
+    key.textContent = k;
+    key.style.display = k ? '' : 'none';
+    says.textContent = meaning || '';
+    badge.classList.add('on');
+    clearTimeout(hide);
+    hide = setTimeout(() => badge.classList.remove('on'), 2200);
+  });
+  // A marker whose label starts with "x" names a speed shown in the corner
+  // ("x8"); "x1" takes it away. Any other label is a scene's end.
+  const speed = document.getElementById('speed');
+  player.addEventListener('marker', ({ label }) => {
+    if (/^x\d+$/.test(label)) {
+      speed.textContent = label === 'x1' ? '' : `${label.slice(1)}× speed`;
+      speed.classList.toggle('on', label !== 'x1');
+      player.play();
+    }
+  });
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowDown') player.play();
+  });
+  window.tour = player;
+</script>
+</body>
+</html>

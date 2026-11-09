@@ -9,7 +9,7 @@ out="$here/../static/video"
 from=${1:-$HOME/RiderProjects/AfterApply/artifacts/promo-video}
 mkdir -p "$out"
 [ $# -gt 0 ] && shift
-tours=${*:-tour review team find}
+tours=${*:-first-change team-on-lonca when-they-ask}
 for s in $tours; do
   d="$from/$s"
   [ -f "$d/video.mp4" ] || { echo "no render at $d/video.mp4" >&2; exit 1; }
@@ -21,7 +21,10 @@ for s in $tours; do
     -c:a aac -b:a 96k -c:s mov_text -movflags +faststart "$out/imece-$s.mp4"
   # SRT → WebVTT: the header, and commas to dots in the times.
   { printf 'WEBVTT\n\n'; sed -E 's/^([0-9:]+),([0-9]{3}) --> ([0-9:]+),([0-9]{3})/\1.\2 --> \3.\4/' "$d/subtitles.srt"; } > "$out/imece-$s.vtt"
-  # The poster: a frame from the first scene on the screen, not the card.
-  ffmpeg -loglevel error -y -ss 9 -i "$d/video.mp4" -frames:v 1 -q:v 6 "$out/imece-$s.jpg"
+  # The poster: a frame where the tour shows what it is about.
+  case $s in
+    first-change) at=70 ;; team-on-lonca) at=112 ;; when-they-ask) at=56 ;; *) at=9 ;;
+  esac
+  ffmpeg -loglevel error -y -ss "$at" -i "$d/video.mp4" -frames:v 1 -q:v 6 "$out/imece-$s.jpg"
   echo "imece-$s: $(du -h "$out/imece-$s.mp4" | cut -f1)"
 done

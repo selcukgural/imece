@@ -1,0 +1,149 @@
+{
+ "cast": "when-they-ask.raw.cast",
+ "speed": [
+  [
+   0,
+   2.515,
+   0
+  ],
+  [
+   51.735,
+   95.153,
+   11
+  ],
+  [
+   135.885,
+   142.556,
+   2
+  ],
+  [
+   165.652,
+   183.054,
+   4
+  ],
+  [
+   199.498,
+   207.654,
+   2
+  ]
+ ],
+ "markers": [
+  [
+   2.515,
+   "intro"
+  ],
+  [
+   15.164,
+   "task"
+  ],
+  [
+   38.89,
+   "question"
+  ],
+  [
+   95.181,
+   "ask"
+  ],
+  [
+   115.054,
+   "notes"
+  ],
+  [
+   142.583,
+   "permission"
+  ],
+  [
+   183.082,
+   "output"
+  ],
+  [
+   197.376,
+   "approve"
+  ],
+  [
+   209.727,
+   "quit"
+  ],
+  [
+   213.881,
+   "end"
+  ]
+ ],
+ "keys": [
+  [
+   13.601,
+   "r",
+   "dismiss the old reply"
+  ],
+  [
+   15.189,
+   "/",
+   "write to the leader"
+  ],
+  [
+   32.429,
+   "enter",
+   "send it"
+  ],
+  [
+   46.568,
+   "g d",
+   "the first thing to decide"
+  ],
+  [
+   49.655,
+   "1",
+   "answer with option 1"
+  ],
+  [
+   110.922,
+   "g c",
+   "the change"
+  ],
+  [
+   111.993,
+   "enter",
+   "read it"
+  ],
+  [
+   123.967,
+   "c",
+   "a note on this line"
+  ],
+  [
+   132.243,
+   "enter",
+   "keep the note"
+  ],
+  [
+   133.806,
+   "n",
+   "send the notes back"
+  ],
+  [
+   163.573,
+   "A",
+   "yes from now on, for this project"
+  ],
+  [
+   197.406,
+   "g c",
+   "the change"
+  ],
+  [
+   199.463,
+   "a",
+   "approve: Lonca runs the tests, then merges"
+  ],
+  [
+   209.755,
+   "q",
+   "quit"
+  ],
+  [
+   210.816,
+   "q",
+   "quit"
+  ]
+ ]
+}
