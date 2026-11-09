@@ -79,7 +79,7 @@ Menü her komutun değerini ardında, ayraç içinde gösterir; çizilir, asla e
 
 ### Kısa adlar
 
-`b` `c` `f` `o` `q` `t`, `budget` `close` `forget` `open` `quit` `theme` yerine geçer. Bütünüyle yazılan bir kısa ad zaten bir komuttur, menü hiçbir şey önermez ve `enter` çalıştırır: `:q` `enter` hemen sorar, `:b 80` bütçeyi artırır.
+`b` `c` `f` `o` `q` `t`, `budget` `close` `forget` `open` `quit` `theme` yerine geçer. Bütünüyle yazılan bir kısa ad zaten bir komuttur, menü hiçbir şey önermez ve `enter` çalıştırır: `:q` `enter` hemen sorar, `:b 80` bütçeyi artırır. Bir komutun bütün adı da öyledir: `:news` `enter` yenilikleri açar, `:archive` `enter` menü `archives`'i de önerse `:archive`'ı çalıştırır (ona geçilince `enter` onu alır, yarım bir sözcükteki gibi).
 
 ### Tema önizlemesi
 

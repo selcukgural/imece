@@ -34,8 +34,21 @@ worker's standing in the column it moves from, not only the newest. A
 card through (`Card::over`: done or failed) has its `finished` tick. The
 person's words to a worker whose card was sent back go on with that card
 (`unfinished` is now a card at work that is still the agent's own), so
-the rounds of one card stay one card; a card in review, done or failed
-makes the next task a card of its own, as a done one always did.
+the rounds of one card stay one card; a card done or failed makes the
+next task a card of its own, as a done one always did. A card in review
+whose change still waits (not a Lonca proposal) goes back to work with
+the person's word (`World::word_goes_on`, from `Live::prompt` when
+`Opening.person`, after the wake briefing has said where the card stood;
+`Sim::told` the same): the acceptance run of 2026-11-09 wrote to a worker
+whose change for #1 waited and imece opened #2 for it, so the next change
+(#1's work and the follow-up) was headed `#2` and flagged two files
+outside #2. It is not a send-back: no round is counted against the card
+(`breaker.sent_back`, the ledger's `sent_back`), and the change is not
+decided; it waits on until the worker's next change, which holds it, takes
+its place (`change_ready`'s `carry_spend` carries what it cost), and an
+apply of it meanwhile leaves the card at work (`change_applied` moves only
+cards in review). A proposal is left to Lonca: its cards follow what Lonca
+does with it.
 
 Attempts. `Card.attempt` counts the times a card was taken: the turn an
 `assign` opened (1), a `claim` (+1, so a posted card starts at 0), or an

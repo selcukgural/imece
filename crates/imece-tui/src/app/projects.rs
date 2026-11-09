@@ -105,7 +105,7 @@ impl App {
                     t.opened,
                     &[
                         &project.name,
-                        &full.display().to_string(),
+                        &self.shown_path(&full),
                         &self.world.agents[leader].name,
                     ],
                 );
@@ -523,25 +523,14 @@ impl App {
     /// stand-in for a checkout).
     fn checkout_shown(&self, p: ProjectId) -> String {
         match &self.engine {
-            Engine::Live(live) => {
-                let repo = live.repo_of(p);
-                match self.home.as_deref().and_then(|h| repo.strip_prefix(h).ok()) {
-                    Some(rest) => format!("~/{}", rest.display()),
-                    None => repo.display().to_string(),
-                }
-            }
+            Engine::Live(live) => crate::model::tilde(live.repo_of(p), self.home.as_deref()),
             Engine::Sim(_) | Engine::View(_) => self.world.projects[p].name.clone(),
         }
     }
 
     /// `path` as the screen shows it: `~` for the home, cleaned.
     pub(crate) fn shown_path(&self, path: &Path) -> String {
-        let said = match self.home.as_deref().and_then(|h| path.strip_prefix(h).ok()) {
-            Some(rest) if rest.as_os_str().is_empty() => "~".to_string(),
-            Some(rest) => format!("~/{}", rest.display()),
-            None => path.display().to_string(),
-        };
-        clean(&said)
+        clean(&crate::model::tilde(path, self.home.as_deref()))
     }
 
     /// The folder project `p` is, as the salon's project line ends: live,

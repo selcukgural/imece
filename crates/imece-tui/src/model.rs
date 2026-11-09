@@ -45,6 +45,28 @@ fn start_seconds() -> u64 {
     START_SECONDS.load(Ordering::Relaxed)
 }
 
+/// `path` as imece writes a path of its own knowledge (record 103): the
+/// home directory and what is under it from `~`, anything else whole.
+/// Not cleaned: what draws it does that.
+pub fn tilde(path: &Path, home: Option<&Path>) -> String {
+    match home.and_then(|h| path.strip_prefix(h).ok()) {
+        Some(rest) if rest.as_os_str().is_empty() => "~".to_string(),
+        Some(rest) => format!("~/{}", rest.display()),
+        None => path.display().to_string(),
+    }
+}
+
+/// [`tilde`] with this process's home directory (`$HOME`, read once).
+pub fn home_tilde(path: &Path) -> String {
+    static HOME: std::sync::OnceLock<Option<std::path::PathBuf>> = std::sync::OnceLock::new();
+    let home = HOME.get_or_init(|| {
+        std::env::var_os("HOME")
+            .filter(|h| !h.is_empty())
+            .map(std::path::PathBuf::from)
+    });
+    tilde(path, home.as_deref())
+}
+
 /// The day of a tick, counted from 1970-01-01 in the clock's time zone.
 pub fn day(tick: u64) -> u64 {
     START_DAY.load(Ordering::Relaxed) + (start_seconds() + tick * SECONDS_PER_TICK) / 86_400
@@ -4679,6 +4701,22 @@ impl World {
         });
     }
 
+    /// The person writes to worker `id` while its change waits: the cards
+    /// of its own that change stands for go back to work, as a send-back's
+    /// do, so the word goes on with them rather than opening a card of its
+    /// own (record 126). The change is not decided: it waits on until the
+    /// worker's next one, which holds it too, takes its place, or the
+    /// person decides it. Not a send-back: no round is counted against
+    /// the card. A proposal on Lonca is left as it was: its cards follow
+    /// what Lonca does with it. The cards moved.
+    pub fn word_goes_on(&mut self, id: AgentId) -> Vec<CardId> {
+        let waits = self.change_of(id).is_some() && self.proposal_of(id).is_none();
+        if self.agents[id].role != Role::Worker || !waits {
+            return Vec::new();
+        }
+        self.move_cards(id, Column::Review, Column::Working)
+    }
+
     /// The person rejected worker `id`'s change; it stays in the worktree.
     pub fn change_rejected(&mut self, id: AgentId) {
         self.carry_spend(id);
@@ -8233,6 +8271,23 @@ mod tests {
             w.change_clashed(1, clashes(&["a"]));
             gone(&mut w);
             assert!(w.clashes.is_empty());
+        }
+    }
+
+    #[test]
+    fn a_path_under_the_home_is_written_from_tilde() {
+        let home = Some(Path::new("/Users/me"));
+        let t = |p: &str| tilde(Path::new(p), home);
+        assert_eq!(t("/Users/me/code/shelf"), "~/code/shelf");
+        assert_eq!(t("/Users/me"), "~");
+        assert_eq!(t("/Users/me/"), "~");
+        assert_eq!(t("/Users/meg/code"), "/Users/meg/code", "a whole part only");
+        assert_eq!(t("/tmp/x"), "/tmp/x");
+        assert_eq!(tilde(Path::new("/Users/me/x"), None), "/Users/me/x");
+        let home = std::env::var_os("HOME").filter(|h| !h.is_empty());
+        if let Some(h) = home {
+            let under = Path::new(&h).join("code/shelf");
+            assert_eq!(home_tilde(&under), "~/code/shelf");
         }
     }
 

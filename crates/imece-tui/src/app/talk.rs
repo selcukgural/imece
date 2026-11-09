@@ -261,10 +261,11 @@ impl App {
         }
         if sent > 0 {
             let t = self.lang.text();
-            self.flash(fill(
-                t.talk_notes_sent,
-                &[&sent.to_string(), &names.join(", ")],
-            ));
+            let names = names.join(", ");
+            self.flash(match sent {
+                1 => fill(t.talk_note_sent, &[&names]),
+                n => fill(t.talk_notes_sent, &[&n.to_string(), &names]),
+            });
         }
     }
 
@@ -371,12 +372,12 @@ impl App {
         let target = (!arg.is_empty()).then(|| expand_tilde(arg, self.home.as_deref()));
         let here = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
         match ui::export::write(target.as_deref(), &here, &name, &text) {
-            Ok(path) => self.flash(fill(t.exported, &[&path.display().to_string()])),
+            Ok(path) => self.flash(fill(t.exported, &[&self.shown_path(&path)])),
             Err(e) => {
                 let path = target.unwrap_or_else(|| here.join(&name));
                 self.flash(fill(
                     t.export_failed,
-                    &[&path.display().to_string(), &e.to_string()],
+                    &[&self.shown_path(&path), &e.to_string()],
                 ))
             }
         }
@@ -475,6 +476,31 @@ mod tests {
         );
         keys(&mut app, "n");
         assert_eq!(app.flash.as_ref().unwrap().0, app.lang.text().no_talk_notes);
+    }
+
+    #[test]
+    fn one_note_sent_is_said_as_one() {
+        let mut app = App::new(1, 2, 0, 1, Lang::En);
+        app.world.journal.clear();
+        let id = app.world.number();
+        app.world.note(Event::Sent {
+            from: 0,
+            to: 1,
+            kind: MsgKind::Inform,
+            text: "do the parser".into(),
+            id,
+            re: None,
+        });
+        app.open_thread(0);
+        keys(&mut app, "vjsc");
+        app.input = "to the lead".into();
+        app.on_key(key(KeyCode::Enter));
+        keys(&mut app, "n");
+        let name = app.world.agents[0].name.clone();
+        assert_eq!(
+            app.flash.as_ref().unwrap().0,
+            format!("1 note went to {name}")
+        );
     }
 
     #[test]

@@ -175,7 +175,7 @@ fn script_body(f: &mut Frame, area: Rect, shown: Shown, s: &crate::live::setup::
     let mut lines = vec![
         Line::from(Span::styled(shown.head.to_string(), fg(pal().warn))),
         Line::from(Span::styled(
-            fill(shown.file, &[&s.real.display().to_string()]),
+            fill(shown.file, &[&crate::model::home_tilde(&s.real)]),
             dim(),
         )),
         Line::default(),
@@ -365,7 +365,7 @@ pub fn tidy(f: &mut Frame, app: &App, win: TidyWin) -> Rect {
             Span::raw(mark),
             name,
             Span::styled(
-                format!("  {}  ", clean(&orphan.checkout.display().to_string())),
+                format!("  {}  ", clean(&crate::model::home_tilde(&orphan.checkout))),
                 dim(),
             ),
             Span::styled(held, style),
@@ -675,7 +675,14 @@ pub fn help(f: &mut Frame, app: &App) -> Option<Position> {
     let wide = f.area().width >= 120;
     let place = app.scope_below();
     let scoped = app.help_scoped() && place.is_some();
-    let all = help_rows(app.lang, app.shift_enter, &app.keys, place, scoped);
+    let all = help_rows(
+        app.lang,
+        app.shift_enter,
+        &app.keys,
+        place,
+        scoped,
+        app.demo(),
+    );
     let keys = found(&all, &app.help_find, |k| format!("{} {}", k.0, k.1));
     let widths = help_widths(f.area().width, wide);
     let mut lines = help_columns(&keys, wide, widths);
@@ -1030,17 +1037,30 @@ pub(crate) fn help_shown(i: usize, place: Scope) -> bool {
     places.is_empty() || places.contains(&place)
 }
 
+/// The rows of `help_keys` (without the new-line line) only the demo
+/// has: `space` (`:pause`) and `+ -` (`:faster`, `:slower`).
+const DEMO_KEYS: [usize; 2] = [48, 49];
+
+/// Whether row `i` of the help's list (with the new-line line in it) is
+/// one of `DEMO_KEYS`.
+pub(crate) fn demo_key(i: usize) -> bool {
+    i > WRITING_KEYS && DEMO_KEYS.contains(&(i - 1))
+}
+
 /// The help's rows with the person's own keys: one for each key the key
 /// file gives first (those of a place say where), then `help_keys` with
 /// every key the file moved written as the keys that do it now at
 /// `place`, where the help was opened (`Keymap::shown`). `scoped`, only
 /// the rows of that place (`help_shown`) and the key file's lines of it.
+/// Without `demo`, the demo's own keys are left out (`demo_key`), as the
+/// `:` menu leaves out their names live (record 41).
 pub(crate) fn help_rows(
     lang: Lang,
     shift_enter: bool,
     keys: &Keymap,
     place: Option<Scope>,
     scoped: bool,
+    demo: bool,
 ) -> Vec<(String, String)> {
     let t = lang.text();
     let only = place.filter(|_| scoped);
@@ -1058,6 +1078,7 @@ pub(crate) fn help_rows(
         .into_iter()
         .enumerate()
         .filter(|(i, _)| only.is_none_or(|o| help_shown(*i, o)))
+        .filter(|(i, _)| demo || !demo_key(*i))
         .map(|(i, (k, what))| {
             let k = if TYPED.contains(&i) {
                 k.to_string()
@@ -2005,7 +2026,8 @@ pub fn thread(f: &mut Frame, app: &App, th: &Thread, within: Rect) -> Rect {
 #[cfg(test)]
 mod tests {
     use super::{
-        HELP_NARROW, help_columns, help_rows, help_widths, in_view, legend_wrap, wrap_words,
+        HELP_NARROW, WRITING_KEYS, demo_key, help_columns, help_keys, help_rows, help_widths,
+        in_view, legend_wrap, wrap_words,
     };
     use crate::i18n::Lang;
     use ratatui::text::Line;
@@ -2141,11 +2163,36 @@ mod tests {
     }
 
     #[test]
+    fn the_demo_s_keys_are_in_its_help_only() {
+        let keys = crate::keys::Keymap::default();
+        for lang in [Lang::En, Lang::Tr] {
+            for shift_enter in [false, true] {
+                let all = help_keys(lang, shift_enter);
+                let demo: Vec<&str> = (0..all.len())
+                    .filter(|&i| demo_key(i))
+                    .map(|i| all[i].0)
+                    .collect();
+                assert_eq!(demo, ["space", "+  -"], "{lang:?}");
+                let rows = |demo| help_rows(lang, shift_enter, &keys, None, false, demo);
+                let shown = |demo: bool| -> Vec<String> {
+                    rows(demo).into_iter().map(|(k, _)| k).collect()
+                };
+                assert!(shown(true).iter().any(|k| k == "space"));
+                assert!(shown(true).iter().any(|k| k == "+  -"));
+                assert!(!shown(false).iter().any(|k| k == "space" || k == "+  -"));
+                assert_eq!(shown(false).len() + 2, shown(true).len());
+            }
+        }
+        assert!(!demo_key(WRITING_KEYS) && !demo_key(48) && demo_key(49) && demo_key(50));
+        assert!(!demo_key(51));
+    }
+
+    #[test]
     fn every_help_row_is_drawn_whole_in_both_languages_and_on_every_screen() {
         let keys = crate::keys::Keymap::default();
         for lang in [Lang::En, Lang::Tr] {
             for shift_enter in [false, true] {
-                let rows = help_rows(lang, shift_enter, &keys, None, false);
+                let rows = help_rows(lang, shift_enter, &keys, None, false, true);
                 for (width, wide) in [(80, false), (120, true), (140, true), (188, true)] {
                     let widths = help_widths(width, wide);
                     for r in &rows {

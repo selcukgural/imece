@@ -956,6 +956,7 @@ impl Live {
             paths: &first.paths,
             checks: &first.checks,
             card: first.card,
+            person: false,
         };
         if let Err(why) = self.prompt(w, id, mail_prompt(w, &mail), Some(opening)) {
             apply(w, id, AgentEvent::Stopped(why), self.spent_before[id]);

@@ -129,3 +129,16 @@ A second vendor's read as a note (2026-11-04, record 106): `:review`
 the worker's read the change and say what it finds, shown above its
 file list. It is advice, never a gate: apply and reject are as they
 were, with or without it.
+
+Acceptance fixes (2026-11-09): `a` while git applies another change was
+taken for silence (the acceptance run's second `a` during an apply). Git's
+thread takes one job at a time, so a change approved meanwhile is queued
+behind it already; the smaller honest change is to say so, not to add a
+queue: `decide_change` flashes `applying_after` (`… goes into your
+checkout after the one being applied now …`) when `App::applying_besides`
+(`Live::applying_besides`: `applying` of another worker, not a Lonca
+proposal; `Sim::applying_besides`) holds before the call, and `a` with
+nothing to approve while one goes in flashes `apply_under_way` instead of
+doing nothing. The same worker's change again is refused as before
+(`their change is being applied`). Record 50's partial apply goes the same
+way.

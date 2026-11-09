@@ -86,3 +86,11 @@ installer trusts the TLS of github.com and github.io, as every `curl |
 sh` does; reading it first is said in the docs. No self-update inside
 imece and no package managers (Homebrew, apt) yet. The first tag
 (`v0.1.0`) is the person's call.
+
+Acceptance fixes (2026-11-09): `IMECE_DOWNLOAD_URL` said it "may also be
+a local directory", but a bare path reached curl as is and failed (`URL
+rejected: No host part`). `main` now takes `https://…` and `file://…` as
+they are, turns a directory's absolute path into `file://PATH`, and
+refuses anything else (a relative path, `http://`, another scheme) with
+one line before downloading; `website/test-install.sh` case 7b installs
+from `$release/` and checks the refusals.

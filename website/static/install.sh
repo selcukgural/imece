@@ -14,8 +14,9 @@
 #   IMECE_INSTALL_DIR=DIR    where imece goes (default: ~/.local/bin)
 #   IMECE_NO_MODIFY_PATH=1   never touch a startup file
 #   IMECE_NO_ICON=1          no icon for imece's tab (iTerm2, Konsole)
-#   IMECE_DOWNLOAD_URL=URL   where the release files are (a mirror; the
-#                            tests give a file:// directory)
+#   IMECE_DOWNLOAD_URL=URL   where the release files are: a mirror's
+#                            https:// address, a file:// directory or
+#                            a directory's absolute path (the tests')
 #
 # It also gives imece's tab its mark where a terminal shows a program's
 # icon: iTerm2 on macOS (iterm_icon), Konsole on Linux (theme_icon).
@@ -71,7 +72,7 @@ target() {
 }
 
 # Fetches $1 to the file $2, over HTTPS only (a mirror given in
-# IMECE_DOWNLOAD_URL may also be a local directory).
+# IMECE_DOWNLOAD_URL may also be a local directory, as file://).
 download() {
     if has curl; then
         proto='=https'
@@ -244,6 +245,13 @@ main() {
     archive="imece-$target.tar.gz"
     if [ -n "${IMECE_DOWNLOAD_URL:-}" ]; then
         base="${IMECE_DOWNLOAD_URL%/}"
+        # A directory's absolute path is a file:// address to curl; a
+        # relative one is refused, as anything without a scheme is.
+        case "$base" in
+            https://* | file://*) ;;
+            /*) base="file://$base" ;;
+            *) die "IMECE_DOWNLOAD_URL must be an https:// or file:// address or an absolute directory: $IMECE_DOWNLOAD_URL" ;;
+        esac
     elif [ -n "${IMECE_VERSION:-}" ]; then
         base="$REPO/releases/download/v${IMECE_VERSION#v}"
     else

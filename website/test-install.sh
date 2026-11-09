@@ -133,6 +133,26 @@ if env -i HOME="$h" PATH="/usr/bin:/bin" SHELL=/bin/bash \
 fi
 [ ! -e "$h/.local/bin/imece" ] || fail "a missing release left an imece"
 
+# 7b. A directory's absolute path is taken as file://; a relative one or
+# another scheme is refused before anything is downloaded.
+h="$work/bare"
+mkdir -p "$h"
+env -i HOME="$h" PATH="/usr/bin:/bin" SHELL=/bin/bash \
+    IMECE_DOWNLOAD_URL="$release/" sh "$installer" >/dev/null ||
+    fail "install from a directory's absolute path failed"
+[ -x "$h/.local/bin/imece" ] || fail "not installed from a directory's absolute path"
+for url in release "http://$release" "ftp://x/release"; do
+    h="$work/refused"
+    rm -rf "$h"
+    mkdir -p "$h"
+    if out=$(cd "$work" && env -i HOME="$h" PATH="/usr/bin:/bin" SHELL=/bin/bash \
+        IMECE_DOWNLOAD_URL="$url" sh "$installer" 2>&1); then
+        fail "IMECE_DOWNLOAD_URL=$url was taken"
+    fi
+    printf '%s\n' "$out" | grep -q "IMECE_DOWNLOAD_URL must be" || fail "$url not said: $out"
+    [ ! -e "$h/.local/bin/imece" ] || fail "IMECE_DOWNLOAD_URL=$url left an imece"
+done
+
 # 8. The tab's icon. macOS, iTerm2's folder there: the mark and imece in
 # both of iTerm2's tables, what the person wrote kept. Linux: the mark in
 # the icon theme, for Konsole. IMECE_NO_ICON=1: nothing.

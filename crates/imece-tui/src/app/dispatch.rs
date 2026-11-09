@@ -24,7 +24,7 @@ impl App {
         let Some(path) = self.keys_file.clone() else {
             return self.flash(t.keys_nowhere);
         };
-        let shown = path.display().to_string();
+        let shown = self.shown_path(&path);
         self.keys_seen = keys::stamp(&path);
         let good = match keys::load(&path) {
             keys::Read::Missing => {
@@ -547,6 +547,11 @@ impl App {
             }
             KeyCode::Char('a') if self.pane == Pane::Inbox => self.answer(true),
             KeyCode::Char('r') if self.pane == Pane::Inbox => self.answer(false),
+            // Nothing at hand to approve while a change still goes in:
+            // said, so `a` is never silent then.
+            KeyCode::Char('a') if self.applying_besides(None) => {
+                self.flash(self.lang.text().apply_under_way);
+            }
             _ => {}
         }
         if decides {

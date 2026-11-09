@@ -457,6 +457,15 @@ impl Live {
         Ok(())
     }
 
+    /// Whether git is applying a change of anyone but `id` (none: of
+    /// anyone) on its thread, which takes one job at a time, so a change
+    /// approved now goes in after it. A proposal Lonca decides is not
+    /// git's.
+    pub fn applying_besides(&self, w: &World, id: Option<AgentId>) -> bool {
+        (self.applying.iter().enumerate())
+            .any(|(j, &on)| on && Some(j) != id && w.proposal_of(j).is_none())
+    }
+
     /// How applying worker `id`'s change went. One that did not fit is
     /// refused with git's words and still waits; one applied but not
     /// marked is applied all the same. When only `part` of its hunks
@@ -2144,6 +2153,7 @@ mod tests {
             paths: &[],
             checks: &[],
             card: None,
+            person: false,
         };
         live.prompt(&mut w, 1, "Add b".into(), Some(opening))
             .unwrap();

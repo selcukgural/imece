@@ -21,7 +21,7 @@ Betik sisteminiz için önceden derlenmiş imece'yi [sürümlerden](https://gith
 | `IMECE_INSTALL_DIR=DIZIN` | imece'nin gideceği yer (varsayılan `~/.local/bin`) |
 | `IMECE_NO_MODIFY_PATH=1` | hiçbir başlangıç dosyasına dokunulmaz |
 | `IMECE_NO_ICON=1` | imece'nin sekmesine ikon konmaz (iTerm2'nin tablolarına ve ikon temasına dokunulmaz) |
-| `IMECE_DOWNLOAD_URL=URL` | sürüm dosyalarının yeri, bir yansı için |
+| `IMECE_DOWNLOAD_URL=URL` | sürüm dosyalarının yeri, bir yansı için: bir `https://` adresi, bir `file://` dizini ya da bir dizinin mutlak yolu; başka bir şey reddedilir |
 
 ```sh
 curl -fsSL https://selcukgural.github.io/imece/install.sh | IMECE_VERSION=0.1.0 sh

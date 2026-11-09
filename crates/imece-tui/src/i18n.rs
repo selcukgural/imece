@@ -60,9 +60,54 @@ pub fn clean(s: &str) -> String {
 /// HTTP authorization schemes whose next word is a credential.
 const AUTH_SCHEMES: &[&str] = &["Bearer", "Basic", "bearer", "basic"];
 
-/// Names that make a `NAME=value` or `NAME:value` a secret, upper case:
-/// `AWS_SECRET_ACCESS_KEY=…`, `"password":"…"`, `db_passwd=…`.
-const SECRET_NAMES: &[&str] = &["KEY", "TOKEN", "SECRET", "PASSWORD", "PASSWD", "CREDENTIAL"];
+/// A name's word (see [`name_words`]) that ends with one of these makes
+/// `NAME=value` or `NAME:value` a secret: `db_passwd`, `accessToken`,
+/// `GOOGLE_CREDENTIALS`. `TOKENS` is none (`max_tokens=1000`).
+const SECRET_WORDS: &[&str] = &[
+    "TOKEN",
+    "SECRET",
+    "PASSWORD",
+    "PASSWD",
+    "PASSPHRASE",
+    "CREDENTIAL",
+    "CREDENTIALS",
+];
+
+/// `KEY` alone is code's word (`sort(key=len)`, `dict(key=1)`,
+/// `cache_key=name`); it names a secret only after one of these
+/// (`API_KEY`, `apiKey`, `aws_secret_access_key`) or glued to one
+/// (`APIKEY`, `secretkey`).
+const KEY_KINDS: &[&str] = &[
+    "API",
+    "ACCESS",
+    "SECRET",
+    "PRIVATE",
+    "SIGNING",
+    "CLIENT",
+    "AUTH",
+    "MASTER",
+    "ENCRYPTION",
+    "LICENSE",
+];
+
+/// Values that are code's words, never a secret: `key=lambda`,
+/// `password=None`.
+const CODE_WORDS: &[&str] = &[
+    "lambda",
+    "None",
+    "True",
+    "False",
+    "null",
+    "nil",
+    "undefined",
+    "true",
+    "false",
+    "self",
+    "this",
+    "new",
+    "await",
+    "function",
+];
 
 /// Starts of tokens that vendors issue (OpenAI and Anthropic `sk-`,
 /// Stripe, GitHub, GitLab, Slack, AWS, Google, npm, Hugging Face).
@@ -107,17 +152,19 @@ fn core(word: &str) -> &str {
 }
 
 /// Whether one word looks like a secret: a vendor's token (also as the
-/// value of `NAME=` or `NAME:`), a secret-named assignment, a URL with a
-/// password, a JSON Web Token, or a long opaque run of base64.
+/// value of `NAME=` or `NAME:`), a secret-named assignment of a value
+/// that is not code, a URL with a password, a JSON Web Token, or a long
+/// opaque run of base64.
 fn secret(word: &str) -> bool {
     let w = core(word);
     if w.is_empty() {
         return false;
     }
-    // A URL's parts: `?token=…`, `/API_KEY=…/`.
+    // A URL's parts: `?token=…`, `/API_KEY=…/`; a value there is never
+    // code, so a secret's name hides it whatever it is.
     if w.contains("://") {
         let part = |p: &str| {
-            assignment(p)
+            assignments(p).any(|a| a.named() && (a.equals || !a.value.is_empty()))
                 || vendor_token(p)
                 || p.split_once('=').is_some_and(|(_, v)| vendor_token(v))
         };
@@ -127,22 +174,159 @@ fn secret(word: &str) -> bool {
     // in code (`keys::Keymap`).
     let split = w.find(['=', ':']).filter(|&i| !w[i..].starts_with("::"));
     let value = split.map_or(w, |i| core(&w[i + 1..]));
-    assignment(w) || vendor_token(w) || vendor_token(value) || jwt(w) || opaque(w)
+    // The word whole: the brackets `core` takes off tell code
+    // (`password=getpass()`).
+    assignments(word).any(|a| a.hides())
+        || vendor_token(w)
+        || vendor_token(value)
+        || jwt(w)
+        || jwt(value)
+        || opaque(w)
+        || opaque(value)
 }
 
-/// `NAME=value` or `NAME:value` with a secret's name: `=` hides even an
-/// empty value (`API_KEY=`); `:` wants one, so `token: &str` in code
-/// stays, and `::` is a path (`keys::Keymap`).
-fn assignment(w: &str) -> bool {
-    let Some(i) = w.find(['=', ':']) else {
-        return false;
-    };
-    if w[i..].starts_with("::") {
-        return false;
+/// One `NAME=value` or `NAME:value` in a word.
+struct Assignment<'a> {
+    name: &'a str,
+    /// `=`, not `:`.
+    equals: bool,
+    value: &'a str,
+}
+
+/// Every `NAME=value` or `NAME:value` in a word, so a call written
+/// without spaces is read whole (`f(x=1,password="a")`): the name is the
+/// run of letters, digits, `_` and `-` before the sign (a closing quote
+/// left out: `"password":`), the value what follows up to a `,` `;` or
+/// `&`, closing brackets off its end. `::` is a path; `==` `!=` `<=`
+/// `>=` `=>` `:=` `=:` are no assignment.
+fn assignments(w: &str) -> impl Iterator<Item = Assignment<'_>> {
+    let bytes = w.as_bytes();
+    w.match_indices(['=', ':']).filter_map(move |(i, sign)| {
+        let paired = |b: Option<&u8>| matches!(b, Some(b'=' | b':' | b'!' | b'<' | b'>'));
+        if paired(i.checked_sub(1).and_then(|j| bytes.get(j))) || paired(bytes.get(i + 1)) {
+            return None;
+        }
+        let head = w[..i].trim_end_matches(['"', '\'', '`']);
+        // The name's characters are ASCII, one byte each, so the start
+        // is on a character's edge whatever comes before it (`→token=x`).
+        let named = (head.chars().rev())
+            .take_while(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-')
+            .count();
+        let start = head.len() - named;
+        let rest = &w[i + 1..];
+        let end = rest.find([',', ';', '&']).unwrap_or(rest.len());
+        Some(Assignment {
+            name: &head[start..],
+            equals: sign == "=",
+            value: rest[..end].trim_end_matches([')', ']', '}', '.', '!', '?']),
+        })
+    })
+}
+
+impl Assignment<'_> {
+    /// Whether the name names a secret (see [`SECRET_WORDS`],
+    /// [`KEY_KINDS`]): by its last word (`token_count=0` is a count), by
+    /// any word in capitals (`SECRET_KEY_BASE=…`).
+    fn named(&self) -> bool {
+        let words = name_words(self.name);
+        let from = if capitals(self.name) {
+            0
+        } else {
+            words.len().saturating_sub(1)
+        };
+        words.iter().enumerate().skip(from).any(|(i, word)| {
+            SECRET_WORDS.iter().any(|s| word.ends_with(s))
+                || KEY_KINDS.iter().any(|kind| {
+                    word.strip_suffix("KEY").is_some_and(|w| w.ends_with(kind))
+                        || (word == "KEY" && i > 0 && words[i - 1].ends_with(kind))
+                })
+        })
     }
-    let name = core(&w[..i]).to_ascii_uppercase();
-    let named = SECRET_NAMES.iter().any(|n| name.contains(n));
-    named && (w[i..].starts_with('=') || !core(&w[i + 1..]).is_empty())
+
+    /// A secret-named assignment whose value may be a secret: `=` hides
+    /// even an empty value (`API_KEY=`); `:` wants one, so `token: &str`
+    /// in code stays. A name in capitals (`DB_PASSWORD=…`, the
+    /// environment's way) hides whatever its value is; any other hides a
+    /// value unless it is code (see [`code_value`]): `password=getpass()`
+    /// and `api_key=os.environ["X"]` stay, `password="hunter2"` and
+    /// `db_passwd=hunter2` go.
+    fn hides(&self) -> bool {
+        self.named()
+            && if self.value.is_empty() {
+                self.equals
+            } else {
+                capitals(self.name) || !code_value(self.value, self.name)
+            }
+    }
+}
+
+/// A name's words, upper cased: split at `_`, `-` and a lower case
+/// letter or digit before an upper case one (`apiKey` → `API` `KEY`).
+fn name_words(name: &str) -> Vec<String> {
+    let mut words: Vec<String> = Vec::new();
+    let mut part = true;
+    let mut lower_before = false;
+    for c in name.chars() {
+        if c == '_' || c == '-' {
+            part = true;
+            lower_before = false;
+            continue;
+        }
+        if c.is_ascii_uppercase() && lower_before {
+            part = true;
+        }
+        if part {
+            words.push(String::new());
+            part = false;
+        }
+        lower_before = c.is_ascii_lowercase() || c.is_ascii_digit();
+        if let Some(word) = words.last_mut() {
+            word.push(c.to_ascii_uppercase());
+        }
+    }
+    words
+}
+
+/// A name with letters and none of them lower case: `API_KEY`.
+fn capitals(name: &str) -> bool {
+    name.chars().any(|c| c.is_ascii_alphabetic()) && !name.chars().any(|c| c.is_ascii_lowercase())
+}
+
+/// A quoted literal's text after its opening quote, a prefix of at most
+/// two letters allowed (`f"…"`, `rb'…'`).
+fn literal(value: &str) -> Option<&str> {
+    let after = value.trim_start_matches(|c: char| "fbruFBRU".contains(c));
+    if value.len() - after.len() > 2 {
+        return None;
+    }
+    after.strip_prefix(['"', '\'', '`'])
+}
+
+/// Whether a value is code, not a secret: a call, an index or a
+/// collection (`(` `[` `{`), a dotted path (`os.environ`, `self.token`),
+/// a variable of the shell in capitals (`$API_KEY`, `${X}`, `$(cat f)`),
+/// one of [`CODE_WORDS`], the name itself (`password=password`) or an
+/// empty string. A quoted literal with text is never code:
+/// `password="hunter2"`.
+fn code_value(value: &str, name: &str) -> bool {
+    if let Some(text) = literal(value) {
+        return text.trim_matches(['"', '\'', '`']).is_empty();
+    }
+    let ident = |p: &str| {
+        p.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_')
+            && p.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+    };
+    let shell = value.strip_prefix('$').is_some_and(|v| {
+        v.starts_with(['{', '('])
+            || (v.starts_with(|c: char| c.is_ascii_uppercase() || c == '_')
+                && v.chars()
+                    .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_'))
+    });
+    value.contains(['(', '[', '{'])
+        || (value.contains('.') && value.split('.').all(ident))
+        || shell
+        || CODE_WORDS.contains(&value)
+        || value.eq_ignore_ascii_case(name)
 }
 
 fn vendor_token(w: &str) -> bool {
@@ -237,6 +421,8 @@ pub struct Text {
     pub note_dropped: &'static str,
     pub no_notes: &'static str,
     pub notes_sent: &'static str,
+    /// `notes_sent` for one note.
+    pub note_sent: &'static str,
     /// `b` in a change that clashes with the checkout (record 108): the
     /// hint, none to send back, a worker that can not hear it, the flash
     /// when it went, the line above the change (HEAD, files, worker).
@@ -253,6 +439,8 @@ pub struct Text {
     /// files it does not show.
     pub binary: &'static str,
     pub more_files: &'static str,
+    /// `more_files` for one file.
+    pub more_file: &'static str,
     /// What a changed file is, in the split above a change's files.
     pub kind_source: &'static str,
     pub kind_tests: &'static str,
@@ -547,6 +735,11 @@ pub struct Text {
     pub approved: &'static str,
     pub rejected: &'static str,
     pub applying: &'static str,
+    /// `a` while another change is being applied: this one is
+    /// queued behind it (git applies one at a time); `a` with
+    /// nothing to approve while one is.
+    pub applying_after: &'static str,
+    pub apply_under_way: &'static str,
     pub apply_failed: &'static str,
     pub rejected_change: &'static str,
     pub reject_failed: &'static str,
@@ -712,6 +905,8 @@ pub struct Text {
     pub note_blank: &'static str,
     pub no_talk_notes: &'static str,
     pub talk_notes_sent: &'static str,
+    /// `talk_notes_sent` for one note.
+    pub talk_note_sent: &'static str,
     /// Choosing lines to copy (`v`): the conversation's title, `{}` the
     /// lines chosen; its keys; the change's title, keys in it.
     pub copy_title: &'static str,
@@ -1441,6 +1636,7 @@ pub const EN: Text = Text {
     note_dropped: "note taken away",
     no_notes: "no notes on this change yet: c writes one on the top line",
     notes_sent: "{} notes went to {}; the change went back to them",
+    note_sent: "1 note went to {}; the change went back to them",
     send_back: "send the clash back",
     no_clash: "nothing to send back: git found no clash with your checkout (your own unstaged edits are yours to settle)",
     back_gone: "{} has stopped: the change stays here",
@@ -1450,6 +1646,7 @@ pub const EN: Text = Text {
     unchosen: "no hunk chosen; a applies the whole change",
     binary: "binary",
     more_files: " … {} more files",
+    more_file: " … 1 more file",
     kind_source: "source",
     kind_tests: "tests",
     kind_generated: "generated",
@@ -1818,6 +2015,8 @@ pub const EN: Text = Text {
     approved: "approved",
     rejected: "sent back",
     applying: "approved: applying {}'s change to your checkout; the journal says when it is in, staged",
+    applying_after: "approved: {}'s change goes into your checkout after the one being applied now; the journal says when it is in, staged",
+    apply_under_way: "a change is still being applied to your checkout; nothing here for a to approve",
     apply_failed: "{}'s change did not apply: {}",
     rejected_change: "sent {}'s change back; tell it why",
     reject_failed: "{}'s change was not sent back: {}",
@@ -1960,6 +2159,7 @@ pub const EN: Text = Text {
     note_blank: "nothing to note: the words chosen are blank",
     no_talk_notes: "no notes in this conversation yet: v chooses words, c notes them",
     talk_notes_sent: "{} notes went to {}",
+    talk_note_sent: "1 note went to {}",
     copy_title: " COPY · {} chosen ",
     copy_hints: [
         ("↑↓ j k", "line"),
@@ -2800,6 +3000,7 @@ pub const TR: Text = Text {
     note_dropped: "not kaldırıldı",
     no_notes: "bu değişiklikte henüz not yok: c en üstteki satıra bir tane yazar",
     notes_sent: "{} not {} adlı ajana gitti; değişiklik ona geri döndü",
+    note_sent: "1 not {} adlı ajana gitti; değişiklik ona geri döndü",
     send_back: "çakışmayı geri gönder",
     no_clash: "geri gönderilecek bir şey yok: git checkout ile çakışma bulmadı (sahnelenmemiş kendi düzenlemelerin sana kalır)",
     back_gone: "{} durdu: değişiklik burada kalıyor",
@@ -2809,6 +3010,7 @@ pub const TR: Text = Text {
     unchosen: "seçili parça yok; a değişikliğin tamamını uygular",
     binary: "ikili",
     more_files: " … {} dosya daha",
+    more_file: " … 1 dosya daha",
     kind_source: "kaynak",
     kind_tests: "testler",
     kind_generated: "üretilmiş",
@@ -3200,6 +3402,8 @@ pub const TR: Text = Text {
     approved: "onaylandı",
     rejected: "geri gönderildi",
     applying: "onaylandı: {} değişikliği checkout'una uygulanıyor; stage'e girince günlük söyler",
+    applying_after: "onaylandı: {} değişikliği şu an uygulanandan sonra checkout'una girer; stage'e girince günlük söyler",
+    apply_under_way: "bir değişiklik hâlâ checkout'una uygulanıyor; burada a'nın onaylayacağı bir şey yok",
     apply_failed: "{} değişikliği uygulanamadı: {}",
     rejected_change: "{} değişikliği geri gönderildi; nedenini ona yaz",
     reject_failed: "{} değişikliği reddedilmedi: {}",
@@ -3342,6 +3546,7 @@ pub const TR: Text = Text {
     note_blank: "not yazılacak bir şey yok: seçilen kelimeler boş",
     no_talk_notes: "bu konuşmada henüz not yok: v kelimeleri seçer, c not yazar",
     talk_notes_sent: "{} not {} adlı ajana gitti",
+    talk_note_sent: "1 not {} adlı ajana gitti",
     copy_title: " KOPYALA · {} seçili ",
     copy_hints: [
         ("↑↓ j k", "satır"),
@@ -4273,6 +4478,111 @@ mod tests {
     }
 
     #[test]
+    fn code_in_a_change_is_not_taken_for_a_secret() {
+        // The acceptance run's line: `key=lambda` was hidden.
+        assert_eq!(
+            clean("return sorted(self._books.values(), key=lambda b: b.title)"),
+            "return sorted(self._books.values(), key=lambda b: b.title)"
+        );
+        for s in [
+            "key=lambda",
+            "key=value_of",
+            "sort(key=len)",
+            "sorted(xs,key=len)",
+            "dict(key=1)",
+            "cache_key=name",
+            "primary_key=True",
+            "key_func=f",
+            "monkey=1",
+            "keys=[]",
+            "api_key=os.environ[\"API_KEY\"]",
+            "api_key=os.environ.get(\"API_KEY\")",
+            "password=getpass()",
+            "password=getpass.getpass()",
+            "password=password",
+            "token=token",
+            "token=self.token",
+            "apiKey=config.apiKey",
+            "password=None",
+            "secret=null",
+            "token=undefined",
+            "password=\"\"",
+            "password=''",
+            "max_tokens=1000",
+            "num_tokens=n",
+            "tokens=tokenize(text)",
+            "token_count=0",
+            "--password=$DB_PASSWORD",
+            "TOKEN==x",
+            "token!=x",
+            "token<=x",
+            "token=>x",
+            "token:=x",
+            "a==b",
+            "https://h/x?sort_key=name",
+        ] {
+            assert_eq!(clean(s), s, "{s} hidden");
+        }
+    }
+
+    #[test]
+    fn a_secret_value_is_hidden_in_code_too() {
+        for s in [
+            "password=\"hunter2\"",
+            "password='hunter2'",
+            "password=f\"hunter2{x}\"",
+            "api_key=\"abc123\"",
+            "apiKey:\"abc123\"",
+            "client_secret=s3cr3t",
+            "f(x=1,password=\"hunter2\")",
+            "dict(token=abc)",
+            "--token=abc",
+            "--password=$ecret",
+            "x-api-key:abc",
+            "APIKEY=abc",
+            "secretkey=abc",
+            "private_key=abc",
+            "DB_PASSWORD=os.environ",
+            "SECRET_KEY=hunter2(x)",
+            "AUTH_TOKEN=1",
+            "authToken=abc",
+            "passphrase=correct",
+            "SECRET_KEY_BASE=abc",
+            "TOKEN_COUNT=0",
+            "credential:abc",
+            "key=eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2ln",
+            "key=sk-abc",
+            "→token=abc",
+            "·password=\"x\"",
+        ] {
+            assert_eq!(clean(s), "[***]", "{s} shows");
+        }
+        // A name after letters of more than one byte, and values of them.
+        for s in ["→key=1", "çözüm=değer", "ş:ğ", "a→=b"] {
+            assert_eq!(clean(s), s);
+        }
+    }
+
+    #[test]
+    fn a_name_is_read_word_by_word() {
+        assert_eq!(
+            name_words("AWS_SECRET_ACCESS_KEY"),
+            ["AWS", "SECRET", "ACCESS", "KEY"]
+        );
+        assert_eq!(name_words("apiKey"), ["API", "KEY"]);
+        assert_eq!(name_words("x-api-key"), ["X", "API", "KEY"]);
+        assert_eq!(name_words("v2Token"), ["V2", "TOKEN"]);
+        assert_eq!(name_words("__a__b"), ["A", "B"]);
+        assert_eq!(name_words("ABC"), ["ABC"]);
+        assert!(capitals("API_KEY2"));
+        assert!(!capitals("Api_KEY"));
+        assert!(!capitals("_1"));
+        assert_eq!(literal("rb'x'"), Some("x'"));
+        assert_eq!(literal("bru'x'"), None);
+        assert_eq!(literal("x'"), None);
+    }
+
+    #[test]
     fn a_tab_or_a_line_break_parts_words() {
         assert_eq!(clean("a\tsk-abc"), "a [***]");
         assert_eq!(clean("a\nsk-abc b"), "a [***] b");
@@ -4318,6 +4628,9 @@ mod tests {
             (e.typing_words_note, t.typing_words_note),
             (e.talk_noted, t.talk_noted),
             (e.talk_notes_sent, t.talk_notes_sent),
+            (e.talk_note_sent, t.talk_note_sent),
+            (e.applying_after, t.applying_after),
+            (e.note_sent, t.note_sent),
             (e.diff_copy_title, t.diff_copy_title),
             (e.no_talk_yet, t.no_talk_yet),
             (e.theme_is, t.theme_is),
