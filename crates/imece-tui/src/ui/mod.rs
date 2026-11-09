@@ -2225,7 +2225,7 @@ fn place_spans(app: &App) -> Vec<Span<'static>> {
         t.places[5]
     } else {
         match app.zoom {
-            Zoom::None if app.card.is_some() => t.places[4],
+            Zoom::None | Zoom::Focus(_) if app.card.is_some() => t.places[4],
             Zoom::None => t.home_place,
             Zoom::Focus(_) => t.places[0],
             Zoom::Trace(_) => t.places[1],
@@ -2252,7 +2252,10 @@ fn place_spans(app: &App) -> Vec<Span<'static>> {
             Some(crate::app::HomeRow::Project(_)) | None => (None, None),
         }
     } else {
-        (app.agent_at_hand(), None)
+        // A detail is about the card its head names: a change's or an
+        // item's, else the agent's (`App::detail_card`).
+        let id = app.agent_at_hand();
+        (id, id.and_then(|id| app.detail_card(id)))
     };
     if let Some(id) = about.filter(|&id| id < w.agents.len()) {
         match card
@@ -6802,6 +6805,26 @@ mod tests {
         assert!(
             row.starts_with(&format!(
                 " home · shop-api · #{} the other card",
+                second_id + 1
+            )),
+            "{row}"
+        );
+        // A detail opened on the item names the item's card, as its head
+        // does, not the one the agent has since taken.
+        app.world.inbox[0].card = Some(0);
+        app.zoom = Zoom::Focus(agent);
+        let row = foot(&app, 200);
+        assert!(row.starts_with(" focus · shop-api · #1 "), "{row}");
+        assert!(!row.contains("the other card"), "{row}");
+        app.zoom = Zoom::Diff(agent);
+        assert!(foot(&app, 200).starts_with(" change · shop-api · #1 "));
+        // A card's own screen is the card's, and says so.
+        app.card = Some(second_id);
+        app.zoom = Zoom::Focus(agent);
+        let row = foot(&app, 200);
+        assert!(
+            row.starts_with(&format!(
+                " card · shop-api · #{} the other card",
                 second_id + 1
             )),
             "{row}"

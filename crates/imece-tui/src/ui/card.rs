@@ -1,7 +1,7 @@
-//! One card up close, in the salon's place: where it stands, who had a
-//! part in it (as the salon draws them, so their state is live) and its
-//! story. What waits for the person on it and its journal lines take the
-//! side panel.
+//! One card up close, as the log tab of its owner's detail (record 125):
+//! where it stands, who had a part in it (as their long rows, so their
+//! state is live) and its story. What waits for the person on it and its
+//! journal lines are in `:export`, not on this screen.
 
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
