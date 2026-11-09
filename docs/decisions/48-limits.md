@@ -39,10 +39,14 @@ world's clock (`World::now`: its first start and the ticks since).
 They are not kept between runs: a session says them again on its
 first turn.
 
-The demo mirrors it for the vendors whose sessions run: every minute of
-its clock, what a vendor's agents spent fills its five-hour window (a
-percent for each $0.02) and a quarter as much of its week, each
-starting again at the next whole window of the clock.
+The demo mirrors it once a session runs: every minute of its clock, what
+the agents spent in a window fills it (a percent for each $0.50 of the
+five hours, $2.00 of the week), and each starts again, empty, at the
+next whole window of the clock (`Extras.windows`: the window's number
+and what was spent when it began). Until 2026-11-09 a percent was $0.02
+of everything ever spent, so a tour sped up for a minute showed the
+five hours used up while the agents went on, and no window ever
+emptied.
 
 Not done: nothing stops or warns before a turn when a window is full
 (the vendor refuses the turn itself, and imece shows that refusal);
