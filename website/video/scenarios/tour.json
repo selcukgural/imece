@@ -139,6 +139,8 @@
       "chapter": "One pot",
       "narration": "Let the simulation run again. The header has four things: the projects, what is to decide, one pot for the whole team, kept between runs, and the time. The pot's rate and how long it lasts are a colon budget away. On a narrow screen, the least wanted parts give way first.",
       "steps": [
+        { "action": "press", "key": "Escape" },
+        { "action": "wait", "seconds": 1 },
         { "action": "type", "target": "#corner", "text": " ", "delayMs": 0 },
         { "action": "wait", "seconds": 1 },
         { "action": "type", "target": "#corner", "text": "gw", "delayMs": 200 },

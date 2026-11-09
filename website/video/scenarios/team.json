@@ -91,7 +91,6 @@
       "steps": [
         { "action": "type", "target": "#corner", "text": "#3", "delayMs": 300 },
         { "action": "wait", "seconds": 1 },
-        { "action": "press", "key": "Escape" },
         { "action": "press", "key": "Enter" },
         { "action": "wait", "seconds": 6 },
         { "action": "type", "target": "#corner", "text": "n", "delayMs": 0 },
@@ -141,10 +140,13 @@
       "chapter": "Two languages",
       "narration": "Capital L turns the screen Turkish, and back. Every word on the screen lives in both languages; what an agent wrote is cleaned before it is drawn, control characters removed and secret-looking tokens hidden.",
       "steps": [
+        { "action": "type", "target": "#corner", "text": " ", "delayMs": 0 },
         { "action": "type", "target": "#corner", "text": "L", "delayMs": 0 },
         { "action": "wait", "seconds": 7 },
         { "action": "type", "target": "#corner", "text": "L", "delayMs": 0 },
-        { "action": "wait", "seconds": 3 }
+        { "action": "wait", "seconds": 3 },
+        { "action": "type", "target": "#corner", "text": " ", "delayMs": 0 }
+
       ]
     },
     {
