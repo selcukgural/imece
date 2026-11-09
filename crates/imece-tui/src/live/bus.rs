@@ -2080,6 +2080,42 @@ mod tests {
     }
 
     #[test]
+    fn a_call_that_comes_before_its_session_is_named_waits_for_it_and_is_answered() {
+        use std::io::{BufRead, BufReader, Write};
+        use std::os::unix::net::UnixStream;
+        let mut w = team(1);
+        let mut live = idle_live(2);
+        live.open_bus(&w, "/opt/imece".into()).unwrap();
+        // The session is starting and calls before the main loop has
+        // taken its start: its socket's owner is not named yet.
+        live.slots[1] = Slot::Starting(Vec::new());
+        live.step(&mut w);
+        let path = live.bus.as_ref().unwrap().servers[1].path().to_path_buf();
+        let caller = thread::spawn(move || {
+            let mut sock = UnixStream::connect(path).unwrap();
+            sock.set_read_timeout(Some(Duration::from_secs(10)))
+                .unwrap();
+            let call = json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"send",
+                "arguments":{"to":"lead","type":"inform","body":"early"}}});
+            writeln!(sock, "{call}").unwrap();
+            let mut line = String::new();
+            BufReader::new(&sock).read_line(&mut line).unwrap();
+            serde_json::from_str::<Value>(&line).unwrap()
+        });
+        thread::sleep(Duration::from_millis(100));
+        live.slots[1] = Slot::Running(Box::new(Runs(std::process::id())));
+        wait_for(&mut live, &mut w, |w| !w.journal.is_empty());
+        let reply = caller.join().unwrap();
+        assert_eq!(reply["result"]["isError"], false, "{reply}");
+        assert!(matches!(w.journal[0].event, Event::Sent { from: 1, .. }));
+        assert!(
+            !(w.agents[1].trace.iter()).any(|l| l.contains("outside its session")),
+            "{:?}",
+            w.agents[1].trace
+        );
+    }
+
+    #[test]
     fn the_bus_answers_through_the_socket_of_the_caller() {
         use std::io::{BufRead, BufReader, Write};
         use std::os::unix::net::UnixStream;

@@ -442,9 +442,10 @@ pub struct Mind {
     pub me: BTreeMap<String, String>,
     /// The workers a leader hired.
     pub hired: Vec<String>,
-    /// The assigns a worker has worked on.
+    /// The assigns a worker (or a helper) has worked on.
     pub worked: u64,
-    /// The task a worker asked the person about, waiting for the answer.
+    /// The task a worker waits on, for the person's answer or its
+    /// helper's done.
     pub waiting: Option<work::Waiting>,
 }
 
@@ -485,6 +486,7 @@ impl Mind {
         match role {
             "the leader" => self.lead(hands, prompt),
             "a worker" => self.work(hands, prompt),
+            "a helper" => self.help(hands, prompt),
             _ => "Nothing for me to do here.".into(),
         }
     }
@@ -1312,7 +1314,7 @@ mod tests {
 
     #[test]
     fn others_and_a_session_without_a_bus_do_nothing() {
-        let mut f = fake("name: claude-1.1\nrole: a helper\n");
+        let mut f = fake("name: r\nrole: a researcher\n");
         assert_eq!(
             Mind::default().turn(&mut f, "x"),
             "Nothing for me to do here."
@@ -1386,11 +1388,13 @@ mod tests {
             waiting: Some(work::Waiting {
                 task: "Round up".into(),
                 list: vec![Some(6), None, Some(8)],
+                helper: Some("claude-1.1".into()),
+                said: Some("behind a flag".into()),
             }),
         };
         assert_eq!(Mind::from_json(&mind.to_json()), mind);
         let odd = json!({ "me": { "role": 3, "name": "x" }, "hired": ["a", 4], "worked": "2",
-            "waiting": { "task": "t", "list": ["1", 2] } });
+            "waiting": { "task": "t", "list": ["1", 2], "helper": 1, "said": ["x"] } });
         let read = Mind::from_json(&odd);
         assert_eq!(read.me, BTreeMap::from([("name".into(), "x".into())]));
         assert_eq!(read.hired, ["a"]);
@@ -1400,6 +1404,7 @@ mod tests {
             (waiting.task.as_str(), waiting.list),
             ("t", vec![None, Some(2)])
         );
+        assert_eq!((waiting.helper, waiting.said), (None, None));
         let no_task = json!({ "waiting": { "task": 1, "list": [1] } });
         assert_eq!(Mind::from_json(&no_task).waiting, None);
         assert_eq!(
@@ -1684,6 +1689,7 @@ mod tests {
             pause: std::time::Duration::from_millis(250),
             asks: 3,
             questions: 5,
+            helpers: 6,
             seed: 7,
         };
         let claude = install(&dir, &imece, &home, &habits).unwrap();
@@ -1698,11 +1704,11 @@ mod tests {
         // Its habits reach the stand-in.
         std::fs::write(
             &imece,
-            "#!/bin/sh\nprintf '%s|' \"$IMECE_STAND_IN_PAUSE_MS\" \"$IMECE_STAND_IN_ASKS\" \"$IMECE_STAND_IN_QUESTIONS\" \"$IMECE_STAND_IN_SEED\"\n",
+            "#!/bin/sh\nprintf '%s|' \"$IMECE_STAND_IN_PAUSE_MS\" \"$IMECE_STAND_IN_ASKS\" \"$IMECE_STAND_IN_QUESTIONS\" \"$IMECE_STAND_IN_HELPERS\" \"$IMECE_STAND_IN_SEED\"\n",
         )
         .unwrap();
         let out = Command::new(&claude).output().unwrap();
-        assert_eq!(String::from_utf8_lossy(&out.stdout), "250|3|5|7|");
+        assert_eq!(String::from_utf8_lossy(&out.stdout), "250|3|5|6|7|");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

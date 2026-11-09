@@ -269,7 +269,32 @@ const NOT_ITS_SESSION_SAID: &str = "this socket takes calls from its own agent's
 /// process `owner` or one it started. None running (0), or a caller the
 /// system will not name, is a no.
 fn its_session(peer: Option<u32>, owner: u32) -> bool {
-    owner != 0 && peer.is_some_and(|p| imece_agent::child::descends(p, owner))
+    owner != 0 && owner != STARTING && peer.is_some_and(|p| imece_agent::child::descends(p, owner))
+}
+
+/// A socket's owner while its session is being started: the process is
+/// there, or about to be, before the main loop has taken its start. No
+/// process has this number.
+const STARTING: u32 = u32::MAX;
+
+/// How often a call on a socket whose session is starting looks again
+/// for its process, and how many times: 5 s. A session that starts
+/// quickly calls before the main loop names it (the next step does).
+const OWNER_STEP: Duration = Duration::from_millis(20);
+const OWNER_LOOKS: u32 = 250;
+
+/// The process of the session a socket answers to, waited for while it
+/// is [`STARTING`], at most `looks` looks `step` apart. None (0) is said
+/// at once; one still starting after the looks is refused as none.
+fn owner_of(owner: &AtomicU32, looks: u32, step: Duration) -> u32 {
+    for _ in 0..looks {
+        let pid = owner.load(Ordering::SeqCst);
+        if pid != STARTING {
+            return pid;
+        }
+        thread::sleep(step);
+    }
+    owner.load(Ordering::SeqCst)
 }
 
 /// and the caller must not do it again.
@@ -316,6 +341,17 @@ pub(super) const RETRY_PROMPT: &str = "From imece (not from the person or a team
 /// What wakes a worker whose helper stopped: the note before it says
 /// what happened.
 pub(super) const GO_ON: &str = "Go on with your task.";
+
+/// How many buses this process has opened: the last part of a bus's
+/// directory, so two opened in the same microsecond (macOS's clock, tests
+/// that run at once) do not take one name.
+static BUSES: AtomicU32 = AtomicU32::new(0);
+
+/// The directory of process `pid`'s `n`th bus, opened at `nanos`, under
+/// `tmp`.
+fn bus_dir(tmp: &Path, pid: u32, nanos: u32, n: u32) -> PathBuf {
+    tmp.join(format!("imece-{pid}-{nanos:x}-{n}"))
+}
 
 /// The most of a helper's last words its worker is told.
 pub(super) const LOST_SAID: usize = 200;
@@ -1093,7 +1129,8 @@ impl Live {
             .map_or(0, |d| d.subsec_nanos());
         // Short (socket paths are limited to about 100 bytes), private, and
         // new: an existing directory is refused, not reused.
-        let dir = std::env::temp_dir().join(format!("imece-{}-{nanos:x}", std::process::id()));
+        let n = BUSES.fetch_add(1, Ordering::Relaxed);
+        let dir = bus_dir(&std::env::temp_dir(), std::process::id(), nanos, n);
         std::os::unix::fs::DirBuilderExt::mode(&mut std::fs::DirBuilder::new(), 0o700)
             .create(&dir)?;
         self.bus = Some(Bus {
@@ -1124,7 +1161,7 @@ impl Live {
         let mine = Arc::clone(&owner);
         let server = Server::bind(&bus.dir.join(format!("a{id}.sock")), tools, {
             move |name, args, peer| {
-                if !its_session(peer, mine.load(Ordering::SeqCst)) {
+                if !its_session(peer, owner_of(&mine, OWNER_LOOKS, OWNER_STEP)) {
                     // Said in the trace of the agent whose socket it is.
                     let (reply, _) = mpsc::channel();
                     let said = json!({ "tool": name });
@@ -1144,7 +1181,8 @@ impl Live {
     }
 
     /// Tells each socket which process its agent's session runs in now:
-    /// a session started, ended, or started Claude Code again.
+    /// a session started, ended, or started Claude Code again; one being
+    /// started is [`STARTING`], so its first calls wait for it.
     fn own_sockets(&self) {
         let Some(bus) = &self.bus else {
             return;
@@ -1152,7 +1190,8 @@ impl Live {
         for (slot, owner) in self.slots.iter().zip(&bus.owners) {
             let pid = match slot {
                 Slot::Running(s) => s.pid().unwrap_or(0),
-                _ => 0,
+                Slot::Starting(_) => STARTING,
+                Slot::None => 0,
             };
             owner.store(pid, Ordering::SeqCst);
         }
@@ -1535,6 +1574,69 @@ pub fn today() -> u64 {
 mod tests {
     use super::*;
     use crate::live::testing::*;
+
+    #[test]
+    fn a_socket_s_owner_is_waited_for_while_its_session_starts_and_only_then() {
+        use std::sync::atomic::AtomicU32;
+        // Named already, or none: at once, not after the looks.
+        for pid in [7, 0] {
+            let named = AtomicU32::new(pid);
+            let at = Instant::now();
+            assert_eq!(owner_of(&named, 1_000, Duration::from_millis(10)), pid);
+            assert!(at.elapsed() < Duration::from_secs(1), "{:?}", at.elapsed());
+        }
+        // Named while the call waits: that one.
+        let later = Arc::new(AtomicU32::new(STARTING));
+        let namer = Arc::clone(&later);
+        let naming = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(60));
+            namer.store(9, Ordering::SeqCst);
+        });
+        assert_eq!(owner_of(&later, 500, Duration::from_millis(10)), 9);
+        naming.join().unwrap();
+        // Never named: still starting after every look, and refused.
+        let never = AtomicU32::new(STARTING);
+        let at = Instant::now();
+        assert_eq!(owner_of(&never, 5, Duration::from_millis(10)), STARTING);
+        assert!(
+            at.elapsed() >= Duration::from_millis(50),
+            "{:?}",
+            at.elapsed()
+        );
+        assert_eq!(OWNER_STEP * OWNER_LOOKS, Duration::from_secs(5));
+        let me = Some(std::process::id());
+        assert!(!its_session(me, STARTING) && !its_session(me, 0));
+        assert!(its_session(me, std::process::id()));
+    }
+
+    #[test]
+    fn a_bus_s_directory_is_its_process_s_its_time_s_and_its_number_s() {
+        let dir = |pid, nanos, n| bus_dir(Path::new("/t"), pid, nanos, n);
+        assert_eq!(dir(7, 255, 2), Path::new("/t/imece-7-ff-2"));
+        assert_ne!(dir(7, 255, 2), dir(7, 255, 3), "one microsecond, two buses");
+        // Two opened at once in this process take two names.
+        let w = team(0);
+        let mut one = Live::new(
+            1,
+            claude_at("claude"),
+            PathBuf::from("."),
+            PathBuf::from("t"),
+        );
+        let mut two = Live::new(
+            1,
+            claude_at("claude"),
+            PathBuf::from("."),
+            PathBuf::from("t"),
+        );
+        one.open_bus(&w, "relay".into()).unwrap();
+        two.open_bus(&w, "relay".into()).unwrap();
+        let (a, b) = (
+            &one.bus.as_ref().unwrap().dir,
+            &two.bus.as_ref().unwrap().dir,
+        );
+        assert_ne!(a, b);
+        assert!(a.is_dir() && b.is_dir());
+    }
 
     /// What a step says when `put` has put something in, on a step that
     /// left the clock where it was (the clock moving says so by itself).

@@ -19,11 +19,12 @@ const HELPERS: usize = 2;
 
 /// How long a demo worker takes over each step of its list, in
 /// milliseconds; one assign in how many runs a command that waits for
-/// the person's yes first, and one in how many asks the person a
-/// question.
+/// the person's yes first, one in how many asks the person a question,
+/// and one in how many hires a helper for its tests.
 const PAUSE: u64 = 1_500;
 const ASKS: u64 = 3;
 const QUESTIONS: u64 = 4;
+const HIRES: u64 = 3;
 
 /// How the demo's stand-ins work, their choices seeded by `seed`.
 fn habits(seed: u64) -> Habits {
@@ -31,6 +32,7 @@ fn habits(seed: u64) -> Habits {
         pause: std::time::Duration::from_millis(PAUSE),
         asks: ASKS,
         questions: QUESTIONS,
+        helpers: HIRES,
         seed,
     }
 }
@@ -282,13 +284,14 @@ mod tests {
     }
 
     #[test]
-    fn the_demo_s_workers_take_their_time_and_sometimes_ask() {
+    fn the_demo_s_workers_take_their_time_and_sometimes_ask_or_hire_a_helper() {
         assert_eq!(
             habits(9),
             Habits {
                 pause: Duration::from_millis(1_500),
                 asks: 3,
                 questions: 4,
+                helpers: 3,
                 seed: 9
             }
         );

@@ -609,6 +609,8 @@ impl Live {
             Slot::None => {
                 self.start(w, id, held);
                 self.slots[id] = Slot::Starting(vec![text.clone()]);
+                // Its first calls may come before the next step.
+                self.own_sockets();
                 w.agents[id].starting = true;
             }
             Slot::Starting(q) => q.push(text.clone()),
