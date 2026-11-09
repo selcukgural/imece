@@ -1512,7 +1512,7 @@ impl Live {
         w.agents[id].trace(
             t,
             format!(
-                "retry {}/{} after a API error",
+                "retry {}/{} after an API error",
                 r.attempt,
                 RETRY_TICKS.len()
             ),

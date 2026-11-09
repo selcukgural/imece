@@ -2077,7 +2077,7 @@ mod tests {
         };
         assert_eq!(
             event(Lang::En, &w, &e),
-            "claude-1 hit a API error: API Error: ↵ overloaded · imece tries again in 2 min 0 s (2/3)"
+            "claude-1 hit an API error: API Error: ↵ overloaded · imece tries again in 2 min 0 s (2/3)"
         );
         assert_eq!(
             event(Lang::Tr, &w, &e),
@@ -2087,7 +2087,7 @@ mod tests {
         let i = w.open_inbox()[0];
         assert_eq!(
             notice(Lang::En, &w, crate::notify::Note::Item(i)),
-            "imece · claude-1 hit a API error that needs you"
+            "imece · claude-1 hit an API error that needs you"
         );
         assert_eq!(
             notice(Lang::Tr, &w, crate::notify::Note::Item(i)),

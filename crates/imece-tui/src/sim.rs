@@ -1388,7 +1388,7 @@ impl Sim {
         a.trace(
             t,
             format!(
-                "retry {}/{} after a API error",
+                "retry {}/{} after an API error",
                 r.attempt,
                 RETRY_TICKS.len()
             ),
@@ -7920,7 +7920,7 @@ diff --git a/b.rs b/b.rs
             w.agents[head]
                 .trace
                 .iter()
-                .any(|l| l.ends_with("retry 1/3 after a API error"))
+                .any(|l| l.ends_with("retry 1/3 after an API error"))
         );
         // Its answer comes two ticks on at the soonest, as a turn's does.
         s.step(&mut w);

@@ -1925,7 +1925,7 @@ mod tests {
             w.agents[0]
                 .trace
                 .iter()
-                .any(|l| l.ends_with("retry 1/3 after a API error"))
+                .any(|l| l.ends_with("retry 1/3 after an API error"))
         );
         // It fails again: the next try is further off; over budget it
         // waits.

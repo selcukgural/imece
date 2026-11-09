@@ -102,3 +102,5 @@ Codex's `usageLimitExceeded`, and a reset time a vendor gives is not used
 to time the try. The tries and their spacing are constants, not
 settings. A failure while the person's message is the turn (not mail)
 retries just the same; the answer goes to the person when it comes.
+
+**Signed out** (found in the acceptance run of 2026-11-09; Claude Code 2.1.319): a turn while not signed in ends with a result of `is_error` true, `terminal_reason` `api_error`, `api_error_status` null and the text `Not logged in · Please run /login`, after an assistant message of its own (`model` `<synthetic>`) carrying `"error": "authentication_failed"`. With no status it was taken for a passing fault and tried again for minutes while Home said nobody was at work. Now the parser keeps an assistant `error` of `authentication_failed` or `billing_error` for its turn (`Parser.account`) and such a turn is the account's; with no status the words `not logged in` / `please run /login` are the account's too (`ACCOUNT_WORDS`). A status still decides first.

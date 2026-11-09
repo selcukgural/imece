@@ -600,6 +600,11 @@ pub struct Parser {
     /// A `SessionStart` hook started before `init`: on Lonca, the `lonca
     /// hook` the session was given, which watches every tool.
     hooked: bool,
+    /// The turn's answer came from Claude Code itself with an error of the
+    /// account's (`"error": "authentication_failed"` on the assistant
+    /// message: not signed in, a key refused; `billing_error`): its
+    /// result names no HTTP status, and it is no fault that passes.
+    account: bool,
     started: bool,
     /// Tool names by tool-use id, to name a failed result.
     calls: HashMap<String, String>,
@@ -682,6 +687,7 @@ impl Parser {
             mcp: spec.mcp.is_some(),
             store: spec.store.is_some(),
             hooked: false,
+            account: false,
             started: false,
             calls: HashMap::new(),
             commands: Vec::new(),
@@ -782,7 +788,8 @@ impl Parser {
             self.window = window;
             out.extend(self.context());
         }
-        out.extend(fault(v).map(Event::Failed));
+        let account = std::mem::take(&mut self.account);
+        out.extend(fault(v, account).map(Event::Failed));
         let mut e = result(v);
         let mut gap = unpriced(v);
         let mut models = None;
@@ -960,6 +967,9 @@ impl Parser {
 
     fn assistant(&mut self, v: &Value) -> Result<Vec<Event>, String> {
         let mut out = Vec::new();
+        if matches!(v["error"].as_str(), Some(ACCOUNT_ERRORS!())) {
+            self.account = true;
+        }
         // The request's prompt (read from the cache or not) and its
         // answer: what the context holds now.
         let u = &v["message"]["usage"];
@@ -1118,15 +1128,28 @@ fn state_of(status: &str) -> Option<StepState> {
 
 /// The fault a turn's `result` reports: an API error after Claude
 /// Code's own retries, by its HTTP status (none when no answer came).
-fn fault(v: &Value) -> Option<Fault> {
+fn fault(v: &Value, account: bool) -> Option<Fault> {
     if v["is_error"] != true || v["terminal_reason"] != "api_error" {
         return None;
+    }
+    if account {
+        return Some(Fault::Account);
     }
     let status = v["api_error_status"]
         .as_u64()
         .map(|s| u16::try_from(s).unwrap_or(u16::MAX));
     Fault::of_status(status, v["result"].as_str().unwrap_or_default())
 }
+
+/// The `error` Claude Code puts on an answer of its own that is the
+/// account's to mend (probed on 2.1.319 signed out: `authentication_failed`,
+/// the result's `api_error_status` null).
+macro_rules! ACCOUNT_ERRORS {
+    () => {
+        "authentication_failed" | "billing_error"
+    };
+}
+use ACCOUNT_ERRORS;
 
 /// One of Claude Code's own retries of a failed API call, for the trace.
 fn retry(v: &Value) -> String {
@@ -2543,6 +2566,53 @@ mod tests {
             p.line(&failed("70000", "odd")).unwrap(),
             [turn("odd")],
             "a status past u16 is no status imece knows"
+        );
+        // Signed out (Claude Code 2.1.319): its own answer carries the
+        // account's error, the result no status. The account's to mend,
+        // whatever the words; the error is forgotten with its turn.
+        let own = |error: &str| {
+            format!(
+                r#"{{"type":"assistant","error":"{error}","message":{{"model":"<synthetic>","content":[{{"type":"text","text":"Sign in first"}}]}}}}"#
+            )
+        };
+        for error in ["authentication_failed", "billing_error"] {
+            p.line(&own(error)).unwrap();
+            assert_eq!(
+                p.line(&failed("null", "Sign in first")).unwrap(),
+                [Event::Failed(Fault::Account), turn("Sign in first")],
+                "{error}"
+            );
+            assert_eq!(
+                p.line(&failed("null", "Sign in first")).unwrap(),
+                [Event::Failed(Fault::Passing), turn("Sign in first")],
+                "{error}: the next turn is judged afresh"
+            );
+        }
+        p.line(&own("rate_limit")).unwrap();
+        assert_eq!(
+            p.line(&failed("null", "Sign in first")).unwrap(),
+            [Event::Failed(Fault::Passing), turn("Sign in first")]
+        );
+        // A success after it is no fault at all.
+        p.line(&own("authentication_failed")).unwrap();
+        let ok = r#"{"type":"result","subtype":"success","is_error":false,"result":"ok","total_cost_usd":0}"#;
+        assert!(matches!(
+            p.line(ok).unwrap()[..],
+            [Event::TurnDone { ok: true, .. }]
+        ));
+        assert_eq!(
+            p.line(&failed("null", "Sign in first")).unwrap(),
+            [Event::Failed(Fault::Passing), turn("Sign in first")],
+            "taken with the turn that ended"
+        );
+        // The words alone, with no status, are the account's too.
+        assert_eq!(
+            p.line(&failed("null", "Not logged in · Please run /login"))
+                .unwrap(),
+            [
+                Event::Failed(Fault::Account),
+                turn("Not logged in · Please run /login")
+            ]
         );
         let budget = r#"{"type":"result","subtype":"error_max_budget_usd","is_error":true,"terminal_reason":"max_budget","api_error_status":529,"total_cost_usd":0}"#;
         assert_eq!(p.line(budget).unwrap(), [turn("error_max_budget_usd")]);

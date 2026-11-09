@@ -309,6 +309,14 @@ mod tests {
     fn an_api_error_is_a_passing_fault_an_account_fault_or_neither_by_status_and_words() {
         let of = Fault::of_status;
         assert_eq!(of(None, "connection refused"), Some(Fault::Passing));
+        for w in ["Not logged in · Please run /login", "please run /LOGIN"] {
+            assert_eq!(of(None, w), Some(Fault::Account), "{w}");
+            assert_eq!(
+                of(Some(503), w),
+                Some(Fault::Passing),
+                "{w}: a status decides first"
+            );
+        }
         for s in [401, 402, 403] {
             assert_eq!(of(Some(s), "no"), Some(Fault::Account), "{s}");
         }
@@ -495,6 +503,8 @@ impl Fault {
             ACCOUNT_WORDS.iter().any(|w| t.contains(w))
         };
         match status {
+            // Claude Code's own refusal, before any request: not signed in.
+            None if account() => Some(Fault::Account),
             None => Some(Fault::Passing),
             Some(401..=403) => Some(Fault::Account),
             Some(429) if account() => Some(Fault::Account),
@@ -505,9 +515,12 @@ impl Fault {
     }
 }
 
-/// Words in an error that make a rate limit or a refused request the
-/// account's: a quota used up, a bill unpaid, a plan's limit reached.
-const ACCOUNT_WORDS: [&str; 6] = [
+/// Words in an error that make a rate limit, a refused request or an
+/// error with no answer the account's: not signed in, a quota used up, a
+/// bill unpaid, a plan's limit reached.
+const ACCOUNT_WORDS: [&str; 8] = [
+    "not logged in",
+    "please run /login",
     "quota",
     "billing",
     "credit",
