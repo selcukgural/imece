@@ -11,7 +11,9 @@ fn a_leader_hires_a_worker_whose_change_waits_for_the_person() {
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let repo = checkout("e2e-repo");
-    let claude = imece_agent::stand_in::install(&dir, &imece(), &dir.join("home")).unwrap();
+    let habits = imece_agent::stand_in::Habits::default();
+    let claude =
+        imece_agent::stand_in::install(&dir, &imece(), &dir.join("home"), &habits).unwrap();
     let mut w = team(0);
     let mut live = Live::new(
         1,
@@ -41,19 +43,26 @@ fn a_leader_hires_a_worker_whose_change_waits_for_the_person() {
         thread::sleep(Duration::from_millis(20));
     }
     // The leader hired through the bus and assigned the person's words;
-    // the worker wrote them in its worktree and said done.
+    // the worker added them to the file of its worktree and said done.
     assert_eq!(w.agents[1].name, "claude-1");
     assert_eq!(w.agents[1].role, Role::Worker);
     let change = w.changes.iter().find(|c| c.agent == 1).unwrap();
-    assert_eq!(change.title, "wrote stand-in/claude-1.md");
+    assert_eq!(change.title, "Write a greeting");
     let files: Vec<&str> = change.files.iter().map(|f| f.path.as_str()).collect();
-    assert_eq!(files, ["stand-in/claude-1.md"]);
+    assert_eq!(files, ["a.txt"]);
     assert!(
-        change.patch.contains("+# Write a greeting"),
+        change.patch.contains("+Write a greeting\n+in French"),
         "{}",
         change.patch
     );
-    assert!(change.patch.contains("+in French"));
+    // Its to-do list, as Claude Code's task tools keep it, all done.
+    let steps: Vec<(&str, StepState)> = (w.agents[1].plan.iter())
+        .map(|s| (s.text.as_str(), s.state))
+        .collect();
+    let done: Vec<(&str, StepState)> = (imece_agent::stand_in::work::STEPS.iter())
+        .map(|s| (*s, StepState::Done))
+        .collect();
+    assert_eq!(steps, done);
     // Each session reported what it spent: the stand-in's turns.
     let cost = imece_agent::stand_in::TURN_COST;
     assert!(w.agents[0].cost > 0 && w.agents[1].cost > 0);
@@ -73,7 +82,8 @@ fn a_session_of_an_earlier_run_resumes_from_its_transcript() {
     let dir = dir.canonicalize().unwrap();
     let repo = checkout("e2e-resume-repo").canonicalize().unwrap();
     let home = dir.join("home");
-    let program = imece_agent::stand_in::install(&dir, &imece(), &home).unwrap();
+    let habits = imece_agent::stand_in::Habits::default();
+    let program = imece_agent::stand_in::install(&dir, &imece(), &home, &habits).unwrap();
     let options = || Options {
         repo: repo.clone(),
         state: dir.join("state"),
@@ -126,7 +136,7 @@ fn a_session_of_an_earlier_run_resumes_from_its_transcript() {
     assert!(resumed(0), "{:#?}", w.journal);
     assert_eq!(w.agents.len(), 2, "no second worker");
     assert!(
-        w.changes[0].patch.contains("+# Write a farewell"),
+        w.changes[0].patch.contains("+Write a farewell"),
         "{}",
         w.changes[0].patch
     );
@@ -135,6 +145,67 @@ fn a_session_of_an_earlier_run_resumes_from_its_transcript() {
     // hire), so less than the whole would be.
     let booked = w.agents[0].cost - spent;
     assert!(booked > 0 && booked < spent, "{booked} after {spent}");
+    drop(live);
+    let _ = std::fs::remove_dir_all(&dir);
+    let _ = std::fs::remove_dir_all(&repo);
+}
+
+#[test]
+fn a_worker_s_command_that_is_no_routine_waits_for_the_person_s_yes() {
+    let dir = std::env::temp_dir().join(format!("imece-e2e-ask-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let repo = checkout("e2e-ask-repo");
+    // Every assign runs a command that asks first.
+    let habits = imece_agent::stand_in::Habits {
+        asks: 1,
+        ..Default::default()
+    };
+    let claude =
+        imece_agent::stand_in::install(&dir, &imece(), &dir.join("home"), &habits).unwrap();
+    let mut w = team(0);
+    let mut live = Live::new(
+        1,
+        claude_at(&claude.to_string_lossy()),
+        repo.clone(),
+        dir.join("trees"),
+    );
+    live.open_bus(&w, imece().to_string_lossy().into_owned())
+        .unwrap();
+    live.told(&mut w, 0, "Check the status").unwrap();
+    let until = |w: &mut World, live: &mut Live, done: &dyn Fn(&World) -> bool| {
+        let start = std::time::Instant::now();
+        while !done(w) {
+            assert!(
+                start.elapsed().as_secs() < 30,
+                "timed out: {:#?}",
+                w.journal
+            );
+            live.step(w);
+            thread::sleep(Duration::from_millis(20));
+        }
+    };
+    let asked =
+        |w: &World| (w.open_inbox().into_iter()).find(|&i| w.inbox[i].kind == InboxKind::Approval);
+    until(&mut w, &mut live, &|w| asked(w).is_some());
+    let item = asked(&w).unwrap();
+    let command = imece_agent::stand_in::work::OTHER.asks[0];
+    assert_eq!(w.inbox[item].agent, 1);
+    assert!(
+        w.inbox[item].detail.contains(command),
+        "{:?}",
+        w.inbox[item]
+    );
+    assert!(w.changes.is_empty(), "nothing done before the yes");
+    live.decide(&mut w, item, true);
+    until(&mut w, &mut live, &|w| {
+        w.changes.iter().any(|c| c.agent == 1) && w.agents.iter().all(|a| a.status == Status::Idle)
+    });
+    // What it heard is in its done, under the change's title.
+    assert_eq!(
+        w.done_why(1),
+        Some(format!("Changed a.txt.\n{command}: Done.").as_str())
+    );
     drop(live);
     let _ = std::fs::remove_dir_all(&dir);
     let _ = std::fs::remove_dir_all(&repo);

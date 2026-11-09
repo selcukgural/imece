@@ -12,9 +12,25 @@ use super::{DEFAULT_RUN_TIMEOUT, Live, Open, Options, StandIn, world as live_wor
 use crate::model::World;
 use crate::sim::{self, Repo};
 use imece_agent::Confine;
+use imece_agent::stand_in::{Habits, work};
 
 /// The demo's helpers per worker, at most.
 const HELPERS: usize = 2;
+
+/// How long a demo worker takes over each step of its list, in
+/// milliseconds, and one assign in how many runs a command that waits
+/// for the person's yes first.
+const PAUSE: u64 = 1_500;
+const ASKS: u64 = 3;
+
+/// How the demo's stand-ins work, their choices seeded by `seed`.
+fn habits(seed: u64) -> Habits {
+    Habits {
+        pause: std::time::Duration::from_millis(PAUSE),
+        asks: ASKS,
+        seed,
+    }
+}
 
 /// The demo's directory: removed with everything in it when dropped,
 /// after the `Live` that runs in it (its sessions end with it).
@@ -108,9 +124,21 @@ fn checkout(dir: &Path, repo: Repo) -> Result<(), String> {
 /// The demo's world: `projects` (one at least, the simulation's names, as
 /// many as it has) each a checkout of its own with its leader, `agents`
 /// workers a leader may hire, every session the stand-in of `imece`
-/// (imece's own binary). The demo's directory goes with the `Demo`.
-pub fn world(projects: usize, agents: usize, imece: &Path) -> Result<(World, Live, Demo), String> {
-    world_in(&std::env::temp_dir(), projects, agents, imece)
+/// (imece's own binary), its choices seeded by `seed`. The demo's
+/// directory goes with the `Demo`.
+pub fn world(
+    projects: usize,
+    agents: usize,
+    seed: u64,
+    imece: &Path,
+) -> Result<(World, Live, Demo), String> {
+    world_in(
+        &std::env::temp_dir(),
+        projects,
+        agents,
+        &habits(seed),
+        imece,
+    )
 }
 
 /// [`world`], the demo's directory under `parent`.
@@ -118,6 +146,7 @@ fn world_in(
     parent: &Path,
     projects: usize,
     agents: usize,
+    habits: &Habits,
     imece: &Path,
 ) -> Result<(World, Live, Demo), String> {
     let demo = made(parent)?;
@@ -132,7 +161,7 @@ fn world_in(
         checkout(&at, repo)?;
         repos.push(at);
     }
-    let program = imece_agent::stand_in::install(&bin, imece, &home)
+    let program = imece_agent::stand_in::install(&bin, imece, &home, habits)
         .map_err(|e| format!("the stand-in: {e}"))?;
     let options = Options {
         repo: repos[0].clone(),
@@ -142,7 +171,8 @@ fn world_in(
         tiers: Vec::new(),
         budget: None,
         fresh: false,
-        run_programs: Vec::new(),
+        // The stand-in's test runs are routine; what it asks first is not.
+        run_programs: work::TEST_PROGRAMS.map(String::from).into(),
         run_timeout: DEFAULT_RUN_TIMEOUT,
         instructions: None,
         own_notes: None,
@@ -185,7 +215,8 @@ mod tests {
         let parent = std::env::temp_dir().join(format!("imece-demo-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&parent);
         std::fs::create_dir_all(&parent).unwrap();
-        let (mut w, mut live, demo) = world_in(&parent, 2, 3, &imece()).unwrap();
+        let (mut w, mut live, demo) =
+            world_in(&parent, 2, 3, &Habits::default(), &imece()).unwrap();
         let dir = demo.dir.clone();
         assert_eq!(
             dir,
@@ -221,6 +252,7 @@ mod tests {
         assert_eq!(live.max_helpers, HELPERS);
         assert_eq!(live.claude_home, dir.join("home"));
         assert_eq!(live.state, dir.join("state"));
+        assert_eq!(live.run_programs, ["dotnet", "gradle", "npm", "go"]);
         // The leader hires on the stand-in; the worker's change waits.
         live.told(&mut w, 0, "Write a greeting").unwrap();
         let start = Instant::now();
@@ -247,14 +279,27 @@ mod tests {
     }
 
     #[test]
+    fn the_demo_s_workers_take_their_time_and_sometimes_ask() {
+        assert_eq!(
+            habits(9),
+            Habits {
+                pause: Duration::from_millis(1_500),
+                asks: 3,
+                seed: 9
+            }
+        );
+    }
+
+    #[test]
     fn one_project_at_least_and_no_more_than_the_simulation_has() {
         let parent = std::env::temp_dir().join(format!("imece-demo-few-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&parent);
         std::fs::create_dir_all(&parent).unwrap();
-        let (w, live, demo) = world_in(&parent, 0, 1, &imece()).unwrap();
+        let none = Habits::default();
+        let (w, live, demo) = world_in(&parent, 0, 1, &none, &imece()).unwrap();
         assert_eq!(w.projects.len(), 1);
         drop((live, demo));
-        let (w, live, demo) = world_in(&parent, 9, 1, &imece()).unwrap();
+        let (w, live, demo) = world_in(&parent, 9, 1, &none, &imece()).unwrap();
         assert_eq!(w.projects.len(), sim::MAX_PROJECTS);
         drop((live, demo));
         let _ = std::fs::remove_dir_all(&parent);

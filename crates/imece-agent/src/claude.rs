@@ -1005,7 +1005,7 @@ fn task_op(name: &str, input: &Value) -> Option<TaskOp> {
 
 /// The number in a `TaskCreate` answer, `Task #7 created successfully:
 /// …`; the answer is a string, or text blocks.
-fn created(content: &Value) -> Option<u64> {
+pub(crate) fn created(content: &Value) -> Option<u64> {
     let text = match content {
         Value::String(s) => s.clone(),
         Value::Array(blocks) => blocks

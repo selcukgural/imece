@@ -4080,17 +4080,34 @@ impl World {
     /// The change of worker `id` that waits for the person.
     /// What worker `id` said of its work under the first line of its
     /// newest `done`, the first line being the change's title; none when
-    /// that is all it said.
+    /// that is all it said. Live's journal keeps a message's first line
+    /// only; the whole of it is in its cards' stories, by its number.
     pub fn done_why(&self, id: AgentId) -> Option<&str> {
-        let text = self.journal.iter().rev().find_map(|e| match &e.event {
+        let (text, number) = self.journal.iter().rev().find_map(|e| match &e.event {
             Event::Sent {
                 from,
                 kind: MsgKind::Done,
                 text,
+                id: number,
                 ..
-            } if *from == id => Some(text),
+            } if *from == id => Some((text, *number)),
             _ => None,
         })?;
+        let whole = || {
+            (self.cards.iter().rev())
+                .flat_map(|c| c.story.iter().rev())
+                .find_map(|s| match &s.event {
+                    StoryEvent::Sent {
+                        from,
+                        kind: MsgKind::Done,
+                        text,
+                        id: n,
+                        ..
+                    } if *from == id && *n == number => Some(text),
+                    _ => None,
+                })
+        };
+        let text = if text.contains('\n') { text } else { whole()? };
         let (_, rest) = text.split_once('\n')?;
         Some(rest.trim()).filter(|why| !why.is_empty())
     }
@@ -8697,6 +8714,41 @@ mod tests {
         assert_eq!(w.done_why(1), None, "the newest says nothing more");
         w.note(done(1, "Title\n  \n", MsgKind::Done));
         assert_eq!(w.done_why(1), None, "blank is nothing");
+        // Live's journal has the first line; the card's story the whole
+        // message, found by its number.
+        let story = |from, text: &str, kind, id| StoryEvent::Sent {
+            from,
+            to: 0,
+            kind,
+            text: text.into(),
+            id,
+            re: None,
+        };
+        w.story(
+            Some(0),
+            story(1, "Title\n\nWhole reason.", MsgKind::Done, 7),
+        );
+        w.story(
+            Some(0),
+            story(1, "Title\n\nNot this number.", MsgKind::Done, 8),
+        );
+        w.story(Some(0), story(2, "Title\n\nNot theirs.", MsgKind::Done, 7));
+        w.story(
+            Some(0),
+            story(1, "Title\n\nNot this kind.", MsgKind::Inform, 7),
+        );
+        let first = |id| Event::Sent {
+            from: 1,
+            to: 0,
+            kind: MsgKind::Done,
+            text: "Title".into(),
+            id,
+            re: None,
+        };
+        w.note(first(7));
+        assert_eq!(w.done_why(1), Some("Whole reason."));
+        w.note(first(9));
+        assert_eq!(w.done_why(1), None, "no story of that message");
     }
 
     #[test]
