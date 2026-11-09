@@ -77,10 +77,12 @@
     {
       "id": "straight",
       "chapter": "Straight to what matters",
-      "narration": "g d jumps to the first row to decide, g w to the first at work. Capital W opens the next item to decide from anywhere, and a yes moves on to the next; escape comes back to Home.",
+      "narration": "g d jumps to the first row to decide, g c to the first change, g w to the first at work. Capital W opens the next item to decide from anywhere, and a yes moves on to the next; escape comes back to Home.",
       "steps": [
         { "action": "type", "target": "#corner", "text": "gd", "delayMs": 200 },
-        { "action": "wait", "seconds": 4 },
+        { "action": "wait", "seconds": 3 },
+        { "action": "type", "target": "#corner", "text": "gc", "delayMs": 200 },
+        { "action": "wait", "seconds": 3 },
         { "action": "type", "target": "#corner", "text": "gw", "delayMs": 200 },
         { "action": "wait", "seconds": 3 },
         { "action": "type", "target": "#corner", "text": "W", "delayMs": 0 },

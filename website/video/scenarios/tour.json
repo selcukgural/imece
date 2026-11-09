@@ -111,9 +111,11 @@
     {
       "id": "change",
       "chapter": "A change",
-      "narration": "Capital W opens the next item from anywhere. This one is a change. Its first line is the verdict: what ran on its tree, whether it stays inside its card's paths, whether it can be approved as it stands. Then what the worker's worktree holds since its last done: the files above the patch, then the diff itself. j and k scroll it; the brackets go from file to file.",
+      "narration": "g c goes to the first change waiting, under the commands and questions, and enter opens it. Its first line is the verdict: what ran on its tree, whether it stays inside its card's paths, whether it can be approved as it stands. Then what the worker's worktree holds since its last done: the files above the patch, then the diff itself. j and k scroll it; the brackets go from file to file.",
       "steps": [
-        { "action": "type", "target": "#corner", "text": "W", "delayMs": 0 },
+        { "action": "type", "target": "#corner", "text": "gc", "delayMs": 200 },
+        { "action": "wait", "seconds": 2 },
+        { "action": "press", "key": "Enter" },
         { "action": "wait", "seconds": 6 },
         { "action": "type", "target": "#corner", "text": "jjjj", "delayMs": 400 },
         { "action": "wait", "seconds": 3 },
