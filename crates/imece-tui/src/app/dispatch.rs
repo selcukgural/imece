@@ -506,6 +506,7 @@ impl App {
                     }
                     Zoom::None => "@".into(),
                 };
+                self.after = 0;
                 self.menu = self.suggest();
             }
             // A digit picks one of the answers a question offers (on Home

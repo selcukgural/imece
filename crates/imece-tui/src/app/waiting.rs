@@ -408,9 +408,7 @@ impl App {
             // the person mended is told the same way: the composer opens
             // to the agent, and the item closes when the message goes.
             let name = self.world.agents[self.world.inbox[item].agent].name.clone();
-            self.typing = true;
-            self.input = format!("@{name} ");
-            self.menu = None;
+            self.compose(format!("@{name} "));
             return;
         }
         if self.world.inbox[item].kind == InboxKind::Reply {

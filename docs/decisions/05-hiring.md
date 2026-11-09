@@ -47,3 +47,12 @@ request refs (GitLab's `merge-requests/N/head`).
 The person makes a worker too, from a worker: `:fork` (record 94) adds
 one named as `hire` names workers (`worker_name`, shared), counted in
 `--agents`, its start point the forked worker's HEAD.
+
+**Free workers first (2026-11-09, the second acceptance run).** In both runs the
+leader hired new workers while one sat idle with its card done. `World::free_workers`
+(here, between turns, no card at work, no change waiting, nothing waiting on the
+person) is listed by `whoami` for a leader (`free workers: …`), the leader's
+prompt says to give a free worker the next card before hiring, and `hire`
+refuses a worker on the tier of a free one (`claude-1 is free … give it the next
+card with send (type assign) instead of hiring`); another tier, a `from`, or
+nobody free hires as before. The demo already hired only when nobody was free.

@@ -479,6 +479,7 @@ mod tests {
                 cut: false,
                 verifies: Runs::default(),
                 on_trunk: true,
+                intent: String::new(),
             },
         );
         let mut app = App::with(world, Engine::Sim(sim), Lang::En);

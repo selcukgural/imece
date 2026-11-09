@@ -167,3 +167,18 @@ shown, they are in review; queued, verifying; on trunk, done; refused,
 conflicted or withdrawn, back to work. A worker's `done` that came late
 (its card handed again) or failed waits on no proposal. A proposal made
 after the card was handed away still shows as the worker's Δ: a gap.
+
+**`r` and the title (2026-11-09, the second acceptance run).** The composer `r`
+opened stood with its cursor at the start (`after` set to the line's length, and
+`after` counts what is after the cursor), so the reason went before `@name`, the
+line went to the leader and nothing was rejected. Every place that puts text on
+the line for the person to write after it now goes through `App::compose`
+(cursor at the end), and `reason_on` takes the line as the reason when the name
+was taken off or written after it; a line to someone else, a `:` command, a
+`!cmd`, a `#` card, a `&` jump or an agent's `/command` rejects nothing. A Lonca
+change is titled by its worker's card (`change_of`'s `card`), not the proposal's
+intent: agents named cards there by another numbering ("Card 16" for #8). The
+intent is kept (`StoreProposal.intent`) and is the change's text under the
+verdict (`World::change_why`: the intent when it says more than the title, else
+the `done`'s words), since it becomes trunk's commit message; `lonca_note` asks
+workers to write it as one line, a commit subject, without card numbers.

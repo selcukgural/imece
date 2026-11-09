@@ -81,7 +81,7 @@ En son başlayan sürüm depoda tutulur (`seen`); en ilk başlangıç bunun yeri
 └───────────────────────────────────────────────────────────┘
 ```
 
-Keseyi, açık proje başına bir satırı, hâlâ sizi bekleyen en eski öğeleri (en çok altı), imece kapanırken yarım kalan turları ve günlüğün son satırlarını listeler. Herhangi bir tuş kapatır ve başka bir şey yapmaz.
+Keseyi, açık proje başına bir satırı, hâlâ karar bekleyen en eski öğeleri (en çok altı; yalnız okunacak yanıtlar ayrı sayılır: `» Home'da 1 yanıt okunacak`), imece kapanırken yarım kalan turları ve günlüğün son satırlarını listeler. Herhangi bir tuş kapatır ve başka bir şey yapmaz.
 
 ## Ana ekran {#home}
 

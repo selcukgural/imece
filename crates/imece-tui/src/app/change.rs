@@ -538,7 +538,7 @@ impl App {
             return self.flash(fill(t.back_gone, &[&name]));
         }
         if self.world.spent() >= self.world.budget {
-            return self.flash(fill(t.budget_spent, &[&name]));
+            return self.flash(ui::words::pot_spent(self.lang, &self.world));
         }
         let message = ui::clash_message(clashes, a.role == Role::Solo);
         self.goes_back(id, &message, fill(t.sent_back, &[&name]));
@@ -577,9 +577,7 @@ impl App {
             // Lonca takes no rejection without a reason, so the words come
             // first: the line that goes is both.
             self.rejecting = Some(id);
-            self.typing = true;
-            self.input = format!("@{name} ");
-            self.after = self.input.chars().count();
+            self.compose(format!("@{name} "));
             self.flash(fill(t.say_why, &[&name]));
             self.close_change(id);
             return false;
@@ -605,8 +603,7 @@ impl App {
             Err(why) if apply => self.flash(fill(t.apply_failed, &[&name, &why])),
             Ok(()) => {
                 self.flash(fill(t.rejected_change, &[&name]));
-                self.typing = true;
-                self.input = format!("@{name} ");
+                self.compose(format!("@{name} "));
             }
             Err(why) => self.flash(fill(t.reject_failed, &[&name, &why])),
         }
@@ -650,11 +647,21 @@ impl App {
         }
     }
 
-    /// The reason on `line`, a line that starts with `@name ` and says
-    /// something to it.
+    /// The reason on `line`, the line written after `r` on worker `id`'s
+    /// proposal: what follows `@name`, or the whole line when the person
+    /// took the name off (or wrote before it: `why @name`). A line to
+    /// someone else, a `:` command, a `!cmd`, a `#` card, a `&` jump or
+    /// an agent's `/command` is no reason.
     pub(super) fn reason_on<'a>(&self, id: AgentId, line: &'a str) -> Option<&'a str> {
-        let head = format!("@{} ", self.world.agents[id].name);
-        let reason = line.strip_prefix(&head)?.trim();
+        let at = format!("@{}", self.world.agents[id].name);
+        let line = line.trim();
+        let reason = match line.strip_prefix(&at) {
+            Some(rest) if rest.is_empty() || rest.starts_with(char::is_whitespace) => rest,
+            Some(_) => return None,
+            None if line.starts_with(['@', ':', '!', '#', '&', '/']) => return None,
+            None => line.strip_suffix(&at).unwrap_or(line),
+        }
+        .trim();
         (!reason.is_empty()).then_some(reason)
     }
 }
@@ -899,6 +906,9 @@ mod tests {
         assert!(app.world.change_of(1).is_none());
         assert!(app.typing);
         assert_eq!(app.input, "@claude-1 ");
+        // What the person types comes after the name.
+        keys(&mut app, "why");
+        assert_eq!(app.input, "@claude-1 why");
     }
 
     /// The inbox selection may have moved while the change was open (an
@@ -1668,7 +1678,13 @@ mod tests {
         let name = app.world.agents[worker].name.clone();
         app.world.budget = app.world.spent();
         app.on_key(key(KeyCode::Char('b')));
-        assert_eq!(flashed(&app), Some(fill(t.budget_spent, &[&name])));
+        let said = flashed(&app).unwrap();
+        assert_eq!(said, crate::ui::words::pot_spent(Lang::En, &app.world));
+        assert!(
+            said.contains("pot is spent") && said.contains(":budget"),
+            "{said}"
+        );
+        assert!(!said.contains(&name), "the pot is the team's: {said}");
         stays(&app, worker);
         // One ten-thousandth left is enough.
         app.world.budget = app.world.spent() + 1;
@@ -1793,6 +1809,7 @@ mod tests {
             cut: false,
             verifies: Runs::default(),
             on_trunk: true,
+            intent: String::new(),
         };
         app.world.change_proposed(a_change(1), proposal);
         app.zoom = Zoom::Diff(1);
@@ -1819,7 +1836,7 @@ mod tests {
         assert_eq!(app.rejecting, Some(1));
         assert!(app.typing);
         assert_eq!(app.input, format!("@{name} "));
-        assert_eq!(app.after, app.input.chars().count());
+        assert_eq!(app.after, 0, "the cursor after the name");
         assert_eq!(app.zoom, Zoom::None);
         let t = app.lang.text();
         assert_eq!(flashed(&app), Some(fill(t.say_why, &[&name])));
@@ -1862,9 +1879,77 @@ mod tests {
         )));
     }
 
+    /// The acceptance run's bug: the reason typed after `r` went before
+    /// the name, to the leader, and nothing was rejected.
+    #[test]
+    fn what_is_typed_after_r_goes_to_the_worker_and_rejects() {
+        let mut app = a_proposal_shown();
+        let name = app.world.agents[1].name.clone();
+        app.on_key(key(KeyCode::Char('r')));
+        keys(&mut app, "XYZ");
+        assert_eq!(app.input, format!("@{name} XYZ"));
+        app.on_key(key(KeyCode::Enter));
+        assert!(app.world.proposal_of(1).is_none(), "rejected");
+        assert!(app.world.journal.iter().any(|e| matches!(
+            &e.event,
+            Event::Landed { how: Landed::Rejected(why), .. } if why == &["rejected: XYZ"]
+        )));
+        let said: Vec<_> = (app.world.journal.iter())
+            .filter_map(|e| match &e.event {
+                Event::YouSaid { to, text } => Some((*to, text.clone())),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(said, vec![(1, "XYZ".to_string())], "to the worker alone");
+    }
+
+    /// The name taken off, or the words written before it: the line is
+    /// still the reason, and it goes to the worker, not the leader.
+    #[test]
+    fn a_reason_without_the_name_still_goes_to_the_worker() {
+        for (line, reason) in [
+            ("not so", "not so"),
+            ("hm @claude-1", "hm"),
+            ("@claude-1", ""),
+        ] {
+            let mut app = a_proposal_shown();
+            assert_eq!(app.world.agents[1].name, "claude-1");
+            app.on_key(key(KeyCode::Char('r')));
+            app.input = line.to_string();
+            app.submit();
+            if reason.is_empty() {
+                assert!(app.world.proposal_of(1).is_some(), "{line}");
+                continue;
+            }
+            assert!(app.world.proposal_of(1).is_none(), "{line}");
+            assert!(
+                app.world.journal.iter().any(|e| matches!(
+                    &e.event,
+                    Event::YouSaid { to: 1, text } if text == reason
+                )),
+                "{line}"
+            );
+            let leader = app.world.projects[0].leader;
+            assert!(
+                !app.world.journal.iter().any(|e| matches!(
+                    &e.event,
+                    Event::YouSaid { to, .. } if *to == leader
+                )),
+                "{line}"
+            );
+        }
+    }
+
     #[test]
     fn a_line_that_is_no_reason_for_it_rejects_nothing() {
-        for line in ["@nobody why", ":salon", "hello"] {
+        for line in [
+            "@nobody why",
+            ":salon",
+            "@claude-10 why",
+            "/clear",
+            "!ls",
+            "#1",
+        ] {
             let mut app = a_proposal_shown();
             app.on_key(key(KeyCode::Char('r')));
             app.input = line.to_string();
@@ -1936,6 +2021,7 @@ mod tests {
             cut: false,
             verifies: Runs::default(),
             on_trunk: true,
+            intent: String::new(),
         };
         let mut w = team(1);
         w.change_ready(a_change(1));

@@ -96,7 +96,12 @@ pub fn script(f: &mut Frame, app: &App, item: usize, at: usize) -> Rect {
 pub fn import(f: &mut Frame, app: &App, ask: &ImportAsk) -> Rect {
     let t = app.lang.text();
     let full = f.area();
-    let area = centered(full, full.width.saturating_sub(8).min(72), 13);
+    // Workers hired before it: what becomes of their worktrees is said
+    // (record 119).
+    let hired = (app.world.agents.iter())
+        .any(|a| a.project == ask.project && a.role == Role::Worker && !a.gone);
+    let tall = if hired { 17 } else { 13 };
+    let area = centered(full, full.width.saturating_sub(8).min(72), tall);
     shade(f, area);
     clear(f, area);
     let block = Block::bordered()
@@ -106,7 +111,7 @@ pub fn import(f: &mut Frame, app: &App, ask: &ImportAsk) -> Rect {
     f.render_widget(block, area);
     // `~` for the home, as every folder on the screen (record 103).
     let checkout = app.shown_path(&ask.checkout);
-    let lines = vec![
+    let mut lines = vec![
         Line::from(fill(t.import_from, &[&checkout])),
         Line::from(fill(
             t.import_branch,
@@ -116,10 +121,15 @@ pub fn import(f: &mut Frame, app: &App, ask: &ImportAsk) -> Rect {
         Line::default(),
         Line::from(Span::styled(t.import_note, dim())),
         Line::from(Span::styled(t.import_critical, dim())),
+    ];
+    if hired {
+        lines.push(Line::from(Span::styled(t.import_workers, dim())));
+    }
+    lines.extend([
         Line::from(Span::styled(t.import_final, fg(pal().warn))),
         Line::default(),
         Line::from(super::hint_spans(&t.import_hints)),
-    ];
+    ]);
     f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), inner);
     area
 }
@@ -219,7 +229,11 @@ pub fn plan(f: &mut Frame, app: &App, item: usize, at: usize) -> Rect {
     };
     let title = fill(
         t.plan_win_title,
-        &[&leader.name, &p.cards.len().to_string(), &dollars(p.cost)],
+        &[
+            &leader.name,
+            &counted(p.cards.len(), t.n_cards),
+            &dollars(p.cost),
+        ],
     );
     let block = Block::bordered()
         .title(title)
@@ -506,7 +520,7 @@ pub fn ps(f: &mut Frame, app: &App, win: PsWin) -> Rect {
         }
         Some(Sure::AllLeft) => {
             let n = crate::app::left_pids(&app.world).len();
-            Some(fill(t.ps_all_sure, &[&n.to_string()]))
+            Some(fill(t.ps_all_sure, &[&counted(n, t.n_processes)]))
         }
         None => None,
     };
@@ -1184,7 +1198,7 @@ fn archive_row(app: &App, b: &Browser, row: Row) -> Line<'static> {
     let t = app.lang.text();
     let w = &app.world;
     let mark = |open: bool| if open { "▾" } else { "▸" };
-    let agents = |p: ProjectId| archives::agents_of(w, p).count().to_string();
+    let agents = |p: ProjectId| counted(archives::agents_of(w, p).count(), t.n_agents);
     match row {
         Row::Checkout(i) => {
             let g = &b.groups[i];
@@ -1217,7 +1231,7 @@ fn archive_row(app: &App, b: &Browser, row: Row) -> Line<'static> {
                 t.archives_row,
                 &[
                     &w.project_spent(p),
-                    &done.to_string(),
+                    &counted(done, t.n_cards_done),
                     &agents(p),
                     &date(day(at)),
                 ],
@@ -1308,7 +1322,11 @@ pub fn left_off(f: &mut Frame, app: &App, l: &LeftOff) {
             Span::styled(
                 fill(
                     t.left_project,
-                    &[name, &agents.to_string(), &cards.to_string()],
+                    &[
+                        name,
+                        &counted(*agents, t.n_agents),
+                        &counted(*cards, t.n_open_cards),
+                    ],
                 ),
                 fg(pal().strong),
             ),
@@ -1340,6 +1358,14 @@ pub fn left_off(f: &mut Frame, app: &App, l: &LeftOff) {
                 dim(),
             )));
         }
+    }
+    // A reply is read, not decided: counted apart, on its own line.
+    if l.replies > 0 {
+        let replies = counted(l.replies, t.home_counts[3]);
+        lines.push(Line::from(Span::styled(
+            format!(" » {}", fill(t.left_replies, &[&replies])),
+            dim(),
+        )));
     }
     if !l.interrupted.is_empty() {
         let (icon, style) = entry_icon(EntryKind::Failed);

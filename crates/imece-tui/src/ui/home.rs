@@ -481,7 +481,7 @@ fn item_tail(app: &App, i: usize) -> Tail {
             let (cards, cost) = words::plan_figures(w, item.agent);
             fill(
                 t.row_plan,
-                &[&cards.to_string(), &dollars(cost), &item.detail],
+                &[&counted(cards, t.n_cards), &dollars(cost), &item.detail],
             )
         }
         InboxKind::Tries | InboxKind::Rounds => {
@@ -852,7 +852,7 @@ fn change_lines(lang: Lang, w: &World, c: &Change, lines: &mut Vec<Line<'static>
         }
     }
     // The worker's words as the Markdown they are: its lists stay lists.
-    let said = w.done_why(c.agent).unwrap_or(&c.title);
+    let said = w.change_why(c.agent).unwrap_or(&c.title);
     for (n, line) in markdown_rows(said, room.saturating_sub(9).max(12))
         .into_iter()
         .enumerate()

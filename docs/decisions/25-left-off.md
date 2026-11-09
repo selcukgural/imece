@@ -23,3 +23,9 @@ count before `adopt` and the seconds since. `saved_at` is a world key
 
 What's new and the welcome window (record 75) come before it, each
 closed by its own key.
+
+**Replies apart (2026-11-09).** A reply is read, not decided (record 125): the
+window's `! N to decide` counts and lists only what is to decide, and the replies
+are one line under it, `» 1 reply to read on Home` (`LeftOff.replies`). Its
+counts say one as one (`1 agent, 1 open card`, `i18n::counted`). The away
+digest's "to decide" counts decisions too.

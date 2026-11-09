@@ -155,3 +155,13 @@ routine; an
 own read-only rules decide what never reaches imece.
 
 Since record 136 a routine command may also be one of the test commands its project's files call for (`python3 -m unittest -v`, `npm test`, `go test ./...`), with the same one-line, one-program checks: `python3 -m unittest 2>&1 | tail -5` still asks.
+
+**`git -C` of its own directory (2026-11-09).** Models write `git -C <their
+worktree> log --oneline -3` often, and git with an option first is never
+routine. `tools::routine_in` takes the asking agent's directory (`cwd_of`,
+canonical) and `own_dir` drops a first `-C DIR` when DIR, as written, is exactly
+that directory: absolute, no `.` or `..` part, no `//`, compared without looking
+anything up, so a link to it, a relative path or another directory still asks.
+Only one `-C`: what is left is judged as any git line, which takes no option
+before its command (a second `-C`, `-c`, `--git-dir`). The `run` tool is not
+changed: it runs in the directory already.

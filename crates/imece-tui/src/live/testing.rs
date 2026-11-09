@@ -474,6 +474,7 @@ pub(super) fn worker_in(
             imece_agent::copy::Brought::default(),
             setup::Done::None,
             None,
+            Moved::Stayed,
         )),
     );
     tree

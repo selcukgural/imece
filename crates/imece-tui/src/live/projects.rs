@@ -478,6 +478,7 @@ mod tests {
                 imece_agent::copy::Brought::default(),
                 setup::Done::None,
                 None,
+                Moved::Stayed,
             )),
         );
         let ended = Arc::new(AtomicBool::new(false));
@@ -492,6 +493,7 @@ mod tests {
                 imece_agent::copy::Brought::default(),
                 setup::Done::None,
                 None,
+                Moved::Stayed,
             )),
         );
         live.mail[2].push(Mail {
@@ -731,6 +733,7 @@ mod tests {
                 imece_agent::copy::Brought::default(),
                 setup::Done::None,
                 None,
+                Moved::Stayed,
             )),
         );
         live.sessions[solo] = Some(Resumable {
@@ -985,6 +988,7 @@ mod tests {
                     imece_agent::copy::Brought::default(),
                     setup::Done::None,
                     None,
+                    Moved::Stayed,
                 )),
             );
         }

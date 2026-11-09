@@ -2246,6 +2246,21 @@ pub enum Event {
         from: String,
         to: String,
     },
+    /// A worker hired before its project went on Lonca left its worktree
+    /// for a workspace of `repo` (record 119): its work goes through Lonca
+    /// from now on.
+    OntoLonca {
+        agent: AgentId,
+        repo: String,
+    },
+    /// A worker hired before its project went on Lonca keeps its worktree,
+    /// which holds work (`changes` files changed or not tracked, `commits`
+    /// of its own): it works off Lonca until its change is in.
+    OffLonca {
+        agent: AgentId,
+        changes: usize,
+        commits: usize,
+    },
     /// A live agent's worktree has work of its own (`commits`: commits the
     /// checkout does not have; else uncommitted changes) and stays at `at`
     /// while the checkout's HEAD is `head`.
@@ -2409,6 +2424,7 @@ impl Event {
             | Event::CommandsMissing { .. }
             | Event::Confine { .. }
             | Event::WorktreeMoved { .. }
+            | Event::OntoLonca { .. }
             | Event::Copied { .. }
             | Event::FilesCut { .. }
             | Event::TestsFound { .. }
@@ -2423,7 +2439,8 @@ impl Event {
             | Event::Retrying { .. }
             | Event::ChangeCost { .. }
             | Event::LateDone { .. }
-            | Event::WorktreeKept { .. } => EntryKind::Assumption,
+            | Event::WorktreeKept { .. }
+            | Event::OffLonca { .. } => EntryKind::Assumption,
             Event::Blocked { .. } | Event::Capped { .. } => EntryKind::Blocked,
             Event::Health { sign, .. } if sign.wakes() => EntryKind::Blocked,
             Event::Health { .. } => EntryKind::Assumption,
@@ -2588,6 +2605,8 @@ impl Event {
             | Event::CommandsMissing { agent }
             | Event::WorktreeMoved { agent, .. }
             | Event::WorktreeKept { agent, .. }
+            | Event::OntoLonca { agent, .. }
+            | Event::OffLonca { agent, .. }
             | Event::Copied { agent, .. }
             | Event::CopySkipped { agent, .. }
             | Event::IncludeRefused { agent, .. }
@@ -2929,6 +2948,10 @@ pub struct StoreProposal {
     /// Its base is trunk as the last look saw it; a stale one is merged
     /// by the queue after the yes (record 125, step 4).
     pub on_trunk: bool,
+    /// What the worker proposed it as, its words (trunk's commit message
+    /// once it lands): the change's text; its title is the card's
+    /// (record 120).
+    pub intent: String,
 }
 
 /// Where the repository's check (`.imece/check`, record 112) stands on a
@@ -4307,6 +4330,17 @@ impl World {
         });
     }
 
+    /// The words under worker `id`'s change's title: a Lonca proposal's
+    /// intent, the worker's words that become trunk's commit message,
+    /// when the title is its card's (record 120); else what its `done`
+    /// said ([`World::done_why`]).
+    pub fn change_why(&self, id: AgentId) -> Option<&str> {
+        let intent = (self.proposal_of(id).map(|p| p.intent.trim()))
+            .filter(|i| !i.is_empty())
+            .filter(|&i| self.change_of(id).is_none_or(|c| c.title.trim() != i));
+        intent.or_else(|| self.done_why(id))
+    }
+
     /// The change of worker `id` that waits for the person.
     /// What worker `id` said of its work under the first line of its
     /// newest `done`, the first line being the change's title; none when
@@ -5273,6 +5307,10 @@ impl World {
             .filter(|i| i.open && i.kind == InboxKind::Plan)?;
         let leader = it.agent;
         self.inbox[item].open = false;
+        // What the leader replied with the plan ("I wait for your yes")
+        // is answered by the decision: it is read (one open reply per
+        // agent holds anyway, `replied`).
+        self.close_replies(leader);
         let gate = &mut self.projects[self.agents[leader].project].plan;
         gate.approved = yes;
         if !yes {
@@ -5324,6 +5362,21 @@ impl World {
     /// queued and starts no turn, but for a cancel (record 107).
     pub fn waits_on_person(&self, id: AgentId) -> bool {
         self.agents[id].status == Status::WaitingHuman || self.holding(id).next().is_some()
+    }
+
+    /// The workers of project `p` free for a card now: here, between
+    /// turns, with no card at work (none, or one that is over), no change
+    /// of theirs waiting and nothing waiting on the person. The leader
+    /// gives one of them the next card before it hires (the acceptance
+    /// run: new workers were hired beside idle ones).
+    pub fn free_workers(&self, p: ProjectId) -> Vec<AgentId> {
+        (self.agents.iter())
+            .filter(|a| a.project == p && a.role == Role::Worker && !a.gone)
+            .filter(|a| matches!(a.status, Status::Idle | Status::Asleep))
+            .filter(|a| a.card.is_none_or(|c| self.cards[c].over()))
+            .filter(|a| self.change_of(a.id).is_none() && !self.waits_on_person(a.id))
+            .map(|a| a.id)
+            .collect()
     }
 
     /// Whether the person's word to agent `id` ends what it waits on: then
@@ -8995,9 +9048,21 @@ mod tests {
         assert!(w.inbox[second + 1].open && w.inbox[second + 2].open);
         assert_eq!(w.plan_hold(0), Some(PlanHold::Unanswered));
         assert_eq!(w.decide_plan(second, true), None, "closed already");
-        // A yes, then a no.
+        // A yes, then a no. The leader's reply that came with the plan
+        // closes with the decision; another agent's stays.
         let third = w.propose(0, plan(3));
+        w.replied(0, "I wait for your yes before I hire");
+        w.replied(1, "something else");
+        let replies = |w: &World, id| {
+            (w.open_inbox().into_iter())
+                .filter(|&i| w.inbox[i].kind == InboxKind::Reply && w.inbox[i].agent == id)
+                .count()
+        };
+        // One open reply per agent: a newer one closes the older.
+        w.replied(0, "still waiting");
+        assert_eq!(replies(&w, 0), 1);
         assert_eq!(w.decide_plan(third, true), Some(0));
+        assert_eq!((replies(&w, 0), replies(&w, 1)), (0, 1));
         assert!(w.projects[0].plan.approved);
         assert_eq!(w.plan_hold(0), None);
         assert!(w.projects[0].plan.proposal.is_some(), "kept on a yes");
@@ -9561,6 +9626,7 @@ mod tests {
             cut: false,
             verifies: Runs::default(),
             on_trunk: true,
+            intent: String::new(),
         }
     }
 

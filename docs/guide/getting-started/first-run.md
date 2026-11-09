@@ -71,7 +71,7 @@ The first time there is nothing to show. On a later start that remembers an earl
 ```text
 ┌ WHERE YOU LEFT OFF · 2 h 10 min ago ────────────────────┐
 │ $3.10 of $50.00 spent; every agent sleeps until spoken to │
-│ imece: 3 agents, 1 open cards                             │
+│ imece: 3 agents, 1 open card                              │
 │ ! 1 to decide:                                            │
 │ Δ 11:42 claude-1 finished: parser: accept trailing commas │
 │ the last lines before:                                    │
@@ -81,7 +81,7 @@ The first time there is nothing to show. On a later start that remembers an earl
 └───────────────────────────────────────────────────────────┘
 ```
 
-It lists the pot, one line per open project, the oldest items still waiting for you (six at most), any turns that were cut short when imece closed, and the last journal lines. Any key closes it and does nothing else.
+It lists the pot, one line per open project, the oldest items still to decide (six at most; replies, only to read, are counted apart: `» 1 reply to read on Home`), any turns that were cut short when imece closed, and the last journal lines. Any key closes it and does nothing else.
 
 ## Home
 

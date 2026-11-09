@@ -2796,6 +2796,7 @@ Taken:
                 imece_agent::copy::Brought::default(),
                 setup::Done::None,
                 None,
+                Moved::Stayed,
             )),
         );
         assert!(live.told(&mut w, 1, "The first.").is_err());

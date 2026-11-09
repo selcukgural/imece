@@ -4,7 +4,7 @@
 use crate::app::Rung;
 use crate::editor::{self, Why};
 use crate::health::Sign;
-use crate::i18n::{Lang, Text, fill};
+use crate::i18n::{Lang, Text, counted, fill};
 use crate::model::*;
 use crate::screen::Progress;
 use crate::shell::Output;
@@ -148,7 +148,7 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
         Event::TurnYes { agent } => fill(t.ev_turn_yes, &[name(w, *agent)]),
         Event::TurnYesEnded { agent, allowed } => fill(
             t.ev_turn_yes_ended,
-            &[name(w, *agent), &allowed.to_string()],
+            &[name(w, *agent), &counted(*allowed as usize, t.n_asks)],
         ),
         Event::Standing {
             leader,
@@ -449,7 +449,11 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
             cost,
         } => fill(
             t.ev_planned,
-            &[name(w, *leader), &cards.to_string(), &dollars(*cost)],
+            &[
+                name(w, *leader),
+                &counted(*cards, t.n_cards),
+                &dollars(*cost),
+            ],
         ),
         Event::PlanAnswered { leader, yes } => {
             let text = if *yes { t.ev_plan_yes } else { t.ev_plan_no };
@@ -466,6 +470,19 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
         Event::WorktreeMoved { agent, from, to } => {
             fill(t.ev_worktree_moved, &[name(w, *agent), from, to])
         }
+        Event::OntoLonca { agent, repo } => fill(t.ev_onto_lonca, &[name(w, *agent), repo]),
+        Event::OffLonca {
+            agent,
+            changes,
+            commits,
+        } => fill(
+            t.ev_off_lonca,
+            &[
+                name(w, *agent),
+                &counted(*changes, t.n_files),
+                &commits.to_string(),
+            ],
+        ),
         Event::WorktreeKept {
             agent,
             at,
@@ -489,7 +506,7 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
             t.ev_change_ready,
             &[
                 name(w, *agent),
-                &files.to_string(),
+                &counted(*files, t.n_files),
                 &added.to_string(),
                 &removed.to_string(),
             ],
@@ -504,7 +521,7 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
             t.ev_change_ready_spent,
             &[
                 name(w, *agent),
-                &files.to_string(),
+                &counted(*files, t.n_files),
                 &added.to_string(),
                 &removed.to_string(),
                 &spend(lang, w, s),
@@ -517,9 +534,10 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
         Event::Verified { agent, checks, .. } => {
             fill(t.ev_verified, &[name(w, *agent), &attested(checks)])
         }
-        Event::Applied { agent, files, mark } => {
-            fill(t.ev_applied, &[name(w, *agent), &files.to_string(), mark])
-        }
+        Event::Applied { agent, files, mark } => fill(
+            t.ev_applied,
+            &[name(w, *agent), &counted(*files, t.n_files), mark],
+        ),
         Event::ApplyFailed { agent, why } => {
             let said = match w.clashes_of(*agent) {
                 Some(_) => t.ev_apply_failed_back,
@@ -721,7 +739,11 @@ pub fn story(lang: Lang, w: &World, card: &Card, e: &StoryEvent) -> String {
         StoryEvent::FromCache(topic) => fill(t.st_from_cache, &[topic]),
         StoryEvent::Change { files, plus, minus } => fill(
             t.st_change,
-            &[&files.to_string(), &plus.to_string(), &minus.to_string()],
+            &[
+                &counted(*files, t.n_files),
+                &plus.to_string(),
+                &minus.to_string(),
+            ],
         ),
         StoryEvent::Sensitive(what) => fill(t.st_sensitive, &[what]),
         StoryEvent::Verified { tests, trunk } => {
@@ -870,6 +892,15 @@ pub fn said_in_story(me: AgentId, e: &StoryEvent) -> Option<Said<'_>> {
 
 /// A span of `seconds` as the person reads it: minutes under an hour,
 /// hours and minutes under a day, days and hours from then on.
+/// Why nothing went to an agent: the team's pot is spent, what it paid
+/// of what it holds, and how to raise it.
+pub fn pot_spent(lang: Lang, w: &World) -> String {
+    fill(
+        lang.text().budget_spent,
+        &[&w.spent_words(), &dollars(w.budget)],
+    )
+}
+
 /// The terminal's title: what a tab in the background shows, `waiting`
 /// being the count of open items to decide (the header's, replies left
 /// out).
@@ -1135,7 +1166,11 @@ pub fn inbox(lang: Lang, w: &World, item: &InboxItem) -> String {
             let (cards, cost) = plan_figures(w, item.agent);
             fill(
                 t.in_plan,
-                &[name(w, item.agent), &cards.to_string(), &dollars(cost)],
+                &[
+                    name(w, item.agent),
+                    &counted(cards, t.n_cards),
+                    &dollars(cost),
+                ],
             )
         }
         (InboxKind::Change, _) => {
@@ -1148,7 +1183,7 @@ pub fn inbox(lang: Lang, w: &World, item: &InboxItem) -> String {
                 &[
                     name(w, item.agent),
                     &item.detail,
-                    &files.to_string(),
+                    &counted(files, t.n_files),
                     &added.to_string(),
                     &removed.to_string(),
                 ],
@@ -2011,8 +2046,30 @@ mod tests {
         );
         assert_eq!(
             event(Lang::Tr, &w, &ended),
-            "claude-1 turunu bitirdi, onun için evetin de bitti: 7 isteğe sormadan izin verdi"
+            "claude-1 turunu bitirdi, onun için evetin de bitti: 7 istek sormadan geçti"
         );
+        // A worker hired before the import (record 119).
+        let onto = Event::OntoLonca {
+            agent: 1,
+            repo: "shop".into(),
+        };
+        let off = Event::OffLonca {
+            agent: 1,
+            changes: 1,
+            commits: 0,
+        };
+        assert_eq!(
+            event(Lang::En, &w, &onto),
+            "claude-1 works in a workspace of Lonca repository shop now: its worktree held \
+             nothing and went"
+        );
+        assert_eq!(
+            event(Lang::En, &w, &off),
+            "claude-1 works off Lonca until its change is in: its worktree holds 1 file \
+             changed and 0 commits of its own"
+        );
+        assert!(event(Lang::Tr, &w, &off).starts_with("claude-1 değişikliği girene dek"));
+        assert!(event(Lang::Tr, &w, &onto).contains("shop"));
         assert!(event(Lang::Tr, &w, &given).starts_with("claude-1 turu bitene dek"));
     }
 

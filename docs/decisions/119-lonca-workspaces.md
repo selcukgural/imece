@@ -202,3 +202,28 @@ daemon gone: a start stops with its words, `lonca hook` blocks every tool of a
 running session (`onFailure: block`, seen: exit 2), and `store_closed` closes the
 project. A crash of imece loses nothing: the work is in the workspace and its
 proposals in the store.
+
+**Workers hired before the import (2026-11-09, the second acceptance run).** "A
+worker that has a worktree keeps it" let a project on Lonca go on working off
+it: the leader handed new cards to the workers it had hired before `:lonca
+import`, their work skipped leases, the queue and verification, and the checkout
+parted from trunk (`↓?`) while the header said the project was on Lonca. The
+smallest honest fix: such a worker moves at its next task. Before a prompt,
+`Live::onto_lonca` ends the session of a worker between turns that
+`Live::may_move` allows (a worker or solo of a project on Lonca whose store
+answers, not in a workspace, started at no branch of its own, with no change
+waiting, no helper at work in its tree, and not found holding work since its
+change was last in, `Live.off_lonca`); the session goes on in the same
+conversation (`remembered`, as `renew_seat`). At the start the thread runs
+`lonca::move_off` before `seat`: a worktree that `worktree::held` finds clean is
+removed (`worktree::remove`, never forced: git checks once more) and the
+workspace is made at the same path, so `--resume` finds its transcript; the
+journal says `Event::OntoLonca` and the worker hears `ONTO_LONCA`. A worktree that
+holds work stays (`Moved::Kept`): `Event::OffLonca` says it works off Lonca until
+its change is in, and `off_lonca` keeps prompts from ending its session for the
+move again until a change of it is applied whole or found empty. A helper never
+moves on its own (its tree is its worker's). The import window says what
+happens to workers already hired (`import_workers`, record 117). The demo
+mirrors it at the card a worker takes (`Sim::onto_lonca`). Removing a worker's
+own worktree is new here and only ever of a clean one; `:tidy` still never
+removes an owned one.

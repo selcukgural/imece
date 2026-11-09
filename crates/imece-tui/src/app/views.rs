@@ -135,6 +135,7 @@ impl App {
                     self.window = None;
                     self.typing = true;
                     self.input = format!("@{} ", self.world.agents[id].name);
+                    self.after = 0;
                     self.menu = self.suggest();
                 }
             }

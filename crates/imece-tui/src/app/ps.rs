@@ -100,9 +100,9 @@ impl App {
             return;
         }
         let t = self.lang.text();
-        let left = fill(t.ps_left_found, &[&n.to_string()]);
+        let left = fill(t.ps_left_found, &[&counted(n, t.n_processes)]);
         let tidy = (self.world.orphans.found.as_ref())
-            .map(|f| fill(t.tidy_found, &[&f.len().to_string()]));
+            .map(|f| fill(t.tidy_found, &[&counted(f.len(), t.n_worktrees)]));
         match &mut self.flash {
             Some((said, _)) if Some(&*said) == tidy.as_ref() => {
                 said.push_str(" · ");
@@ -458,7 +458,10 @@ mod tests {
         app.step();
         let tidy = fill(
             Lang::En.text().tidy_found,
-            &[&app.world.orphans.found.as_ref().unwrap().len().to_string()],
+            &[&counted(
+                app.world.orphans.found.as_ref().unwrap().len(),
+                Lang::En.text().n_worktrees,
+            )],
         );
         assert_eq!(
             said(&app),

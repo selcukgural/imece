@@ -31,7 +31,7 @@ Each project starts with its name and the time of its first column, its middle o
 | `░` | thinking: in a turn, no tool call in hand |
 | `●` | starting: its session coming up |
 | `?` | asking a teammate and waiting for the answer |
-| `⚑` | waiting for you: a tool call waiting for your yes, a question to you, or, out of a turn, something of its in TO DECIDE |
+| `⚑` | waiting for you: a tool call waiting for your yes, a question to you, or, out of a turn, something of its in TO DECIDE to decide (a reply only to read is no wait: its agent is idle) |
 | `■` | stuck: blocked, or its session stopped |
 | `✓` | the tick a turn ended |
 | `·` | idle |

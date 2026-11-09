@@ -401,6 +401,7 @@ impl App {
             Some(c) => format!("#{}", c + 1),
             None => "#".into(),
         };
+        self.after = 0;
         self.menu = self.suggest();
     }
 

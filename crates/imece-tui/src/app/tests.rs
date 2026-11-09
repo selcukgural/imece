@@ -234,7 +234,9 @@ fn where_you_left_off_is_what_the_earlier_runs_left() {
     w.inbox.clear();
     w.inbox.push(item(0, false));
     for i in 0..7 {
-        w.inbox.push(item(i % 3, true));
+        let mut asked = item(i % 3, true);
+        asked.kind = InboxKind::Question;
+        w.inbox.push(asked);
     }
     // Project 1 is closed; of project 0, one agent is gone and one card
     // done.
@@ -281,9 +283,15 @@ fn where_you_left_off_is_what_the_earlier_runs_left() {
     assert!(LeftOff::of(w, 0, Some(5)).is_none());
     assert!(LeftOff::of(w, 1, Some(5)).is_some(), "a line from before");
     w.inbox[0].open = true;
+    w.inbox[0].kind = InboxKind::Question;
     let l = LeftOff::of(w, 0, Some(5)).unwrap();
     assert_eq!((l.waiting.as_slice(), l.waiting_total), (&[0][..], 1));
     assert!(l.last.is_empty());
+    assert_eq!(l.replies, 0);
+    // A reply is to read, not to decide: counted apart.
+    w.inbox[0].kind = InboxKind::Reply;
+    let l = LeftOff::of(w, 0, Some(5)).unwrap();
+    assert_eq!((l.waiting.len(), l.waiting_total, l.replies), (0, 0, 1));
 }
 
 #[test]
@@ -725,4 +733,23 @@ pub(crate) fn asking_plan() -> (App, usize, AgentId) {
     app.pane = Pane::Inbox;
     app.inbox_sel = app.inbox_rows().iter().position(|&i| i == item).unwrap();
     (app, item, leader)
+}
+
+/// The acceptance run's words: a message refused for the pot named the
+/// leader ("lead has spent its budget"); the pot is the team's.
+#[test]
+fn a_message_refused_for_the_pot_names_the_pot_and_budget() {
+    let mut app = App::new(1, 1, 0, 1, Lang::En);
+    app.world.budget = app.world.spent();
+    let lead = app.world.agents[app.world.projects[0].leader].name.clone();
+    app.typing = true;
+    app.input = "hello".into();
+    app.submit();
+    let said = flashed(&app).unwrap();
+    assert_eq!(said, crate::ui::words::pot_spent(Lang::En, &app.world));
+    assert!(
+        said.contains("pot is spent") && said.contains(":budget"),
+        "{said}"
+    );
+    assert!(!said.contains(&lead), "{said}");
 }

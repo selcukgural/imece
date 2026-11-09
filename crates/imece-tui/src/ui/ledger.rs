@@ -152,7 +152,7 @@ pub fn window(f: &mut Frame, app: &App, at: usize) -> Rect {
     let w = &app.world;
     let listed = listed(w);
     let count: usize = listed.iter().map(|(_, r)| r.len()).sum();
-    let mut title = fill(t.ledger_title, &[&count.to_string()]);
+    let mut title = fill(t.ledger_title, &[&counted(count, t.n_attempts)]);
     if w.estimated {
         title.push_str(t.ledger_estimated);
     }

@@ -81,7 +81,8 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
                     ));
                 }
                 spans.push(Span::styled(clean(&a.name), fg(pal().agent)));
-                if c.column == Column::Working {
+                // The demo's made-up progress; a live agent has none.
+                if c.column == Column::Working && w.demo {
                     spans.push(Span::styled(format!(" {}", bar(a.progress)), fg(color)));
                 }
             }

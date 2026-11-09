@@ -263,3 +263,7 @@ board and the code map work as anywhere.
 
 **Not done:** deleting an archive, renaming one. The view is the
 archive as it was when it opened; it is not built again while open.
+
+**The banner's count (2026-11-09).** `N to decide now` counted replies; it
+counts `World::open_decisions` and says replies apart (`2 to decide, 1 reply to
+read now`). The browser's `1 agent`, `1 card done` count one as one.

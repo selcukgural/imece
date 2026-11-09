@@ -96,16 +96,53 @@ pub(super) fn approve_tool() -> Tool {
 /// (`2>&1 | tail -20`, `| head -n 5`): that only shortens what the agent
 /// reads (record 136).
 pub(crate) fn routine(role: Role, what: &Ask, programs: &[String], tests: &Runners) -> bool {
+    routine_in(role, what, programs, tests, None)
+}
+
+/// [`routine`] for an agent that works in `cwd` (canonical): `git -C
+/// <cwd> …` there is judged as `git …` ([`own_dir`]).
+pub(crate) fn routine_in(
+    role: Role,
+    what: &Ask,
+    programs: &[String],
+    tests: &Runners,
+    cwd: Option<&Path>,
+) -> bool {
     match what {
         Ask::Command { command, .. } => {
             let line = command.trim();
             let line = uncut(line).unwrap_or(line);
             // A shell runs each line as a command of its own.
             !line.contains(['\n', '\r'])
-                && run::split(line).is_ok_and(|argv| allowed(role, &argv, programs, tests).is_ok())
+                && run::split(line).is_ok_and(|argv| {
+                    let argv = cwd.map_or_else(|| argv.clone(), |cwd| own_dir(argv.clone(), cwd));
+                    allowed(role, &argv, programs, tests).is_ok()
+                })
         }
         Ask::Other { .. } => false,
     }
+}
+
+/// `git -C DIR …` as `git …` when DIR is exactly the agent's own
+/// directory `cwd` as its session has it (canonical): absolute, no `..`
+/// or `.`, not through a link (DIR is compared as written, never looked
+/// up), so the `-C` changes nothing. One `-C` only: what is left is
+/// judged as any git line, which takes no option before its command (a
+/// second `-C`, `-c`, `--git-dir`). Anything else stays as it was.
+pub(super) fn own_dir(mut argv: Vec<String>, cwd: &Path) -> Vec<String> {
+    if argv.len() > 3 && argv[0] == "git" && argv[1] == "-C" && is_own_dir(&argv[2], cwd) {
+        argv.drain(1..3);
+    }
+    argv
+}
+
+fn is_own_dir(dir: &str, cwd: &Path) -> bool {
+    let dir = dir.strip_suffix('/').unwrap_or(dir);
+    !dir.is_empty()
+        && Path::new(dir).is_absolute()
+        && !dir.split('/').any(|part| part == ".." || part == ".")
+        && !dir.contains("//")
+        && Path::new(dir) == cwd
 }
 
 /// `line` without a cut of its output at its end: `| tail`, `| head`, with
@@ -794,7 +831,14 @@ impl Live {
     /// they decide. The trace says which.
     pub(super) fn ask(&mut self, w: &mut World, from: AgentId, what: Ask, reply: Reply) {
         let tests = &w.projects[w.agents[from].project].runners;
-        if routine(w.agents[from].role, &what, &self.run_programs, tests) {
+        let cwd = self.cwd_of(w, from);
+        if routine_in(
+            w.agents[from].role,
+            &what,
+            &self.run_programs,
+            tests,
+            Some(&cwd),
+        ) {
             w.agents[from].trace(w.tick, format!("allowed on its own: {}", what.line()));
             self.reply(reply, true);
             return;
@@ -1211,6 +1255,69 @@ mod tests {
         go: false,
     };
 
+    /// `git -C` with the agent's own directory is git in it (the
+    /// acceptance run: models write it often); with any other directory,
+    /// or the same written another way, it asks as before.
+    #[test]
+    fn git_c_is_routine_only_for_the_agent_s_own_directory_as_written() {
+        let root = std::env::temp_dir().join(format!("imece-own-dir-{}", std::process::id()));
+        let own = root.join("tree");
+        let other = root.join("other");
+        std::fs::create_dir_all(&own).unwrap();
+        std::fs::create_dir_all(&other).unwrap();
+        let own = own.canonicalize().unwrap();
+        let link = root.join("link");
+        let _ = std::fs::remove_file(&link);
+        std::os::unix::fs::symlink(&own, &link).unwrap();
+        let at = |line: &str| {
+            routine_in(
+                Role::Worker,
+                &bash(line),
+                &[],
+                &NO_TESTS,
+                Some(own.as_path()),
+            )
+        };
+        let o = own.display();
+        for yes in [
+            format!("git -C {o} log --oneline -3"),
+            format!("git -C {o}/ status"),
+            format!("git -C '{o}' diff | tail -5"),
+            // Without a -C it is as ever.
+            "git log --oneline -3".to_string(),
+        ] {
+            assert!(at(&yes), "{yes}");
+        }
+        let parent = own.parent().unwrap().display();
+        for no in [
+            format!("git -C {} log", other.canonicalize().unwrap().display()),
+            format!("git -C {} log", link.display()),
+            format!("git -C {o}/../tree log"),
+            format!("git -C {parent}/./tree log"),
+            format!("git -C {o}/. log"),
+            "git -C tree log".to_string(),
+            "git -C . log".to_string(),
+            format!("git -C {o} -C {o} log"),
+            format!("git -C {o} -c core.pager=sh log"),
+            format!("git -C {o} --git-dir=/x log"),
+            // A command git only reads with, still.
+            format!("git -C {o} commit -m x"),
+            format!("git -C {o} push"),
+            format!("git -C {o}"),
+            format!("git -C{o} log"),
+        ] {
+            assert!(!at(&no), "{no}");
+        }
+        // Without its directory known nothing is taken off.
+        assert!(!routine(
+            Role::Worker,
+            &bash(&format!("git -C {o} log")),
+            &[],
+            &NO_TESTS
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     #[test]
     fn the_tests_a_project_s_files_call_for_run_as_cargo_s_and_nothing_more() {
         let extra = vec!["make".to_string()];
@@ -1443,6 +1550,28 @@ mod tests {
     }
 
     #[test]
+    fn git_c_with_the_asker_s_own_directory_goes_on_and_another_s_asks() {
+        let mut w = team(2);
+        let mut live = idle_live(3);
+        let own = live.cwd_of(&w, 1);
+        let theirs = live.cwd_of(&w, 2);
+        assert_ne!(own, theirs);
+        let mine = ask_to_run(
+            &live,
+            1,
+            &format!("git -C {} log --oneline -3", own.display()),
+        );
+        let other = ask_to_run(&live, 1, &format!("git -C {} log", theirs.display()));
+        live.step(&mut w);
+        assert_eq!(verdict(&mine)["behavior"], "allow");
+        assert!(
+            other.try_recv().is_err(),
+            "another's directory asks the person"
+        );
+        assert_eq!(w.open_inbox().len(), 1);
+    }
+
+    #[test]
     fn a_routine_ask_is_allowed_at_once_and_the_rest_wait_for_the_person_in_order() {
         let mut w = team(1);
         let mut live = idle_live(2);
@@ -1605,6 +1734,7 @@ mod tests {
                 imece_agent::copy::Brought::default(),
                 setup::Done::None,
                 None,
+                Moved::Stayed,
             )),
         );
         live
@@ -1730,6 +1860,7 @@ mod tests {
                 imece_agent::copy::Brought::default(),
                 setup::Done::None,
                 None,
+                Moved::Stayed,
             )),
         );
         let mut sleeper = std::process::Command::new("sleep")
