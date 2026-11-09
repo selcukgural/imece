@@ -7574,7 +7574,10 @@ diff --git a/b.rs b/b.rs
                 .iter()
                 .any(|l| l.ends_with("retry 1/3 after a API error"))
         );
-        for _ in 0..5 {
+        // Its answer comes two ticks on at the soonest, as a turn's does.
+        s.step(&mut w);
+        assert_eq!(w.agents[head].status, Status::Working);
+        for _ in 0..4 {
             s.step(&mut w);
         }
         assert_eq!(w.agents[head].status, Status::Idle, "and it answered");
