@@ -35,6 +35,7 @@ imece --demo --lang tr                             # ya da IMECE_LANG=tr
 - İlk bayrak `--version` (ya da `-V`) ise stdout'a `imece 0.1.0` yazar ve 0 çıkış koduyla biter; kurulum betiği yerine koyduğu dosyayı böyle denetler.
 - `--live` kabul edilir ve yok sayılır: canlı ajanlar varsayılan olmadan önce onlar bu bayrakla istenirdi.
 - `imece mcp-relay SOCKET` sizin için değildir: Claude Code imece'yi bu biçimde kendi MCP sunucusu olarak başlatır ve süreç yalnızca CLI ile imece'nin o ajana ait soketi arasında bayt taşır ([mesaj türleri](message-types.md)).
+- `imece stand-in ARGS…` de sizin için değildir: imece'nin kendi testleri için Claude Code'u oynar. PATH'te `imece stand-in "$@"` çağıran bir `claude` betiği onu çalıştırınca imece'nin `claude`a verdiği bayrakları alır (`0.0.0 (imece stand-in)` basan `--version`'ı ve giriş yapılmış olduğunu söyleyen `auth status --json`'ı da), imece'nin veri yoluyla Claude Code'un MCP istemcisi gibi konuşur ve aynı olayları akıtır: bir lider bir işçi alır ve ona son paragrafınızı görev olarak verir, bir işçi `stand-in/<ad>.md` yazar ve `done` gönderir, her tur uydurma bir sente. Hiçbir modele sorulmaz, hiçbir şey harcanmaz. imece'nin uçtan uca testi gerçek takımı bunun üstünde çalıştırır.
 
 ## Çıkış kodları
 

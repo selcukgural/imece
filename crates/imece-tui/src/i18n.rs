@@ -3946,7 +3946,10 @@ pub const TR: Text = Text {
         ("tab ↑ ↓ ^r", "yazarken: tamamla · gönderilenler · :history"),
         ("^a ^e ⌥b ⌥f", "yazarken: başa / sona, kelime geri / ileri"),
         ("^w ^u ^k ^y", "yazarken: kelime/öncesi/sonrası kes; koy"),
-        ("#N #kelime", "başlıkla bir kart; n p: önceki / sonraki"),
+        (
+            "#N #kelime n p",
+            "bir kartın ayrıntısı; n p: sonraki / önceki kart",
+        ),
         ("&  :goto", "agent'a/projeye git; 1-9 n'inci; ! bekleyen"),
         ("↑ ↓  j k", "seç"),
         (
@@ -3980,10 +3983,13 @@ pub const TR: Text = Text {
         ("c y  C Y", "kopyala: mesaj · konuşma"),
         ("v  w b  s", "satır, kelime (w b) seç; s buradan başlar"),
         ("m '  :mark", "eldeki satırı işaretle · ' sonraki işaret"),
-        (",  .  <  >  J", "yan paneli genişlet / daralt · J :story"),
+        (
+            "J  :journal",
+            "günlük bir pencerede; orada J hikâyeyi anlatır",
+        ),
         (
             "a A e r :allow",
-            "onayla (A hep, e bu tur) · geri gönder, reddet; odakta da",
+            "onayla (A hep, e bu tur) · geri gönder, reddet",
         ),
         (
             "[  ]",

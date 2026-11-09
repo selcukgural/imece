@@ -23,36 +23,33 @@ imece `~/code/cli` içinde başlatıldı; projesi dizinin adını aldı, `cli`, 
 
 `:open YOL [AD]`, YOL'daki git çalışma kopyasını açar; AD, dizinin güvenli kılınmış adıdır (1-24 harf, rakam, `.`, `_`, `-`). Yeni projenin lideri `lead-AD`dır; aynı model ve kademelerle. `:open ` yazarken dizinleri tamamlar (gizli olanlar bir `.`ten sonra, `~` çalışır). `:` menüsü `:open`ı `$` ile işaretler: yeni bir lider, ilk yazdığınızda para tutan yeni bir oturumdur. Çalışma kopyası olmayan bir yol, alınmış bir ad ya da zaten açık bir çalışma kopyası nedeniyle reddedilir (`api zaten açık, adı api`). `:o` kısaltmasıdır.
 
-Ekip artık ajanları projeye göre gruplar, her birinin bir başlık satırı vardır; birden fazla proje varken gelen kutusu ve günlük satırları projenin adını taşır:
+Başlık açık projeleri adlandırır. Ana ekranın ÇALIŞAN kısmı satırlarını projeye göre, her biri bir başlık altında gruplar; birden fazla proje açıkken bir satır projesinin adını taşır. Listede kimsesi olmayan projenin başlığı olmaz: yapacak işi olmayan bir liderin satırı yoktur, bu yüzden `api` ve `web`, liderleri çalışana dek yalnızca üst başlıkta görünür:
 
 ```text
- ▾ cli                        1 çalışıyor  $2.10
-   ● lead       koordine ediyor                                   $0.40
-   ● claude-1   #2   docs: man sayfası    docs/imece.1 yazıyor      $1.70
- ▾ api                        0 çalışıyor  $0.00
-   ○ lead-api   boşta
- ▾ web                        0 çalışıyor  $0.00
-   ○ lead-web   boşta
+ imece  cli · api · web │ $2.10 / $50.00  15:00
+ ÇALIŞAN 1
+▸▾ cli           ▓▓▓▓░░░░ 1/2  1 çalışıyor  $2.10  ~/code/cli
+ ● cli         #2   docs: man sayfası         docs/imece.1 yazıyor · 4 dk
 ```
 
-`/` seçili projenin liderine yazar; önce `api` içinde bir satır seçin (`j k`), sonra `/`. `@lead-web mesaj` her yerden tek bir lidere yazar.
+`/` eldeki projenin liderine yazar: ana ekranı `]` ile `api`ye daraltın (4. adım) ya da satırlarından birini seçin, sonra `/`. `@lead-web mesaj` her yerden tek bir lidere yazar.
 
 ## 2. Katlayın ve açın
 
-`web` başlığını seçin ve `h`ye basın (ya da `←`, ya da başlıkta `enter`). Proje tek satıra katlanır; `l` açar. `za` değiştirir, `zM` her projeyi ve işçiyi katlar, `zR` hepsini açar (`:fold`, `:unfold`). Katlı bir proje sessizdir, sağır değil: satırı sizi bekleyenleri saymayı sürdürür.
+Sonra `lead-web` bir işçi alır ve `web`in kendi başlığı olur. `web`in bir satırı eldeyken (başlığı ya da ajanlarından biri) `h`ye basın (ya da `←`). Proje başlığına katlanır; `l` açar. `za` değiştirir, `zM` her projeyi katlar, `zR` hepsini açar (`:fold`, `:unfold`). Başlıkta `enter` ise liderin ayrıntısını açar. Katlı bir proje sessizdir, sağır değil: başlığı sizi bekleyenleri saymayı sürdürür, karar bekleyenler de yukarıda KARAR BEKLEYEN'de kalır.
 
 ```text
- ▸ web                        1 çalışıyor  $0.80  ! 1 bekliyor
+ ▸ web            ! 1 bekliyor   1 çalışıyor  $0.80
 ```
 
-Ekip herkese dar gelince sakin işçiler alttan yukarı `… N agent yolunda` içine katlanır; sizi bekleyen işçiler (onayınızı bekleyen, takılan, bitmiş ama bakılmamış) projelerinde öne sıralanır, bu yüzden en son katlanırlar.
+Başlıkta `s`, projenin tamamını sizi bekleyene dek ÇALIŞAN'dan gizler (`:unsettle` geri getirir); ÇALIŞAN başlığı gizlenenleri sayar.
 
 ## 3. İçinde yaşadığınızı sabitleyin
 
-`:pin api` yazın ve `enter`a basın: `api ekibin en üstüne sabitlendi`. Başlığı `▴` taşır ve açılma sırası ne olsa önde kalır; en son da katlanır. `:pin` tek başına eldeki projeyi sabitler; `:pin` yine bırakır (`api artık sabit değil`). Sabitleme kayıt dosyasında çalışmalar arasında saklanır ve kapatılan bir proje yeniden açılınca sabitini korur.
+`:pin api` yazın ve `enter`a basın: `api ekibin en üstüne sabitlendi`. Proje başlığı `▴` taşır ve açılma sırası ne olsa önde kalır; en son da katlanır. `:pin` tek başına eldeki projeyi sabitler; `:pin` yine bırakır (`api artık sabit değil`). Sabitleme kayıt dosyasında çalışmalar arasında saklanır ve kapatılan bir proje yeniden açılınca sabitini korur.
 
 ```text
- ▾ ▴ api                      2 çalışıyor  $3.10
+ ▾ ▴ api         2 çalışıyor  $3.10
 ```
 
 Proje başına renk henüz yapılmadı.
@@ -104,7 +101,7 @@ Ajanlarının oturumları ve çalıştırmaları biter, postaları, teklifleri v
 
 ## 9. Hepsi için tek bütçe
 
-Başlıkta bütün projeler için tek bütçe satırı vardır: `$5.90 / $50.00 harcandı ($8.20/sa, ~5 sa 20 dk kaldı)`. `:budget 80` hepsi için artırır; her projenin başlık satırı kendi ajanlarının harcadığını gösterir. Bütçe (kese) bitmeye yakınken günlük bir kez, ilk açık projenin liderinin altında söyler:
+Başlıkta bütün projeler için tek bütçe vardır: `$5.90 / $50.00`. Şimdiki hızla yarım saatten az kalınca dikkat rengine döner ve ne kadar yeteceğini ekler (`~25 dk kaldı`); hızın kendisi `:` menüsünde `:budget` notundadır (`$5.90 / $50.00 · $8.20/sa, ~5 sa 20 dk kaldı`). `:budget 80` hepsi için artırır; ana ekranda her projenin başlığı kendi ajanlarının harcadığını gösterir. Bütçe (kese) bitmeye yakınken günlük bir kez, ilk açık projenin liderinin altında söyler:
 
 ```text
  15:40 ! $8.20/sa hızla bütçe yaklaşık 25 dk daha yeter; :budget USD ile artır
@@ -116,6 +113,6 @@ Bütçe bitince hiçbir projede kimse bir tur daha almaz. Kayıt dosyasını ayn
 
 - [Projeler](../concepts/projects.md)
 - [Bütçe ve sınırlar](../concepts/budget-and-limits.md)
-- [Ekip](../screen/salon.md): katlama, sıra, filo
+- [Ana ekran](../screen/home.md): KARAR BEKLEYEN, ÇALIŞAN, katlama, gizleme
 - [Komutlar](../reference/commands.md)
 - [Dosyalar](../reference/files.md): worktree'ler ve kayıt dosyası nerede

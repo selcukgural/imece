@@ -63,6 +63,7 @@ const sidebars = {
         'scenarios/next-morning',
         'scenarios/new-epic',
         'scenarios/own-shell-and-commit',
+        'scenarios/when-a-card-goes-wrong',
       ],
     },
     {

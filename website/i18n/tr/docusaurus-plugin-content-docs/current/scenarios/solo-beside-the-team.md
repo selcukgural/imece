@@ -23,18 +23,19 @@ Sözcükler herhangi bir sırada gelebilir; imece onları biçimlerinden ayırı
  notes solo oturum olarak açıldı (/Users/me/code/kule); solo-notes adına yaz (claude opus@xhigh)
 ```
 
-Ekip takımın yanında tek ajanlı yeni bir grup gösterir ve o seçilidir:
+Ana ekranın ÇALIŞAN kısmı takımın yanında tek ajanlı yeni bir proje gösterir ve o seçilidir:
 
 ```text
- ▾ kule
-   ● lead             eşgüdüm                                   $0.42
-   ● claude-1         #3 limiter: config v2     src/limit.rs düzenliyor
-   ○ claude-2         #4 limiter tests          boşta
- ▾ notes
-   ○ solo-notes       opus@xhigh                boşta
+ ÇALIŞAN 4 · boşta 2
+ ▾ kule          ░░░░░░░░ 0/2  2 çalışıyor  $0.42  ~/code/kule
+ ● kule        #3   limiter: config v2        src/limit.rs düzenliyor · 2 dk
+ ○ kule        #4   limiter tests             boşta
+ ● kule             lead                      koordine ediyor
+ ▾ notes         0 çalışıyor  $0.00  ~/code/kule
+▸○ notes            solo-notes                boşta
 ```
 
-Solonun satırı seçimini söyler. Simge durumudur, her satırda olduğu gibi: solo çalışır, eşgüdüm yapmaz. Henüz hiçbir şey para etmiyor: her ajan gibi, siz yazana dek süreci yoktur.
+Solonun kartı yoktur, bu yüzden satırı adını taşır; seçimi flaşta ve `:` menüsünde `:model` ile `:effort` notlarındadır. Simge durumudur, her satırda olduğu gibi: solo çalışır, eşgüdüm yapmaz. Henüz hiçbir şey para etmiyor: her ajan gibi, siz yazana dek süreci yoktur.
 
 ## 2. Ne yapacağını söyle
 
@@ -47,17 +48,20 @@ Solonun satırı seçimini söyler. Simge durumudur, her satırda olduğu gibi: 
 İlk turu başlar. Önce imece `solo-notes`a `~/.local/state/imece/worktrees/` altında, projenin kimliğinden `solo-3` adlı, HEAD'inizde detached bir `kule` worktree'si açar. Solo, `--confine standard` altında bir işçinin aldığını alır: Claude Code'un okuma ve düzenleme araçları, kabuğu (soracak olan size `⚑` olarak gelir), web ve imece'nin `run` aracı. Satırı ne yaptığını gösterir:
 
 ```text
-   ● solo-notes       opus@xhigh                src/limit.rs okuyor           $0.31
+ ● notes            solo-notes                src/limit.rs okuyor · 1 dk
 ```
 
 ## 3. Yanıt ve onunla gelen Δ
 
-Tur bir yanıtla biter. Her ajanın yanıtı gibi günlüğe ve SİZİ BEKLEYENLER'e gider ve bu bir solo olduğu için imece aynı anda worktree'sini okur:
+Tur bir yanıtla biter. Her ajanın yanıtı gibi günlüğe ve KARAR BEKLEYEN'e gider ve bu bir solo olduğu için imece aynı anda worktree'sini okur:
 
 ```text
- SİZİ BEKLEYENLER
- ↩ solo-notes yanıtladı: docs/limits.md'yi src/limit.rs'den yazdım: iki pencere, anahtar başına…
- Δ solo-notes: docs/limits.md'yi src/limit.rs'den yazdım   bu ağaçta çalıştırma yok
+ KARAR BEKLEYEN 1 soru · 1 değişiklik
+ sorular
+▸! notes            solo-notes                yanıtladı: docs/limits.md'yi src/limit.rs'den
+                                              yazdım: iki pencere, anahtar başına…
+ değişiklikler
+ ! notes            docs/limits.md'yi src/l…  hiçbir şey koşmadı · 1 dosya +48 −0
 ```
 
 Solo için kimse `done` göndermez. Bir yanıtla biten her tur, yanıtın ilk satırıyla adlandırılmış olarak worktree'sinin tuttuğunu size gösterir. `Δ` üzerinde `enter` diff'i açar; `a` checkout'unuza uygular, `r` reddeder ve gerekçeleriniz için `@solo-notes ` açar, `c` ve `n` satırlara not gönderir, `x` parça seçer ([değişiklikler](../concepts/changes.md)). Dosyaya dokunmadan bir soruyu yanıtlayan bir tur aynı ağacı yeniden okur: `Δ` kalır, adı yenilenir.
@@ -81,17 +85,18 @@ Başka bir soru, başka bir model. Bu kez bir yol ve ad yok:
 `~/code/kule` bir yoldur (içinde `/` var), seçim `sonnet`i `high` çabasında adlandırır ve ad varsayılan olarak dizininkidir: `kule` takımda olduğundan proje `kule-2`, ajanı `solo-kule-2` olur:
 
 ```text
- ▾ kule
-   ○ lead             boşta
-   ○ claude-1         #3 limiter: config v2     boşta
-   ○ claude-2         #4 limiter tests          boşta
- ▾ notes
-   ○ solo-notes       opus@xhigh                boşta                         $0.58
- ▾ kule-2
-   ○ solo-kule-2      sonnet@high               boşta
+ imece  kule · notes · kule-2 │ $4.10 / $50.00  16:20
+ ÇALIŞAN 4 · boşta 4
+ ▾ kule          ░░░░░░░░ 0/2  0 çalışıyor  $3.52  ~/code/kule
+ ○ kule        #3   limiter: config v2        boşta
+ ○ kule        #4   limiter tests             boşta
+ ▾ notes         0 çalışıyor  $0.58  ~/code/kule
+ ○ notes            solo-notes                boşta
+ ▾ kule-2        0 çalışıyor  $0.00  ~/code/kule
+▸○ kule-2           solo-kule-2               boşta
 ```
 
-Bir checkout'ta üç grup: bir takım ve iki solo, her biri kendi worktree'sinde, checkout'unuza hiçbiri dokunmuyor. Hepsini tek bütçe öder; başlığın `$/h`'si onları birlikte sayar. Aynı checkout'ta ikinci bir *takım* reddedilir (`that checkout is open already, as kule`): checkout başına bir takım, istendiği kadar solo.
+Bir checkout'ta üç grup: bir takım ve iki solo, her biri kendi worktree'sinde, checkout'unuza hiçbiri dokunmuyor. Hepsini tek bütçe öder; başlıktaki bütçe ve `:budget` notundaki hız onları birlikte sayar. Aynı checkout'ta ikinci bir *takım* reddedilir (`that checkout is open already, as kule`): checkout başına bir takım, istendiği kadar solo.
 
 Çıplak bir `:solo` tahmin etmez, sorar: bir ekran modelleri, sonra çabaları listeler; `j k` ve `enter` seçer, `esc` bir adım geri gider. Çalışan bir solo da yeniden ayarlanır: `:effort max`, `solo-notes`u sonraki turundan itibaren `max`ta düşündürür (flaş: `solo-notes sonraki turundan itibaren claude opus@max üzerinde; oturumu onunla yeniden başlar`), `:model sonnet` kalan küçük düzeltmeler için onu daha ucuz bir modele taşır; oturum aynı transkript üzerinde yeniden başlar, konuşmadan hiçbir şey yitmez.
 

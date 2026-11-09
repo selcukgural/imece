@@ -12,26 +12,28 @@ A change (`Δ`) has more answers than apply or reject. You can note its lines an
 ## 1. A change of three files
 
 ```text
- TO DECIDE (1)
- Δ 15:02 claude-2 finished: token bucket in src/limit.rs, wired in lib.rs, tests (3 files, +45 −6) · no run on this tree
-   enter see the diff · a approve · r send back
+ TO DECIDE 1 change
+ changes
+▸! #4   token bucket in src/li…  nothing ran · 3 files +45 −6   a  approve   r  send back
 ```
 
-`no run on this tree` says the worker ran nothing through imece's `run` tool on exactly this tree; whether it builds is not known. Press `W` (from anywhere) or `enter` on the item:
+`nothing ran` says the worker ran nothing through imece's `run` tool on exactly this tree; whether it builds is not known, so the change is not counted as ready to approve. Press `W` (from anywhere) or `enter` on the row:
 
 ```text
- CHANGE · claude-2 · 3 files +45 −6 · token bucket in src/limit.rs, wired in lib.rs, tests
- no imece run on exactly this change: whether it builds and passes its tests is not known
+#4 rate limiter · shop · claude-2 · $0.62 · 3 files +45 −6
+diff · talk · log                                                     tab switches
+! look first · nothing ran · 3 files
+ cost · $0.62 · 18 min
  source +27 −6 (2) · tests +18 −0 (1)
  src/limit.rs +22 −6
  src/lib.rs +5 −0
  tests/limit.rs +18 −0
- diff --git a/src/limit.rs b/src/limit.rs
- @@ -1,6 +1,12 @@
- …
+src/limit.rs
+@@ -1,6 +1,12 @@
+…
 ```
 
-Above the patch: the runs (none here), then, because the files are of more than one kind, a line with the lines per kind, then the file list. Kinds are told by the path alone: `tests/`, `test_*` and test suffixes are tests; lock files, `.min.js`, `generated/`, `dist/`, `vendor/` are generated; the rest is source. A change of one kind shows no kinds line; a change of one file shows no file list. Six files are listed at most, the rest counted (`… 2 more files`). `[` `]` jump from file to file in the patch.
+The head line names the card the change came on, its project, worker, cost and size. The first line under the tabs is the verdict: `! look first` and why. Above the patch: what the change cost, then, because the files are of more than one kind, a line with the lines per kind, then the file list. Kinds are told by the path alone: `tests/`, `test_*` and test suffixes are tests; lock files, `.min.js`, `generated/`, `dist/`, `vendor/` are generated; the rest is source. A change of one kind shows no kinds line; a change of one file shows no file list. Six files are listed at most, the rest counted (`… 2 more files`). `[` `]` jump from file to file in the patch.
 
 ## 2. Notes on two lines
 
@@ -69,7 +71,7 @@ The change goes back the way `r` sends it back: the journal says `sent back: cla
 
 ## 4. The worker answers
 
-The worker reads the notes at its next turn and works. Its messages on the bus are numbered, and a reply names what it answers. It asks the leader about the refill period and the leader answers; its next `done` replies to the assign that gave it the card. Open their conversation with `enter` on one of its lines in the journal (`v` on a row opens that agent's conversation with you):
+The worker reads the notes at its next turn and works. Its messages on the bus are numbered, and a reply names what it answers. It asks the leader about the refill period and the leader answers; its next `done` replies to the assign that gave it the card. Open their conversation with `tab` on the change's detail (its talk tab), or `enter` on one of its lines in the journal window (`J`); `v` on a row opens that agent's conversation with you:
 
 ```text
  CONVERSATION · lead ⇄ claude-2 · 6/6
@@ -84,7 +86,7 @@ The worker reads the notes at its next turn and works. Its messages on the bus a
 `↩` after the type marks a reply; the dim line under it is the first line of what it answers. `%` goes from a reply to the message it answers and from a message to its first reply; `[` `]` go from turn to turn. The `done` makes the next `Δ`:
 
 ```text
- Δ 15:31 claude-2 finished: Instant-based bucket; refill test added (3 files, +51 −9) · ✓ ran clean on this tree: cargo test
+ ! #4   Instant-based bucket; …  ✓ cargo test · 3 files +51 −9
 ```
 
 ## 5. Choose two hunks with `x`
@@ -112,7 +114,7 @@ Press `a`. On imece's git thread the chosen hunks become a change of their own (
 The worktree is committed at the mark with only that part, files left as they were. What the worktree holds against that new HEAD is read again at once and waits as a change under the same title:
 
 ```text
- Δ 15:33 claude-2 finished: Instant-based bucket; refill test added (2 files, +30 −3) · no run on this tree
+ ! #4   Instant-based bucket; …  nothing ran · 2 files +30 −3
 ```
 
 The worker hears at its next prompt: "The person applied part of your change (Instant-based bucket; refill test added) to their checkout: 2 of its hunks. Your worktree is committed at 7c0e4b2 with only that part; your files are as you left them, and the rest is not committed and waits for the person as a change again." A part that does not fit is refused like a change that does not apply, and the change still waits. Lines inside a hunk cannot be chosen; the hunk is the unit.

@@ -44,7 +44,7 @@ Before anything moves, one window says where you left off:
  WHERE YOU LEFT OFF · 14 h 20 min ago
  $12.40 of $50.00 spent; every agent sleeps until spoken to
  parser: 4 agents, 2 open cards
- 1 wait for you:
+ 1 to decide:
    Δ 18:40 claude-4 finished: config loader (2 files, +30 −4)
  turns cut short when imece closed: claude-1, claude-3
  the last lines before:
@@ -56,7 +56,7 @@ Before anything moves, one window says where you left off:
 
 The pot is where it was: `--budget` unset keeps it, `--budget 80` would set it. Any key closes the window and does nothing else. It opens only when there is something to tell; the demo never has one.
 
-The journal has a line for each cut turn, and the team shows everyone asleep:
+The journal has a line for each cut turn, and Home's AT WORK shows everyone asleep:
 
 ```text
  09:00 ■ claude-1's turn was cut short when imece closed; it hears of it when it wakes
@@ -64,9 +64,8 @@ The journal has a line for each cut turn, and the team shows everyone asleep:
 ```
 
 ```text
-   ◦ claude-1   #3   parser: nested lists   ◦ asleep since the last run, write to it to wake it
-   ◦ claude-3   #5   config: defaults       ◦ asleep since the last run, write to it to wake it
-   ◦ claude-4   #4   config loader          ◦ asleep since the last run, write to it to wake it
+ ○ #3   parser: nested lists      ◦ asleep since the last run, write to it to wake it
+ ○ #5   config: defaults          ◦ asleep since the last run, write to it to wake it
 ```
 
 Asleep means no process and no cost. Three things wake an agent: you write to it, a teammate's message of a waking type arrives, or a card posted in this run is offered to it. Mail and cards that waited through the restart wake nobody. A journal line older than today carries a `─ YYYY-MM-DD` row above it, and so does an item in TO DECIDE of another day.
@@ -117,7 +116,7 @@ Switch to another window for a while. When the terminal gets the focus back afte
 ```text
  WHILE YOU WERE AWAY · last 12 min
   ✓ 0 cards merged
-  ! 1 decisions wait for you
+  ! 1 to decide
   ■ 0 blocks
   ⚑ 1 assumptions made
   ⇄ 4 conversations
@@ -131,7 +130,7 @@ The counts are the new journal lines by kind and what waits for you now; under t
 The digest tells you when you are back; `:notify` fetches you. `:notify bell` rings the terminal's bell, `:notify text` sends a desktop notification, when something came to wait for you while you were in another window and is still there five seconds later: a change, a question, an ask for your yes, an agent stuck, each once. What was on screen when you left stays quiet, and so does whatever came and went within the wait.
 
 ```text
- imece · claude-3 finished: a change waits for you
+ imece · claude-3 finished: change ready
 ```
 
 Several at once are one bell, or one note with the count. `:notify` bare goes round: off, bell, text, off; the choice is remembered. It needs the same focus reports as the digest, and a terminal that shows notifications for the text (iTerm2, WezTerm, Ghostty, kitty; elsewhere `bell`). In kitty a click on the note opens what it was about.
@@ -140,7 +139,7 @@ Away from the machine altogether, `:notify push` sends the same words, with the 
 
 ## 6. Keep a place with marks
 
-In the journal (or an open conversation) select a line you will want again, the message with the plan say, and press `m`: `marked: ' comes back to it`. The line wears `✱` after its clock. `'` selects the next marked line, round to the first: in the open conversation, else in the journal; from anywhere else it goes to the team's journal first. `m` again takes the mark away (`mark taken away`).
+In the journal window (`J`, or an open conversation) select a line you will want again, the message with the plan say, and press `m`: `marked: ' comes back to it`. The line wears `✱` after its clock. `'` selects the next marked line, round to the first: in the open conversation, else in the journal; from anywhere else it opens the journal window at that line. `m` again takes the mark away (`mark taken away`).
 
 ```text
  09:41✱ ⇄ lead → claude-3 [assign]: #5 config: defaults, src/config.rs
