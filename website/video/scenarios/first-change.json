@@ -1,0 +1,201 @@
+{
+  "title": "imece — your first change",
+  "language": "en",
+  "baseUrl": "http://127.0.0.1:8792",
+  "viewport": {
+    "width": 1920,
+    "height": 1080,
+    "deviceScaleFactor": 2
+  },
+  "output": {
+    "width": 1920,
+    "height": 1080,
+    "fps": 30
+  },
+  "colorScheme": "dark",
+  "voice": {
+    "provider": "google",
+    "name": "Charon",
+    "model": "gemini-2.5-pro-tts",
+    "prompt": "Read in a calm, warm and clear product-tour voice, at a natural pace.",
+    "rate": 1.0
+  },
+  "music": {
+    "generate": "ambient",
+    "volume": 0.12
+  },
+  "pronounce": {
+    "imece": "imeje",
+    "imece's": "imeje's",
+    "worktree": "work-tree"
+  },
+  "scenes": [
+    {
+      "id": "opening",
+      "chapter": "imece",
+      "minSeconds": 4.5,
+      "steps": [
+        {
+          "action": "goto",
+          "path": "/video/card.html?t=Your%20first%20change&s=One%20task%2C%20from%20imece%20to%20a%20commit"
+        },
+        {
+          "action": "hover",
+          "target": "#corner"
+        },
+        {
+          "action": "wait",
+          "seconds": 1
+        }
+      ]
+    },
+    {
+      "id": "load",
+      "minSeconds": 1.5,
+      "steps": [
+        {
+          "action": "goto",
+          "path": "/video/cast.html?cast=casts/first-change.cast"
+        },
+        {
+          "action": "hover",
+          "target": "#corner"
+        },
+        {
+          "action": "wait",
+          "seconds": 1.2
+        }
+      ]
+    },
+    {
+      "id": "intro",
+      "narration": "This is shelf, a small Python project. Start imece in its checkout.",
+      "leadIn": 0.3,
+      "tail": 0.4,
+      "minSeconds": 7.2,
+      "steps": [
+        {
+          "action": "press",
+          "key": "ArrowDown"
+        }
+      ],
+      "chapter": "Start"
+    },
+    {
+      "id": "start",
+      "narration": "The first time, a welcome window says Claude Code is signed in, and lists the keys to start with. Escape closes it.",
+      "leadIn": 0.3,
+      "tail": 0.4,
+      "minSeconds": 18.3,
+      "steps": [
+        {
+          "action": "press",
+          "key": "ArrowDown"
+        }
+      ]
+    },
+    {
+      "id": "task",
+      "narration": "Press slash, and tell the leader what you want, in your own words. Enter sends it.",
+      "leadIn": 0.3,
+      "tail": 0.4,
+      "minSeconds": 17.5,
+      "steps": [
+        {
+          "action": "press",
+          "key": "ArrowDown"
+        }
+      ],
+      "chapter": "Ask the leader"
+    },
+    {
+      "id": "worker",
+      "narration": "The leader reads the code, and hires a worker for the task.",
+      "leadIn": 0.3,
+      "tail": 0.4,
+      "minSeconds": 8.7,
+      "steps": [
+        {
+          "action": "press",
+          "key": "ArrowDown"
+        }
+      ]
+    },
+    {
+      "id": "change",
+      "narration": "When the worker is done, its change waits for you. The first line is the verdict: the tests ran on exactly this change, and every file is inside its card. Enter reads the diff. Tab shows its talk and its log.",
+      "leadIn": 0.3,
+      "tail": 0.4,
+      "minSeconds": 25.1,
+      "steps": [
+        {
+          "action": "press",
+          "key": "ArrowDown"
+        }
+      ],
+      "chapter": "Read the change"
+    },
+    {
+      "id": "approve",
+      "narration": "A approves. The change lands staged in your checkout. Nothing is committed for you.",
+      "leadIn": 0.3,
+      "tail": 0.4,
+      "minSeconds": 11.8,
+      "steps": [
+        {
+          "action": "press",
+          "key": "ArrowDown"
+        }
+      ],
+      "chapter": "Approve"
+    },
+    {
+      "id": "commit",
+      "narration": "Colon commit asks a cheap model for a message. Enter runs git commit, in your own shell.",
+      "leadIn": 0.3,
+      "tail": 0.4,
+      "minSeconds": 20.7,
+      "steps": [
+        {
+          "action": "press",
+          "key": "ArrowDown"
+        }
+      ],
+      "chapter": "Commit"
+    },
+    {
+      "id": "quit",
+      "narration": "Q quits. The agents sleep, and the next start goes on where you left off.",
+      "leadIn": 0.3,
+      "tail": 0.4,
+      "minSeconds": 10.6,
+      "steps": [
+        {
+          "action": "press",
+          "key": "ArrowDown"
+        }
+      ],
+      "chapter": "Quit"
+    },
+    {
+      "id": "closing",
+      "chapter": "Install",
+      "narration": "Install imece with one line, and start it in any git checkout.",
+      "tail": 1.5,
+      "steps": [
+        {
+          "action": "goto",
+          "path": "/video/card.html?t=imece&s=curl%20-fsSL%20selcukgural.github.io%2Fimece%2Finstall.sh%20%7C%20sh&l=github.com%2Fselcukgural%2Fimece"
+        },
+        {
+          "action": "hover",
+          "target": "#corner"
+        },
+        {
+          "action": "wait",
+          "seconds": 2
+        }
+      ]
+    }
+  ]
+}

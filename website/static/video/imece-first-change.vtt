@@ -1,0 +1,86 @@
+WEBVTT
+
+1
+00:00:08.672 --> 00:00:11.949
+This is shelf, a small Python project.
+
+2
+00:00:11.949 --> 00:00:14.363
+Start imece in its checkout.
+
+3
+00:00:15.873 --> 00:00:22.180
+The first time, a welcome window says Claude Code is signed in, and lists the keys
+
+4
+00:00:22.180 --> 00:00:23.257
+to start with.
+
+5
+00:00:23.257 --> 00:00:24.564
+Escape closes it.
+
+6
+00:00:34.174 --> 00:00:38.909
+Press slash, and tell the leader what you want, in your own words.
+
+7
+00:00:38.909 --> 00:00:39.985
+Enter sends it.
+
+8
+00:00:51.674 --> 00:00:56.045
+The leader reads the code, and hires a worker for the task.
+
+9
+00:01:00.372 --> 00:01:04.542
+When the worker is done, its change waits for you.
+
+10
+00:01:04.542 --> 00:01:11.463
+The first line is the verdict: the tests ran on exactly this change, and every file
+
+11
+00:01:11.463 --> 00:01:13.047
+is inside its card.
+
+12
+00:01:13.047 --> 00:01:14.799
+Enter reads the diff.
+
+13
+00:01:14.799 --> 00:01:17.384
+Tab shows its talk and its log.
+
+14
+00:01:25.473 --> 00:01:26.333
+A approves.
+
+15
+00:01:26.333 --> 00:01:29.538
+The change lands staged in your checkout.
+
+16
+00:01:29.538 --> 00:01:31.805
+Nothing is committed for you.
+
+17
+00:01:37.275 --> 00:01:41.341
+Colon commit asks a cheap model for a message.
+
+18
+00:01:41.341 --> 00:01:44.966
+Enter runs git commit, in your own shell.
+
+19
+00:01:57.976 --> 00:01:58.631
+Q quits.
+
+20
+00:01:58.631 --> 00:02:03.867
+The agents sleep, and the next start goes on where you left off.
+
+21
+00:02:08.676 --> 00:02:14.127
+Install imece with one line, and start it in any git checkout.
+

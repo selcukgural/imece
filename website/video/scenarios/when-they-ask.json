@@ -1,0 +1,213 @@
+{
+  "title": "imece — when they ask you",
+  "language": "en",
+  "baseUrl": "http://127.0.0.1:8792",
+  "viewport": {
+    "width": 1920,
+    "height": 1080,
+    "deviceScaleFactor": 2
+  },
+  "output": {
+    "width": 1920,
+    "height": 1080,
+    "fps": 30
+  },
+  "colorScheme": "dark",
+  "voice": {
+    "provider": "google",
+    "name": "Charon",
+    "model": "gemini-2.5-pro-tts",
+    "prompt": "Read in a calm, warm and clear product-tour voice, at a natural pace.",
+    "rate": 1.0
+  },
+  "music": {
+    "generate": "ambient",
+    "volume": 0.12
+  },
+  "pronounce": {
+    "imece": "imeje",
+    "imece's": "imeje's",
+    "worktree": "work-tree"
+  },
+  "scenes": [
+    {
+      "id": "opening",
+      "chapter": "imece",
+      "minSeconds": 4.5,
+      "steps": [
+        {
+          "action": "goto",
+          "path": "/video/card.html?t=When%20they%20ask%20you&s=Questions%2C%20permissions%20and%20notes%2C%20all%20by%20keys"
+        },
+        {
+          "action": "hover",
+          "target": "#corner"
+        },
+        {
+          "action": "wait",
+          "seconds": 1
+        }
+      ]
+    },
+    {
+      "id": "load",
+      "minSeconds": 1.5,
+      "steps": [
+        {
+          "action": "goto",
+          "path": "/video/cast.html?cast=casts/when-they-ask.cast"
+        },
+        {
+          "action": "hover",
+          "target": "#corner"
+        },
+        {
+          "action": "wait",
+          "seconds": 1.2
+        }
+      ]
+    },
+    {
+      "id": "intro",
+      "narration": "Agents ask you things. Here is how you answer, without leaving the keyboard.",
+      "leadIn": 0.3,
+      "tail": 0.4,
+      "minSeconds": 13.2,
+      "steps": [
+        {
+          "action": "press",
+          "key": "ArrowDown"
+        }
+      ],
+      "chapter": "Answering"
+    },
+    {
+      "id": "task",
+      "narration": "Ask for a small feature, and tell the leader to check with you first.",
+      "leadIn": 0.3,
+      "tail": 0.4,
+      "minSeconds": 24.3,
+      "steps": [
+        {
+          "action": "press",
+          "key": "ArrowDown"
+        }
+      ]
+    },
+    {
+      "id": "question",
+      "narration": "The leader asks, with its choices as options. A digit answers with one of them; slash would let you write your own.",
+      "leadIn": 0.3,
+      "tail": 0.4,
+      "minSeconds": 17.4,
+      "steps": [
+        {
+          "action": "press",
+          "key": "ArrowDown"
+        }
+      ],
+      "chapter": "A question"
+    },
+    {
+      "id": "ask",
+      "narration": "A worker builds it, and its change waits for you, before anything ran.",
+      "leadIn": 0.3,
+      "tail": 0.4,
+      "minSeconds": 20.5,
+      "steps": [
+        {
+          "action": "press",
+          "key": "ArrowDown"
+        }
+      ]
+    },
+    {
+      "id": "notes",
+      "narration": "Read the change. C puts a note on the line at hand; enter keeps it. N sends every note back to the worker, each under its file and line.",
+      "leadIn": 0.3,
+      "tail": 0.4,
+      "minSeconds": 24.8,
+      "steps": [
+        {
+          "action": "press",
+          "key": "ArrowDown"
+        }
+      ],
+      "chapter": "Notes on a change"
+    },
+    {
+      "id": "permission",
+      "narration": "Now the worker wants to run a command that is not a test, so it asks you. A allows this command from now on, for the whole project; e would allow everything until its turn ends. If the item changed under you, imece asks you to read it first, and you press again.",
+      "leadIn": 0.3,
+      "tail": 0.4,
+      "minSeconds": 28.0,
+      "steps": [
+        {
+          "action": "press",
+          "key": "ArrowDown"
+        }
+      ],
+      "chapter": "A permission"
+    },
+    {
+      "id": "output",
+      "narration": "The worker ran the command on a scratch file, and proposed its change again.",
+      "leadIn": 0.3,
+      "tail": 0.4,
+      "minSeconds": 14.9,
+      "steps": [
+        {
+          "action": "press",
+          "key": "ArrowDown"
+        }
+      ]
+    },
+    {
+      "id": "approve",
+      "narration": "A approves. Lonca runs the tests, then merges it.",
+      "leadIn": 0.3,
+      "tail": 0.4,
+      "minSeconds": 8.9,
+      "steps": [
+        {
+          "action": "press",
+          "key": "ArrowDown"
+        }
+      ],
+      "chapter": "Approve"
+    },
+    {
+      "id": "quit",
+      "narration": "Every answer is a key: a, r, e, A, a digit, or a note.",
+      "leadIn": 0.3,
+      "tail": 0.4,
+      "minSeconds": 4.8,
+      "steps": [
+        {
+          "action": "press",
+          "key": "ArrowDown"
+        }
+      ]
+    },
+    {
+      "id": "closing",
+      "chapter": "Learn more",
+      "narration": "The cheat sheet on the site has every key on one page.",
+      "tail": 1.5,
+      "steps": [
+        {
+          "action": "goto",
+          "path": "/video/card.html?t=imece&s=selcukgural.github.io%2Fimece&l=Cheat%20sheet%20%C2%B7%20Guide%20%C2%B7%20Videos"
+        },
+        {
+          "action": "hover",
+          "target": "#corner"
+        },
+        {
+          "action": "wait",
+          "seconds": 2
+        }
+      ]
+    }
+  ]
+}

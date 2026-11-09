@@ -102,8 +102,11 @@ writes to the store itself (the daemon is the only writer). It does not depend o
   commands reference for a `:` command, the scenario that shows it).
   `website/check.sh` fails the build when a page lacks its Turkish copy, or
   when a `:` command or a `?` help key is missing from the reference pages.
-  The tour videos (`website/video/`, English only) are re-rendered when what
-  they show changes; `website/video/README.md` says how.
+  The tour videos (`website/video/`, English only; the Turkish page shows
+  them too) are recorded from real sessions, never the demo (user,
+  2026-11-09): real agents on a small repository, keys shown as badges,
+  narration written against the recording. A tour is recorded again when
+  what it shows changes; `website/video/README.md` says how.
 
 ## Decision records
 

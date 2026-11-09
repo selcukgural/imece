@@ -1,124 +1,91 @@
 ---
 title: Video turları
 sidebar_label: Video turları
-description: imece'nin gerçek ekranından, simülasyon üzerinde kaydedilmiş dört kısa tur; bölümleri ve altyazısıyla.
+description: imece'nin üç kısa turu; her biri gerçek ajanlarla gerçek bir oturumdan kaydedildi, basılan tuşlar ekranda, bölümleri ve altyazısıyla.
 ---
 
 import useBaseUrl from '@docusaurus/useBaseUrl';
 
 # Video turları
 
-imece'nin gerçek ekranından, [simülasyon](getting-started/demo.md) çalışırken
-kaydedilmiş dört kısa tur; gördüğünüz ekranların aynısını, düzenli bir tempoda
-gösterirler. Videolar İngilizcedir; altyazı oynatıcıdan açılabilir ve her
-bölüm, onu anlatan sayfaya bağlanır.
+Üç kısa tur; her biri **gerçek** bir imece oturumundan kaydedildi: küçük bir
+Python projesinde çalışan gerçek Claude Code ajanları, gerçek testler,
+gerçek bir Lonca daemon'u. Hiçbir şey taklit edilmedi; anlatım ekranda olanı
+söyler. Basılan her tuş, ne yaptığıyla birlikte terminalin altında görünür;
+beklemeler hızlandırılır (köşede ne kadar hızlandığı yazar). Videolar
+İngilizcedir; altyazı oynatıcıdan açılabilir ve her bölüm, onu anlatan
+sayfaya bağlanır. Sırayla izlendiğinde imece'yi kurmaktan çalışan bir
+ekibe kadar götürür; her tuş tek sayfada [kopya kâğıdında](cheat-sheet.md).
 
-## 1 · imece nedir
+## 1 · İlk değişikliğin
 
-Ana ekran: karar bekleyenler, sonra çalışan ekip; bir ajanın ayrıntısı ve ham
-akışı; hükmüyle açılıp uygulanan bir değişiklik; bütçe; pencere olarak pano,
-kod haritası ve zaman çizelgesi; lidere bir satır; çıkış sorusu.
-
-<video
-  controls
-  preload="metadata"
-  playsInline
-  poster={useBaseUrl('/video/imece-tour.jpg')}
-  style={{ width: '100%', borderRadius: '12px', background: '#000' }}>
-  <source src={useBaseUrl('/video/imece-tour.mp4')} type="video/mp4" />
-  <track kind="captions" srcLang="en" label="English" src={useBaseUrl('/video/imece-tour.vtt')} default />
-</video>
-
-| Bölüm | Nerede okunur |
-| --- | --- |
-| Ana ekran: KARAR BEKLEYEN, sonra ÇALIŞAN | [Ana ekran](screen/home.md) |
-| Bir ajanın ayrıntısı ve ham akışı | [Sohbetler ve iz](screen/conversations.md) |
-| KARAR BEKLEYEN: bir izin, bir soru, bir değişiklik | [KARAR BEKLEYEN](screen/waiting.md) |
-| Bir değişiklik: hükmü, diff'i, uygulanması | [Değişiklikler](concepts/changes.md) |
-| Bütçe ve kullanım sınırları | [Bütçe ve sınırlar](concepts/budget-and-limits.md) |
-| Pano, kod haritası ve zaman çizelgesi | [Pano ve kod haritası](screen/board-and-code-map.md) |
-| Çıkış: tur ortasında olanlar, incelenmemiş olanlar | [Tuşlar](screen/keyboard.md) |
-
-## 2 · Bir değişikliği incelemek
-
-Birkaç dosyalık bir değişiklik: dosya listesi ve türe göre satırlar, satırlara
-yazılıp tek mesajla geri gönderilen notlar, bir soruda alıntılanan bir parça,
-yarısı uygulanıp gerisi bekletilen bir değişiklik, gerekçeli bir ret.
+Bir checkout'ta `imece`, karşılama, lidere tek bir iş, onun için işe alınan
+bir işçi, hükmü en üstte duran değişikliği, diff, `a` ile onay (değişiklik
+staged olarak iner), `:commit` ile bir mesaj ve çıkış.
 
 <video
   controls
   preload="metadata"
   playsInline
-  poster={useBaseUrl('/video/imece-review.jpg')}
+  poster={useBaseUrl('/video/imece-first-change.jpg')}
   style={{ width: '100%', borderRadius: '12px', background: '#000' }}>
-  <source src={useBaseUrl('/video/imece-review.mp4')} type="video/mp4" />
-  <track kind="captions" srcLang="en" label="English" src={useBaseUrl('/video/imece-review.vtt')} default />
+  <source src={useBaseUrl('/video/imece-first-change.mp4')} type="video/mp4" />
+  <track kind="captions" srcLang="en" label="English" src={useBaseUrl('/video/imece-first-change.vtt')} default />
 </video>
 
-| Bölüm | Nerede okunur |
+| Bölüm | Daha fazlası |
 | --- | --- |
-| Diff görünümü, dosyadan dosyaya, sarılan satırlar | [Diff görünümü](screen/changes.md) |
-| Satırlara notlar, tek mesajla gönderilir | [Değişiklikler](concepts/changes.md) |
-| Parça seçmek, yalnızca onları uygulamak | [Değişiklikler](concepts/changes.md) |
-| Bir parçayı işçisine alıntılamak | [Diff görünümü](screen/changes.md) |
-| Bir komuta izin vermek ya da reddetmek (⚑) | [Onaylar ve sorular](concepts/approvals-and-questions.md) |
-| Senaryo, adım adım | [Bir değişikliği geri göndermek, sonra yarısını almak](scenarios/review-with-notes.md) |
+| Start | [İlk çalıştırma](getting-started/first-run.md) |
+| Ask the leader | [Komut satırı](screen/command-line.md) |
+| Read the change | [Değişiklikler](concepts/changes.md) |
+| Approve | [Değişiklik ekranı](screen/changes.md) |
+| Commit | [Kendi kabuğunuz ve bir commit](scenarios/own-shell-and-commit.md) |
+| Quit | [Oturumlar](concepts/sessions.md) |
 
-## 3 · Ekiple konuşmak
+## 2 · Lonca üzerinde bir ekip
 
-Lidere ve tek bir işçiye yazmak, bir yanıt ve yanıtladığı soru, bir kartın
-ekranı, değerleriyle `:` menüsü, yazılırken önizlenen bir tema, Türkçe ekran,
-yardım penceresi ve süzgeci.
+Ertesi gün: proje Lonca'ya geçer, bir ekip için daha büyük bir iş, liderin
+okunup onaylanan planı, aynı anda Lonca çalışma alanlarında iki işçi, hangi
+dosyayı ve fonksiyonu kimin tuttuğunu gösteren `:code`, her onaydan sonra
+bir şey inmeden testleri koşan Lonca, günlük ve `:sync`.
 
 <video
   controls
   preload="metadata"
   playsInline
-  poster={useBaseUrl('/video/imece-team.jpg')}
+  poster={useBaseUrl('/video/imece-team-on-lonca.jpg')}
   style={{ width: '100%', borderRadius: '12px', background: '#000' }}>
-  <source src={useBaseUrl('/video/imece-team.mp4')} type="video/mp4" />
-  <track kind="captions" srcLang="en" label="English" src={useBaseUrl('/video/imece-team.vtt')} default />
+  <source src={useBaseUrl('/video/imece-team-on-lonca.mp4')} type="video/mp4" />
+  <track kind="captions" srcLang="en" label="English" src={useBaseUrl('/video/imece-team-on-lonca.vtt')} default />
 </video>
 
-| Bölüm | Nerede okunur |
+| Bölüm | Daha fazlası |
 | --- | --- |
-| Lidere, tek bir ajana yazmak, bir Claude Code komutu | [Komut satırı](screen/command-line.md) |
-| Bir sohbet, turları, bir yanıt ve sorusu | [Sohbetler](screen/conversations.md) |
-| Bir kartın ekranı | [Kartlar](screen/cards.md) |
-| `:` komutları ve değerleri | [`:` komutları](reference/commands.md) |
-| Temalar ve dil | [Temalar ve dil](screen/themes-and-language.md) |
-| Yardım penceresi | [Tuşlar](screen/keyboard.md) |
+| On Lonca | [Projeler](concepts/projects.md) |
+| A team task, the plan | [Ekip](concepts/team.md) |
+| Who edits what | [Pano ve kod haritası](screen/board-and-code-map.md) |
+| Verified, then merged | [Değişiklikler](concepts/changes.md) |
+| Sync | [Komutlar](reference/commands.md) |
 
-## 4 · Yolunu bulmak
+## 3 · Sana sorduklarında
 
-Atlama satırı, yapılacaklar listesiyle bir ajanın ayrıntısı, ana ekranın üstünde bir
-göz atma, gizlenen bir satır, bir konuşmanın seçilip
-kopyalanan satırları, bir işaret; arşivlenen, salt okunur açılan ve geri
-getirilen bir proje.
+Lider seçenekleriyle bir soru sorar, bir rakamla cevaplanır; bir
+değişikliğin satırlarına düşülen notlar tek mesajda geri gider; bir işçi bir
+komutu çalıştırmak için izin ister, `A` ile bundan sonrası için verilir.
 
 <video
   controls
   preload="metadata"
   playsInline
-  poster={useBaseUrl('/video/imece-find.jpg')}
+  poster={useBaseUrl('/video/imece-when-they-ask.jpg')}
   style={{ width: '100%', borderRadius: '12px', background: '#000' }}>
-  <source src={useBaseUrl('/video/imece-find.mp4')} type="video/mp4" />
-  <track kind="captions" srcLang="en" label="English" src={useBaseUrl('/video/imece-find.vtt')} default />
+  <source src={useBaseUrl('/video/imece-when-they-ask.mp4')} type="video/mp4" />
+  <track kind="captions" srcLang="en" label="English" src={useBaseUrl('/video/imece-when-they-ask.vtt')} default />
 </video>
 
-| Bölüm | Nerede okunur |
+| Bölüm | Daha fazlası |
 | --- | --- |
-| Atlama satırı (`&`) | [Tuşlar](screen/keyboard.md) |
-| Bir ajanın ayrıntısı: bağlam, hareket, yapılacaklar | [Ana ekran](screen/home.md) |
-| Göz atma (`K`), satır gizlemek (`s`), `gd` `gc` `gw` | [Ana ekran](screen/home.md) |
-| Satır seçip kopyalamak, işaretler | [Konuşmalar](screen/conversations.md) |
-| `:archive`, arşivler (`A`), birini geri getirmek | [Oturumlar ve kalıcılık](concepts/sessions.md) |
-
-:::note
-
-Turlar `imece --demo` üzerinde çalışır: ajanlar sahtedir, bu yüzden videolar
-hiçbir şeye mal olmaz ve her seferinde aynı şeyi gösterir. Canlı ajanlar,
-[senaryoların](scenarios/index.md) anlattığı gibi gerçek oturumlar ve gerçek
-bir bütçeyle davranır.
-
-:::
+| A question | [Onaylar ve sorular](concepts/approvals-and-questions.md) |
+| Notes on a change | [Senaryo: notlarla inceleme](scenarios/review-with-notes.md) |
+| A permission | [Onaylar ve sorular](concepts/approvals-and-questions.md) |
+| Approve | [TO DECIDE](screen/waiting.md) |

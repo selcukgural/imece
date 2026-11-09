@@ -1,0 +1,221 @@
+{
+ "cast": "team-on-lonca.raw.cast",
+ "speed": [
+  [
+   0,
+   2.226,
+   0
+  ],
+  [
+   34.183,
+   46.738,
+   0
+  ],
+  [
+   65.318,
+   85.339,
+   5
+  ],
+  [
+   107.024,
+   136.086,
+   7
+  ],
+  [
+   172.531,
+   180.684,
+   2
+  ],
+  [
+   185.862,
+   194.02,
+   2
+  ]
+ ],
+ "markers": [
+  [
+   2.226,
+   "intro"
+  ],
+  [
+   5.323,
+   "start"
+  ],
+  [
+   24.65,
+   "import"
+  ],
+  [
+   48.295,
+   "task"
+  ],
+  [
+   85.369,
+   "plan"
+  ],
+  [
+   104.939,
+   "yes"
+  ],
+  [
+   136.114,
+   "working"
+  ],
+  [
+   145.045,
+   "map"
+  ],
+  [
+   170.4,
+   "approve"
+  ],
+  [
+   202.022,
+   "journal"
+  ],
+  [
+   209.185,
+   "sync"
+  ],
+  [
+   238.13,
+   "quit"
+  ],
+  [
+   242.282,
+   "end"
+  ]
+ ],
+ "keys": [
+  [
+   21.026,
+   "esc",
+   "close where you left off"
+  ],
+  [
+   22.589,
+   "r",
+   "dismiss the old reply"
+  ],
+  [
+   24.678,
+   ":",
+   "a command to imece"
+  ],
+  [
+   26.025,
+   "enter",
+   "put the project on Lonca"
+  ],
+  [
+   33.124,
+   "a",
+   "import"
+  ],
+  [
+   48.321,
+   "/",
+   "write to the leader"
+  ],
+  [
+   62.271,
+   "enter",
+   "send it"
+  ],
+  [
+   88.414,
+   "W",
+   "the next thing to decide"
+  ],
+  [
+   89.471,
+   "enter",
+   "read the plan"
+  ],
+  [
+   100.324,
+   "j k",
+   "scroll the plan"
+  ],
+  [
+   104.966,
+   "a",
+   "yes: the leader may hire"
+  ],
+  [
+   145.073,
+   ":",
+   "a command to imece"
+  ],
+  [
+   145.818,
+   "enter",
+   "who edits what"
+  ],
+  [
+   159.84,
+   "esc",
+   "close"
+  ],
+  [
+   170.429,
+   "g c",
+   "the first change"
+  ],
+  [
+   172.496,
+   "a",
+   "approve: Lonca runs the tests, then merges"
+  ],
+  [
+   183.752,
+   "g c",
+   "the second change"
+  ],
+  [
+   185.83,
+   "a",
+   "approve: it merges onto the new trunk"
+  ],
+  [
+   202.05,
+   "J",
+   "the journal"
+  ],
+  [
+   208.125,
+   "esc",
+   "close"
+  ],
+  [
+   209.216,
+   ":",
+   "a command to imece"
+  ],
+  [
+   209.956,
+   "enter",
+   "bring trunk into your checkout"
+  ],
+  [
+   216.027,
+   "!",
+   "a command in your own shell"
+  ],
+  [
+   217.734,
+   "enter",
+   "run it"
+  ],
+  [
+   238.156,
+   "q",
+   "quit"
+  ],
+  [
+   239.218,
+   "q",
+   "quit"
+  ]
+ ]
+}

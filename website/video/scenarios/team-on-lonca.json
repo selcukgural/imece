@@ -1,0 +1,254 @@
+{
+  "title": "imece — a team, on Lonca",
+  "language": "en",
+  "baseUrl": "http://127.0.0.1:8792",
+  "viewport": {
+    "width": 1920,
+    "height": 1080,
+    "deviceScaleFactor": 2
+  },
+  "output": {
+    "width": 1920,
+    "height": 1080,
+    "fps": 30
+  },
+  "colorScheme": "dark",
+  "voice": {
+    "provider": "google",
+    "name": "Charon",
+    "model": "gemini-2.5-pro-tts",
+    "prompt": "Read in a calm, warm and clear product-tour voice, at a natural pace.",
+    "rate": 1.0
+  },
+  "music": {
+    "generate": "ambient",
+    "volume": 0.12
+  },
+  "pronounce": {
+    "imece": "imeje",
+    "imece's": "imeje's",
+    "worktree": "work-tree"
+  },
+  "scenes": [
+    {
+      "id": "opening",
+      "chapter": "imece",
+      "minSeconds": 4.5,
+      "steps": [
+        {
+          "action": "goto",
+          "path": "/video/card.html?t=A%20team%2C%20on%20Lonca&s=Plan%2C%20parallel%20workers%2C%20leases%2C%20verified%20merges"
+        },
+        {
+          "action": "hover",
+          "target": "#corner"
+        },
+        {
+          "action": "wait",
+          "seconds": 1
+        }
+      ]
+    },
+    {
+      "id": "load",
+      "minSeconds": 1.5,
+      "steps": [
+        {
+          "action": "goto",
+          "path": "/video/cast.html?cast=casts/team-on-lonca.cast"
+        },
+        {
+          "action": "hover",
+          "target": "#corner"
+        },
+        {
+          "action": "wait",
+          "seconds": 1.2
+        }
+      ]
+    },
+    {
+      "id": "intro",
+      "narration": "The next day, back in shelf.",
+      "leadIn": 0.3,
+      "tail": 0.4,
+      "minSeconds": 3.7,
+      "steps": [
+        {
+          "action": "press",
+          "key": "ArrowDown"
+        }
+      ],
+      "chapter": "Next day"
+    },
+    {
+      "id": "start",
+      "narration": "imece opens where you left off. The old reply can go: r dismisses it.",
+      "leadIn": 0.3,
+      "tail": 0.4,
+      "minSeconds": 19.9,
+      "steps": [
+        {
+          "action": "press",
+          "key": "ArrowDown"
+        }
+      ]
+    },
+    {
+      "id": "import",
+      "narration": "Colon lonca import puts the project on Lonca. From now on, workers work in Lonca workspaces, and Lonca keeps them from editing the same code.",
+      "leadIn": 0.3,
+      "tail": 0.4,
+      "minSeconds": 11.7,
+      "steps": [
+        {
+          "action": "press",
+          "key": "ArrowDown"
+        }
+      ],
+      "chapter": "On Lonca"
+    },
+    {
+      "id": "task",
+      "narration": "Now a bigger task, for a team: lending, split so that two workers can work at once.",
+      "leadIn": 0.3,
+      "tail": 0.4,
+      "minSeconds": 21.7,
+      "steps": [
+        {
+          "action": "press",
+          "key": "ArrowDown"
+        }
+      ],
+      "chapter": "A team task"
+    },
+    {
+      "id": "plan",
+      "narration": "Before a second worker, the leader shows you its plan: the cards, which files each one owns, and what it should cost. W opens it, enter reads it.",
+      "leadIn": 0.3,
+      "tail": 0.4,
+      "minSeconds": 20.2,
+      "steps": [
+        {
+          "action": "press",
+          "key": "ArrowDown"
+        }
+      ],
+      "chapter": "The plan"
+    },
+    {
+      "id": "yes",
+      "narration": "A says yes.",
+      "leadIn": 0.3,
+      "tail": 0.4,
+      "minSeconds": 6.9,
+      "steps": [
+        {
+          "action": "press",
+          "key": "ArrowDown"
+        }
+      ]
+    },
+    {
+      "id": "working",
+      "narration": "Two workers start, each in a workspace of its own.",
+      "leadIn": 0.3,
+      "tail": 0.4,
+      "minSeconds": 9.5,
+      "steps": [
+        {
+          "action": "press",
+          "key": "ArrowDown"
+        }
+      ]
+    },
+    {
+      "id": "map",
+      "narration": "Colon code shows who edits what. Each worker holds a lease on the files and functions it changes, so nobody else touches them meanwhile.",
+      "leadIn": 0.3,
+      "tail": 0.4,
+      "minSeconds": 26.0,
+      "steps": [
+        {
+          "action": "press",
+          "key": "ArrowDown"
+        }
+      ],
+      "chapter": "Who edits what"
+    },
+    {
+      "id": "approve",
+      "narration": "Both changes wait for you. After your yes, Lonca runs the tests on the merged result, and only then does the change land on trunk. The second one was based on the old trunk: Lonca merges it after your yes.",
+      "leadIn": 0.3,
+      "tail": 0.4,
+      "minSeconds": 24.1,
+      "steps": [
+        {
+          "action": "press",
+          "key": "ArrowDown"
+        }
+      ],
+      "chapter": "Verified, then merged"
+    },
+    {
+      "id": "journal",
+      "narration": "The journal tells the story, card by card.",
+      "leadIn": 0.3,
+      "tail": 0.4,
+      "minSeconds": 7.8,
+      "steps": [
+        {
+          "action": "press",
+          "key": "ArrowDown"
+        }
+      ]
+    },
+    {
+      "id": "sync",
+      "narration": "Colon sync brings trunk into your checkout. Bang runs a command in your own shell: all twenty-six tests pass.",
+      "leadIn": 0.3,
+      "tail": 0.4,
+      "minSeconds": 29.5,
+      "steps": [
+        {
+          "action": "press",
+          "key": "ArrowDown"
+        }
+      ],
+      "chapter": "Sync"
+    },
+    {
+      "id": "quit",
+      "narration": "That is a team, on Lonca.",
+      "leadIn": 0.3,
+      "tail": 0.4,
+      "minSeconds": 4.8,
+      "steps": [
+        {
+          "action": "press",
+          "key": "ArrowDown"
+        }
+      ]
+    },
+    {
+      "id": "closing",
+      "chapter": "Learn more",
+      "narration": "The guide has every key and command, and a one-page cheat sheet.",
+      "tail": 1.5,
+      "steps": [
+        {
+          "action": "goto",
+          "path": "/video/card.html?t=imece&s=selcukgural.github.io%2Fimece&l=Cheat%20sheet%20%C2%B7%20Guide%20%C2%B7%20Videos"
+        },
+        {
+          "action": "hover",
+          "target": "#corner"
+        },
+        {
+          "action": "wait",
+          "seconds": 2
+        }
+      ]
+    }
+  ]
+}

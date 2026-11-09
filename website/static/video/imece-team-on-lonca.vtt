@@ -1,0 +1,98 @@
+WEBVTT
+
+1
+00:00:08.639 --> 00:00:11.131
+The next day, back in shelf.
+
+2
+00:00:12.339 --> 00:00:15.299
+imece opens where you left off.
+
+3
+00:00:15.299 --> 00:00:18.831
+The old reply can go: r dismisses it.
+
+4
+00:00:32.242 --> 00:00:36.286
+Colon lonca import puts the project on Lonca.
+
+5
+00:00:36.286 --> 00:00:43.835
+From now on, workers work in Lonca workspaces, and Lonca keeps them from editing the
+
+6
+00:00:43.835 --> 00:00:44.733
+same code.
+
+7
+00:00:45.435 --> 00:00:51.646
+Now a bigger task, for a team: lending, split so that two workers can work at once.
+
+8
+00:01:07.137 --> 00:01:14.277
+Before a second worker, the leader shows you its plan: the cards, which files each
+
+9
+00:01:14.277 --> 00:01:17.237
+one owns, and what it should cost.
+
+10
+00:01:17.237 --> 00:01:19.588
+W opens it, enter reads it.
+
+11
+00:01:27.338 --> 00:01:28.909
+A says yes.
+
+12
+00:01:34.239 --> 00:01:38.450
+Two workers start, each in a workspace of its own.
+
+13
+00:01:43.741 --> 00:01:46.046
+Colon code shows who edits what.
+
+14
+00:01:46.046 --> 00:01:51.736
+Each worker holds a lease on the files and functions it changes, so nobody else
+
+15
+00:01:51.736 --> 00:01:53.392
+touches them meanwhile.
+
+16
+00:02:09.743 --> 00:02:11.886
+Both changes wait for you.
+
+17
+00:02:11.886 --> 00:02:18.563
+After your yes, Lonca runs the tests on the merged result, and only then does the
+
+18
+00:02:18.563 --> 00:02:20.294
+change land on trunk.
+
+19
+00:02:20.294 --> 00:02:26.394
+The second one was based on the old trunk: Lonca merges it after your yes.
+
+20
+00:02:33.845 --> 00:02:37.696
+The journal tells the story, card by card.
+
+21
+00:02:41.647 --> 00:02:44.869
+Colon sync brings trunk into your checkout.
+
+22
+00:02:44.869 --> 00:02:49.738
+Bang runs a command in your own shell: all twenty-six tests pass.
+
+23
+00:03:11.148 --> 00:03:13.439
+That is a team, on Lonca.
+
+24
+00:03:16.049 --> 00:03:20.781
+The guide has every key and command, and a one-page cheat sheet.
+
