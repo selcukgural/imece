@@ -318,9 +318,11 @@ impl Server {
             return Err("the server is not running".into());
         };
         let line = json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params });
+        // A server that ended may be seen so here (a broken pipe) or at the
+        // read below: the same either way.
         writeln!(to, "{line}")
             .and_then(|()| to.flush())
-            .map_err(|e| format!("the server is gone: {e}"))?;
+            .map_err(|_| "the server is gone".to_string())?;
         let mut buf = String::new();
         loop {
             buf.clear();
