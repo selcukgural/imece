@@ -6471,6 +6471,27 @@ diff --git a/b.rs b/b.rs
     }
 
     #[test]
+    fn a_busy_tick_s_cost_splits_into_its_model_and_the_background_one() {
+        let (mut w, mut s) = world(1, 1, 1, 1, Lang::En);
+        let worker = workers_of(&w, 0)[0];
+        w.agents[worker].status = Status::Working;
+        let before = w.agents[worker].cost;
+        s.step(&mut w);
+        let spent = w.agents[worker].cost - before;
+        assert_eq!(spent, 8, "a busy tick costs eight ten-thousandths");
+        let row = (w.ledger.iter())
+            .rfind(|r| r.agent == worker)
+            .expect("its row");
+        let model = w.agents[worker].meter.model.clone();
+        // An eighth of the tick in the background model, the rest in its
+        // own: the parts add up to what it spent, nothing unsplit.
+        assert_eq!(row.models.get(DEMO_BACKGROUND), Some(&1));
+        assert_eq!(row.models.get(&model), Some(&7));
+        assert_eq!(row.models.values().sum::<u64>(), row.cost);
+        assert_eq!(row.unsplit(), 0);
+    }
+
+    #[test]
     fn a_stopped_worker_resumes_in_its_session_when_told() {
         let (mut w, mut s, worker, card) = one_at_work();
         s.stop(&mut w, worker);
