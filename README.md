@@ -25,6 +25,7 @@ curl -fsSL https://selcukgural.github.io/imece/install.sh | sh   # ~/.local/bin
 
 ```sh
 brew tap selcukgural/imece                                       # Homebrew
+brew trust --formula selcukgural/imece/imece                     # Homebrew 7 asks this of every tap that is not its own
 brew install imece
 ```
 
