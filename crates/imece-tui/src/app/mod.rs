@@ -39,6 +39,7 @@ mod frames;
 mod grace;
 mod home;
 mod jump;
+mod ledger;
 mod line;
 mod lonca;
 mod notices;
@@ -109,7 +110,7 @@ pub struct Viewed {
 const VIEW_COMMANDS: &[&str] = &[
     "goto", "history", "export", "salon", "board", "code", "timeline", "lang", "theme", "help",
     "quit", "next", "defer", "waiting", "fold", "unfold", "trace", "peek", "news", "settle",
-    "unsettle", "talk", "why", "story", "journal",
+    "unsettle", "talk", "why", "story", "journal", "ledger",
 ];
 
 /// Whether a line sent is one `↑` and `^r` bring back: a message, a
@@ -922,6 +923,9 @@ pub struct App {
     /// The project at hand's Lonca repository in a window over the screen
     /// (bare `:lonca`, record 125): what waits for a human, what is held.
     pub lonca_win: Option<LoncaWin>,
+    /// The cost ledger in a window over the screen (`:ledger`, record
+    /// 133): the row at hand among `ui::ledger::rows`.
+    pub ledger_win: Option<usize>,
     /// The board, the code map or the timeline in a window over the
     /// screen (`:board` `:code` `:timeline`, record 125).
     pub window: Option<Window>,
@@ -1256,6 +1260,7 @@ impl App {
             ps_looked: None,
             ps_start: false,
             lonca_win: None,
+            ledger_win: None,
             window: None,
             board_ready: false,
             importing: None,

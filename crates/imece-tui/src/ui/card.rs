@@ -65,6 +65,19 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, c: CardId) {
         spans.extend(line.spans);
         head.push(Line::from(spans).style(line.style));
     }
+    // Its attempts and what each cost (record 133), oldest first.
+    let tries: Vec<&crate::ledger::Attempt> =
+        (w.ledger.iter()).filter(|r| r.card == Some(c)).collect();
+    if !tries.is_empty() {
+        head.push(Line::raw(""));
+        head.push(Line::from(Span::styled(
+            t.card_attempts,
+            bold(pal().strong),
+        )));
+        for r in tries {
+            head.push(Line::from(super::ledger::row_spans(app.lang, w, r)));
+        }
+    }
     head.push(Line::raw(""));
     head.push(Line::from(Span::styled(t.card_story, bold(pal().strong))));
 

@@ -17,7 +17,7 @@ use crate::model::ImportAsk;
 use crate::welcome::{self, Seen};
 use imece_agent::Login;
 
-fn centered(area: Rect, width: u16, height: u16) -> Rect {
+pub(crate) fn centered(area: Rect, width: u16, height: u16) -> Rect {
     let width = width.min(area.width);
     let height = height.min(area.height);
     Rect {

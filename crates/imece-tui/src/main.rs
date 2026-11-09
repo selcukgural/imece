@@ -15,6 +15,7 @@ mod health;
 mod i18n;
 mod input;
 mod keys;
+mod ledger;
 mod live;
 mod model;
 mod motion;

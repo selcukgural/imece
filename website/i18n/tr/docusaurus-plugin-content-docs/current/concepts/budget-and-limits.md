@@ -1,6 +1,6 @@
 ---
 title: Bütçe ve limitler
-description: "Bütün ekibin harcadığı tek bütçe, nasıl belirlenir ve değiştirilir, başlık yakma hızı hakkında ne der, Claude Code'un kullanım pencereleri, : menüsünde neye para gider, :commit ve :review'un tavanları."
+description: "Bütün ekibin harcadığı tek bütçe, nasıl belirlenir ve değiştirilir, başlık yakma hızı hakkında ne der, Claude Code'un kullanım pencereleri, : menüsünde neye para gider, :commit ve :review'un tavanları, her kart denemesinin maliyeti (:ledger)."
 ---
 
 # Bütçe ve limitler
@@ -86,13 +86,34 @@ Hiçbir `:` komutu kendi başına ücretli bir tur başlatmaz; `:budget` işaret
 
 Bütçe takımın ne harcadığını söyler; her değişiklik tek başına neye mal olduğunu söyler ([değişiklikler](changes.md#maliyeti)): işçinin, yardımcıları dahil, son değişikliğinden sonraki ilk isteminden `done`'una harcadığı, çalıştığı süreyle ve geri gönderilip yeniden gönderilen bir değişiklik için turlarıyla: `$0.84 · 12 dk`, `$1.20 · 25 dk · 3 tur`. `Δ` satırında, diff'in üstünde, günlükte ve liderin aldığı `done`'da (`[done 12 · $0.84]`) durur; böylece lider katmanlarının neye mal olduğunu öğrenir. Bütçenin saydığı harcamanın aynısıdır, değişikliğe göre bölünmüş; hiçbir şey iki kez ödenmez.
 
+## Harcamalar
+
+Bütçe takımın ne harcadığını, bir değişiklik neye mal olduğunu söyler; `:ledger` bir karta yapılan her **denemenin** neye mal olduğunu ve ne olduğunu söyler, böylece neyin uygulandığını ve neyin boşa harcandığını görürsünüz.
+
+```text
+┌HARCAMALAR · 4 deneme · API karşılığı──────────────────────────────────────────────────────┐
+│shop-api  uygulanan ≈$1.30 · boşa ≈$0.91+? · süren ≈$0.22 · lider ≈$0.48                   │
+│▶ #4 deneme 1  claude-2  claude-sonnet-5-5  1 Δ  ≈$0.22  6 dk  sürüyor  2026-11-09 · 2.1.4 │
+│  #3 deneme 2  claude-1  claude-opus-5-5  2 Δ · 1 geri döndü  ≈$1.30  31 dk  uygulandı  …  │
+│  #3 deneme 1  claude-3  claude-sonnet-5-5  0 Δ  ≈$0.84  12 dk  devredildi  …              │
+│  #2 deneme 1  claude-2  claude-sonnet-5-5  0 Δ  ≈$0.07+?  2 dk  başarısız  …              │
+│ j k  gez   enter  kartı aç   esc  geri                                                    │
+└───────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+- **Bir satır bir denemedir**: bir işçinin bir karta denemesi (yeniden verilen bir kart bir deneme daha demektir); işçisi, Claude Code'un oturumunun çalıştığını söylediği model, önünüze koyduğu değişiklikler (`Δ`) ve kaçının geri döndüğü (sizin ya da Lonca'nın geri göndermesiyle), neye mal olduğu (yardımcılarınınki dahil), ne kadar sürdüğü, nasıl bittiği, en son harcadığı gün ve o zamanki Claude Code sürümüyle. Bir işçinin kartsız işi (bir solo, doğrudan yazdığınız bir işçi), bir değişikliği uygulanana dek bir `kartsız` satırıdır.
+- **Nasıl bittiği**: `sürüyor` (ya da değişikliği bekliyor), `uygulandı` (Lonca'da gövdede), `bitti, değişiklik yok`, `başarısız` (işçisi öyle dedi, ya da bir deneme daha istemediniz), `geri çekildi`, `devredildi` (bu deneme çalışırken kart başka bir denemeye gitti), `geç done` (devredildi, işçisi yine de `done` gönderdi). Bir işçinin kartı başarısız olduktan, geri çekildikten ya da devredildikten sonra harcadığı o denemeye sayılır: boşa harcanmıştır.
+- **Bir projenin satırı** satırlarını nasıl bittiklerine göre toplar: `uygulanan` (uygulandı, bitti), `boşa` (başarısız, geri çekildi, devredildi, geç), `süren`, ve liderin kendi harcaması ayrı, çünkü liderin turları hiçbir kartın değildir. Bir işçinin ya da yardımcının her doları tam bir satırdadır.
+- Rakamlar her yerdeki gibi okunur: planda `≈` (başlık `API karşılığı` der), hiç fiyatlanmamış bir kısım için `+?`.
+- `enter` satırın kartını açar; bir kartın kendi ekranı denemelerini **DENEMELER** altında listeler. Harcamalar depoda tutulur, arşivler dahil; bu sürümden önce harcananın satırı yoktur.
+
 ## Demo
 
-`--demo` uydurma bir bütçeyi aynı yolla harcar: başlık, hız, azalan bütçe satırı, `:budget`, kullanım pencereleri (harcamadan doldurulur), her değişikliğin maliyeti ve `:commit` ile `:review`'un birkaç kuruşu canlıdaki gibi görünür. Demo bir planla giriş yapar, bu yüzden rakamları `≈` ile okunur; okuduğu her beşinci değişiklik maliyet söylemeyen bir turla biter (`+?`), o işçinin bir sonraki turuna dek.
+`--demo` uydurma bir bütçeyi aynı yolla harcar: başlık, hız, azalan bütçe satırı, `:budget`, kullanım pencereleri (harcamadan doldurulur), her değişikliğin maliyeti ve `:commit` ile `:review`'un birkaç kuruşu canlıdaki gibi görünür. Demo bir planla giriş yapar, bu yüzden rakamları `≈` ile okunur; okuduğu her beşinci değişiklik maliyet söylemeyen bir turla biter (`+?`), o işçinin bir sonraki turuna dek. `:ledger` kartları uygulandıkça, başarısız oldukça, devredildikçe ve geri çekildikçe dolar.
 
 ## Ayrıca bakınız
 
 - [Claude Code](../concepts/claude-code.md): confine düzeyleri ve kullanım limitleri.
 - [Oturumlar](../concepts/sessions.md): bütçe depoda.
 - [Kendi kabuğunuz ve commit](../scenarios/own-shell-and-commit.md): `:commit` kullanımda.
-- [Komutlar](../reference/commands.md): `:budget`, `:commit`.
+- [Komutlar](../reference/commands.md): `:budget`, `:commit`, `:ledger`.

@@ -388,12 +388,13 @@ impl App {
     /// a plan's are API-equivalent, said `≈` (record 132). Unknown or not
     /// signed in leaves them as they were.
     pub fn take_plan(&mut self) {
-        if let Seen::Here {
-            login: Login::Yes { subscription },
-            ..
-        } = &self.seen
-        {
-            self.world.estimated = *subscription;
+        if let Seen::Here { version, login } = &self.seen {
+            // The ledger's rows say which Claude Code priced them (record
+            // 133).
+            self.world.version = Some(version.clone());
+            if let Login::Yes { subscription } = login {
+                self.world.estimated = *subscription;
+            }
         }
     }
 
@@ -614,9 +615,12 @@ mod tests {
         }
         let mut app = live_welcome(|| answer(true));
         assert!(!app.world.estimated);
+        assert_eq!(app.world.version, None);
         app.start_welcome(false);
         app.looked();
         assert!(app.world.estimated, "a plan");
+        // The ledger's rows say which Claude Code priced them (record 133).
+        assert_eq!(app.world.version.as_deref(), Some("2.1.3"));
         app.look = Some(|| answer(false));
         app.start_welcome(false);
         app.looked();
@@ -624,13 +628,19 @@ mod tests {
         // Signed out or not said: as it was.
         app.world.estimated = true;
         for login in [Login::No, Login::Unknown] {
-            app.seen = here("2.1.3", login);
+            app.seen = here("2.1.4", login);
             app.take_plan();
             assert!(app.world.estimated);
+            assert_eq!(
+                app.world.version.as_deref(),
+                Some("2.1.4"),
+                "the version all the same"
+            );
         }
         app.seen = Seen::Missing;
         app.take_plan();
         assert!(app.world.estimated);
+        assert_eq!(app.world.version.as_deref(), Some("2.1.4"), "kept");
     }
 
     #[test]

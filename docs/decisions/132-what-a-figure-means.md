@@ -10,8 +10,8 @@ every figure of a plan's login; Claude Code's own figure as the source
 (its version, the turn's date, the per-model split of `modelUsage`), no
 price table of imece's; what was never priced shown as "at least", the
 pot's limit working on what is known. This record is the first of two
-parts: what a figure means. The ledger itself is the second, and is to
-come.
+parts: what a figure means. The ledger itself is the second, record
+133.
 
 The source. Every dollar imece shows from an agent is Claude Code's
 `total_cost_usd`, which it computes from its own price table, plan or

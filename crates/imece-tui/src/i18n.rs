@@ -581,6 +581,24 @@ pub struct Text {
     // A card's screen
     pub card_who: &'static str,
     pub card_story: &'static str,
+    /// The cost ledger (record 133): the `:ledger` window's title with its
+    /// count of attempts, what follows it on a plan's login, a project's
+    /// figures (kept, wasted, at work, the leader's), the line when nothing
+    /// was spent, a row's card and try, a row with no card, the changes it
+    /// put before the person and those that came back, how it ended (open,
+    /// applied, done, failed, withdrawn, handed on, late), the window's
+    /// keys; the card screen's head of its attempts.
+    pub ledger_title: &'static str,
+    pub ledger_estimated: &'static str,
+    pub ledger_totals: &'static str,
+    pub ledger_none: &'static str,
+    pub ledger_try: &'static str,
+    pub ledger_no_card: &'static str,
+    pub ledger_rounds: &'static str,
+    pub ledger_back: &'static str,
+    pub ledger_outcomes: [&'static str; 7],
+    pub ledger_hints: [(&'static str, &'static str); 3],
+    pub card_attempts: &'static str,
     pub card_parts: [&'static str; 4],
     pub card_no_story: &'static str,
     /// The agent's own to-do list on its focus: steps done, and all.
@@ -1308,7 +1326,7 @@ pub struct Text {
     pub help_keys: [(&'static str, &'static str); 57],
     /// What each `:` command does, in a line, in `complete::COMMANDS`'
     /// order: shown after the menu's keys once `tab` put one on the line.
-    pub command_hints: [(&'static str, &'static str); 70],
+    pub command_hints: [(&'static str, &'static str); 71],
     /// The completion menu's mark for the items after the window, and
     /// where the highlighted one is among them all.
     pub menu_more: &'static str,
@@ -1562,6 +1580,10 @@ pub const EN: Text = Text {
         ("journal", "the journal in a window (J)"),
         ("keys", "read your key file again"),
         ("lang", "Türkçe / English (L)"),
+        (
+            "ledger",
+            "what each attempt at a card cost, applied apart from wasted",
+        ),
         ("lonca", "the Lonca window; NAME, import, login, off"),
         ("mark", "mark the line at hand; ' goes to the next mark (m)"),
         (
@@ -1806,6 +1828,25 @@ pub const EN: Text = Text {
     journal_story: " JOURNAL · J story ",
     card_who: "WHO",
     card_story: "STORY",
+    ledger_title: "LEDGER · {} attempts",
+    ledger_estimated: " · API-equivalent",
+    ledger_totals: "applied {} · wasted {} · at work {} · lead {}",
+    ledger_none: "nothing spent on a card yet",
+    ledger_try: "#{} try {}",
+    ledger_no_card: "no card",
+    ledger_rounds: "{} Δ",
+    ledger_back: " · {} sent back",
+    ledger_outcomes: [
+        "at work",
+        "applied",
+        "done, no change",
+        "failed",
+        "withdrawn",
+        "handed on",
+        "late done",
+    ],
+    ledger_hints: [("j k", "move"), ("enter", "open the card"), ("esc", "back")],
+    card_attempts: "ATTEMPTS",
     card_parts: ["posted", "owner", "helper", "talked"],
     card_no_story: "No story yet.",
     plan_title: "TO DO {}/{}",
@@ -2900,6 +2941,10 @@ pub const TR: Text = Text {
         ("journal", "günlük, bir pencerede (J)"),
         ("keys", "tuş dosyanı yeniden oku"),
         ("lang", "Türkçe / English (L)"),
+        (
+            "ledger",
+            "her kart denemesinin maliyeti; uygulanan, boşa gidenden ayrı",
+        ),
         ("lonca", "Lonca penceresi; AD, import, login, off"),
         (
             "mark",
@@ -3153,6 +3198,25 @@ pub const TR: Text = Text {
     journal_story: " DEFTER · J hikâye ",
     card_who: "KİM",
     card_story: "HİKÂYE",
+    ledger_title: "HARCAMALAR · {} deneme",
+    ledger_estimated: " · API karşılığı",
+    ledger_totals: "uygulanan {} · boşa {} · süren {} · lider {}",
+    ledger_none: "henüz bir karta harcama yok",
+    ledger_try: "#{} deneme {}",
+    ledger_no_card: "kartsız",
+    ledger_rounds: "{} Δ",
+    ledger_back: " · {} geri döndü",
+    ledger_outcomes: [
+        "sürüyor",
+        "uygulandı",
+        "bitti, değişiklik yok",
+        "başarısız",
+        "geri çekildi",
+        "devredildi",
+        "geç done",
+    ],
+    ledger_hints: [("j k", "gez"), ("enter", "kartı aç"), ("esc", "geri")],
+    card_attempts: "DENEMELER",
     card_parts: ["astı", "sahibi", "yardımcı", "konuştu"],
     card_no_story: "Henüz hikâye yok.",
     plan_title: "YAPILACAKLAR {}/{}",
@@ -4553,6 +4617,15 @@ mod tests {
             (e.lonca_state_up, t.lonca_state_up),
             (e.lonca_state_down, t.lonca_state_down),
             (e.lonca_title, t.lonca_title),
+            (e.ledger_title, t.ledger_title),
+            (e.ledger_estimated, t.ledger_estimated),
+            (e.ledger_totals, t.ledger_totals),
+            (e.ledger_none, t.ledger_none),
+            (e.ledger_try, t.ledger_try),
+            (e.ledger_no_card, t.ledger_no_card),
+            (e.ledger_rounds, t.ledger_rounds),
+            (e.ledger_back, t.ledger_back),
+            (e.card_attempts, t.card_attempts),
             (e.lonca_pending_head, t.lonca_pending_head),
             (e.lonca_pending_none, t.lonca_pending_none),
             (e.lonca_shown, t.lonca_shown),

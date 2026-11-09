@@ -377,6 +377,10 @@ impl App {
             self.lonca_key(win, k);
             return;
         }
+        if let Some(at) = self.ledger_win {
+            self.ledger_key(at, k);
+            return;
+        }
         if let Some(win) = self.window {
             self.window_key(win, k);
             return;

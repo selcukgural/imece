@@ -1184,12 +1184,7 @@ pub fn check_mark(lang: Lang, check: &Check) -> Option<(&'static str, Option<boo
 /// · 3 rounds`; the dollars as [`World::money`] says them (record 132).
 pub fn spend(lang: Lang, w: &World, s: &Spend) -> String {
     let t = lang.text();
-    let seconds = s.ticks * SECONDS_PER_TICK;
-    let time = if seconds < 60 {
-        fill(t.took_s, &[&seconds.to_string()])
-    } else {
-        ago(lang, seconds)
-    };
+    let time = super::ledger::lasted(lang, s.ticks);
     let mut out = format!("{} · {time}", w.money(s.cost, s.unpriced));
     if s.rounds > 1 {
         out.push_str(&fill(t.spend_rounds, &[&s.rounds.to_string()]));

@@ -814,6 +814,9 @@ pub struct Agent {
     /// What imece follows of it for its health notices (record 128).
     /// Memory only.
     pub watch: crate::health::Watch,
+    /// What of its spending is booked on the ledger, and where its next
+    /// goes (record 133). Memory only.
+    pub meter: crate::ledger::Meter,
     /// A researcher that finished; kept so ids stay stable.
     pub gone: bool,
 }
@@ -1024,6 +1027,7 @@ impl Agent {
             unpriced: Unpriced::default(),
             attempt: 0,
             watch: Default::default(),
+            meter: Default::default(),
             gone: false,
         }
     }
@@ -3161,6 +3165,12 @@ pub struct World {
     /// The lines the person sent, oldest first, for `↑` `↓` and `^r` on
     /// the command line; kept between runs (the newest [`SENT_KEEP`]).
     pub sent: Vec<Sent>,
+    /// The cost ledger (record 133): one row per attempt at a card,
+    /// oldest first; kept in the store.
+    pub ledger: Vec<crate::ledger::Attempt>,
+    /// Claude Code's version as last asked (record 75), for the ledger's
+    /// rows. Memory only.
+    pub version: Option<String>,
 }
 
 /// A line the person sent: a message, a `:` command or a `!cmd`, as it
@@ -3413,6 +3423,8 @@ impl World {
         }
         u.session = false;
         u.said = false;
+        // The gap goes on the row it was spent on (record 133).
+        self.book(id);
     }
 
     /// The projects that are open, in id order.
@@ -3851,6 +3863,8 @@ impl World {
             procs: Default::default(),
             messages: self.messages,
             sent: self.sent.clone(),
+            ledger: self.ledger.clone(),
+            version: self.version.clone(),
         }
     }
 
@@ -4404,6 +4418,8 @@ impl World {
         self.carry_spend(agent);
         self.forget_change(agent);
         self.move_cards(agent, Column::Working, Column::Review);
+        let cards = self.owned_in(agent, Column::Review);
+        self.count_round(agent, &cards, false);
         let (added, removed) = change.counts();
         let files = change.files.len();
         // Read with its turn over (a solo's, or a part's rest): what it
@@ -4504,6 +4520,10 @@ impl World {
         let moved = self.move_cards(id, from, to);
         if back {
             self.sent_back(&moved);
+            self.count_round(id, &moved, true);
+        }
+        if matches!(how, Landed::Integrated(_)) {
+            self.close_rows(id, &moved, crate::ledger::Outcome::Applied);
         }
     }
 
@@ -4578,8 +4598,12 @@ impl World {
     /// Agent `id`'s worktree holds no change (a done with nothing in it,
     /// or the rest of a part applied was nothing): nothing is carried on.
     pub fn change_none(&mut self, id: AgentId) {
-        self.move_cards(id, Column::Working, Column::Done);
-        self.move_cards(id, Column::Review, Column::Done);
+        let mut done = self.move_cards(id, Column::Working, Column::Done);
+        done.extend(self.move_cards(id, Column::Review, Column::Done));
+        // A turn of a solo's with nothing changed ends no row of its own.
+        if !done.is_empty() {
+            self.close_rows(id, &done, crate::ledger::Outcome::Done);
+        }
         let task = &mut self.agents[id].task;
         task.carried = Spend::default();
         // A done with nothing in it costs the leader's mail no figure.
@@ -4602,7 +4626,8 @@ impl World {
         let files = self.change_of(id).map_or(0, |c| c.files.len());
         if whole {
             self.agents[id].task.carried = Spend::default();
-            self.move_cards(id, Column::Review, Column::Done);
+            let done = self.move_cards(id, Column::Review, Column::Done);
+            self.close_rows(id, &done, crate::ledger::Outcome::Applied);
         } else {
             self.carry_spend(id);
         }
@@ -4620,6 +4645,7 @@ impl World {
         self.forget_change(id);
         let moved = self.move_cards(id, Column::Review, Column::Working);
         self.sent_back(&moved);
+        self.count_round(id, &moved, true);
         self.note(Event::Rejected { agent: id });
     }
 
@@ -4677,12 +4703,23 @@ impl World {
     pub fn takes(&mut self, id: AgentId, c: CardId) {
         self.agents[id].card = Some(c);
         self.agents[id].attempt = self.cards[c].attempt;
+        self.row_takes(id, c);
+    }
+
+    /// Worker `id`'s cards standing in `column`, by number.
+    fn owned_in(&self, id: AgentId, column: Column) -> Vec<CardId> {
+        (self.cards.iter())
+            .filter(|c| c.owner == Some(id) && c.column == column)
+            .map(|c| c.id)
+            .collect()
     }
 
     /// The leader hands card `c` to `to` (record 126): its next attempt,
     /// at work again, taken from whoever held it, whose later `done`
     /// closes nothing. `to` takes it with the turn the assign starts.
     pub fn hand(&mut self, c: CardId, to: AgentId) {
+        // The try at work ends here (record 133).
+        self.close_card_row(c, crate::ledger::Outcome::HandedOn);
         let card = &mut self.cards[c];
         let from = card.owner;
         card.owner = Some(to);
@@ -4779,6 +4816,7 @@ impl World {
     /// nothing comes of it; a `done` for it closes nothing.
     pub fn withdraw(&mut self, c: CardId, by: AgentId, why: &str) {
         let tick = self.tick;
+        self.close_card_row(c, crate::ledger::Outcome::Withdrawn);
         let card = &mut self.cards[c];
         card.column = Column::Withdrawn;
         card.finished = tick;
@@ -4820,6 +4858,7 @@ impl World {
     /// Agent `id`'s `done` said card `c` failed: through, no change; `why`
     /// is the done's first line.
     pub fn card_failed(&mut self, id: AgentId, c: CardId, why: &str) {
+        self.close_rows(id, &[c], crate::ledger::Outcome::Failed);
         let tick = self.tick;
         let card = &mut self.cards[c];
         card.column = Column::Failed;
@@ -4882,6 +4921,7 @@ impl World {
                 card.breaker.stopped = true;
                 card.column = Column::Failed;
                 card.finished = tick;
+                self.close_card_row(c, crate::ledger::Outcome::Failed);
             }
         }
         self.story(Some(c), StoryEvent::CapAnswered { cap, yes });
@@ -4904,6 +4944,7 @@ impl World {
 
     /// Agent `id` sent a `done` for card `c` after it was handed again.
     pub fn late_done(&mut self, id: AgentId, c: CardId) {
+        self.row_late(id, c, self.agents[id].attempt);
         self.story(Some(c), StoryEvent::LateDone { from: id });
         self.note(Event::LateDone { agent: id, card: c });
     }
@@ -5806,6 +5847,8 @@ mod tests {
             orphans: crate::model::Orphans::default(),
             health: Default::default(),
             procs: Default::default(),
+            ledger: Vec::new(),
+            version: None,
             messages: 0,
             plans: Vec::new(),
         }
