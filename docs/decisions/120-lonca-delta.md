@@ -19,12 +19,17 @@ still waits, and an open Δ's cost does not come back.
 workspace is a new pending change on the same base that holds the first; the
 first stays pending. Approve the second and trunk has both; approve the first
 afterwards and it integrates too, as an empty commit. Left alone it would come
-up as the worker's change the moment the newest was decided. So the older ones
-are counted on the Δ (`· holds 2 older`), and a decision turns them down first
-(`replaced by proposal 9`), whichever the word: a refused step stops there and
-the newest still waits. Each is a signature, so with a Secure Enclave key each
-is a finger; lonca#107 asks for a new proposal of a workspace to replace its
-older ones, and then this goes.
+up as the worker's change the moment the newest was decided. Lonca 0.2.1
+(lonca#107) settles it in the store: a workspace's new proposal withdraws its
+waiting one in the same entry and names it in its reasons (`replaces:<change>`),
+and its pinned leases pass to the newer. So imece needs that daemon (record
+116's `LEAST`), and what it built for the older ones went (2026-11-09): no count
+on the Δ, no rejections before a decision. A shown proposal that left
+`withdrawn` while a waiting one names it is `Landed::Replaced` (`replaced_in`,
+`as_replaced`): `proposed again; the newer proposal takes the place of the one
+you saw`, the worker neither told nor woken, its cards back at work until the
+newer one is its Δ; `replaces` on the Δ reads `it takes the place of its
+earlier proposal`.
 
 **`done`'s gate.** A worker's `done` from a workspace is not taken until a thread
 has looked (`Live::gate_of`, `gate`, `take_gates`; `lonca diff` is a child, the
@@ -131,7 +136,8 @@ stay for a worktree: the git path goes once a team runs on Lonca end to end
 (record 115).
 
 **The demo** (record 31). A worker in a workspace proposes (`Sim::ready`), every
-fourth proposal holding an older one, and each third `done` is refused first, in its
+proposal made while its last still waits replacing it (and each fourth naming one
+the person never saw), and each third `done` is refused first, in its
 trace; `a` lands on the table's trunk or, one in
 eight, comes back `Conflicted` and the worker takes it up; `r` asks why. What can
 not be faked: a daemon, a signature, a real queue.

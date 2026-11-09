@@ -1512,9 +1512,10 @@ impl Sim {
     }
 
     /// A worker's `change` waits for the person: as a proposal when its
-    /// project is on Lonca (record 120), each fourth of those holding an
-    /// older one, which the demo has nobody to propose, each third based
-    /// before trunk.
+    /// project is on Lonca (record 120), each third based before trunk. One
+    /// proposed while its last still waits replaces it, as Lonca withdraws
+    /// it (`replaces:`); each fourth replaces one the person never saw,
+    /// proposed while its worker's turn went on.
     fn ready(&mut self, w: &mut World, change: Change) {
         let id = change.agent;
         if w.agents[id].workspace.is_none() {
@@ -1523,11 +1524,18 @@ impl Sim {
         self.extras.proposed += 1;
         let n = self.extras.proposed;
         let seq = 2 * n;
+        let mut why = vec!["unobserved_session".to_string()];
+        let shown = w.proposal_of(id).map(|p| p.change.clone());
+        if let Some(old) = &shown {
+            w.proposal_left(id, Landed::Replaced);
+            why.push(format!("replaces:{old}"));
+        } else if n.is_multiple_of(4) {
+            why.push(format!("replaces:unseen{n}"));
+        }
         let proposal = StoreProposal {
             seq,
             change: format!("demo{n}"),
-            older: n.is_multiple_of(4).then(|| seq - 1).into_iter().collect(),
-            why: vec!["unobserved_session".to_string()],
+            why,
             redacted: Vec::new(),
             cut: false,
             // Each seventh comes from a policy Lonca could not read.
@@ -9137,7 +9145,6 @@ diff --git a/b.rs b/b.rs
         let p = w.proposal_of(id).expect("a proposal");
         assert_eq!((p.seq, p.change.as_str()), (2, "demo1"));
         assert_eq!(p.why, ["unobserved_session"]);
-        assert!(p.older.is_empty());
         let (mut w, mut s, worker, _) = one_at_work();
         let change = w.change_of(worker).cloned();
         assert!(change.is_none());
@@ -9443,7 +9450,6 @@ diff --git a/b.rs b/b.rs
         StoreProposal {
             seq,
             change: format!("c{seq}"),
-            older: Vec::new(),
             why: Vec::new(),
             redacted: Vec::new(),
             cut: false,
@@ -9483,15 +9489,29 @@ diff --git a/b.rs b/b.rs
     }
 
     #[test]
-    fn each_fourth_demo_proposal_holds_an_older_one() {
+    fn a_demo_proposal_made_again_replaces_the_one_waiting() {
         let (mut w, mut s, id) = a_proposal_waits();
-        for n in 2..=3 {
-            s.ready(&mut w, a_change_of(id));
-            assert_eq!(w.proposal_of(id).map(|p| p.seq), Some(2 * n));
-            assert!(w.proposal_of(id).unwrap().older.is_empty());
-        }
         s.ready(&mut w, a_change_of(id));
-        assert_eq!(w.proposal_of(id).unwrap().older, [7]);
+        let p = w.proposal_of(id).unwrap();
+        assert_eq!(p.seq, 4);
+        assert_eq!(p.why, ["unobserved_session", "replaces:demo1"]);
+        assert_eq!(w.changes.len(), 1, "one change: the newer");
+        let replaced = w.journal.iter().rev().find_map(|e| match &e.event {
+            Event::Landed { agent, how } if *agent == id => Some(how.clone()),
+            _ => None,
+        });
+        assert_eq!(replaced, Some(Landed::Replaced));
+        // Each fourth replaces one the person never saw.
+        let (mut w, mut s, id) = a_proposal_waits();
+        for n in 2..=4 {
+            // The last one settled: none waits when the next comes.
+            w.proposal_left(id, Landed::Integrated("c".into()));
+            s.ready(&mut w, a_change_of(id));
+            let why = &w.proposal_of(id).unwrap().why;
+            let unseen = format!("replaces:unseen{n}");
+            assert_eq!(why.contains(&unseen), n == 4, "{n}: {why:?}");
+            assert_eq!(why.len(), if n == 4 { 2 } else { 1 }, "{n}");
+        }
     }
 
     #[test]

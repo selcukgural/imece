@@ -1703,7 +1703,6 @@ mod tests {
         let proposal = StoreProposal {
             seq: 5,
             change: "c5".into(),
-            older: Vec::new(),
             why: Vec::new(),
             redacted: Vec::new(),
             cut: false,
@@ -1847,7 +1846,6 @@ mod tests {
         let proposal = StoreProposal {
             seq: 5,
             change: "c5".into(),
-            older: Vec::new(),
             why: Vec::new(),
             redacted: Vec::new(),
             cut: false,

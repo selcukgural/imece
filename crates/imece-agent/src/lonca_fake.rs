@@ -43,6 +43,9 @@ pub fn seen(dir: &Path) -> String {
     std::fs::read_to_string(dir.join("seen")).unwrap()
 }
 
+/// The version the fake's `ping` says: the oldest imece takes.
+pub const VERSION: &str = "0.2.1";
+
 /// A trunk the fake answers with.
 pub const TRUNK: &str = "693d62952cd8f7ce58b0de780cf5d998b2f5c1a6";
 
@@ -67,6 +70,15 @@ impl Daemon {
         protocol: u64,
         answer: impl Fn(&Value) -> Result<Value, &'static str> + Send + Sync + 'static,
     ) -> Daemon {
+        Self::start_at(protocol, Some(VERSION), answer)
+    }
+
+    /// As [`Daemon::start`], its `ping` saying `version` (none: no field).
+    pub fn start_at(
+        protocol: u64,
+        version: Option<&'static str>,
+        answer: impl Fn(&Value) -> Result<Value, &'static str> + Send + Sync + 'static,
+    ) -> Daemon {
         let n = NEXT.fetch_add(1, Ordering::Relaxed);
         let dir = std::env::temp_dir().join(format!("il{}-{n}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
@@ -86,7 +98,7 @@ impl Daemon {
                         let asked: Value = serde_json::from_str(&line).expect("json");
                         let id = asked["id"].clone();
                         let reply = if asked["method"] == "ping" {
-                            json!({"id": id, "ok": true, "result": {"protocol": protocol}})
+                            json!({"id": id, "ok": true, "result": {"protocol": protocol, "version": version}})
                         } else if asked["method"] == "tree" && asked["params"]["commit"] == POLICY {
                             json!({"id": id, "ok": true, "result": []})
                         } else {

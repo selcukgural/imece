@@ -28,6 +28,11 @@ use crate::child;
 /// The protocol number this client was written for: a daemon that says
 /// another one is refused (the protocol's own rule).
 pub const PROTOCOL: u64 = 1;
+/// The oldest Lonca whose daemon this client takes: 0.2.1 withdraws a
+/// workspace's waiting proposal when it proposes again and names it in the
+/// newer one's reasons (`replaces:`), and its `status` lists the policy's
+/// checks. A daemon that says an older version, or none, is refused.
+pub const LEAST: [u64; 3] = [0, 2, 1];
 /// The longest line read: the daemon's own `MAX_LINE`.
 const MAX_LINE: u64 = 96 << 20;
 /// How long the daemon gets to answer. Its calls take a millisecond; one
@@ -112,6 +117,8 @@ pub enum Down {
     NotTheDaemon,
     /// It answered outside the protocol, or with another protocol number.
     Protocol,
+    /// A daemon of the protocol, but older than [`LEAST`].
+    Old,
     /// No human identity, no session, or an ended one: `lonca human login`.
     SignedOut,
     /// A session the repository does not take: the person is not enrolled
@@ -641,11 +648,13 @@ impl Client {
 
     fn check_protocol(&mut self) -> Result<(), Down> {
         let told = self.call("ping", None, json!({}))?;
-        if told["protocol"].as_u64() == Some(PROTOCOL) {
-            Ok(())
-        } else {
-            Err(Down::Protocol)
+        if told["protocol"].as_u64() != Some(PROTOCOL) {
+            return Err(Down::Protocol);
         }
+        if !new_enough(told["version"].as_str()) {
+            return Err(Down::Old);
+        }
+        Ok(())
     }
 
     /// `method` on `repo`, with the token when there is one; what the
@@ -801,6 +810,29 @@ fn answered(answer: &[u8], id: u64) -> Result<Value, Down> {
         Some(false) => Err(down_of(code)),
         None => Err(Down::Protocol),
     }
+}
+
+/// Whether `said`, a daemon's `version`, is [`LEAST`] or later, by its
+/// three numbers; what follows them (`-dev`, `+build`) does not count.
+pub fn new_enough(said: Option<&str>) -> bool {
+    let Some(said) = said else {
+        return false;
+    };
+    let core = said.split(['-', '+']).next().unwrap_or_default();
+    let mut numbers = core.split('.').map(|n| n.parse::<u64>().ok());
+    let mut got = [0; 3];
+    for slot in &mut got {
+        let Some(Some(n)) = numbers.next() else {
+            return false;
+        };
+        *slot = n;
+    }
+    numbers.next().is_none() && got >= LEAST
+}
+
+/// [`LEAST`] as Lonca writes a version.
+pub fn least() -> String {
+    LEAST.map(|n| n.to_string()).join(".")
 }
 
 /// What an error code of the daemon's means here; no code, the protocol.
@@ -1976,6 +2008,49 @@ mod tests {
     }
 
     #[test]
+    fn no_token_goes_to_a_daemon_older_than_the_least() {
+        for version in [Some("0.2.0"), None] {
+            let d = Daemon::start_at(PROTOCOL, version, |_| Ok(status(&[])));
+            d.sign_in();
+            assert_eq!(d.place.open().err(), Some(Down::Old), "{version:?}");
+            assert!(d.heard.lock().expect("heard").is_empty());
+        }
+        let d = Daemon::start_at(PROTOCOL, Some("0.2.2-dev"), |_| Ok(status(&[])));
+        d.sign_in();
+        assert!(d.place.open().is_ok(), "a newer one");
+        // Another protocol is said first, whatever the version.
+        let d = Daemon::start_at(PROTOCOL + 1, Some("0.1.0"), |_| Ok(status(&[])));
+        d.sign_in();
+        assert_eq!(d.place.open().err(), Some(Down::Protocol));
+    }
+
+    #[test]
+    fn a_version_is_new_enough_by_its_three_numbers() {
+        assert_eq!(least(), "0.2.1");
+        assert_eq!(crate::lonca_fake::VERSION, least(), "the fake is the least");
+        for (said, ok) in [
+            ("0.2.1", true),
+            ("0.2.2", true),
+            ("0.3.0", true),
+            ("1.0.0", true),
+            ("0.10.0", true),
+            ("0.2.1-dev", true),
+            ("0.2.1+abc", true),
+            ("0.2.0", false),
+            ("0.1.9", false),
+            ("0.0.5", false),
+            ("0.2", false),
+            ("0.2.1.0", false),
+            ("0.2.x", false),
+            ("", false),
+            ("v0.2.1", false),
+        ] {
+            assert_eq!(new_enough(Some(said)), ok, "{said}");
+        }
+        assert!(!new_enough(None));
+    }
+
+    #[test]
     fn an_answer_with_no_result_is_nothing() {
         assert_eq!(answered(b"{\"id\":1,\"ok\":true}\n", 1), Ok(Value::Null));
     }
@@ -2790,10 +2865,11 @@ mod tests {
         assert_eq!(place.left_in(&tree), Some(1));
         assert_eq!(place.stand_up(&tree), Ok(()));
         assert_eq!(place.seated(&tree), Ok(false));
-        assert_eq!(place.left_in(&tree), None, "a session over can not count");
+        assert_eq!(place.left_in(&tree), Some(1), "its end said what it left");
         assert!(place.stand_up(&tree).is_err(), "twice");
+        // Nothing runs under a dead token: what its end said stands.
         fs::remove_file(tree.join("new.txt")).unwrap();
-        assert_eq!(place.left_in(&tree), Some(0), "no change needs no session");
+        assert_eq!(place.left_in(&tree), Some(1));
     }
 
     /// Against a real daemon, the fake being only what this client thinks
@@ -2837,36 +2913,34 @@ mod tests {
         assert_eq!(c.holds_unobserved(&repo, &status.policy), Ok(true));
     }
 
-    /// A worker's proposals decided by the real program: as above, with
-    /// two proposals of one workspace waiting, and `lonca` on `PATH`.
+    /// A worker's proposals decided by the real program: as above, with a
+    /// workspace that proposed twice, and `lonca` on `PATH`. Lonca (0.2.1)
+    /// withdrew the older one for the newer, which names it.
     #[test]
     #[ignore = "needs a running lonca daemon and the lonca program"]
-    fn live_a_proposal_is_turned_down_and_its_newer_one_lands() {
+    fn live_a_newer_proposal_replaces_the_older_and_lands() {
         let repo = std::env::var("IMECE_LONCA_REPO").expect("a repository");
         let dir = std::env::temp_dir();
         let place = Place::here();
         let mut c = place.open().expect("opens");
         let status = c.status(&repo).expect("status");
-        let [older, newer] = &status.pending[..] else {
-            panic!("two waiting: {:?}", status.pending);
+        let [newer] = &status.pending[..] else {
+            panic!("one waiting: {:?}", status.pending);
         };
-        let standing = |c: &mut Client, change: &Option<String>| {
+        let older = (newer.reasons.iter())
+            .find_map(|why| why.strip_prefix("replaces:"))
+            .expect("it names the one it replaces")
+            .to_string();
+        let standing = |c: &mut Client, change: &str| {
             let changes = c.status(&repo).expect("status").changes;
-            let found = changes
-                .into_iter()
-                .find(|(id, _)| Some(id) == change.as_ref());
+            let found = changes.into_iter().find(|(id, _)| id == change);
             found.map(|(_, s)| s)
         };
-        assert_eq!(place.reject(&repo, &dir, older.seq, "replaced"), Ok(()));
-        let rejected = Standing::Rejected(vec!["rejected: replaced".into()]);
-        assert_eq!(standing(&mut c, &older.change), Some(rejected));
+        assert_eq!(standing(&mut c, &older), Some(Standing::Withdrawn));
         assert_eq!(place.approve(&repo, &dir, newer.seq, &[]), Ok(()));
         let trunk = c.status(&repo).expect("status").trunk;
-        assert_eq!(
-            standing(&mut c, &newer.change),
-            Some(Standing::Integrated(trunk))
-        );
         let change = newer.change.as_deref().expect("a proposal");
+        assert_eq!(standing(&mut c, change), Some(Standing::Integrated(trunk)));
         let checks = c.evidence(&repo, change).expect("evidence");
         assert!(checks.iter().any(|e| e.check == "syntax"), "{checks:?}");
         assert_eq!(

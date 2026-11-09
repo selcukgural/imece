@@ -1245,6 +1245,7 @@ fn landed(t: &Text, name: &str, how: &Landed) -> String {
             fill(t.ev_landed_rejected, &[name, &said.join("; ")])
         }
         Landed::Withdrawn => fill(t.ev_landed_withdrawn, &[name]),
+        Landed::Replaced => fill(t.ev_landed_replaced, &[name]),
     }
 }
 
@@ -1341,6 +1342,7 @@ pub fn store_down(t: &Text, why: StoreDown) -> &'static str {
         StoreDown::NoDaemon => t.store_no_daemon,
         StoreDown::NotTheDaemon => t.store_not_the_daemon,
         StoreDown::Protocol => t.store_protocol,
+        StoreDown::Old => t.store_old,
         StoreDown::SignedOut => t.store_signed_out,
         StoreDown::Forbidden => t.store_forbidden,
         StoreDown::NoRepo => t.store_no_repo,
@@ -2860,6 +2862,19 @@ mod tests {
     }
 
     #[test]
+    fn an_old_daemon_is_told_with_the_version_imece_needs() {
+        let least = imece_agent::lonca::least();
+        for lang in [Lang::En, Lang::Tr] {
+            let said = store_down(lang.text(), StoreDown::Old);
+            assert!(
+                said.contains(&least) && said.contains("brew upgrade lonca"),
+                "{said}"
+            );
+        }
+        assert!(StoreDown::Old.why().contains(&least));
+    }
+
+    #[test]
     fn what_became_of_a_proposal_is_said_in_both_languages() {
         for lang in [Lang::En, Lang::Tr] {
             let t = lang.text();
@@ -2875,6 +2890,10 @@ mod tests {
             assert_eq!(
                 landed(t, "w", &Landed::Withdrawn),
                 fill(t.ev_landed_withdrawn, &["w"])
+            );
+            assert_eq!(
+                landed(t, "w", &Landed::Replaced),
+                fill(t.ev_landed_replaced, &["w"])
             );
             let symbols = Landed::Conflicted(vec!["a".into(), "b".into()]);
             assert_eq!(

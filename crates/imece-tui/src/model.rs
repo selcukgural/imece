@@ -682,6 +682,8 @@ pub enum StoreDown {
     NoDaemon,
     NotTheDaemon,
     Protocol,
+    /// A daemon older than the Lonca imece needs (`lonca::LEAST`).
+    Old,
     SignedOut,
     Forbidden,
     NoRepo,
@@ -705,6 +707,7 @@ impl StoreDown {
             StoreDown::NoDaemon => "no Lonca daemon answers",
             StoreDown::NotTheDaemon => "what is on Lonca's socket is not the person's daemon",
             StoreDown::Protocol => "Lonca's daemon speaks another protocol",
+            StoreDown::Old => "Lonca's daemon is older than 0.2.1, which imece needs",
             StoreDown::SignedOut => "the person is not signed in to Lonca",
             StoreDown::Forbidden => "the person is not enrolled in a Lonca repository of that name",
             StoreDown::NoRepo => "Lonca has no such repository",
@@ -2421,7 +2424,7 @@ impl Event {
             Event::Approved { .. }
             | Event::Rejected { .. }
             | Event::Landed {
-                how: Landed::Queued | Landed::Withdrawn,
+                how: Landed::Queued | Landed::Withdrawn | Landed::Replaced,
                 ..
             }
             | Event::YouSaid { .. }
@@ -2847,6 +2850,9 @@ pub enum Landed {
     Rejected(Vec<String>),
     /// Its worker took it back.
     Withdrawn,
+    /// Its worker proposed again: Lonca withdrew it for the newer one,
+    /// which names it (`replaces:`, Lonca 0.2.1).
+    Replaced,
 }
 
 /// One check Lonca's merge queue ran on a proposal.
@@ -2870,9 +2876,6 @@ pub struct StoreProposal {
     pub seq: u64,
     /// The change's id in the store.
     pub change: String,
-    /// The worker's older proposals still waiting. A workspace proposes
-    /// all it holds, so this one holds what they did.
-    pub older: Vec<u64>,
     /// Why it waits, as the policy said it.
     pub why: Vec<String>,
     /// Files its patch leaves out: a blob of theirs was redacted.
@@ -4518,7 +4521,7 @@ impl World {
             Landed::Queued => (Column::Verifying, false),
             Landed::Integrated(_) => (Column::Done, false),
             Landed::Conflicted(_) | Landed::Rejected(_) => (Column::Working, true),
-            Landed::Withdrawn => (Column::Working, false),
+            Landed::Withdrawn | Landed::Replaced => (Column::Working, false),
         };
         let moved = self.move_cards(id, from, to);
         if back {
@@ -6993,6 +6996,7 @@ mod tests {
             (Landed::Conflicted(Vec::new()), Working),
             (Landed::Rejected(Vec::new()), Working),
             (Landed::Withdrawn, Working),
+            (Landed::Replaced, Working),
         ];
         for (how, to) in cases.clone() {
             // Left the waiting list: from review.
@@ -9035,6 +9039,7 @@ mod tests {
             StoreDown::NoDaemon,
             StoreDown::NotTheDaemon,
             StoreDown::Protocol,
+            StoreDown::Old,
             StoreDown::SignedOut,
             StoreDown::Forbidden,
             StoreDown::NoRepo,
@@ -9447,7 +9452,6 @@ mod tests {
         StoreProposal {
             seq,
             change: format!("c{seq}"),
-            older: Vec::new(),
             why: Vec::new(),
             redacted: Vec::new(),
             cut: false,
@@ -9815,6 +9819,7 @@ mod tests {
         assert_eq!(kind(Landed::Rejected(Vec::new())), EntryKind::Failed);
         assert_eq!(kind(Landed::Queued), Event::Rejected { agent: 1 }.kind());
         assert_eq!(kind(Landed::Withdrawn), Event::Rejected { agent: 1 }.kind());
+        assert_eq!(kind(Landed::Replaced), Event::Rejected { agent: 1 }.kind());
         assert_eq!(
             Event::Landed {
                 agent: 3,

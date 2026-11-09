@@ -2611,7 +2611,6 @@ mod tests {
             StoreProposal {
                 seq: 4,
                 change: "demo2".into(),
-                older: Vec::new(),
                 why: Vec::new(),
                 redacted: Vec::new(),
                 cut: false,
@@ -7306,7 +7305,6 @@ mod tests {
         let proposal = crate::model::StoreProposal {
             seq: 5,
             change: "c5".into(),
-            older: Vec::new(),
             why: vec!["unobserved_session".into()],
             redacted: Vec::new(),
             cut: false,
@@ -13987,6 +13985,7 @@ after | not a table";
             (StoreDown::NoDaemon, "lonca daemon"),
             (StoreDown::NotTheDaemon, "not your daemon"),
             (StoreDown::Protocol, "another protocol"),
+            (StoreDown::Old, "brew upgrade lonca"),
             (StoreDown::SignedOut, ":lonca login"),
             (StoreDown::Forbidden, "not enrolled"),
             (StoreDown::NoRepo, "no such repository"),

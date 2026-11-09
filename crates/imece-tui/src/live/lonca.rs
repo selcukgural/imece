@@ -5,7 +5,7 @@
 //! Δ (record 120). imece only reads here; what must be signed the `lonca`
 //! program does, on a thread of its own, when the person asks (record 117).
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
@@ -114,6 +114,8 @@ struct Looked {
     offers: Vec<(ProjectId, Offer)>,
     /// Where every change of each repository stands.
     standings: HashMap<String, Standing>,
+    /// The changes a waiting proposal says it replaces.
+    replaced: HashSet<String>,
     /// What Lonca's queue checked on the watched changes that settled.
     evidence: HashMap<String, Vec<Attested>>,
     /// What is held in each repository.
@@ -163,9 +165,9 @@ impl Kept {
     }
 }
 
-/// What waits for a person in `status`, per worker: its newest proposal,
-/// which holds what its older ones did, since a workspace proposes all it
-/// has. Anything else that waits is the count on the project's line.
+/// What waits for a person in `status`, per worker: its newest proposal
+/// (Lonca withdraws a workspace's waiting one when it proposes again).
+/// Anything else that waits is the count on the project's line.
 fn offers(status: &lonca::Status, read: &mut impl FnMut(&str) -> Option<Arc<Diff>>) -> Vec<Offer> {
     let mut by_agent: BTreeMap<&str, Vec<&lonca::Pending>> = BTreeMap::new();
     let proposals = (status.pending.iter()).filter(|p| p.op == lonca::PROPOSE);
@@ -192,7 +194,6 @@ fn offers(status: &lonca::Status, read: &mut impl FnMut(&str) -> Option<Arc<Diff
             proposal: StoreProposal {
                 seq: newest.seq,
                 change: change.to_string(),
-                older: waiting.iter().map(|p| p.seq).collect(),
                 why: newest.reasons.clone(),
                 redacted: diff.redacted.clone(),
                 cut: diff.cut,
@@ -237,6 +238,27 @@ fn landed(standing: &Standing) -> Option<Landed> {
     }
 }
 
+/// The reason a proposal gives for the waiting one of its workspace that
+/// Lonca withdrew when it came (Lonca 0.2.1): `replaces:<change>`.
+const REPLACES: &str = "replaces:";
+
+/// The changes the proposals waiting in `status` say they replace.
+fn replaced_in(status: &lonca::Status) -> impl Iterator<Item = String> + '_ {
+    (status.pending.iter())
+        .flat_map(|p| &p.reasons)
+        .filter_map(|why| why.strip_prefix(REPLACES))
+        .map(str::to_string)
+}
+
+/// `how` a proposal left, said as a replacement when a newer one of its
+/// workspace names it: its worker took nothing back.
+fn as_replaced(how: Landed, replaced: bool) -> Landed {
+    match how {
+        Landed::Withdrawn if replaced => Landed::Replaced,
+        how => how,
+    }
+}
+
 /// What a worker hears of its proposal, `title`: nothing for one that
 /// needs nothing of it; whether it has to act comes with it.
 fn told(how: &Landed, title: &str, checks: &[Attested]) -> Option<(String, bool)> {
@@ -250,7 +272,7 @@ fn told(how: &Landed, title: &str, checks: &[Attested]) -> Option<(String, bool)
         title => format!(" ({title})"),
     };
     match how {
-        Landed::Queued | Landed::Withdrawn => None,
+        Landed::Queued | Landed::Withdrawn | Landed::Replaced => None,
         Landed::Integrated(commit) => Some((
             format!(
                 "Your proposal{named} is on trunk as {commit}. Call the sync tool before you \
@@ -376,9 +398,8 @@ fn run(place: &Place, dir: &Path, job: &StoreJob) -> Done {
     }
 }
 
-/// The person's word on `proposal`. Its worker's older proposals go first
-/// and whatever the word: this one holds what they did, and one left
-/// waiting would come up as the worker's change.
+/// The person's word on `proposal`: an older one of its worker's waits no
+/// more, Lonca withdrew it when this one came (`replaces:`).
 fn decide(
     place: &Place,
     repo: &str,
@@ -386,10 +407,6 @@ fn decide(
     proposal: &StoreProposal,
     verdict: &Decision,
 ) -> Result<(), Failed> {
-    let replaced = format!("replaced by proposal {}", proposal.seq);
-    for &older in &proposal.older {
-        place.reject(repo, dir, older, &replaced)?;
-    }
     match verdict {
         Decision::Approve(also) => place.approve(repo, dir, proposal.seq, also),
         Decision::Reject(reason) => place.reject(repo, dir, proposal.seq, reason),
@@ -603,6 +620,7 @@ fn look(place: &Place, repos: &Repos, watched: &[String], kept: &mut Kept) -> Lo
                             looked.evidence.insert(change, attested(&found));
                         }
                     }
+                    looked.replaced.extend(replaced_in(&status));
                     looked.standings.extend(status.changes);
                     StoreSeen::Up {
                         behind: behind_of(c, repo, checkout.as_deref(), &status.trunk),
@@ -731,6 +749,7 @@ fn down_of(down: Down) -> StoreDown {
         Down::NoDaemon => StoreDown::NoDaemon,
         Down::NotTheDaemon => StoreDown::NotTheDaemon,
         Down::Protocol => StoreDown::Protocol,
+        Down::Old => StoreDown::Old,
         Down::SignedOut => StoreDown::SignedOut,
         Down::Forbidden => StoreDown::Forbidden,
         Down::NoRepo => StoreDown::NoRepo,
@@ -942,7 +961,7 @@ impl Live {
         for (p, repo, names) in looked.policy_checks {
             changed |= w.store_checks(p, &repo, names);
         }
-        changed |= self.land(w, &looked.standings, &looked.evidence);
+        changed |= self.land(w, &looked.standings, &looked.replaced, &looked.evidence);
         for (p, offer) in &looked.offers {
             changed |= self.offered(w, *p, offer);
         }
@@ -968,9 +987,7 @@ impl Live {
         };
         match w.proposals.get_mut(&id) {
             Some(shown) if shown.change == offer.proposal.change => {
-                let moved = shown.older != offer.proposal.older
-                    || shown.on_trunk != offer.proposal.on_trunk;
-                shown.older.clone_from(&offer.proposal.older);
+                let moved = shown.on_trunk != offer.proposal.on_trunk;
                 shown.on_trunk = offer.proposal.on_trunk;
                 moved
             }
@@ -988,9 +1005,13 @@ impl Live {
         &mut self,
         w: &mut World,
         standings: &HashMap<String, Standing>,
+        replaced: &HashSet<String>,
         evidence: &HashMap<String, Vec<Attested>>,
     ) -> bool {
-        let of = |change: &str| standings.get(change).and_then(landed);
+        let of = |change: &str| {
+            let how = standings.get(change).and_then(landed)?;
+            Some(as_replaced(how, replaced.contains(change)))
+        };
         let checks = |change: &str| evidence.get(change).cloned().unwrap_or_default();
         let mut shown: Vec<(AgentId, String, Landed)> = (w.proposals.iter())
             .filter_map(|(&id, p)| Some((id, p.change.clone(), of(&p.change)?)))
@@ -2137,6 +2158,7 @@ mod tests {
             (Down::NoDaemon, StoreDown::NoDaemon),
             (Down::NotTheDaemon, StoreDown::NotTheDaemon),
             (Down::Protocol, StoreDown::Protocol),
+            (Down::Old, StoreDown::Old),
             (Down::SignedOut, StoreDown::SignedOut),
             (Down::Forbidden, StoreDown::Forbidden),
             (Down::NoRepo, StoreDown::NoRepo),
@@ -2365,7 +2387,6 @@ mod tests {
             proposal: StoreProposal {
                 seq,
                 change: change.to_string(),
-                older: Vec::new(),
                 why: vec!["unobserved_session".into()],
                 redacted: Vec::new(),
                 cut: false,
@@ -2399,7 +2420,6 @@ mod tests {
         let want = StoreProposal {
             seq: 9,
             change: "c9".into(),
-            older: vec![5, 7],
             why: vec!["unobserved_session".into()],
             redacted: vec!["s.txt".into()],
             cut: true,
@@ -2409,7 +2429,6 @@ mod tests {
         assert_eq!(got[0].proposal, want);
         assert_eq!(got[1].proposal.verifies, Runs::Unsaid, "Lonca said nothing");
         assert_eq!(got[1].agent, "w2");
-        assert_eq!(got[1].proposal.older, Vec::<u64>::new());
         assert!(got[1].proposal.on_trunk, "based on trunk as it stands");
     }
 
@@ -2686,7 +2705,7 @@ mod tests {
         let no = Standing::Rejected(vec!["verification_failed:build".into()]);
         let checks = vec![a_check("build", false, &["broke"])];
         let evidence = HashMap::from([("c5".to_string(), checks.clone())]);
-        assert!(live.land(&mut w, &standing("c5", no), &evidence));
+        assert!(live.land(&mut w, &standing("c5", no), &HashSet::new(), &evidence));
         assert!(
             matches!(last(&w), Event::Verified { agent: 1, ok: false, checks: c } if *c == checks)
         );
@@ -2698,12 +2717,17 @@ mod tests {
         let (mut w, mut live, word) = proposer();
         live.offered(&mut w, 0, &offer(&word, 5, "c5"));
         let none = HashMap::new();
-        assert!(live.land(&mut w, &standing("c5", Standing::Queued), &none));
+        assert!(live.land(
+            &mut w,
+            &standing("c5", Standing::Queued),
+            &HashSet::new(),
+            &none
+        ));
         assert!(!matches!(last(&w), Event::Verified { .. }));
         let on = Standing::Integrated("c1".into());
         let checks = vec![a_check("tests", true, &[])];
         let evidence = HashMap::from([("c5".to_string(), checks)]);
-        assert!(live.land(&mut w, &standing("c5", on), &evidence));
+        assert!(live.land(&mut w, &standing("c5", on), &HashSet::new(), &evidence));
         assert!(matches!(
             last(&w),
             Event::Verified {
@@ -2744,6 +2768,7 @@ mod tests {
     fn a_worker_hears_what_it_must_act_on_and_is_woken_for_it() {
         assert_eq!(told(&Landed::Queued, "t", &[]), None);
         assert_eq!(told(&Landed::Withdrawn, "t", &[]), None);
+        assert_eq!(told(&Landed::Replaced, "t", &[]), None);
         let (on_trunk, act) = told(&Landed::Integrated("c1".into()), "T", &[]).unwrap();
         assert!(
             on_trunk.contains("(T)") && on_trunk.contains("c1"),
@@ -2816,22 +2841,15 @@ mod tests {
     }
 
     #[test]
-    fn a_decision_turns_down_the_older_proposals_first() {
+    fn a_decision_is_one_word_on_its_proposal() {
         let (place, dir) =
             imece_agent::lonca_fake::program("echo \"$*\" >> \"$(dirname \"$0\")/all\"\nexit 0");
         let calls = |dir: &Path| std::fs::read_to_string(dir.join("all")).unwrap();
-        let mut proposal = offer("w1", 9, "c9").proposal;
-        proposal.older = vec![5, 7];
+        let proposal = offer("w1", 9, "c9").proposal;
         let yes = Decision::Approve(vec!["api".into(), "e2e".into()]);
         decide(&place, "demo", &dir, &proposal, &yes).unwrap();
-        assert_eq!(
-            calls(&dir),
-            "reject 5 --repo=demo --reason=replaced by proposal 9 --json\n\
-             reject 7 --repo=demo --reason=replaced by proposal 9 --json\n\
-             approve 9 --repo=demo --also=api,e2e --json\n"
-        );
+        assert_eq!(calls(&dir), "approve 9 --repo=demo --also=api,e2e --json\n");
         std::fs::remove_file(dir.join("all")).unwrap();
-        proposal.older = Vec::new();
         let no = Decision::Reject("not this".into());
         decide(&place, "demo", &dir, &proposal, &no).unwrap();
         assert_eq!(
@@ -2846,8 +2864,7 @@ mod tests {
         let (place, dir) = imece_agent::lonca_fake::program(
             "echo \"$*\" >> \"$(dirname \"$0\")/all\"\necho 'lonca: no' >&2\nexit 1",
         );
-        let mut proposal = offer("w1", 9, "c9").proposal;
-        proposal.older = vec![5, 7];
+        let proposal = offer("w1", 9, "c9").proposal;
         let got = decide(
             &place,
             "demo",
@@ -2900,6 +2917,8 @@ mod tests {
                 v["changes"] = serde_json::json!([
                     {"change": "kkkk", "status": {"status": "pending", "seq": 7}}]);
                 v["policy"] = policy.clone();
+                v["pending"][0]["reasons"] =
+                    serde_json::json!(["unobserved_session", "replaces:jjjj"]);
                 // An operation waiting that is no proposal.
                 let mut rule = v["pending"][0].clone();
                 rule["op"] = serde_json::json!("policy.update");
@@ -2929,6 +2948,7 @@ mod tests {
         assert_eq!(looked.offers[0].1.diff.patch, "the patch");
         assert!(looked.offers[0].1.proposal.on_trunk);
         assert_eq!(looked.standings.get("kkkk"), Some(&Standing::Pending));
+        assert_eq!(looked.replaced, HashSet::from(["jjjj".to_string()]));
         // Every proposal waiting, with trunk; the other operation is not.
         assert_eq!(looked.pending.len(), 1);
         let (p, repo, trunk, pending) = &looked.pending[0];
@@ -2982,6 +3002,7 @@ mod tests {
         let down = StoreSeen::Down(StoreDown::Unguarded);
         assert_eq!(looked.found[0].2, down);
         assert!(looked.offers.is_empty() && looked.standings.is_empty());
+        assert!(looked.replaced.is_empty());
         assert!(looked.pending.is_empty(), "nothing waits where no gate is");
         assert!(looked.policy_checks.is_empty());
     }
@@ -3164,11 +3185,7 @@ mod tests {
             !live.offered(&mut w, 0, &offer(&word, 5, "c5")),
             "nothing new"
         );
-        let mut same = offer(&word, 5, "c5");
-        same.proposal.older = vec![2];
-        assert!(live.offered(&mut w, 0, &same), "an older one came to light");
-        assert_eq!(w.proposal_of(1).unwrap().older, [2]);
-        assert_eq!(w.changes.len(), 1);
+        let same = offer(&word, 5, "c5");
         let mut rebased = same.clone();
         rebased.proposal.on_trunk = false;
         assert!(live.offered(&mut w, 0, &rebased), "trunk moved on");
@@ -3186,7 +3203,12 @@ mod tests {
         let (mut w, mut live, word) = proposer();
         live.offered(&mut w, 0, &offer(&word, 5, "c5"));
         let on_trunk = Standing::Integrated("c1".into());
-        assert!(live.land(&mut w, &standing("c5", on_trunk), &HashMap::new()));
+        assert!(live.land(
+            &mut w,
+            &standing("c5", on_trunk),
+            &HashSet::new(),
+            &HashMap::new()
+        ));
         assert!(w.change_of(1).is_none() && w.proposal_of(1).is_none());
         assert!(w.open_inbox().is_empty());
         assert!(matches!(
@@ -3202,13 +3224,76 @@ mod tests {
     }
 
     #[test]
+    fn what_a_newer_proposal_replaces_is_read_from_its_reasons() {
+        let mut status = waiting(&[(9, Some("w1"), Some("c9")), (6, Some("w2"), Some("c6"))]);
+        status.pending[0].reasons = vec![
+            "unobserved_session".into(),
+            "replaces:c5".into(),
+            "approvals=1".into(),
+        ];
+        status.pending[1].reasons = vec!["replaces:c2".into(), "replaces".into()];
+        let got: Vec<String> = replaced_in(&status).collect();
+        assert_eq!(got, ["c5", "c2"]);
+        assert_eq!(replaced_in(&waiting(&[(9, None, None)])).count(), 0);
+    }
+
+    #[test]
+    fn only_a_withdrawal_a_newer_proposal_names_is_a_replacement() {
+        assert_eq!(as_replaced(Landed::Withdrawn, true), Landed::Replaced);
+        assert_eq!(as_replaced(Landed::Withdrawn, false), Landed::Withdrawn);
+        let on = Landed::Integrated("c1".into());
+        assert_eq!(as_replaced(on.clone(), true), on);
+        assert_eq!(as_replaced(Landed::Queued, true), Landed::Queued);
+    }
+
+    #[test]
+    fn a_proposal_replaced_by_a_newer_one_tells_and_wakes_nobody() {
+        let (mut w, mut live, word) = proposer();
+        live.offered(&mut w, 0, &offer(&word, 5, "c5"));
+        let gone = standing("c5", Standing::Withdrawn);
+        let named = HashSet::from(["c5".to_string()]);
+        assert!(live.land(&mut w, &gone, &named, &HashMap::new()));
+        assert!(w.change_of(1).is_none() && w.proposal_of(1).is_none());
+        assert!(matches!(
+            last(&w),
+            Event::Landed {
+                agent: 1,
+                how: Landed::Replaced
+            }
+        ));
+        assert!(live.notes[1].is_empty() && !live.lost[1]);
+        // Named by nobody, it is its worker's taking back.
+        let (mut w, mut live, word) = proposer();
+        live.offered(&mut w, 0, &offer(&word, 5, "c5"));
+        let other = HashSet::from(["c4".to_string()]);
+        assert!(live.land(&mut w, &gone, &other, &HashMap::new()));
+        assert!(matches!(
+            last(&w),
+            Event::Landed {
+                agent: 1,
+                how: Landed::Withdrawn
+            }
+        ));
+    }
+
+    #[test]
     fn a_proposal_still_waiting_stays() {
         let (mut w, mut live, word) = proposer();
         live.offered(&mut w, 0, &offer(&word, 5, "c5"));
-        assert!(!live.land(&mut w, &standing("c5", Standing::Pending), &HashMap::new()));
-        assert!(!live.land(&mut w, &standing("c5", Standing::Other), &HashMap::new()));
+        assert!(!live.land(
+            &mut w,
+            &standing("c5", Standing::Pending),
+            &HashSet::new(),
+            &HashMap::new()
+        ));
+        assert!(!live.land(
+            &mut w,
+            &standing("c5", Standing::Other),
+            &HashSet::new(),
+            &HashMap::new()
+        ));
         assert!(
-            !live.land(&mut w, &HashMap::new(), &HashMap::new()),
+            !live.land(&mut w, &HashMap::new(), &HashSet::new(), &HashMap::new()),
             "not listed"
         );
         assert!(w.proposal_of(1).is_some());
@@ -3219,7 +3304,12 @@ mod tests {
         let (mut w, mut live, word) = proposer();
         live.offered(&mut w, 0, &offer(&word, 5, "c5"));
         let clash = Standing::Conflicted(vec!["a#b".into()]);
-        assert!(live.land(&mut w, &standing("c5", clash), &HashMap::new()));
+        assert!(live.land(
+            &mut w,
+            &standing("c5", clash),
+            &HashSet::new(),
+            &HashMap::new()
+        ));
         assert!(live.notes[1][0].contains("a#b"), "{:?}", live.notes[1]);
         assert!(live.lost[1]);
     }
@@ -3232,7 +3322,12 @@ mod tests {
         w.cards[c].breaker.sent_back = back;
         live.offered(&mut w, 0, &offer(&word, 5, "c5"));
         let no = Standing::Rejected(vec!["verification_failed:tests".into()]);
-        assert!(live.land(&mut w, &standing("c5", no), &HashMap::new()));
+        assert!(live.land(
+            &mut w,
+            &standing("c5", no),
+            &HashSet::new(),
+            &HashMap::new()
+        ));
         assert_eq!(w.cards[c].breaker.sent_back, back + 1);
         (w, live, c)
     }
@@ -3291,7 +3386,12 @@ mod tests {
         live.offered(&mut w, 0, &offer(&word, 5, "c5"));
         live.lonca.worded.push("c5".into());
         let no = Standing::Rejected(vec!["human".into()]);
-        live.land(&mut w, &standing("c5", no), &HashMap::new());
+        live.land(
+            &mut w,
+            &standing("c5", no),
+            &HashSet::new(),
+            &HashMap::new(),
+        );
         assert!(w.open_inbox().is_empty(), "they decide already");
         // Nor one that is on trunk, while another card of its worker's,
         // at work, has its rounds out: nothing woke it.
@@ -3303,7 +3403,12 @@ mod tests {
         w.cards[other].breaker.sent_back = 5;
         assert_eq!(w.rounds_out_of(1), Some(other));
         let on_trunk = Standing::Integrated("c1".into());
-        live.land(&mut w, &standing("c5", on_trunk), &HashMap::new());
+        live.land(
+            &mut w,
+            &standing("c5", on_trunk),
+            &HashSet::new(),
+            &HashMap::new(),
+        );
         assert!(w.open_inbox().is_empty());
     }
 
@@ -3313,7 +3418,12 @@ mod tests {
         live.lost[1] = true;
         live.offered(&mut w, 0, &offer(&word, 5, "c5"));
         let clash = Standing::Conflicted(vec!["a#b".into()]);
-        live.land(&mut w, &standing("c5", clash), &HashMap::new());
+        live.land(
+            &mut w,
+            &standing("c5", clash),
+            &HashSet::new(),
+            &HashMap::new(),
+        );
         assert!(live.lost[1], "the other reason still stands");
     }
 
@@ -3323,7 +3433,12 @@ mod tests {
         live.offered(&mut w, 0, &offer(&word, 5, "c5"));
         w.agents[1].gone = true;
         let no = Standing::Rejected(vec!["no".into()]);
-        live.land(&mut w, &standing("c5", no), &HashMap::new());
+        live.land(
+            &mut w,
+            &standing("c5", no),
+            &HashSet::new(),
+            &HashMap::new(),
+        );
         assert!(!live.lost[1]);
     }
 
@@ -3331,7 +3446,12 @@ mod tests {
     fn what_the_queue_holds_is_said_when_it_comes_out() {
         let (mut w, mut live, word) = proposer();
         live.offered(&mut w, 0, &offer(&word, 5, "c5"));
-        assert!(live.land(&mut w, &standing("c5", Standing::Queued), &HashMap::new()));
+        assert!(live.land(
+            &mut w,
+            &standing("c5", Standing::Queued),
+            &HashSet::new(),
+            &HashMap::new()
+        ));
         assert!(w.proposal_of(1).is_none(), "the person is done with it");
         assert!(matches!(
             last(&w),
@@ -3343,12 +3463,22 @@ mod tests {
         assert!(live.notes[1].is_empty());
         let lines = w.journal.len();
         assert!(
-            !live.land(&mut w, &standing("c5", Standing::Queued), &HashMap::new()),
+            !live.land(
+                &mut w,
+                &standing("c5", Standing::Queued),
+                &HashSet::new(),
+                &HashMap::new()
+            ),
             "it stays"
         );
         assert_eq!(w.journal.len(), lines);
         let out = Standing::Conflicted(vec!["a#b".into()]);
-        assert!(live.land(&mut w, &standing("c5", out), &HashMap::new()));
+        assert!(live.land(
+            &mut w,
+            &standing("c5", out),
+            &HashSet::new(),
+            &HashMap::new()
+        ));
         assert!(matches!(
             last(&w),
             Event::Landed {
@@ -3361,6 +3491,7 @@ mod tests {
         assert!(!live.land(
             &mut w,
             &standing("c5", Standing::Rejected(vec![])),
+            &HashSet::new(),
             &HashMap::new()
         ));
     }
@@ -3371,7 +3502,12 @@ mod tests {
         live.offered(&mut w, 0, &offer(&word, 5, "c5"));
         live.lonca.worded.push("c5".into());
         let no = Standing::Rejected(vec!["rejected: no".into()]);
-        live.land(&mut w, &standing("c5", no), &HashMap::new());
+        live.land(
+            &mut w,
+            &standing("c5", no),
+            &HashSet::new(),
+            &HashMap::new(),
+        );
         assert!(live.notes[1].is_empty() && !live.lost[1]);
         assert!(live.lonca.worded.is_empty());
     }
