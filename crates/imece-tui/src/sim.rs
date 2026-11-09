@@ -1079,6 +1079,29 @@ const STRAY_EVERY: usize = 4;
 const ASKS_EVERY: usize = 3;
 /// The check such a card asks for.
 const ASKED_CHECK: &str = "api";
+/// The checks the demo's Lonca policy defines (#390): what `:checks`
+/// completes to and a name the leader writes is judged by.
+const DEMO_POLICY: [&str; 2] = [ASKED_CHECK, "e2e"];
+/// Every this many cards of a project on Lonca, one also asks for
+/// [`DROPPED_CHECK`], which a newer policy dropped: its verdict says so
+/// and Lonca refuses the yes until `:checks` changes it.
+const DROPPED_EVERY: usize = 9;
+/// The check no longer in [`DEMO_POLICY`].
+const DROPPED_CHECK: &str = "smoke";
+/// How far from a multiple of [`DROPPED_EVERY`] those cards are: the
+/// seventh card is the first, not the first.
+const DROPPED_FROM: usize = 3;
+
+/// What a demo card asks for: [`ASKED_CHECK`] when it `asks`, and
+/// [`DROPPED_CHECK`] too when it is one of those whose policy `dropped`
+/// it since.
+fn demo_checks(asks: bool, dropped: bool) -> Vec<String> {
+    let mut checks: Vec<String> = asks.then(|| ASKED_CHECK.to_string()).into_iter().collect();
+    if asks && dropped {
+        checks.push(DROPPED_CHECK.to_string());
+    }
+    checks
+}
 /// From this far into its work.
 const STRAY_FROM: u8 = 40;
 
@@ -1465,6 +1488,8 @@ impl Sim {
             w.store_seen(p, &repo, seen);
             if up {
                 w.store_pending(p, &repo, pending);
+                let policy = DEMO_POLICY.iter().map(|c| c.to_string()).collect();
+                w.store_checks(p, &repo, Some(policy));
             }
         }
     }
@@ -1509,6 +1534,30 @@ impl Sim {
             a.trace(t, "send: done refused: propose first");
             a.trace(t, "propose: it proposes what it holds");
         }
+    }
+
+    /// The person's yes to worker `id`'s `proposal` asked for a check the
+    /// policy does not define: refused as a real daemon refuses it, the
+    /// proposal still waiting. Whether it was.
+    fn unknown_refused(&mut self, w: &mut World, id: AgentId, proposal: StoreProposal) -> bool {
+        let asked = w.asked_checks(id).to_vec();
+        let Some(name) = asked.iter().find(|c| !DEMO_POLICY.contains(&c.as_str())) else {
+            return false;
+        };
+        let why = format!("denied: unknown_check:{name}");
+        let project = w.agents[id].project;
+        let job = StoreJob::Decide {
+            project,
+            repo: w.projects[project]
+                .lonca
+                .as_ref()
+                .map_or_else(String::new, |l| l.repo.clone()),
+            agent: id,
+            proposal,
+            verdict: Decision::Approve(asked),
+        };
+        w.store_failed(&job, Some(why));
+        true
     }
 
     /// The person approved worker `id`'s proposal: it is on trunk, or the
@@ -2216,8 +2265,10 @@ impl Sim {
         }
         for (id, hunks) in std::mem::take(&mut self.applying) {
             let fits = !self.rng.one_in(8);
-            if w.proposal_of(id).is_some() {
-                self.landed(w, id, fits);
+            if let Some(proposal) = w.proposal_of(id).cloned() {
+                if !self.unknown_refused(w, id, proposal) {
+                    self.landed(w, id, fits);
+                }
             } else {
                 self.applied(w, id, fits, &hunks);
             }
@@ -3052,7 +3103,7 @@ impl Sim {
             story: Vec::new(),
             symbols: Vec::new(),
             paths: Vec::new(),
-            checks: (asks.then(|| ASKED_CHECK.to_string()).into_iter()).collect(),
+            checks: demo_checks(asks, (id + DROPPED_FROM).is_multiple_of(DROPPED_EVERY)),
             started: 0,
             finished: 0,
             attempt: 0,
@@ -9133,6 +9184,69 @@ diff --git a/b.rs b/b.rs
         }
         let off = s.new_card(&mut w, 0, "x".into());
         assert!(w.cards[off].checks.is_empty(), "nothing would run it");
+    }
+
+    #[test]
+    fn the_demo_s_policy_has_its_checks_and_a_card_asking_one_it_dropped_is_refused_at_the_yes() {
+        let (mut w, mut s, id) = a_proposal_waits();
+        let policy: Vec<String> = DEMO_POLICY.iter().map(|c| c.to_string()).collect();
+        assert_eq!(policy, ["api", "e2e"]);
+        // The demo's daemon says its policy's checks, as a look does.
+        w.tick = 0;
+        s.extras.store.push(("r".into(), 0));
+        s.store_answers(&mut w);
+        assert_eq!(w.policy_checks(0), Some(policy.as_slice()));
+        // The seventh card, then each ninth after, also asks for one the
+        // policy dropped; the others as before.
+        assert_eq!(demo_checks(false, true), Vec::<String>::new());
+        assert_eq!(demo_checks(true, false), [ASKED_CHECK]);
+        while w.cards.len() < 6 {
+            s.new_card(&mut w, 0, "x".into());
+        }
+        assert_eq!(w.cards[3].checks, [ASKED_CHECK], "not the fourth");
+        let c = s.new_card(&mut w, 0, "Smoke".into());
+        assert_eq!(
+            (c, w.cards[c].checks.as_slice()),
+            (6, &[ASKED_CHECK.to_string(), DROPPED_CHECK.into()][..])
+        );
+        while w.cards.len() < 15 {
+            s.new_card(&mut w, 0, "x".into());
+        }
+        assert_eq!(w.cards[9].checks, [ASKED_CHECK], "nor the tenth");
+        let again = s.new_card(&mut w, 0, "x".into());
+        assert_eq!(
+            w.cards[again].checks,
+            [ASKED_CHECK.to_string(), DROPPED_CHECK.into()]
+        );
+        // Its change is not ready: the verdict says the policy lacks it.
+        w.agents[id].card = Some(c);
+        let v = w.verdict(id).unwrap();
+        assert_eq!(
+            (v.unknown.as_slice(), v.ready),
+            (&[DROPPED_CHECK.to_string()][..], false)
+        );
+        // The yes is refused as Lonca refuses it; the proposal still waits.
+        let landed = |w: &World| {
+            (w.journal.iter())
+                .filter(|l| matches!(l.event, Event::Landed { .. }))
+                .count()
+        };
+        let before = landed(&w);
+        s.apply_change(&w, id, Vec::new()).unwrap();
+        s.step(&mut w);
+        let refused = Event::StoreFailed {
+            leader: w.projects[0].leader,
+            act: StoreAct::Decide,
+            why: Some(format!("denied: unknown_check:{DROPPED_CHECK}")),
+        };
+        assert!(w.journal.iter().any(|l| l.event == refused));
+        assert_eq!(landed(&w), before);
+        assert!(w.proposal_of(id).is_some(), "it still waits");
+        // Without it the yes goes through.
+        w.set_checks(c, vec![ASKED_CHECK.into()], None);
+        s.apply_change(&w, id, Vec::new()).unwrap();
+        s.step(&mut w);
+        assert_eq!(landed(&w), before + 1);
     }
 
     #[test]

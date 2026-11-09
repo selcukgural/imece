@@ -966,6 +966,11 @@ pub struct Status {
     pub trunk: String,
     /// The commit that holds the repository's policy.
     pub policy: String,
+    /// The names of the checks the policy in force defines, sorted
+    /// (lonca#203): what `approve --also` takes. None when Lonca did not
+    /// say: an older daemon, a policy it can not read, or a list that is
+    /// not check names; the yes is where a name is judged then.
+    pub policy_checks: Option<Vec<String>>,
     /// What is held now.
     pub leases: Vec<Lease>,
     /// The number the next log entry gets: a change here means something
@@ -1163,6 +1168,17 @@ pub struct Pending {
     pub runs: Option<Vec<String>>,
 }
 
+/// `policy_checks` as a `status` says it: a list of check names, sorted
+/// and each once as imece keeps them; anything else is not said.
+fn policy_checks_of(v: &Value) -> Option<Vec<String>> {
+    let mut names = (v.as_array()?.iter())
+        .map(|n| n.as_str().filter(|n| is_check_name(n)).map(str::to_string))
+        .collect::<Option<Vec<String>>>()?;
+    names.sort();
+    names.dedup();
+    Some(names)
+}
+
 impl Status {
     /// Fails closed: a field the protocol promises and is not there, or a
     /// trunk that is no commit id, is no answer.
@@ -1176,6 +1192,7 @@ impl Status {
         Some(Status {
             trunk: trunk.to_string(),
             policy: v["policy"].as_str()?.to_string(),
+            policy_checks: policy_checks_of(&v["policy_checks"]),
             next_seq: v["next_seq"].as_u64()?,
             pending: pending.iter().map(Pending::of).collect::<Option<_>>()?,
             changes: changes
@@ -2583,6 +2600,24 @@ mod tests {
         );
         v["frozen"] = json!(true);
         assert_eq!(Status::of(&v).unwrap().frozen.as_deref(), Some("true"));
+    }
+
+    #[test]
+    fn a_status_says_the_policy_s_checks_only_as_a_list_of_names() {
+        let mut v = status(&[]);
+        let read = |v: &Value| Status::of(v).unwrap().policy_checks;
+        assert_eq!(read(&v), None, "an older daemon: no field");
+        v["policy_checks"] = Value::Null;
+        assert_eq!(read(&v), None, "a policy it can not read");
+        v["policy_checks"] = json!([]);
+        assert_eq!(read(&v), Some(Vec::new()), "a policy with none");
+        v["policy_checks"] = json!(["e2e", "api", "e2e"]);
+        let both = Some(vec!["api".to_string(), "e2e".to_string()]);
+        assert_eq!(read(&v), both, "sorted, each once");
+        for odd in [json!(["api", 3]), json!(["api", "Bad"]), json!("api")] {
+            v["policy_checks"] = odd.clone();
+            assert_eq!(read(&v), None, "{odd}");
+        }
     }
 
     #[test]

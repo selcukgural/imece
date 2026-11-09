@@ -69,6 +69,32 @@ said. Demo: a card of the project on Lonca handed again that asked for nothing a
 `api` (the leader's `ChecksSet`), one that asks keeps its own; `:checks` runs the same
 path.
 
+**The policy's names** (#390, on lonca#203 → lonca#210: `status.policy_checks`, the
+sorted names of `verification.checks` in the policy in force, `null` when it can not be
+read; names only, never a command; protocol 1, a field added, in Lonca after 0.2.0).
+`lonca::Status.policy_checks` (`policy_checks_of`: a list of check names, sorted, each
+once; missing, `null` or anything else is `None`) goes with each look of a repository
+that holds a change for a person into `OnLonca.policy_checks` (memory only, through
+`World::store_checks`, gone with a store that is down; `World::policy_checks`). Where it
+is said:
+- `bus::checks_run` (an `assign`, a `post`, a plan card, a card handed again) refuses a
+  name it lacks with `checks::against`: `"apii" is not a check of Lonca's policy; it has
+  api, e2e. Did you mean api?` (`checks::nearest`: the fewest edits, at most `NEAR_EDITS`
+  2 and fewer than the name has letters; several lacking name each nearest, `api for
+  "apii"`), and a policy with none `… which names none: leave checks out, and say in the
+  body what to run`. Nothing is sent, so the leader fixes it in the same turn.
+- `Verdict.unknown`: the card's checks the policy no longer defines (a newer policy
+  signed since the card was written); they leave `asks`, the line ends in red with
+  `Lonca's policy no longer has smoke: :checks changes what the card asks for`, and the
+  change is not ready (Lonca would refuse the yes).
+- `:checks NAMES` refuses one the policy lacks (`checks_known`: `Lonca's policy has no
+  apii; it has api, e2e · did you mean api?`, the nearest only when one is lacking), and
+  the menu after `:checks ` offers the policy's names not named yet, `none` first
+  (`complete::check_words`).
+`None` (an older daemon, a policy Lonca can not read) leaves everything as before: the
+yes judges the names. imece still drops and adds no check by itself, not even one the
+policy no longer has: the verdict says it and the person or the leader changes the card.
+
 **Points.** Growth: at most 32 names of 32 bytes a card, gone with the card's row.
 Read cost: the verdict reads one card's list per frame. Concurrency: the yes is one
 store job at a time, as before. Migration: an older file gets the columns empty; an
@@ -77,12 +103,11 @@ yes; the person adds it with `lonca policy set` or rejects the change. Security:
 names are checked at the bus, at load and before `lonca approve`; the boundary list
 gets `checks.rs`.
 
-**Gaps.** imece does not check a name against the policy before the yes, so a leader's
-typo is found then (and fixed with `:checks`): Lonca's `status` does not say which named
-checks its policy defines, and reading `lonca.toml` by hand is what record 122 stopped
-(lonca#203, then #390: refuse an unknown name at the bus with the names there are and
-the nearest, say on the verdict line a check a newer policy dropped, complete
-`:checks` from the policy). The leader changes a card's checks only by handing it
+**Gaps.** With a daemon that does not say `policy_checks` (0.2.0 and older) a leader's
+typo is still found at the yes (and fixed with `:checks`); reading `lonca.toml` by hand
+is what record 122 stopped. A policy signed between a look and the yes is seen at the
+next look (5 s), else at the yes. The leader's prompt does not list the policy's
+names: the refusal does, when one is wrong. The leader changes a card's checks only by handing it
 again, not while its change waits for the person (the person's `:checks` is there
 then). The git path has no named checks (`.imece/check` is per repository). The worker
 hears that the checks run, not their commands. `status.changes[].checks` (asked at
@@ -90,5 +115,10 @@ earlier approvals) is not read; `runs` already holds them.
 
 **The demo** (record 31): every third card of the project on Lonca asks for `api`;
 its change's verdict line says `the card also asks for api`, and its landing's
-journal line has `✓ api` after `build` and `tests`. What can not be faked: a real
-`--also`.
+journal line has `✓ api` after `build` and `tests`. Its daemon's policy defines `api`
+and `e2e` (`DEMO_POLICY`, said at each look, so `:checks` completes and refuses as
+live); the seventh card and each ninth after also ask for `smoke`, which it dropped
+(`DROPPED_EVERY`, `DROPPED_FROM`): the verdict says so, and a yes is refused with
+`denied: unknown_check:smoke` (`Sim::unknown_refused`) until `:checks api`. What can
+not be faked: a real `--also`, and the bus's refusal (the demo's leader calls no
+tool).

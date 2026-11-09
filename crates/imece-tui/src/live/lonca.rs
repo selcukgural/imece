@@ -120,6 +120,8 @@ struct Looked {
     leases: Vec<(ProjectId, String, Vec<lonca::Lease>)>,
     /// Every proposal waiting in each repository, with its trunk.
     pending: Vec<(ProjectId, String, String, Vec<lonca::Pending>)>,
+    /// The checks each repository's policy defines, when Lonca says.
+    policy_checks: Vec<(ProjectId, String, Option<Vec<String>>)>,
 }
 
 /// What the looks keep: the store does not change what it said.
@@ -590,6 +592,8 @@ fn look(place: &Place, repos: &Repos, watched: &[String], kept: &mut Kept) -> Lo
                         .cloned();
                     let trunk = status.trunk.clone();
                     (looked.pending).push((*p, repo.clone(), trunk, proposals.collect()));
+                    let names = status.policy_checks.clone();
+                    (looked.policy_checks).push((*p, repo.clone(), names));
                     let mut read = |change: &str| kept.diff(c, repo, change);
                     let offered = offers(&status, &mut read);
                     waiting.extend(offered.iter().map(|o| o.proposal.change.clone()));
@@ -934,6 +938,9 @@ impl Live {
                 .filter_map(|waiting| pending_of(w, p, &trunk, waiting))
                 .collect();
             changed |= w.store_pending(p, &repo, pending);
+        }
+        for (p, repo, names) in looked.policy_checks {
+            changed |= w.store_checks(p, &repo, names);
         }
         changed |= self.land(w, &looked.standings, &looked.evidence);
         for (p, offer) in &looked.offers {
@@ -2306,6 +2313,7 @@ mod tests {
         lonca::Status {
             trunk: TRUNK.into(),
             policy: POLICY.into(),
+            policy_checks: None,
             frozen: None,
             leases: Vec::new(),
             next_seq: 9,
@@ -2927,6 +2935,8 @@ mod tests {
         assert_eq!((*p, repo.as_str(), trunk.as_str()), (4, "demo", TRUNK));
         assert_eq!(pending.iter().map(|w| w.seq).collect::<Vec<_>>(), [7]);
         assert_eq!(pending[0].paths, ["src/a.rs"]);
+        // An older daemon says nothing of the policy's checks.
+        assert_eq!(looked.policy_checks, [(4, "demo".to_string(), None)]);
         look(&d.place, &repos, &[], &mut kept);
         let diffs = |d: &Daemon| {
             let heard = d.heard.lock().unwrap();
@@ -2957,6 +2967,7 @@ mod tests {
         let looked = look(&d.place, &repos, &[], &mut Kept::default());
         assert_eq!(looked.found[0].2, StoreSeen::Down(StoreDown::Frozen));
         assert!(looked.offers.is_empty() && looked.pending.is_empty());
+        assert!(looked.policy_checks.is_empty());
         let asked: Vec<String> = (d.heard.lock().unwrap().iter())
             .map(|h| h["method"].as_str().unwrap_or("").to_string())
             .collect();
@@ -2972,6 +2983,7 @@ mod tests {
         assert_eq!(looked.found[0].2, down);
         assert!(looked.offers.is_empty() && looked.standings.is_empty());
         assert!(looked.pending.is_empty(), "nothing waits where no gate is");
+        assert!(looked.policy_checks.is_empty());
     }
 
     #[test]
@@ -3036,6 +3048,7 @@ mod tests {
             Some("status") => {
                 let mut v = status(&[]);
                 v["pending"] = said.lock().unwrap().clone();
+                v["policy_checks"] = serde_json::json!(["e2e", "api"]);
                 Ok(v)
             }
             Some("tree") => Ok(serde_json::json!([{"path": "lonca.toml",
@@ -3047,6 +3060,8 @@ mod tests {
         live.lonca_due(&w, Instant::now());
         assert!(settled(&mut live, &mut w));
         let on = w.projects[0].lonca.as_ref().unwrap();
+        let policy = Some(vec!["api".to_string(), "e2e".to_string()]);
+        assert_eq!(on.policy_checks, policy, "the policy's checks too");
         assert!(
             matches!(on.seen, StoreSeen::Up { pending: 2, .. }),
             "{:?}",
@@ -3501,6 +3516,43 @@ mod tests {
         assert_eq!(live.apply_change(&w, 1, Vec::new()), why);
         assert!(live.notes[1].is_empty() && live.lonca.worded.is_empty());
         assert!(!live.applying[1]);
+    }
+
+    #[test]
+    fn a_look_whose_only_news_is_the_policy_s_checks_changed_the_screen() {
+        let names = Arc::new(std::sync::Mutex::new(serde_json::json!(["api"])));
+        let said = names.clone();
+        let d = Daemon::start(PROTOCOL, move |asked| match asked["method"].as_str() {
+            Some("status") => {
+                let mut v = status(&[]);
+                v["policy_checks"] = said.lock().unwrap().clone();
+                Ok(v)
+            }
+            Some("tree") => Ok(serde_json::json!([{"path": "lonca.toml",
+                "content_b64": "W29ic2VydmF0aW9uXQp1bm9ic2VydmVkX2lzX3RhaW50ZWQgPSBmYWxzZQo="}])),
+            _ => Err("not_found"),
+        });
+        d.sign_in();
+        let mut w = team(0);
+        let mut live = idle_live(1);
+        live.lonca = Watch::start(d.place.clone());
+        w.on_lonca(0, Some("demo".into()));
+        let look = |live: &mut Live, w: &mut World| {
+            live.look_now();
+            live.lonca_due(w, Instant::now());
+            settled(live, w)
+        };
+        // The store coming up and its checks both are news: neither undoes
+        // the other.
+        assert!(look(&mut live, &mut w), "the first answer");
+        assert_eq!(w.policy_checks(0), Some(&["api".to_string()][..]));
+        assert!(!look(&mut live, &mut w), "the same again");
+        *names.lock().unwrap() = serde_json::json!(["api", "e2e"]);
+        assert!(look(&mut live, &mut w), "only the checks moved");
+        assert_eq!(w.policy_checks(0).map(<[String]>::len), Some(2));
+        *names.lock().unwrap() = serde_json::Value::Null;
+        assert!(look(&mut live, &mut w), "Lonca no longer says");
+        assert_eq!(w.policy_checks(0), None);
     }
 
     #[test]
