@@ -8,7 +8,7 @@ says imece may be tried by others.
 
 What a release is. `.github/workflows/release.yml` runs on a tag `vX.Y.Z`,
 which must be the version in `Cargo.toml` (the build stops otherwise). It
-builds `imece-tui` in release mode, every build to its end (`fail-fast`
+builds the crate `imece` (`crates/imece-tui`) in release mode, every build to its end (`fail-fast`
 off, so one failure shows all), for four targets: `aarch64-apple-darwin`
 and `x86_64-apple-darwin` (on macOS arm64; the x86_64 build is not run
 there, Apple silicon may lack Rosetta), `x86_64-unknown-linux-musl` and
@@ -94,3 +94,48 @@ they are, turns a directory's absolute path into `file://PATH`, and
 refuses anything else (a relative path, `http://`, another scheme) with
 one line before downloading; `website/test-install.sh` case 7b installs
 from `$release/` and checks the refusals.
+
+## Homebrew and crates.io (2026-11-10)
+
+The person's ask (2026-11-10): the release, a Rust crate and a Homebrew
+package, and the three ways to install in the README and on the site as
+Lonca has them. Done as Lonca does it, so the two read and work alike.
+
+**The crate.** The package `imece-tui` is named `imece`, after its
+program (`cargo install --locked imece`, Rust 1.99 or newer); its
+directory keeps its name. `imece-agent` is published with it, since a
+crate on crates.io can depend only on crates there: its description says
+its API has no stability promise. The two name each other at the
+workspace's version exactly (`[workspace.dependencies]`, `=X.Y.Z`): a
+version changed without that line fails the build. `imece_core` on
+crates.io is someone else's and has nothing to do with imece.
+
+**Publishing.** The first version of each crate is published by hand
+(`cargo publish --workspace --locked` from the tag): crates.io's trusted
+publishing needs a crate to exist. From then on `release.yml`'s last two
+jobs do it, Lonca's `registries.yml` moved into this workflow (a release
+made with the workflow's own token starts no other workflow, and imece's
+release is published by the workflow, not drafted): `crates-check`
+packages and builds without a token, `crates` uploads with `--no-verify`
+under a token crates.io hands out for that job in the `release`
+environment. Both are off until the repository variable
+`PUBLISH_CRATES` is `true`, which waits for the person to set trusted
+publishing on crates.io for the two crates (workflow `release.yml`,
+environment `release`). No registry token is kept anywhere.
+
+**Homebrew.** The tap `selcukgural/homebrew-imece`
+(`brew tap selcukgural/imece`, `brew install imece`), copied from
+`selcukgural/homebrew-lonca`: its `update.yml` reads imece's latest
+release every day and on demand, checks every archive against
+`SHA256SUMS` and its attestation (signed by imece's `release.yml` on the
+tag), writes `Formula/imece.rb` with `scripts/formula.sh`, installs and
+tests it on macOS and Linux, and commits it with its own token. imece's
+repository holds no token for the tap. The formula installs the same
+archive the installer does; the tab's icon stays the installer's.
+
+Growth: one formula, two crates a release. Failure: a release whose
+crates did not go up is still a release (the archives and the installer
+do not wait for them); `cargo publish` again from the tag finishes it,
+and a version on crates.io can only be yanked, never replaced, which is
+why the upload is last. Migration: someone with `~/.cargo/bin/imece` from
+`cargo install --path` keeps it; `cargo install imece` replaces it.

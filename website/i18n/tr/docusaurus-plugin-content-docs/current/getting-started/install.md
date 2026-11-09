@@ -31,6 +31,25 @@ Betiği çalışmadan önce okumak için: `curl -fsSL https://selcukgural.github
 
 Kaldırmak için: `rm ~/.local/bin/imece` ve başlangıç dosyasındaki `# imece` altındaki satırlar; sekme ikonu için macOS'ta `graphic_imece.png` ve iTerm2'nin iki tablosundaki `imece` girdileri, Linux'ta `~/.local/share/icons/hicolor/scalable/apps/imece.svg`. Durum dizini (aşağıda) siz silene kadar kalır.
 
+## Homebrew ile
+
+```sh
+brew tap selcukgural/imece
+brew install imece
+```
+
+[Tap](https://github.com/selcukgural/homebrew-imece), kurulum betiğinin kurduğu aynı önceden derlenmiş imece'yi kurar: macOS (arm64, x86_64) ve Linux (x86_64, arm64). Formülü son sürüm için bir iş akışı yazar: her arşiv sürümün `SHA256SUMS` dosyasına ve derleme kaynağı kanıtına (attestation) karşı denetlenir; formül commit edilmeden önce macOS ve Linux'ta kurulup sınanır. `brew upgrade imece` günceller, `brew uninstall imece` kaldırır. Homebrew sekme ikonunu ayarlamaz; onu kurulum betiği yapar.
+
+## crates.io'dan
+
+```sh
+cargo install --locked imece
+```
+
+imece'yi [crate](https://crates.io/crates/imece)'inden kendi Rust'ınızla (1.99 ya da daha yenisi) derler ve `~/.cargo/bin`'e koyar. `--locked`, sürümün sınandığı bağımlılık sürümleriyle derler. Aynı komut yeniden çalıştırılınca günceller; `cargo uninstall imece` kaldırır.
+
+Hangi yolla gelmiş olursa olsun `imece --version` hangisinin çalıştığını, [`imece doctor`](doctor.md) bir açılışın başka neye ihtiyaç duyduğunu söyler. Tek bir yolla kurun: PATH'teki iki kopya er geç iki ayrı sürüm olur.
+
 ## Kaynaktan
 
 Depo derleyicisini `rust-toolchain.toml` dosyasında sabitler (kanal `1.99.1`, `clippy` ve `rustfmt` ile). [rustup](https://rustup.rs) kuruluysa `cargo` ilk derlemede o araç zincirini kendisi alır; yeni bir derleyici yalnız o dosyadaki bir değişiklikle gelir.
@@ -39,19 +58,19 @@ Depo derleyicisini `rust-toolchain.toml` dosyasında sabitler (kanal `1.99.1`, `
 git clone https://github.com/selcukgural/imece.git
 cd imece
 export PATH="$HOME/.cargo/bin:$PATH"
-cargo install --path crates/imece-tui      # ikili dosyanın adı imece
+cargo install --locked --path crates/imece-tui   # crate'in ve ikili dosyanın adı imece
 ```
 
 Ya da kurmadan, checkout'tan çalıştırın:
 
 ```sh
-cargo run -p imece-tui -- --help
-cargo run -p imece-tui -- --demo
+cargo run -p imece -- --help
+cargo run -p imece -- --demo
 ```
 
 Bu yolla `~/.cargo/bin`'e konan bir imece ile kurulum betiğinin `~/.local/bin`'e koyduğu iki ayrı kopyadır; diğeri PATH'te önce geliyorsa betik bunu söyler.
 
-Crate `imece-tui`, ikili dosyası `imece`. SQLite derlemeye gömülür, depo için sistem kütüphanesi gerekmez. Git PATH'te olmalı: imece değişiklikleri git'in kendisiyle okur ve uygular; üç yollu uygulama git 2.56 üzerinde sondalandı.
+Crate'in adı da ikili dosyası gibi `imece` (`crates/imece-tui` içinde). SQLite derlemeye gömülür, depo için sistem kütüphanesi gerekmez. Git PATH'te olmalı: imece değişiklikleri git'in kendisiyle okur ve uygular; üç yollu uygulama git 2.56 üzerinde sondalandı.
 
 ## Claude Code
 

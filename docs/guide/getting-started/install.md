@@ -1,6 +1,6 @@
 ---
 title: Install
-description: Install imece with one line (or build it from source), put Claude Code on PATH, and know where it keeps its state.
+description: Install imece with one line (the installer, Homebrew or cargo; or build it from source), put Claude Code on PATH, and know where it keeps its state.
 ---
 
 # Install
@@ -31,6 +31,25 @@ To read the script before it runs: `curl -fsSL https://selcukgural.github.io/ime
 
 To uninstall: `rm ~/.local/bin/imece`, and the lines under `# imece` in the startup file; for the tab icon, on macOS `graphic_imece.png` and the `imece` entries in iTerm2's two tables, on Linux `~/.local/share/icons/hicolor/scalable/apps/imece.svg`. The state directory (below) stays until you remove it.
 
+## With Homebrew
+
+```sh
+brew tap selcukgural/imece
+brew install imece
+```
+
+The [tap](https://github.com/selcukgural/homebrew-imece) installs the same prebuilt imece as the installer, for macOS (arm64, x86_64) and Linux (x86_64, arm64). Its formula is written by a workflow for the latest release: every archive is checked against the release's `SHA256SUMS` and its build provenance attestation, and the formula is installed and tested on macOS and Linux before it is committed. `brew upgrade imece` updates it, `brew uninstall imece` removes it. Homebrew does not set the tab's icon; the installer does.
+
+## From crates.io
+
+```sh
+cargo install --locked imece
+```
+
+Builds imece from the [crate](https://crates.io/crates/imece) with your own Rust (1.99 or newer) and puts it in `~/.cargo/bin`. `--locked` builds with the dependency versions the release was tested with. The same command again updates it; `cargo uninstall imece` removes it.
+
+Whichever way it came, `imece --version` says which one runs, and [`imece doctor`](doctor.md) what else a start needs. Install one way only: two copies on PATH are two versions sooner or later.
+
 ## From source
 
 The repository pins its compiler in `rust-toolchain.toml` (channel `1.99.1`, with `clippy` and `rustfmt`). With [rustup](https://rustup.rs) installed, `cargo` picks that toolchain up on its own the first time you build; a new compiler comes in only by a change to that file.
@@ -39,19 +58,19 @@ The repository pins its compiler in `rust-toolchain.toml` (channel `1.99.1`, wit
 git clone https://github.com/selcukgural/imece.git
 cd imece
 export PATH="$HOME/.cargo/bin:$PATH"
-cargo install --path crates/imece-tui      # the binary is called imece
+cargo install --locked --path crates/imece-tui   # the crate and its binary are called imece
 ```
 
 Or run it from the checkout without installing:
 
 ```sh
-cargo run -p imece-tui -- --help
-cargo run -p imece-tui -- --demo
+cargo run -p imece -- --help
+cargo run -p imece -- --demo
 ```
 
 An imece put in `~/.cargo/bin` this way and one the installer put in `~/.local/bin` are two copies; the installer says so when the other comes first on PATH.
 
-The crate is `imece-tui`; its binary is `imece`. SQLite is bundled into the build, so no system library is needed for the store. Git must be on PATH: imece reads and applies changes with git itself, and the three-way apply was probed on git 2.56.
+The crate is `imece` (in `crates/imece-tui`), as its binary is. SQLite is bundled into the build, so no system library is needed for the store. Git must be on PATH: imece reads and applies changes with git itself, and the three-way apply was probed on git 2.56.
 
 ## Claude Code
 

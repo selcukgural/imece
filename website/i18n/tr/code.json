@@ -37,6 +37,7 @@
   },
   "home.cta.install": { "message": "Kurulum" },
   "home.install.label": { "message": "macOS ve Linux" },
+  "home.install.also": { "message": "ya da" },
   "home.install.copy": { "message": "Kopyala" },
   "home.install.copied": { "message": "Kopyalandı" },
   "home.install.copyLabel": { "message": "Kurulum komutunu kopyala" },

@@ -11,7 +11,7 @@ imece is one terminal program that runs several Claude Code agents on one codeba
 
 | Crate | What it holds |
 | --- | --- |
-| `imece-tui` | The screen and its model. The model (`model.rs`) stores what happened as data; the screen words it at draw time in English or Turkish. The same model is fed by live sessions (`live/`, the default) or by the fake agents of `--demo`. |
+| `imece` (`crates/imece-tui`) | The screen and its model. The model (`model.rs`) stores what happened as data; the screen words it at draw time in English or Turkish. The same model is fed by live sessions (`live/`, the default) or by the fake agents of `--demo`. |
 | `imece-agent` | The Claude Code adapter. It drives `claude` as a child process and turns its output into events (a turn started, text, a tool call, a cost, a limit, an ask). The screen never sees a wire format. |
 
 Everything an agent wrote reaches the terminal only after it is cleaned: control characters are removed and secret-looking tokens are hidden. See [security](../concepts/security.md).

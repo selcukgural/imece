@@ -11,7 +11,7 @@ imece, birçok Claude Code ajanını tek bir kod tabanında çalıştıran ve te
 
 | Crate | Ne tutar |
 | --- | --- |
-| `imece-tui` | Ekran ve modeli. Model (`model.rs`) olanları veri olarak saklar; ekran çizim anında İngilizce ya da Türkçe sözcüklere çevirir. Aynı modeli canlı oturumlar (`live/`, varsayılan) ya da `--demo`'nun sahte ajanları besler. |
+| `imece` (`crates/imece-tui`) | Ekran ve modeli. Model (`model.rs`) olanları veri olarak saklar; ekran çizim anında İngilizce ya da Türkçe sözcüklere çevirir. Aynı modeli canlı oturumlar (`live/`, varsayılan) ya da `--demo`'nun sahte ajanları besler. |
 | `imece-agent` | Claude Code adaptörü. `claude`'u alt süreç olarak sürer ve çıktısını olaylara çevirir (tur başladı, metin, araç çağrısı, maliyet, limit, soru). Ekran hiçbir zaman bir tel biçimi görmez. |
 
 Bir ajanın yazdığı her şey terminale ancak temizlenerek ulaşır: kontrol karakterleri kaldırılır, gizli anahtara benzeyen sözcükler saklanır. Bkz. [güvenlik](../concepts/security.md).

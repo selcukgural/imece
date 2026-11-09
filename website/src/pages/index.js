@@ -130,6 +130,10 @@ function InstallLine() {
           )}
         </button>
       </div>
+      <span className="imece-install-label">
+        <Translate id="home.install.also">or</Translate> <code>brew install selcukgural/imece/imece</code>{' · '}
+        <code>cargo install --locked imece</code>
+      </span>
     </div>
   );
 }

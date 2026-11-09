@@ -17,6 +17,13 @@ the recorded sha, so a fix upstream is not missed.
 | `website/video/card.html`, `card.js`, `card.css` | kule `website/video/card.*` | `c09ec13` | 2026-11-01 | imece's mark and colours |
 | `website/package.json`, `package-lock.json` | kule `website/package.json`, `package-lock.json` | `c09ec13` | 2026-11-01 | name and description |
 
+The `crates-check` and `crates` jobs of `.github/workflows/release.yml`
+are lonca's `.github/workflows/registries.yml` (`9fbbeb7`, 2026-11-10),
+moved into the release workflow (a release made with the workflow's own
+token starts no other workflow) and without Lonca's excluded crates. The
+Homebrew tap `selcukgural/homebrew-imece` is a repository of its own,
+copied from `selcukgural/homebrew-lonca`.
+
 Built against, not copied: `crates/imece-agent/src/lonca.rs` speaks Lonca's
 daemon protocol **number 1** as `docs/protocol.md` of lonca `v0.2.1`
 (`d802fd6`, 2026-11-09; a daemon older than 0.2.1 is refused; with `session start --continue` and `--harness`, `change.diff`, `reject`, `git` in a workspace, a clean end kept in `status.sessions[].unproposed` and the reasons `unhooked_session`, `unhooked_critical_path` and `verification_missing`, a newer proposal's `replaces:` and `status.policy_checks`) writes it; a daemon of another

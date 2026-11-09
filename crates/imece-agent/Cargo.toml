@@ -1,11 +1,15 @@
 [package]
 name = "imece-agent"
-description = "Drives Claude Code sessions as child processes and reports what they do as events"
+description = "imece's own library: drives Claude Code sessions as child processes and reports what they do as events. Published for `cargo install imece`; its API has no stability promise"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
-publish = false
+repository.workspace = true
+homepage.workspace = true
+readme = "../../README.md"
+keywords = ["claude", "agents", "cli"]
+categories = ["development-tools"]
 
 [features]
 # A daemon that speaks Lonca's protocol, for tests.

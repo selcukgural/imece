@@ -1,11 +1,17 @@
 [package]
-name = "imece-tui"
-description = "imece's screen: a team of Claude Code agents in one terminal, on fake events or live agents"
+# The crate is named after its program (`cargo install imece`); its
+# directory keeps the name it had.
+name = "imece"
+description = "One terminal for a team of Claude Code agents: a leader that hires workers, each in its own worktree, and nothing reaches your checkout until you have read the change"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
-publish = false
+repository.workspace = true
+homepage.workspace = true
+readme = "../../README.md"
+keywords = ["claude", "agents", "tui", "terminal", "git"]
+categories = ["command-line-utilities", "development-tools"]
 
 [[bin]]
 name = "imece"
@@ -16,7 +22,7 @@ path = "src/main.rs"
 # drift apart.
 # Line counts of wrapped text, to keep the newest lines of a long story in view.
 ratatui = { version = "=0.30.2", features = ["unstable-rendered-line-info"] }
-imece-agent = { path = "../imece-agent" }
+imece-agent = { workspace = true }
 # Wrapping a conversation by cell width, so every row keeps its gutter.
 unicode-width = "=0.2.3"
 # The arguments of agents' tool calls.

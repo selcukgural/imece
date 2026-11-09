@@ -3147,6 +3147,16 @@ pub const EN: Text = Text {
     news_close: " any key: close · :news shows this again",
     news: &[
         (
+            "0.1.202611100124",
+            &[
+                "Home lists what is to decide with its keys; a change opens with a verdict.",
+                "Claude Code only. A project can sit on Lonca: workspaces, proposals, your yes.",
+                "Cards can fail, wait on others or be withdrawn; :ledger says what each try cost.",
+                ":health tells the leader of a stalled worker; :ps shows and ends a hung process.",
+                "imece doctor (:doctor) says what a start needs; brew and cargo install imece too.",
+            ],
+        ),
+        (
             "0.1.202611030725",
             &[
                 ":why says why an agent is where it is; the help wraps instead of cutting.",
@@ -4691,6 +4701,16 @@ pub const TR: Text = Text {
     news_title: " IMECE {} SÜRÜMÜNDE YENİ OLANLAR ",
     news_close: " herhangi bir tuş: kapat · :news bunu yine gösterir",
     news: &[
+        (
+            "0.1.202611100124",
+            &[
+                "Ana ekran karar bekleyenleri tuşlarıyla listeler; değişiklik bir hükümle açılır.",
+                "Yalnızca Claude Code. Proje Lonca'da durabilir: workspace, öneri, senin evetin.",
+                "Kart başarısız olabilir, bekleyebilir, geri çekilebilir; :ledger maliyeti söyler.",
+                ":health duran işçiyi lidere bildirir; :ps süreçleri gösterir, takılanı bitirir.",
+                "imece doctor (:doctor) açılışın ihtiyacını söyler; brew ve cargo da imece kurar.",
+            ],
+        ),
         (
             "0.1.202611030725",
             &[
