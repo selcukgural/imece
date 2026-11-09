@@ -554,6 +554,12 @@ pub enum Event {
     /// never came), which an empty list is not: the format may have
     /// changed, and only imece's own commands complete. Once a session.
     CommandsMissing,
+    /// Claude Code took one prompt imece gave it (it echoed the prompt
+    /// back, `--replay-user-messages`). A prompt that comes while a turn
+    /// waits on a tool is taken into that turn: its one
+    /// [`Event::TurnDone`] then ends every prompt taken since the last.
+    /// Claude Code's own commands (`/clear`) are not echoed.
+    Took,
     /// Text the agent wrote during a turn. Display only.
     Text(String),
     /// The agent used a tool: its name and what it touched (a path relative

@@ -16,6 +16,7 @@ const sidebars = {
       collapsed: false,
       items: ['getting-started/install', 'getting-started/first-run', 'getting-started/demo'],
     },
+    'cheat-sheet',
     {
       type: 'category',
       label: 'Concepts',

@@ -386,6 +386,9 @@ pub fn args(spec: &Spec) -> Vec<String> {
         "--output-format",
         "stream-json",
         "--verbose",
+        // Each prompt taken comes back, so imece knows how many a turn
+        // ended (record 135).
+        "--replay-user-messages",
         "--no-chrome",
         "--permission-mode",
         PERMISSION_MODE,
@@ -999,6 +1002,11 @@ impl Parser {
     }
 
     fn results(&mut self, v: &Value) -> Vec<Event> {
+        // A prompt imece gave, taken now: echoed with nothing in it to
+        // read (the text is imece's own).
+        if v["isReplay"] == true {
+            return vec![Event::Took];
+        }
         let mut out = Vec::new();
         for block in v["message"]["content"].as_array().into_iter().flatten() {
             if block["type"] != "tool_result" {
@@ -2127,7 +2135,12 @@ mod tests {
     #[test]
     fn the_command_line_is_locked_down_and_carries_no_prompt() {
         let a = args(&spec(EDIT_TOOLS));
-        for flag in ["--restricted", "--strict-mcp-config", "--no-chrome"] {
+        for flag in [
+            "--restricted",
+            "--strict-mcp-config",
+            "--no-chrome",
+            "--replay-user-messages",
+        ] {
             assert!(a.iter().any(|x| x == flag), "missing {flag}");
         }
         // The person's own commands reach the session; a prompt that
@@ -2738,6 +2751,11 @@ mod tests {
                 },
             ]
         );
+        // A prompt taken, echoed back: counted, never read.
+        let taken = r#"{"type":"user","message":{"role":"user","content":"[tool_result] fake"},"session_id":"s","parent_tool_use_id":null,"isReplay":true}"#;
+        assert_eq!(p.line(taken).unwrap(), [Event::Took]);
+        let not_one = r#"{"type":"user","message":{"role":"user","content":"x"},"isReplay":false}"#;
+        assert_eq!(p.line(not_one).unwrap(), []);
         let res = r#"{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","is_error":true,"content":"no"},{"type":"tool_result","tool_use_id":"t2","content":"ok"}]}}"#;
         assert_eq!(
             p.line(res).unwrap(),

@@ -503,9 +503,11 @@ pub(super) fn abilities(role: Role, confine: Confine) -> &'static str {
              the web. A command that is one program with its arguments (no pipes, \
              redirections, && or $, one line) and runs the build, the tests or git's \
              reading commands runs at once; most others wait for the person's yes, so \
-             prefer the first kind. A refusal is the person's decision, not an error: \
-             do not try the same another way. The run tool runs the build and the \
-             tests with their output tidied."
+             prefer the first kind. Change files with your Edit and Write tools, never \
+             through the shell (cat > file, sed -i, a script that rewrites one): the \
+             person reads every such command before it runs. A refusal is the person's \
+             decision, not an error: do not try the same another way. The run tool runs \
+             the build and the tests with their output tidied."
         }
     }
 }
@@ -514,6 +516,18 @@ pub(super) fn abilities(role: Role, confine: Confine) -> &'static str {
 mod tests {
     use super::*;
     use crate::live::testing::*;
+
+    #[test]
+    fn a_writer_with_a_shell_is_told_to_change_files_with_its_file_tools() {
+        let said = "Change files with your Edit and Write tools";
+        for role in [Role::Worker, Role::Helper, Role::Solo] {
+            assert!(abilities(role, Confine::Standard).contains(said));
+            assert!(abilities(role, Confine::Open).contains(said));
+            // Without a shell there is nothing to write through.
+            assert!(!abilities(role, Confine::Strict).contains(said));
+        }
+        assert!(!abilities(Role::Leader, Confine::Standard).contains(said));
+    }
 
     #[test]
     fn delivered_mail_is_headed_with_its_type_number_and_what_it_replies_to() {

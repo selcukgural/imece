@@ -177,3 +177,58 @@
     max-width: 18rem;
   }
 }
+
+/* Printing a page: only the page itself, the width of the paper. */
+@media print {
+  .navbar,
+  .theme-doc-sidebar-container,
+  .theme-doc-toc-desktop,
+  .theme-doc-toc-mobile,
+  .theme-doc-breadcrumbs,
+  .theme-doc-footer,
+  .theme-doc-version-badge,
+  .pagination-nav,
+  .footer {
+    display: none !important;
+  }
+  main .container,
+  main .col {
+    max-width: 100% !important;
+    flex: 1 0 100% !important;
+  }
+}
+
+/* The cheat sheet on paper: two columns, small type, no group split. */
+@media print {
+  html.docs-doc-id-cheat-sheet .markdown {
+    font-size: 8.5pt;
+    column-count: 2;
+    column-gap: 1.2em;
+  }
+  html.docs-doc-id-cheat-sheet .markdown h1 {
+    column-span: all;
+    font-size: 16pt;
+    margin-bottom: 0.3em;
+  }
+  html.docs-doc-id-cheat-sheet .markdown h2 {
+    font-size: 10.5pt;
+    margin: 0.6em 0 0.2em;
+    break-after: avoid;
+  }
+  html.docs-doc-id-cheat-sheet .markdown p {
+    margin-bottom: 0.4em;
+  }
+  html.docs-doc-id-cheat-sheet .markdown table {
+    display: table;
+    width: 100%;
+    margin-bottom: 0.4em;
+    break-inside: avoid;
+  }
+  html.docs-doc-id-cheat-sheet .markdown th,
+  html.docs-doc-id-cheat-sheet .markdown td {
+    padding: 0.1em 0.35em;
+  }
+  html.docs-doc-id-cheat-sheet .markdown code {
+    font-size: 95%;
+  }
+}

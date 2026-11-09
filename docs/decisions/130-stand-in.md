@@ -283,3 +283,5 @@ come next.
 Next: faults and retries, rate limits and context, strays and the plan
 gate, the leader's board and cards, informs to the person, the commit and
 review one-shots; then Lonca's fake daemon, then `Engine::Sim` goes.
+
+Under `--replay-user-messages` (every session since record 135) it echoes each prompt as it takes it, `"isReplay": true`, before the turn's work; its commands (`/clear`) are not echoed, as Claude Code's are not.

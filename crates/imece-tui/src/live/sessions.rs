@@ -45,6 +45,8 @@ pub fn apply(w: &mut World, id: AgentId, e: AgentEvent, before: u64) {
             a.trace(t, format!("text {text:?}"));
         }
         AgentEvent::Note(text) => w.agents[id].trace(t, format!("note {text}")),
+        // Counted by `Live::step`, which never brings it here.
+        AgentEvent::Took => {}
         // Its `TurnDone` comes next and takes it (record 132).
         AgentEvent::Unpriced(model) => w.turn_unpriced(id, model.as_deref()),
         // Booked with what the `TurnDone` after it says (record 134).
@@ -231,6 +233,7 @@ impl Live {
         self.cwds[id] = None;
         self.generation[id] += 1;
         self.turns[id] = 0;
+        self.took[id] = 0;
         self.turned[id] = false;
         self.inflight[id].clear();
         self.floor[id] = 0;
@@ -1762,6 +1765,30 @@ mod tests {
         // Another turn queued after it: it goes on.
         let (mut w, mut live, helper, heard) = helped();
         live.turns[helper] = 2;
+        hear(&live, helper, failed("x"));
+        live.step(&mut w);
+        assert!(heard.lock().unwrap().is_empty() && !live.lost[1]);
+        // Both prompts taken into the one turn that failed: it was the
+        // last; one of three still queued after it.
+        let (mut w, mut live, helper, heard) = helped();
+        live.turns[helper] = 2;
+        hear(&live, helper, AgentEvent::Took);
+        hear(&live, helper, AgentEvent::Took);
+        hear(&live, helper, failed("x"));
+        live.step(&mut w);
+        assert_eq!(heard.lock().unwrap().len(), 1);
+        // More echoed than imece counted: still its last.
+        let (mut w, mut live, helper, heard) = helped();
+        live.turns[helper] = 1;
+        hear(&live, helper, AgentEvent::Took);
+        hear(&live, helper, AgentEvent::Took);
+        hear(&live, helper, failed("x"));
+        live.step(&mut w);
+        assert_eq!(heard.lock().unwrap().len(), 1);
+        let (mut w, mut live, helper, heard) = helped();
+        live.turns[helper] = 3;
+        hear(&live, helper, AgentEvent::Took);
+        hear(&live, helper, AgentEvent::Took);
         hear(&live, helper, failed("x"));
         live.step(&mut w);
         assert!(heard.lock().unwrap().is_empty() && !live.lost[1]);
