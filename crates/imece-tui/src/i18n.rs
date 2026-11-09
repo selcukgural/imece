@@ -2574,10 +2574,7 @@ pub const EN: Text = Text {
         ),
         ("^d ^u ^f ^b", "half a page / a page"),
         ("^o", "back where you were: Home, a detail, a card"),
-        (
-            "← →  h l",
-            "fold/unfold: project, helpers, message, entry, file",
-        ),
+        ("← →  h l", "fold/unfold: project, message, entry, file"),
         ("za  zM  zR", "fold: toggle · all (:fold) · none (:unfold)"),
         ("s  :settle", "hide the row at hand until it needs you"),
         ("enter  K", "focus, then raw stream · K :peek over all"),
@@ -3966,10 +3963,7 @@ pub const TR: Text = Text {
         ),
         ("^d ^u ^f ^b", "yarım sayfa / tam sayfa"),
         ("^o", "olduğun yere geri: ana ekran, ayrıntı, kart"),
-        (
-            "← →  h l",
-            "katla / aç: proje, yardımcılar, mesaj, kayıt, dosya",
-        ),
+        ("← →  h l", "katla / aç: proje, mesaj, kayıt, dosya"),
         ("za  zM  zR", "katla: değiştir · hepsi :fold · hiç :unfold"),
         ("s  :settle", "eldeki satırı seni bekleyene dek gizle"),
         ("enter  K", "odak, sonra ham akış · K :peek üstte bak"),
