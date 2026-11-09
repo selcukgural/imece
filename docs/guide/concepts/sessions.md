@@ -16,6 +16,10 @@ Everything imece knows is in one SQLite file, `$XDG_STATE_HOME/imece/imece.sqlit
 - **One imece at a time** has the file (a `.lock` beside it): a second one is refused and told to use `:open` from the first.
 - A file imece cannot open or load (not a database, a newer imece's schema, a row it does not know) is refused and left as it was; the message names the file and says how to start afresh (move it away with its `-wal` and `-shm`). imece never backs it up or starts over on its own, since a newer imece may still read it.
 
+## Writing to an agent mid-turn
+
+What you write to an agent goes to its session at once, even mid-turn. While the turn waits on a tool (a command running, an ask of yours), Claude Code takes your words into that same turn and the agent answers them there; otherwise they start its next turn. Either way the agent's row, its change and its `done` follow what Claude Code actually did: imece counts the prompts Claude Code says it took, so a turn that took two of them ends both.
+
 ## Asleep and awake
 
 At the next start every agent comes back `◦ asleep since the last run, write to it to wake it`: no process and no cost until you write to it, a teammate's waking message arrives, or a card posted in this run is offered to it. Mail and cards that waited through the restart wake nobody.
