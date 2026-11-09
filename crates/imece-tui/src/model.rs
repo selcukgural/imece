@@ -947,13 +947,23 @@ pub struct Task {
     pub own: Option<Own>,
 }
 
-/// The person's line a worker works on with no card yet (record 126):
-/// its first line, the card's title once a change of it shows, and the
-/// tick it was written, the card's start.
+/// The line a worker works on with no card yet (record 126): the
+/// person's, or a teammate's mail that is no assign. Its first line, the
+/// card's title once a change of it shows, and the tick it was written,
+/// the card's start.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Own {
     pub title: String,
     pub tick: u64,
+    /// The turn it started or joined ended, and imece asks whether that
+    /// left anything to show (`World::own_ended`): the worktree's stand,
+    /// or Lonca's look. Memory only: a restart keeps the line.
+    #[serde(skip)]
+    pub ended: bool,
+    /// A line that came while that was asked, with its tick: the task
+    /// once the answer is nothing, else part of this one.
+    #[serde(skip)]
+    pub later: Option<(String, u64)>,
 }
 
 fn is_zero(n: &u32) -> bool {
@@ -4729,12 +4739,61 @@ impl World {
             }
         }
         let task = &mut self.agents[id].task;
-        if task.own.is_none() {
-            task.own = Some(Own {
-                title: title.to_string(),
-                tick,
-            });
+        match &mut task.own {
+            None => {
+                task.own = Some(Own {
+                    title: title.to_string(),
+                    tick,
+                    ..Own::default()
+                });
+            }
+            Some(own) if own.ended && own.later.is_none() => {
+                own.later = Some((title.to_string(), tick));
+            }
+            Some(_) => {}
         }
+    }
+
+    /// Worker `id`'s turn ended with a line waiting for its change (record
+    /// 126): whether imece is to ask now if the turn left anything to show
+    /// (not when it is asked already).
+    pub fn own_ended(&mut self, id: AgentId) -> bool {
+        match &mut self.agents[id].task.own {
+            Some(own) if !own.ended => {
+                own.ended = true;
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Whether worker `id`'s line waits on the answer to `own_ended`.
+    pub fn own_asked(&self, id: AgentId) -> bool {
+        self.agents[id].task.own.as_ref().is_some_and(|o| o.ended)
+    }
+
+    /// The answer to `own_ended` for worker `id`: its tree `holds` a change
+    /// or not. Something there: the line goes on, a later one part of it.
+    /// Nothing: the line came to nothing and opens no card ever; a later
+    /// one is the task now. Whether that later one is (its turn may be
+    /// over too, and asks again).
+    pub fn own_checked(&mut self, id: AgentId, holds: bool) -> bool {
+        let Some(own) = self.agents[id].task.own.as_mut().filter(|o| o.ended) else {
+            return false;
+        };
+        let later = own.later.take();
+        own.ended = false;
+        if holds {
+            return false;
+        }
+        let next = later.map(|(title, tick)| Own {
+            title,
+            tick,
+            ..Own::default()
+        });
+        let promoted = next.is_some();
+        self.agents[id].task.own = next;
+        promoted
     }
 
     /// Worker `id`'s change shows: the person's own line it worked on
@@ -7831,6 +7890,45 @@ mod tests {
     }
 
     #[test]
+    fn a_line_whose_turn_left_nothing_goes_and_one_written_meanwhile_takes_its_place() {
+        let mut w = world(vec![
+            agent(0, Role::Leader, Status::Idle),
+            agent(1, Role::Worker, Status::Idle),
+        ]);
+        let title = |w: &World| w.agents[1].task.own.as_ref().map(|o| o.title.clone());
+        assert!(!w.own_ended(1), "nothing to ask about");
+        assert!(!w.own_checked(1, false), "nothing asked");
+        w.own_line(1, "hello");
+        assert!(!w.own_checked(1, false), "not asked: kept");
+        assert_eq!(title(&w).as_deref(), Some("hello"));
+        // Asked once a turn.
+        assert!(w.own_ended(1));
+        assert!(!w.own_ended(1), "asked already");
+        assert!(w.own_asked(1));
+        // Something there: kept, a line written meanwhile part of it.
+        w.tick = 9;
+        w.own_line(1, "and more");
+        w.own_line(1, "and even more");
+        assert!(!w.own_checked(1, true));
+        assert_eq!(title(&w).as_deref(), Some("hello"));
+        assert!(!w.own_asked(1));
+        // Nothing: it goes, and the first line written meanwhile is next.
+        w.own_ended(1);
+        w.own_line(1, "add b");
+        w.own_line(1, "add c");
+        assert!(w.own_checked(1, false), "a later one is the task");
+        let own = w.agents[1].task.own.clone().unwrap();
+        assert_eq!(
+            (own.title.as_str(), own.tick, own.ended),
+            ("add b", 9, false)
+        );
+        // Nothing, and nothing written meanwhile: no line at all.
+        w.own_ended(1);
+        assert!(!w.own_checked(1, false));
+        assert_eq!(title(&w), None);
+    }
+
+    #[test]
     fn the_person_s_own_line_waits_for_a_change_to_open_its_card() {
         let mut w = world(vec![
             agent(0, Role::Leader, Status::Idle),
@@ -7854,7 +7952,8 @@ mod tests {
             w.agents[1].task.own,
             Some(Own {
                 title: "hi".into(),
-                tick: 7
+                tick: 7,
+                ..Own::default()
             })
         );
         w.own_none(1);

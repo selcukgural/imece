@@ -2492,8 +2492,12 @@ impl Sim {
             text: text.lines().next().unwrap_or_default().to_string(),
         });
         // A worker on the person's own line, with no card (record 126),
-        // ends its turn with the answer as a solo does.
-        let own = a.role == Role::Worker && a.task.own.is_some() && !Self::unfinished(w, id);
+        // ends its turn with the answer as a solo does, once no other
+        // answer of it is due (a line written mid-turn is part of it).
+        let own = a.role == Role::Worker
+            && a.task.own.is_some()
+            && !Self::unfinished(w, id)
+            && !self.replies.iter().any(|r| r.agent == id);
         let a = &mut w.agents[id];
         if matches!(a.role, Role::Leader | Role::Solo) || own {
             a.activity = None;
@@ -2505,6 +2509,13 @@ impl Sim {
             self.extras.own_answers += 1;
             self.extras.own_answers.is_multiple_of(OWN_CHANGE_EVERY)
         };
+        // The rest end their turn with nothing to show: the line opens no
+        // card ever, as live's stand or Lonca's look finds it.
+        if own && !own_change {
+            w.own_ended(id);
+            w.own_checked(id, false);
+            w.agents[id].trace(t, "nothing to show: the line opens no card");
+        }
         // A solo's turn end shows what its worktree holds, as live reads
         // it: a change about every other answer.
         let solo_change = w.agents[id].role == Role::Solo
@@ -6074,53 +6085,64 @@ diff --git a/b.rs b/b.rs
         // Told once it is done: no card for the line (record 126), as
         // live's; it waits as the worker's own task.
         s.extras.calm = true;
-        let told_at = w.tick;
-        s.told(&mut w, worker, "Keep the old rounding\nIt breaks invoices.")
+        s.told(&mut w, worker, "are you there?\nAnswer in one word.")
             .unwrap();
         assert_eq!(w.cards.len(), cards, "no card for a line");
         assert_eq!(w.agents[worker].card, None);
         assert_eq!(w.agents[worker].status, Status::Working);
+        // Every answer due given: its turn is over.
         let answered = |w: &mut World, s: &mut Sim| {
-            let n = w.journal.len();
-            for _ in 0..8 {
+            for _ in 0..16 {
                 s.step(w);
-                let replied = (w.journal[n..].iter())
-                    .any(|e| matches!(e.event, Event::Replied { agent, .. } if agent == worker));
-                if replied {
+                if !s.replies.iter().any(|r| r.agent == worker) {
                     return;
                 }
             }
             panic!("no answer");
         };
-        // Its first answer is talk: nothing to show, no card.
+        // Its answer is talk: the turn ends with nothing to show, and the
+        // line is through, no card ever.
         answered(&mut w, &mut s);
         assert_eq!(w.cards.len(), cards, "talk opens no card");
         assert!(w.change_of(worker).is_none());
-        assert_eq!(w.agents[worker].status, Status::Idle);
-        // Told again while the line waits: part of it, no second one.
+        assert_eq!(w.agents[worker].task.own, None);
+        // The next line, and one more while its turn goes on: part of it.
+        let told_at = w.tick;
+        s.told(&mut w, worker, "Keep the old rounding\nIt breaks invoices.")
+            .unwrap();
         s.told(&mut w, worker, "and the tests").unwrap();
         let own = w.agents[worker].task.own.clone().unwrap();
         assert_eq!(
             (own.title.as_str(), own.tick),
             ("Keep the old rounding", told_at)
         );
-        // Its next answer comes with a change: the card opens with it,
-        // titled by the first line, waiting with the change.
+        // Its turn ends with a change: the card opens with it, titled by
+        // the turn's first line, waiting with the change.
         answered(&mut w, &mut s);
-        assert_eq!(w.cards.len(), cards + 1, "a card with the change");
-        let c = &w.cards[cards];
-        assert_eq!(c.title, "Keep the old rounding");
+        // (The leader may post cards meanwhile, and give the worker one
+        // once its change waits.)
+        let mine: Vec<CardId> = (cards..w.cards.len())
+            .filter(|&c| w.cards[c].column == Column::Review)
+            .collect();
+        assert_eq!(mine.len(), 1, "a card with the change");
+        let n = mine[0];
+        let c = &w.cards[n];
         assert_eq!(
-            (c.owner, c.column, c.attempt, c.started),
-            (Some(worker), Column::Review, 1, told_at)
+            (c.title.as_str(), c.owner),
+            ("Keep the old rounding", Some(worker))
+        );
+        assert_eq!(
+            (c.column, c.attempt, c.started),
+            (Column::Review, 1, told_at)
         );
         assert!(matches!(c.story[0].event, StoryEvent::Took { agent } if agent == worker));
-        assert_eq!(w.agents[worker].card, Some(cards));
+        let item = (w.inbox.iter()).rfind(|i| i.kind == InboxKind::Change && i.agent == worker);
+        assert_eq!(item.unwrap().card, Some(n), "the change is the card's");
         assert_eq!(w.change_of(worker).unwrap().agent, worker);
         assert!(
             !w.journal
                 .iter()
-                .any(|e| matches!(e.event, Event::Claimed { card, .. } if card == cards)),
+                .any(|e| matches!(e.event, Event::Claimed { card, .. } if card == n)),
             "nobody claimed it"
         );
     }

@@ -21,6 +21,10 @@ pub(super) struct Opening<'a> {
     /// The person's own word: to a worker whose change waits, it goes on
     /// with that change's card (`World::word_goes_on`).
     pub person: bool,
+    /// It opens no card by itself (record 126): the person's line, or a
+    /// teammate's mail that is no assign, waits as the worker's own task
+    /// until a change of it shows (`World::own_line`).
+    pub lazy: bool,
 }
 
 /// Applies one event of agent `id`'s session. `before` is what its earlier
@@ -533,6 +537,7 @@ impl Live {
             checks: &[],
             card: None,
             person: true,
+            lazy: true,
         };
         if let Err(why) = self.prompt(w, id, prompt, Some(opening)) {
             self.mail[id] = mail;
@@ -679,7 +684,7 @@ impl Live {
             && a.role == Role::Worker
         {
             w.takes(id, c);
-        } else if let Some(o) = opening.as_ref().filter(|o| o.person)
+        } else if let Some(o) = opening.as_ref().filter(|o| o.lazy)
             && a.role == Role::Worker
             && a.status != Status::Working
             && !unfinished
@@ -3193,6 +3198,7 @@ mod tests {
             checks: &[],
             card: None,
             person: false,
+            lazy: false,
         };
         live.prompt(&mut w, 1, "go on".into(), Some(opening))
             .unwrap();
@@ -3212,6 +3218,7 @@ mod tests {
             checks: &[],
             card,
             person: false,
+            lazy: false,
         };
         // An assign naming a card: the worker takes it at its try now,
         // whatever it held, and no card is made.

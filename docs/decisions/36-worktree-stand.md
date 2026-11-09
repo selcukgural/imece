@@ -55,3 +55,8 @@ costs an `add -A` of the worktree, as reading a change does.
 
 Record 67 puts a project's file listing on the same git thread
 (`GitJob::Files`), every `FILES_EVERY` while an agent is mid-turn.
+
+Record 126 reads one more fact from the same read: `Stand.holds`, whether
+the tree differs from its HEAD (its mark) as `worktree::change` reads it,
+a binary file included (a `rev-parse` more). The last read asked after a
+turn's end says whether a line with no card left anything to show.
