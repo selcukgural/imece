@@ -148,6 +148,20 @@ impl App {
         self.home_go_heading(Heading::Decide);
     }
 
+    /// `gc` / `:changes`: Home, its first change waiting; a flash when
+    /// none waits.
+    pub(super) fn go_changes(&mut self) {
+        self.go_home();
+        self.first_change();
+    }
+
+    /// On Home, the first change waiting, or a flash that none does.
+    pub(super) fn first_change(&mut self) {
+        if !self.home_go_group(HomeGroup::Change) {
+            self.flash(self.lang.text().no_change_waits);
+        }
+    }
+
     /// `:salon`: the team, Home's lower half (record 125, step 5).
     pub(super) fn go_team(&mut self) {
         self.go_home();

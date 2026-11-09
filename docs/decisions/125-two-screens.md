@@ -389,3 +389,11 @@ height. Place of a row: a key that acts on Home, its focus, its trace or
 a card is the salon's; a change's keys the change's; a conversation's
 and the journal window's theirs; `[ ]` the three it serves. Record 40
 carries the mechanics.
+
+**`gc` (2026-11-09).** Recording the tours, `W` and `gd` reached a
+permission or a question first whenever one waited, which a demo with
+checks to allow and cards out of tries nearly always has; a change sat
+under them, a row count the person had to `j` through. `gc` (`:changes`,
+`home_go_group`) goes to the first change under the asks, beside `gd`
+and `gw`; with none waiting it flashes `no change waits for you` and
+nothing moves.

@@ -58,7 +58,7 @@ Under 40 columns or 12 rows imece shows only the terminal's size and its own lea
 | Key | What it does |
 | --- | --- |
 | `j` `k` / `↑` `↓`, `gg` `G` | move; the preview follows |
-| `gd` `gw` | the first row to decide · the first at work |
+| `gd` `gc` `gw` | the first row to decide · the first change, under the permissions and the questions (`no change waits for you` when none does) · the first at work |
 | `[` `]` | all projects, then each one, round |
 | `enter` | open it: a change's diff, a question's conversation, a script's bytes, an agent's focus, a project's leader. `esc` comes back here |
 | `a` `r` | yes and no, as in [TO DECIDE](waiting.md); on a change approve and send back; on a question `a` writes back. The row at hand says them at its end |

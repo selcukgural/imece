@@ -63,7 +63,7 @@ While the first key of a chord waits for its second, the row lists what the seco
 | `[`  `]` | in the timeline's window: a column of 5 s · 30 s · 1 min |
 | `r` | in the board's window: only the cards ready to take (no card they wait on undone), again: all ([board](board-and-code-map.md#the-board)) |
 | `↑` `↓`  `j` `k` | select |
-| `gg`  `G`  `gd`  `gw` | first / last line · on Home: the first row to decide · the first at work |
+| `gg`  `G`  `gd`  `gc`  `gw` | first / last line · on Home: the first row to decide · the first change (`:changes`; none waiting: a flash says so) · the first at work |
 | `^d` `^u` `^f` `^b` | half a page / a page |
 | `^o` | back where you were: a focus, a raw stream, a change, a card, the row you were on (vim's jump list, fifty places; an open conversation closes first) |
 | `enter` | look deeper: focus, then the raw stream |
@@ -90,6 +90,7 @@ While the first key of a chord waits for its second, the row lists what the seco
 | Key | What it does |
 | --- | --- |
 | `:waiting` | Home, its first row to decide |
+| `:changes` | Home, its first change to decide (`gc`) |
 | `W`  `S` | `:next` waiting, from anywhere · `:defer` this one and open the next; in a script's window they close it first |
 | `a`  `r` | approve / allow once · send back / refuse (in TO DECIDE, and on a focus: below) |
 | `A`  `:allow` | on an ask in TO DECIDE or on its agent's focus: yes from now on to its commands for the project (elsewhere `A` is the archives) |
@@ -191,6 +192,7 @@ The focus's `folder` line says where the agent works: the checkout for a leader,
 | --- | --- |
 | `:home` `:salon` | none: Home · Home's AT WORK (`gw`) |
 | `:waiting` | none: Home's first row to decide (`gd`) |
+| `:changes` | `gc` |
 | `:board` `:code` `:timeline` | none: windows over the screen; `esc` closes them |
 | `:journal` / `:story` | `J` / `J` in the journal's window |
 | `:lang` | `L` |

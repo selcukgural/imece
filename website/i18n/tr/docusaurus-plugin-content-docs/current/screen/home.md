@@ -58,7 +58,7 @@ imece ssh üzerinden bir telefonda da çalışır. 80 sütunun altında her sat�
 | Tuş | Ne yapar |
 | --- | --- |
 | `j` `k` / `↑` `↓`, `gg` `G` | gezer; önizleme izler |
-| `gd` `gw` | karar bekleyen ilk satır · çalışan ilk satır |
+| `gd` `gc` `gw` | karar bekleyen ilk satır · izinlerin ve soruların altındaki ilk değişiklik (hiçbiri yoksa `seni bekleyen bir değişiklik yok`) · çalışan ilk satır |
 | `[` `]` | tüm projeler, sonra her biri, dönerek |
 | `enter` | açar: değişikliğin diff'i, sorunun konuşması, betiğin baytları, ajanın odağı, projenin lideri. `esc` buraya döner |
 | `a` `r` | evet ve hayır, [KARAR BEKLEYEN](waiting.md)'deki gibi; değişiklikte onayla ve geri gönder; soruda `a` yanıt yazar. Eldeki satır bunları sonunda söyler |

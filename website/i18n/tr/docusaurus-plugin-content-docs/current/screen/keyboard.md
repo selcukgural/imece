@@ -63,7 +63,7 @@ Bir akorun ilk tuşu ikincisini beklerken satır ikinci tuşun ne olabileceğini
 | `[`  `]` | zaman şeridinin penceresinde: bir sütun 5 sn · 30 sn · 1 dk |
 | `r` | panonun penceresinde: yalnız alınabilecek kartlar (beklediği bitmemiş kart yok), yine: hepsi ([pano](board-and-code-map.md#pano)) |
 | `↑` `↓`  `j` `k` | seç |
-| `gg`  `G`  `gd`  `gw` | ilk / son satır · ana ekranda: karar bekleyen ilk satır · çalışan ilk satır |
+| `gg`  `G`  `gd`  `gc`  `gw` | ilk / son satır · ana ekranda: karar bekleyen ilk satır · ilk değişiklik (`:changes`; bekleyen yoksa bir flaş söyler) · çalışan ilk satır |
 | `^d` `^u` `^f` `^b` | yarım sayfa / tam sayfa |
 | `^o` | olduğunuz yere geri: bir odak, bir ham akış, bir değişiklik, bir kart, üstünde olduğunuz satır (vim'in atlama listesi, elli yer; açık konuşma önce kapanır) |
 | `enter` | derine in: odak, sonra ham akış |
@@ -90,6 +90,7 @@ Bir akorun ilk tuşu ikincisini beklerken satır ikinci tuşun ne olabileceğini
 | Tuş | Ne yapar |
 | --- | --- |
 | `:waiting` | ana ekran, karar bekleyen ilk satırı |
+| `:changes` | ana ekran, karar bekleyen ilk değişikliği (`gc`) |
 | `W`  `S` | `:next` bekleyen, her yerden · `:defer` bunu ertele ve sıradakini aç; bir betiğin penceresinde önce onu kapatırlar |
 | `a`  `r` | onayla / bir kez izin ver · geri gönder / reddet (karar bekleyenlerde, bir de odakta: aşağıda) |
 | `A`  `:allow` | sizi bekleyenlerdeki bir istekte ya da ajanının odağında: proje için komutlarına artık hep evet (başka yerde `A` arşivlerdir) |
@@ -191,6 +192,7 @@ Odağın `klasör` satırı ajanın nerede çalıştığını söyler: lider iç
 | --- | --- |
 | `:home` `:salon` | yok: ana ekran · ana ekranın ÇALIŞAN'ı (`gw`) |
 | `:waiting` | yok: ana ekranın karar bekleyen ilk satırı (`gd`) |
+| `:changes` | `gc` |
 | `:board` `:code` `:timeline` | yok: ekranın üstünde pencereler; `esc` kapatır |
 | `:journal` / `:story` | `J` / günlüğün penceresinde `J` |
 | `:lang` | `L` |

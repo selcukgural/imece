@@ -27,6 +27,7 @@ description: imece'nin aldığı her `:` komutu; argümanları, karşılığı o
 | `:away [TIME\|off]` | — | | | | `30m` / `1h` / `off` |
 | `:board` | — | | | | |
 | `:budget USD` | — | `:b` | | | bütçe, hız, ne kadar yeteceği, en dar kullanım penceresi |
+| `:changes` | `gc` | | | | |
 | `:checks [NAMES\|none]` | — | | | | elinizdeki değişikliğe evetin istediği denetimler |
 | `:clear [inbox\|journal]` | — | | | | |
 | `:close [NAME]` | — | `:c` | | | eldeki proje |
@@ -125,6 +126,10 @@ Pano, ekranın üstünde bir pencerede; `esc` kapatır. Bkz. [pano ve kod harita
 ### `:budget USD`
 
 Ajanlar çalışırken bütçeyi artırır ya da azaltır (`:b 80`). Değer, noktadan önce en çok dört rakam ve en çok iki ondalıkla dolardır (`80`, `2.50`); başkası: `80$ dolar değil; 80 ya da 2.50 gibi yaz`. Flaş `bütçe artık $80.00` der, günlük `bütçeyi $80.00 yaptın (önce $50.00)`, ve bütçenin azaldığı uyarısı yeniden çalabilir. Süren bir tur eski sınırında biter; sonraki yeni kalanla başlar, eskisi sınırına çarpmışsa yeni bir oturumda. Bütçe bütün projeler için tektir ve çalıştırmalar arasında saklanır. Menü notu başlığın artık söylemediğini söyler: bütçe, hız, bütçenin o hızla ne kadar yeteceği ve Claude Code birini söylediyse en dar kullanım penceresi: `($3.10 / $20.00 · $2.40/sa, ~7 sa 2 dk kaldı)`. Bkz. [bütçe ve sınırlar](../concepts/budget-and-limits.md).
+
+### `:changes`
+
+Ana ekran, karar bekleyen ilk değişikliği, izinlerin ve soruların altında, `gc` gibi; bir ayrıntıdan ya da pencereden önce ana ekrana döner. Bekleyen bir değişiklik yoksa `seni bekleyen bir değişiklik yok` flaşı çıkar, hiçbir şey kıpırdamaz.
 
 ### `:checks [NAMES|none]`
 
