@@ -48,6 +48,7 @@ A line that starts with `:` is a command to imece, not a message to an agent. Yo
 | `:help` | `?` | | | | |
 | `:keys` | — | | | | how many keys your file gives |
 | `:lang [en\|tr]` | `L` | | | | `English` / `Türkçe` |
+| `:ledger` | — | | | | |
 | `:lonca [NAME\|off\|login\|import [NAME]]` | — | | | | the project's repository, when there is one |
 | `:mark` | `m` | | | | |
 | `:model NAME` | — | | | | the solo at hand's model, or `default` |
@@ -222,6 +223,10 @@ Reads your key file (`~/.config/imece/keys`) again and says what came of it: `�
 ### `:lang [en|tr]`
 
 The screen's language, as `L`. Alone it switches to the other language; `:lang en` or `:lang tr` sets one. Anything else: `de is not a language: en or tr`. The menu note shows the language in use. For this run only; the next start reads `--lang` or `IMECE_LANG`.
+
+### `:ledger`
+
+The cost ledger, in a window over the screen: per open project what it spent, `applied $3.20 · wasted $1.10 · at work $0.40 · lead $0.90`, then every attempt at a card newest first, one row each: the card and its try, the worker, the model its session ran on, the changes it put before you and those that came back, what it cost, how long it took, how it ended (at work, applied, done with no change, failed, withdrawn, handed on, late done), the day and Claude Code's version. `j` `k` `g` `G` move, `enter` opens the row's card (a row with no card: its worker's focus), `esc` or `q` closes it. On a plan's login the title says `API-equivalent` and every figure starts with `≈`. See [the ledger](../concepts/budget-and-limits.md#the-ledger).
 
 ### `:lonca [NAME|off|login|import]`
 

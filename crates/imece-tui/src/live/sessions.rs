@@ -28,6 +28,8 @@ pub fn apply(w: &mut World, id: AgentId, e: AgentEvent, before: u64) {
     match e {
         AgentEvent::Started { session, model } => {
             w.agents[id].trace(t, format!("session {session} · {model}"));
+            // The ledger's rows say it (record 133).
+            w.agents[id].meter.model = model;
         }
         AgentEvent::Commands(mut commands) => {
             // imece's own /clear ends a session whose CLI has none.
@@ -136,6 +138,9 @@ pub fn apply(w: &mut World, id: AgentId, e: AgentEvent, before: u64) {
         } => {
             w.agents[id].cost = before + cost / 100;
             w.turn_priced(id);
+            // On the ledger's row it was spent on (record 133), before a
+            // done's change settles.
+            w.book(id);
             // A done's change waited for this: what the turn cost is known.
             w.settle_change(id);
             let a = &mut w.agents[id];
@@ -1375,6 +1380,39 @@ mod tests {
         let mut live = idle_live(w.agents.len());
         live.end(&mut w, 1);
         assert!(w.agents[1].plan.is_empty());
+    }
+
+    #[test]
+    fn a_turn_s_cost_goes_on_the_ledger_under_the_model_its_session_said() {
+        let mut w = team(1);
+        let c = crate::live::testing::with_card(&mut w, 1);
+        w.takes(1, c);
+        apply(
+            &mut w,
+            1,
+            AgentEvent::Started {
+                session: "s1".into(),
+                model: "claude-opus-5-5".into(),
+            },
+            0,
+        );
+        assert_eq!(w.agents[1].meter.model, "claude-opus-5-5");
+        let done = |cost| AgentEvent::TurnDone {
+            ok: true,
+            text: "done".into(),
+            cost,
+            denied: 0,
+        };
+        // Millionths of a dollar on top of what was spent before.
+        apply(&mut w, 1, done(1_200_000), 300);
+        let r = &w.ledger[0];
+        assert_eq!((r.card, r.cost), (Some(c), 12_300));
+        assert_eq!(r.model, "claude-opus-5-5");
+        // Unpriced: the row says so.
+        apply(&mut w, 1, AgentEvent::Unpriced(None), 0);
+        apply(&mut w, 1, done(1_200_000), 300);
+        assert_eq!(w.ledger[0].cost, 12_300);
+        assert!(w.ledger[0].unpriced);
     }
 
     #[test]

@@ -236,6 +236,8 @@ const WEEK: u32 = imece_agent::WEEK;
 const MAX_WORKERS: usize = 6;
 /// Fake cost of one busy tick, in ten-thousandths of a dollar.
 const COST_PER_TICK: u64 = 8;
+/// The models the demo's sessions say they run on, by agent (record 133).
+const DEMO_MODELS: [&str; 2] = ["claude-sonnet-5-5", "claude-opus-5-5"];
 /// Ticks an approval waits before the demo's session gives up on it.
 const APPROVAL_WAIT: u64 = 100 / SECONDS_PER_TICK;
 /// Ticks a worker that asked the person waits before it goes on with what
@@ -1008,6 +1010,8 @@ pub fn world(
         orphans: crate::model::Orphans::default(),
         health: Default::default(),
         procs: Default::default(),
+        ledger: Vec::new(),
+        version: None,
         messages: 0,
         plans: Vec::new(),
     };
@@ -2270,7 +2274,13 @@ impl Sim {
             .collect();
         for &id in &busy {
             w.round_opens(id);
+            // The model its session says it runs on, as live's `init`
+            // does (record 133).
+            if w.agents[id].meter.model.is_empty() {
+                w.agents[id].meter.model = DEMO_MODELS[id % DEMO_MODELS.len()].to_string();
+            }
             w.agents[id].cost += COST_PER_TICK;
+            w.book(id);
         }
         for (id, hunks) in std::mem::take(&mut self.applying) {
             let fits = !self.rng.one_in(8);

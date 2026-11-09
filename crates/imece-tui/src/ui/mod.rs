@@ -11,6 +11,7 @@ mod diff;
 pub(crate) mod export;
 mod focus;
 mod home;
+pub(crate) mod ledger;
 pub(crate) mod overlay;
 pub(crate) mod salon;
 pub(crate) mod story;
@@ -132,6 +133,9 @@ pub fn draw(f: &mut Frame, app: &App) {
     }
     if let Some(win) = app.lonca_win {
         over.push(overlay::lonca(f, app, win));
+    }
+    if let Some(at) = app.ledger_win {
+        over.push(ledger::window(f, app, at));
     }
     if let Some(win) = app.window {
         over.push(overlay::view(f, app, win));
@@ -2729,6 +2733,246 @@ mod tests {
         app.lonca_win = Some(LoncaWin { at: 0 });
         let s = render(&app, 100, 12);
         assert!(s.contains("▶   10  p10") && !s.contains("p15"), "{s}");
+    }
+
+    #[test]
+    fn the_ledger_window_says_each_project_s_figures_and_its_attempts_newest_first() {
+        use crate::ledger::{Attempt, Outcome};
+        let mut app = app_after(2, 1, 0, Lang::En);
+        let w = &mut app.world;
+        let p = w.salon_order()[0];
+        let other = w.salon_order()[1];
+        let lead = w.projects[p].leader;
+        let name = w.agents[lead].name.clone();
+        w.agents[lead].cost = 2_500;
+        let c = crate::live::testing::with_card(w, lead);
+        w.cards[c].project = p;
+        w.ledger = vec![
+            Attempt {
+                project: p,
+                card: Some(c),
+                attempt: 2,
+                agent: lead,
+                model: "claude-opus-5-5".into(),
+                cost: 8_400,
+                rounds: 3,
+                sent_back: 2,
+                outcome: Outcome::Late,
+                began: 0,
+                ended: 12,
+                version: Some("2.1.4 (Claude Code)".into()),
+                ..Attempt::default()
+            },
+            Attempt {
+                project: p,
+                agent: lead,
+                cost: 700,
+                unpriced: true,
+                rounds: 1,
+                outcome: Outcome::Applied,
+                began: 0,
+                ended: 11,
+                ..Attempt::default()
+            },
+        ];
+        app.command("ledger");
+        assert_eq!(app.ledger_win, Some(0));
+        let s = render(&app, 140, 30);
+        assert!(s.contains("LEDGER · 2 attempts"), "{s}");
+        assert!(!s.contains("API-equivalent"), "{s}");
+        assert!(
+            s.contains("applied $0.07+? · wasted $0.84 · at work $0.00 · lead $0.25"),
+            "{s}"
+        );
+        let row = |s: &str, word: &str| {
+            s.lines()
+                .find(|l| l.contains(word))
+                .unwrap_or("")
+                .to_string()
+        };
+        let late = row(&s, "late done");
+        assert!(
+            late.contains(&format!(
+                "  #{} try 2  {name}  claude-opus-5-5  3 Δ · 2 sent back  $0.84  1 min  late done",
+                c + 1
+            )),
+            "{s}"
+        );
+        assert!(
+            late.ends_with(" · 2.1.4") || late.contains(" · 2.1.4 "),
+            "{late}"
+        );
+        assert!(!late.contains("(Claude Code)"), "{late}");
+        let applied = row(&s, "  applied  ");
+        assert!(
+            applied.contains(&format!("▶ no card  {name}  1 Δ  $0.07+?  55 s  applied")),
+            "{s}"
+        );
+        assert!(
+            !late.contains('▶') && !applied.contains("sent back"),
+            "{applied}"
+        );
+        // Newest first: the row with no card is above.
+        assert!(
+            s.find("no card").unwrap() < s.find("late done").unwrap(),
+            "{s}"
+        );
+        // A project nothing was spent in says so.
+        let other_name = app.world.projects[other].name.clone();
+        assert!(s.contains(&format!("{other_name}  applied $0.00")), "{s}");
+        assert!(s.contains("nothing spent on a card yet"), "{s}");
+        assert!(s.contains("open the card"), "{s}");
+        // On a plan: API-equivalent, every figure ≈.
+        app.world.estimated = true;
+        let s = render(&app, 140, 30);
+        assert!(s.contains("LEDGER · 2 attempts · API-equivalent"), "{s}");
+        assert!(
+            s.contains("≈$0.84") && s.contains("applied ≈$0.07+?"),
+            "{s}"
+        );
+        // In Turkish.
+        app.lang = Lang::Tr;
+        let s = render(&app, 140, 30);
+        for word in [
+            "HARCAMALAR · 2 deneme · API karşılığı",
+            "uygulanan ≈$0.07+? · boşa ≈$0.84 · süren ≈$0.00 · lider ≈$0.25",
+            "deneme 2",
+            "kartsız",
+            "2 geri döndü",
+            "geç done",
+            "uygulandı",
+            "henüz bir karta harcama yok",
+            "kartı aç",
+        ] {
+            assert!(s.contains(word), "{word}: {s}");
+        }
+        // On a short screen the row at hand stays in view.
+        app.lang = Lang::En;
+        app.world.estimated = false;
+        let older = (0..8).map(|i| Attempt {
+            project: p,
+            agent: lead,
+            model: format!("m-{i}"),
+            ..Attempt::default()
+        });
+        app.world.ledger.splice(0..0, older);
+        app.ledger_win = Some(9);
+        let s = render(&app, 140, 12);
+        assert!(row(&s, "m-0").contains('▶'), "the oldest, at hand: {s}");
+        assert!(!s.contains("late done"), "scrolled away: {s}");
+        app.ledger_win = Some(0);
+        let s = render(&app, 140, 12);
+        assert!(s.contains("lead $0.25") && !s.contains("m-0"), "{s}");
+        app.world.ledger.drain(0..8);
+        // How it ended says it in its colour; the row at hand in bold;
+        // a blank line between projects.
+        app.ledger_win = Some(1);
+        let mut term = ratatui::Terminal::new(TestBackend::new(140, 30)).unwrap();
+        term.draw(|f| draw(f, &app)).unwrap();
+        let buf = term.backend().buffer().clone();
+        let s = render(&app, 140, 30);
+        let lines: Vec<&str> = s.lines().collect();
+        let cell = |word: &str| {
+            let y = lines.iter().position(|l| l.contains(word)).unwrap();
+            let x = lines[y].split(word).next().unwrap().chars().count();
+            buf[(x as u16, y as u16)].clone()
+        };
+        assert_eq!(cell("late done").fg, pal().warn);
+        let applied = lines.iter().position(|l| l.contains("no card")).unwrap();
+        let x = (lines[applied].find("55 s  applied"))
+            .map(|b| lines[applied][..b].chars().count() + "55 s  ".len())
+            .unwrap();
+        assert_eq!(buf[(x as u16, applied as u16)].fg, pal().ok);
+        assert!(
+            cell("#3 try 2").modifier.contains(Modifier::BOLD),
+            "at hand"
+        );
+        assert!(!cell("no card").modifier.contains(Modifier::BOLD));
+        let other_at = lines
+            .iter()
+            .position(|l| l.contains(&format!("{other_name}  applied")))
+            .unwrap();
+        assert!(
+            lines[other_at - 1].contains("│ ")
+                && lines[other_at - 1]
+                    .trim_matches(|c| c == ' ' || c == '│')
+                    .is_empty(),
+            "{s}"
+        );
+        app.world.ledger.push(Attempt {
+            project: other,
+            agent: lead,
+            model: "m-open".into(),
+            ..Attempt::default()
+        });
+        let s = render(&app, 140, 30);
+        let lines: Vec<&str> = s.lines().collect();
+        let mut term = ratatui::Terminal::new(TestBackend::new(140, 30)).unwrap();
+        term.draw(|f| draw(f, &app)).unwrap();
+        let buf = term.backend().buffer().clone();
+        let y = lines.iter().position(|l| l.contains("m-open")).unwrap();
+        let x = lines[y]
+            .find("at work")
+            .map(|b| lines[y][..b].chars().count())
+            .unwrap();
+        assert_eq!(buf[(x as u16, y as u16)].fg, pal().info);
+        app.world.ledger.pop();
+        // The card's screen lists its tries.
+        app.ledger_win = None;
+        app.open_card(c);
+        let s = render(&app, 140, 40);
+        assert!(s.contains("ATTEMPTS"), "{s}");
+        assert!(row(&s, "late done").contains("try 2"), "{s}");
+        assert!(!s.contains("no card"), "only the card's: {s}");
+        // A card no try spent on lists none.
+        let d = crate::live::testing::with_card(&mut app.world, lead);
+        app.world.cards[d].project = p;
+        app.open_card(d);
+        let s = render(&app, 140, 40);
+        assert!(!s.contains("ATTEMPTS"), "{s}");
+    }
+
+    #[test]
+    fn how_long_an_attempt_took_is_seconds_under_a_minute() {
+        use crate::ui::ledger::lasted;
+        assert_eq!(lasted(Lang::En, 11), "55 s");
+        assert_eq!(lasted(Lang::En, 12), "1 min");
+        assert_eq!(lasted(Lang::Tr, 0), "0 sn");
+        // Every outcome has its own words.
+        let t = Lang::En.text();
+        let words: std::collections::HashSet<&str> = [
+            crate::ledger::Outcome::Open,
+            crate::ledger::Outcome::Applied,
+            crate::ledger::Outcome::Done,
+            crate::ledger::Outcome::Failed,
+            crate::ledger::Outcome::Withdrawn,
+            crate::ledger::Outcome::HandedOn,
+            crate::ledger::Outcome::Late,
+        ]
+        .map(|o| crate::ui::ledger::outcome(t, o))
+        .into_iter()
+        .collect();
+        assert_eq!(words.len(), 7);
+        assert_eq!(
+            crate::ui::ledger::outcome(t, crate::ledger::Outcome::HandedOn),
+            "handed on"
+        );
+        assert_eq!(
+            crate::ui::ledger::outcome(t, crate::ledger::Outcome::Withdrawn),
+            "withdrawn"
+        );
+        assert_eq!(
+            crate::ui::ledger::outcome(t, crate::ledger::Outcome::Failed),
+            "failed"
+        );
+        assert_eq!(
+            crate::ui::ledger::outcome(t, crate::ledger::Outcome::Done),
+            "done, no change"
+        );
+        assert_eq!(
+            crate::ui::ledger::outcome(t, crate::ledger::Outcome::Open),
+            "at work"
+        );
     }
 
     #[test]

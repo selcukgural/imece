@@ -42,6 +42,7 @@ Left, in the team's place:
 - The paths it owns (`owns   src/parser.rs, docs (shared)`), when its `assign` or `post` gave it any ([the paths a card owns](../concepts/messages-and-board.md#the-paths-a-card-owns)); a write outside them is a `change` line of its story, `changed src/other.rs, outside the card's paths`.
 - The checks it asks for (`checks api, e2e`), on a project on Lonca ([the checks a card asks for](../concepts/messages-and-board.md#the-checks-a-card-asks-for)).
 - **WHO**: who posted it, its owner, the owner's helpers while it is still the owner's card, then everyone its story says talked about it, each once with the first part it had. They are drawn as the team's agent rows, so their state is live; `j` `k` select among them and `enter` opens the selected one's focus as in the team.
+- **ATTEMPTS**: each try at the card, oldest first, as [the ledger](../concepts/budget-and-limits.md#the-ledger) lists it: the try, the worker, the model, the changes and those sent back, what it cost, how long it took and how it ended. Shown once a try spent anything.
 - **STORY**: the card's story, one line per event, oldest first, told as the owner had it. Each line has a glyph and a label: `◎` intent, `⚑` assumption, `⚖` decision, `⇄` talk (a message, with its type), `•` evidence (a run and how it ended), `Δ` change, `›` you (what you said about it). A card nobody took yet says `No story yet.`
 
 Under them, for this card alone:

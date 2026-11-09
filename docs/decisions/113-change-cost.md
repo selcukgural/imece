@@ -64,9 +64,9 @@ busy for long enough that the worker settled a newer change reads the
 newer figure on the older `done`: accepted, the mail carries no figure of
 its own.
 
-Not done, by choice for now: a price per applied
-change across a project (G2's ledger, #60; what a figure means, `≈` on a
-plan and `+?` for what was never priced, is record 132); the figure in the `board`
+Not done, by choice for now (a price per attempt across a project, applied
+apart from wasted, is G2's ledger, record 133; what a figure means, `≈` on
+a plan and `+?` for what was never priced, is record 132): the figure in the `board`
 tool's lines; re-settling a change for a helper whose last turn ends
 after its worker's (its cost goes to the next round).
 

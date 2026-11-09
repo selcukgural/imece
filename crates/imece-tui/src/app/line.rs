@@ -705,6 +705,7 @@ impl App {
                 self.toggle_story();
             }
             "journal" => self.open_window(Window::Journal),
+            "ledger" => self.open_ledger(),
             which @ ("fold" | "unfold") if self.thread.is_none() && self.diff_zoom().is_some() => {
                 if let Some(id) = self.diff_zoom() {
                     self.fold_files(id, |f, _| *f = Folds::every(which == "fold"));

@@ -868,6 +868,8 @@ pub fn world(o: Options) -> Result<(World, Live), String> {
                 orphans: crate::model::Orphans::default(),
                 health: Default::default(),
                 procs: Default::default(),
+                ledger: Vec::new(),
+                version: None,
                 messages: 0,
             },
             None,

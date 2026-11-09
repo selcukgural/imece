@@ -32,6 +32,7 @@ use imece_agent::worktree;
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Serialize, de::DeserializeOwned};
 
+use crate::ledger::Attempt;
 use crate::model::*;
 use crate::recall::{Hit, Line};
 
@@ -96,7 +97,9 @@ use crate::recall::{Hit, Line};
 /// 127), an assign's until it is delivered (`mail.checks`).
 /// 33 (2026-11-09): an agent's spending Claude Code never priced
 /// (`agents.unpriced`, record 132).
-pub const SCHEMA_VERSION: i64 = 33;
+/// 34 (2026-11-09): the cost ledger, one row per attempt at a card
+/// (`ledger`, record 133).
+pub const SCHEMA_VERSION: i64 = 34;
 /// Trace lines kept per agent, as the world keeps them.
 const TRACE_KEEP: usize = 200;
 /// The file's name under the state directory.
@@ -176,6 +179,13 @@ CREATE TABLE IF NOT EXISTS paid (
     kind INTEGER NOT NULL, day INTEGER NOT NULL, calls INTEGER NOT NULL, cost INTEGER NOT NULL,
     PRIMARY KEY (kind, day)) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS sent (seq INTEGER PRIMARY KEY, tick INTEGER NOT NULL, text TEXT NOT NULL);
+-- One row per attempt at a card (record 133), read whole in key order
+-- (`load`) and written by its key: no index beyond it.
+CREATE TABLE IF NOT EXISTS ledger (
+    id INTEGER PRIMARY KEY, project INTEGER NOT NULL, card INTEGER, attempt INTEGER NOT NULL,
+    agent INTEGER NOT NULL, model TEXT NOT NULL, cost INTEGER NOT NULL,
+    unpriced INTEGER NOT NULL, rounds INTEGER NOT NULL, sent_back INTEGER NOT NULL,
+    outcome TEXT NOT NULL, began INTEGER NOT NULL, ended INTEGER NOT NULL, version TEXT);
 ";
 
 /// The full-text index `:recall` searches (record 93): one row per journal
@@ -335,6 +345,8 @@ struct Saved {
     projects: Vec<u64>,
     agents: Vec<u64>,
     cards: Vec<u64>,
+    /// Each ledger row by what it holds (record 133).
+    ledger: Vec<u64>,
     /// Story lines saved per card.
     story: Vec<usize>,
     /// Journal lines in the world that are saved, and the last sequence
@@ -1087,6 +1099,30 @@ impl Store {
                 ],
             )?;
         }
+        for &i in &plan.ledger {
+            let r = &w.ledger[i];
+            tx.execute(
+                "INSERT OR REPLACE INTO ledger (id, project, card, attempt, agent, model, cost, \
+                 unpriced, rounds, sent_back, outcome, began, ended, version) VALUES (?1, ?2, ?3, \
+                 ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+                params![
+                    n(i),
+                    n(r.project),
+                    opt(r.card),
+                    r.attempt,
+                    n(r.agent),
+                    r.model,
+                    big(r.cost),
+                    r.unpriced,
+                    r.rounds,
+                    r.sent_back,
+                    tag(&r.outcome),
+                    big(r.began),
+                    big(r.ended),
+                    r.version,
+                ],
+            )?;
+        }
         for &c in &plan.story {
             let from = self.saved.story.get(c).copied().unwrap_or(0);
             for (seq, s) in w.cards[c].story.iter().enumerate().skip(from) {
@@ -1467,6 +1503,13 @@ impl Store {
             }
             after.story.push(card.story.len());
         }
+        for (i, row) in w.ledger.iter().enumerate() {
+            let h = hash(row);
+            if s.ledger.get(i) != Some(&h) {
+                plan.ledger.push(i);
+            }
+            after.ledger.push(h);
+        }
         let new = w.journal.len().saturating_sub(s.journal);
         plan.journal = new > 0;
         after.journal = w.journal.len();
@@ -1621,6 +1664,8 @@ impl Store {
             orphans: crate::model::Orphans::default(),
             health: Default::default(),
             procs: Default::default(),
+            ledger: Vec::new(),
+            version: None,
             messages,
         };
         let mut found = Found::default();
@@ -1831,6 +1876,40 @@ impl Store {
                 a.attempt = c.attempt;
             }
         }
+        let mut st = conn.prepare(
+            "SELECT id, project, card, attempt, agent, model, cost, unpriced, rounds, sent_back, \
+             outcome, began, ended, version FROM ledger ORDER BY id",
+        )?;
+        for row in st.query_map([], |r| {
+            Ok((
+                u(r.get(0)?),
+                Attempt {
+                    project: u(r.get(1)?),
+                    card: uopt(r.get(2)?),
+                    attempt: r.get(3)?,
+                    agent: u(r.get(4)?),
+                    model: r.get(5)?,
+                    cost: ubig(r.get(6)?),
+                    unpriced: r.get(7)?,
+                    rounds: r.get(8)?,
+                    sent_back: r.get(9)?,
+                    outcome: untag(&r.get::<_, String>(10)?)?,
+                    began: ubig(r.get(11)?),
+                    ended: ubig(r.get(12)?),
+                    version: r.get(13)?,
+                },
+            ))
+        })? {
+            let (id, a) = row?;
+            if id != w.ledger.len() {
+                return Err(bad(format!("ledger row {id} is out of order")));
+            }
+            if a.agent >= w.agents.len() || a.card.is_some_and(|c| c >= w.cards.len()) {
+                return Err(bad(format!("ledger row {id} names what is not there")));
+            }
+            w.ledger.push(a);
+        }
+        w.meters_after_load();
         let mut st = conn.prepare("SELECT card, tick, data FROM story ORDER BY card, seq")?;
         for row in st.query_map([], |r| {
             Ok((u(r.get(0)?), ubig(r.get(1)?), r.get::<_, String>(2)?))
@@ -2076,6 +2155,7 @@ struct Plan {
     projects: Vec<ProjectId>,
     agents: Vec<AgentId>,
     cards: Vec<CardId>,
+    ledger: Vec<usize>,
     story: Vec<CardId>,
     journal: bool,
     /// Journal lines whose mark changed, with the mark they have now.
@@ -2105,6 +2185,7 @@ impl Plan {
             && self.projects.is_empty()
             && self.agents.is_empty()
             && self.cards.is_empty()
+            && self.ledger.is_empty()
             && self.story.is_empty()
             && self.inbox.is_empty()
             && self.mail.is_empty()
@@ -2479,6 +2560,8 @@ mod tests {
             clashes: Default::default(),
             proposals: Default::default(),
             orphans: crate::model::Orphans::default(),
+            ledger: Vec::new(),
+            version: None,
             health: Default::default(),
             procs: Default::default(),
             messages: 12,
@@ -2851,6 +2934,74 @@ mod tests {
                 .setup_approved
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn the_ledger_comes_back_whole_and_a_save_writes_only_the_rows_that_moved() {
+        use crate::ledger::{Attempt, Outcome};
+        let (mut w, k) = (world(), kept());
+        let mut store = Store::in_memory();
+        w.agents[1].cost = 9_000;
+        w.ledger = vec![
+            Attempt {
+                project: 0,
+                card: Some(0),
+                attempt: 2,
+                agent: 1,
+                model: "claude-opus-5-5".into(),
+                cost: 8_400,
+                unpriced: true,
+                rounds: 3,
+                sent_back: 2,
+                outcome: Outcome::Late,
+                began: 11,
+                ended: 70,
+                version: Some("2.1.4 (Claude Code)".into()),
+            },
+            Attempt {
+                project: 0,
+                agent: 1,
+                cost: 600,
+                began: 71,
+                ended: 75,
+                ..Attempt::default()
+            },
+        ];
+        assert!(store.save(&w, &k.kept()).unwrap());
+        let back = store.load(100).unwrap().unwrap().world;
+        assert_eq!(back.ledger, w.ledger);
+        // Each agent's spending is booked up to its figure, on its newest
+        // row not kept.
+        let m = &back.agents[1].meter;
+        assert_eq!((m.booked, m.row), (9_000, Some(1)));
+        // Nothing moved, nothing written; a row that moved, only it.
+        assert!(!store.save(&w, &k.kept()).unwrap());
+        store
+            .raw()
+            .execute("UPDATE ledger SET model = 'x' WHERE id = 0", [])
+            .unwrap();
+        w.ledger[1].cost = 650;
+        assert!(store.save(&w, &k.kept()).unwrap());
+        let back = store.load(100).unwrap().unwrap().world;
+        assert_eq!(back.ledger[0].model, "x", "not written again");
+        assert_eq!(back.ledger[1].cost, 650);
+        // A row out of order, or one naming what is not there, does not load.
+        for broken in [
+            "UPDATE ledger SET id = 5 WHERE id = 1".to_string(),
+            format!("UPDATE ledger SET agent = {} WHERE id = 1", w.agents.len()),
+            format!("UPDATE ledger SET card = {} WHERE id = 1", w.cards.len()),
+        ] {
+            let mut store = Store::in_memory();
+            store.save(&w, &k.kept()).unwrap();
+            store.raw().execute(&broken, []).unwrap();
+            assert!(store.load(100).is_err(), "{broken}");
+        }
+        // The last card and agent there are there.
+        let mut store = Store::in_memory();
+        w.ledger[1].card = Some(w.cards.len() - 1);
+        w.ledger[1].agent = w.agents.len() - 1;
+        store.save(&w, &k.kept()).unwrap();
+        assert_eq!(store.load(100).unwrap().unwrap().world.ledger, w.ledger);
     }
 
     #[test]
@@ -4297,14 +4448,14 @@ mod tests {
                 )
                 .unwrap();
             assert_eq!(
-                version, "33",
+                version, "34",
                 "the sent table, the Fault kind, archives, restores, start points, standing yes, the \
                  recall index, forks, paid kinds, reviews, no vendor, the check on a change, what \
                  it cost, the paths a card owns, the plan gate, a project's Lonca repository, \
                  a card's attempts, its breaker, what it waits on, a card withdrawn and the \
-                 checks it asks for, what was never priced: an older imece knows none"
+                 checks it asks for, what was never priced, the ledger: an older imece knows none"
             );
-            assert_eq!(SCHEMA_VERSION, 33);
+            assert_eq!(SCHEMA_VERSION, 34);
         }
         let back = Store::open(&path)
             .unwrap()

@@ -48,6 +48,7 @@ description: imece'nin aldığı her `:` komutu; argümanları, karşılığı o
 | `:help` | `?` | | | | |
 | `:keys` | — | | | | dosyanızın verdiği tuş sayısı |
 | `:lang [en\|tr]` | `L` | | | | `English` / `Türkçe` |
+| `:ledger` | — | | | | |
 | `:lonca [NAME\|off\|login\|import [NAME]]` | — | | | | projenin deposu, varsa |
 | `:mark` | `m` | | | | |
 | `:model NAME` | — | | | | eldeki solonun modeli ya da `default` |
@@ -222,6 +223,10 @@ Tuş dosyanızı (`~/.config/imece/keys`) yeniden okur ve ne çıktığını sö
 ### `:lang [en|tr]`
 
 Ekranın dili, `L` gibi. Tek başına öteki dile geçer; `:lang en` ya da `:lang tr` birini seçer. Başka bir şey: `de bir dil değil: en ya da tr`. Menü notu kullanılan dili gösterir. Yalnızca bu çalıştırma için; sonraki başlangıç `--lang` ya da `IMECE_LANG`'i okur.
+
+### `:ledger`
+
+Harcamalar, ekranın üstünde bir pencerede: açık her proje için ne harcadığı, `uygulanan $3.20 · boşa $1.10 · süren $0.40 · lider $0.90`, sonra bir karta yapılan her deneme, en yenisi üstte, satır başına bir tane: kart ve denemesi, işçi, oturumunun çalıştığı model, önüne koyduğu değişiklikler ve geri dönenler, neye mal olduğu, ne kadar sürdüğü, nasıl bittiği (sürüyor, uygulandı, bitti ama değişiklik yok, başarısız, geri çekildi, devredildi, geç done), günü ve Claude Code'un sürümü. `j` `k` `g` `G` gezer, `enter` satırın kartını açar (kartsız bir satırda işçinin odağını), `esc` ya da `q` kapatır. Bir planla girişte başlık `API karşılığı` der ve her rakam `≈` ile başlar. Bkz. [harcamalar](../concepts/budget-and-limits.md#harcamalar).
 
 ### `:lonca [NAME|off|login|import]`
 
