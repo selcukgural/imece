@@ -271,9 +271,9 @@ impl Live {
             any = true;
             self.suggesting = None;
             // Millionths of a dollar to the pot's ten-thousandths; a call
-            // that never said keeps its cap.
+            // that never said, or not all (record 132), keeps its cap.
             let cost = match &s.said {
-                Ok(said) => said.cost / 100,
+                Ok(said) => said.cost.map_or(SUGGEST_CAP, |c| c / 100),
                 Err(u) => u.cost.map_or(SUGGEST_CAP, |c| c / 100),
             };
             self.settle(w, s.day, cost);
@@ -636,7 +636,7 @@ mod tests {
             &live,
             Ok(imece_agent::Said {
                 text: "```\nFix it\n```".into(),
-                cost: 4_299,
+                cost: Some(4_299),
             }),
         );
         live.take_said(&mut w);
@@ -693,7 +693,7 @@ mod tests {
         w.paid = SUGGEST_CAP;
         let empty = imece_agent::Said {
             text: "```\n```".into(),
-            cost: 1_000,
+            cost: Some(1_000),
         };
         said(&live, Ok(empty));
         live.take_said(&mut w);

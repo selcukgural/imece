@@ -1199,6 +1199,9 @@ pub struct App {
     /// What the pot had paid when this run began: the farewell says what
     /// the run spent.
     pub spent_at_start: u64,
+    /// [`World::unpriced_count`] then: more at the end leave the run's
+    /// figure unpriced (record 132).
+    pub unpriced_at_start: u32,
 }
 
 impl App {
@@ -1233,6 +1236,7 @@ impl App {
         };
         let begun = world.tick;
         let spent_at_start = world.spent();
+        let unpriced_at_start = world.unpriced_count();
         App {
             world,
             engine,
@@ -1375,6 +1379,7 @@ impl App {
             mark_before: Cell::new(false),
             mark_from: Cell::new(None),
             spent_at_start,
+            unpriced_at_start,
         }
     }
 
@@ -1475,6 +1480,18 @@ impl App {
     }
 
     /// Whether the demo drives the agents (it pauses and changes speed).
+    /// What this run spent, and whether part of it was never priced
+    /// (record 132): a gap since the start, or a turn the quit cuts.
+    pub fn spent_this_run(&self) -> (u64, bool) {
+        let w = &self.world;
+        // A turn under way now ends with imece and never says its cost.
+        let cut = (w.agents.iter()).any(|a| a.status == Status::Working && !w.put_away(a.id));
+        (
+            w.spent().saturating_sub(self.spent_at_start),
+            cut || w.unpriced_count() > self.unpriced_at_start,
+        )
+    }
+
     pub fn demo(&self) -> bool {
         matches!(self.engine, Engine::Sim(_))
     }

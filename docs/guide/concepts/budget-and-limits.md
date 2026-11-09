@@ -40,6 +40,14 @@ A turn costs the pot the dollars Claude Code reports (`total_cost_usd`); a resum
 
 What was spent is read back from the store at every start, agents and imece's own calls alike.
 
+## What a figure means
+
+Every dollar figure is Claude Code's own: it prices each turn from its own price table, and imece books what it says. Two things change how a figure reads:
+
+- **`≈` on a plan.** Signed in through a claude.ai plan (Pro, Max, Team), Claude Code still prices turns at API rates, but what you pay is the plan. Then every figure Claude Code gave starts with `≈`, API-equivalent: `≈$3.10 of $20.00`, `≈$0.84 · 12 min`. The budget itself, which you set, stays plain. imece reads the sign-in at every start (`claude auth status --json`: `authMethod` `claude.ai`); an API key in the environment pays by the token, so its figures are plain. `:welcome` says which: `signed in, a plan · ≈ API prices`.
+- **`+?` for what was never priced.** A figure is never `$0.00` for spending nobody priced. A turn whose result says no cost, a model Claude Code priced at nothing though it used tokens (one it has no price for), and a session that ended mid-turn (a quit, `:close`, `:forget`, a crash) leave part of an agent's spending unknown. Its figure then reads `$2.29+?`, what it spent at least, or `?` alone when none of it is known; the change it worked on, its project's total, the pot and the farewell's `spent this run` read the same way. A turn's own result without a figure is covered again by the session's next one, which says the whole session; a session that ended mid-turn stays `+?` for good, kept in the store. The agent's trace says why: `cost unknown: the turn's result said none`. The pot's limit works on what is known.
+- `:commit` and `:review` that do not say all they cost keep what they reserved, as one that stopped without a figure does.
+
 ## `$` in the `:` menu
 
 The `:` menu shows each command's value after it, `budget (spent $3.10 of $20.00)`, and marks with `$` the commands that raise the next bill:
@@ -80,7 +88,7 @@ The pot says what the team spent; each change says what it alone cost ([changes]
 
 ## The demo
 
-`--demo` spends a made-up pot the same way: the header, the rate, the low-pot line, `:budget`, the usage windows (filled from spending), what each change cost and the few cents of `:commit` and `:review` all show as live does.
+`--demo` spends a made-up pot the same way: the header, the rate, the low-pot line, `:budget`, the usage windows (filled from spending), what each change cost and the few cents of `:commit` and `:review` all show as live does. The demo signs in through a plan, so its figures read `≈`, and every fifth change it reads ends a turn that said no cost (`+?`) until that worker's next one.
 
 ## See also
 

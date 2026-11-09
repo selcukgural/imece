@@ -616,7 +616,7 @@ pub(crate) fn inbox_line(app: &App, i: usize) -> Line<'static> {
         spans.push(Span::styled(words::evidence(app.lang, &c.runs), fg(colour)));
         if let Some(s) = c.spend {
             spans.push(Span::styled(
-                format!(" · {}", words::spend(app.lang, &s)),
+                format!(" · {}", words::spend(app.lang, &app.world, &s)),
                 dim(),
             ));
         }
@@ -1648,7 +1648,7 @@ pub(crate) fn header_parts(app: &App) -> Vec<HeadPart> {
             KEEP,
         ));
     }
-    let spent = fill(t.budget, &[&dollars(w.spent()), &dollars(w.budget)]);
+    let spent = fill(t.budget, &[&w.spent_words(), &dollars(w.budget)]);
     match w.pot_lasts().filter(|_| w.pot_low()) {
         Some(minutes) => parts.push(part(
             vec![Span::styled(
@@ -4586,6 +4586,7 @@ mod tests {
             cost: 8_400,
             ticks: 144,
             rounds: 2,
+            unpriced: false,
         });
         let line = inbox_line(&app, *open.last().unwrap());
         let last = line.spans.last().unwrap();
@@ -10543,6 +10544,12 @@ mod tests {
         let screen = render(&app, 170, 40);
         assert!(screen.contains("imece"));
         assert!(screen.contains("│ $0.50 of $1.00"), "{screen}");
+        // On a plan, with a turn never priced: what it spent at least, its
+        // API-equivalent (record 132); the budget is the person's own.
+        app.world.estimated = true;
+        app.world.agents[1].unpriced.gaps = 1;
+        let screen = render(&app, 170, 40);
+        assert!(screen.contains("│ ≈$0.50+? of $1.00"), "{screen}");
         // The footer names no view and no pause: the status line says where
         // you are, the header says PAUSED.
         let footer = screen.lines().last().unwrap().to_string();
@@ -10607,14 +10614,14 @@ mod tests {
             version: version.into(),
             login,
         };
-        app.seen = here("2.1.3 (Claude Code)", Login::Yes);
+        app.seen = here("2.1.3 (Claude Code)", Login::Yes { subscription: true });
         app.welcome = true;
         let screen = render(&app, 120, 40);
         for want in [
             &format!("WELCOME TO IMECE {}", crate::welcome::VERSION),
             "One terminal for a team of Claude Code agents.",
             "Claude Code on this machine:",
-            "✓ claude  2.1.3 (Claude Code) · signed in",
+            "✓ claude  2.1.3 (Claude Code) · signed in, a plan · ≈ API prices",
             "Keys to start with:",
             "   /  i            write to the leader",
             "   ?               every key; / in it filters",
@@ -10622,6 +10629,16 @@ mod tests {
         ] {
             assert!(screen.contains(want), "{want} missing:\n{screen}");
         }
+        // An API key's figures are what it pays.
+        app.seen = here(
+            "2.1.3 (Claude Code)",
+            Login::Yes {
+                subscription: false,
+            },
+        );
+        let screen = render(&app, 120, 40);
+        assert!(screen.contains("✓ claude  2.1.3 (Claude Code) · signed in "));
+        assert!(!screen.contains("a plan"), "{screen}");
         // Not signed in, in a CLI's words, cleaned.
         app.seen = here("2.1.3 \u{1b}[31mred", Login::No);
         let screen = render(&app, 120, 40);

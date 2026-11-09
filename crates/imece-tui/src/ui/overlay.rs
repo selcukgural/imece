@@ -229,7 +229,7 @@ pub fn plan(f: &mut Frame, app: &App, item: usize, at: usize) -> Rect {
     let mut lines = vec![
         Line::from(Span::styled(t.plan_head.to_string(), fg(pal().warn))),
         Line::from(Span::styled(
-            fill(t.plan_pot, &[&dollars(p.cost), &dollars(left)]),
+            fill(t.plan_pot, &[&dollars(p.cost), &w.money(left, false)]),
             dim(),
         )),
         Line::default(),
@@ -1165,9 +1165,6 @@ fn archive_row(app: &App, b: &Browser, row: Row) -> Line<'static> {
             ),
         ]),
         Row::Archive(p) => {
-            let cost: u64 = (w.agents.iter().filter(|a| a.project == p))
-                .map(|a| a.cost)
-                .sum();
             let done = (w.cards.iter())
                 .filter(|c| c.project == p && c.column == Column::Done)
                 .count();
@@ -1175,7 +1172,7 @@ fn archive_row(app: &App, b: &Browser, row: Row) -> Line<'static> {
             let what = fill(
                 t.archives_row,
                 &[
-                    &dollars(cost),
+                    &w.project_spent(p),
                     &done.to_string(),
                     &agents(p),
                     &date(day(at)),
@@ -1203,7 +1200,7 @@ fn archive_row(app: &App, b: &Browser, row: Row) -> Line<'static> {
             Line::from(vec![
                 Span::raw(indent),
                 Span::styled(clean(&a.name), name),
-                Span::styled(format!(" · {}", dollars(a.cost)), dim()),
+                Span::styled(format!(" · {}", w.spent_by(a.id)), dim()),
             ])
         }
     }
@@ -1254,7 +1251,10 @@ pub fn left_off(f: &mut Frame, app: &App, l: &LeftOff) {
     let mut lines: Vec<Line> = vec![Line::from(Span::styled(
         format!(
             " {}",
-            fill(t.left_spent, &[&dollars(l.spent), &dollars(l.budget)])
+            fill(
+                t.left_spent,
+                &[&w.money(l.spent, w.unpriced()), &dollars(l.budget)]
+            )
         ),
         dim(),
     ))];
@@ -1397,7 +1397,14 @@ fn seen_line(app: &App) -> Line<'static> {
         Seen::Here { version, login } => {
             let version = format!("{} · ", clean(version));
             match login {
-                Login::Yes => ("✓", fg(pal().ok), version, t.login_yes.to_string()),
+                Login::Yes { subscription } => {
+                    let what = if *subscription {
+                        t.login_plan
+                    } else {
+                        t.login_yes
+                    };
+                    ("✓", fg(pal().ok), version, what.to_string())
+                }
                 Login::No => (
                     "✗",
                     bold(pal().warn),

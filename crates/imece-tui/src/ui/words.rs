@@ -301,9 +301,10 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
             Fresh::Refused(said) => fill(t.ev_restarted_refused, &[name(w, *agent), said]),
         },
         Event::Budget { from, to, .. } => fill(t.ev_budget, &[&dollars(*to), &dollars(*from)]),
-        Event::PotLow { rate, minutes, .. } => {
-            fill(t.ev_pot_low, &[&dollars(*rate), &ago(lang, minutes * 60)])
-        }
+        Event::PotLow { rate, minutes, .. } => fill(
+            t.ev_pot_low,
+            &[&w.money(*rate, false), &ago(lang, minutes * 60)],
+        ),
         Event::Shell {
             command,
             ended,
@@ -493,11 +494,11 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
                 &files.to_string(),
                 &added.to_string(),
                 &removed.to_string(),
-                &spend(lang, s),
+                &spend(lang, w, s),
             ],
         ),
         Event::ChangeCost { agent, spend: s } => {
-            fill(t.ev_change_cost, &[name(w, *agent), &spend(lang, s)])
+            fill(t.ev_change_cost, &[name(w, *agent), &spend(lang, w, s)])
         }
         Event::Landed { agent, how } => landed(t, name(w, *agent), how),
         Event::Verified { agent, checks, .. } => {
@@ -513,9 +514,11 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
             };
             fill(said, &[name(w, *agent), why])
         }
-        Event::Suggested { model, cost, .. } => fill(t.ev_suggested, &[model, &dollars(*cost)]),
+        Event::Suggested { model, cost, .. } => {
+            fill(t.ev_suggested, &[model, &w.money(*cost, false)])
+        }
         Event::SuggestFailed { why, cost, .. } => {
-            fill(t.ev_suggest_failed, &[&dollars(*cost), why])
+            fill(t.ev_suggest_failed, &[&w.money(*cost, false), why])
         }
         Event::Reviewed {
             agent,
@@ -529,15 +532,16 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
                 CLAUDE,
                 model,
                 name(w, *agent),
-                &dollars(*cost),
+                &w.money(*cost, false),
                 text.lines()
                     .find(|l| !l.trim().is_empty())
                     .unwrap_or_default(),
             ],
         ),
-        Event::ReviewFailed { agent, why, cost } => {
-            fill(t.ev_review_failed, &[name(w, *agent), &dollars(*cost), why])
-        }
+        Event::ReviewFailed { agent, why, cost } => fill(
+            t.ev_review_failed,
+            &[name(w, *agent), &w.money(*cost, false), why],
+        ),
         Event::Copied {
             agent,
             paths,
@@ -877,7 +881,7 @@ pub fn title(lang: Lang, waiting: usize, progress: Progress) -> String {
 /// imece's mark and name, what waits for the person, the agents that
 /// sleep until the next start (the demo keeps none), what this run spent,
 /// and how to go on.
-pub fn farewell(lang: Lang, w: &World, spent: u64, demo: bool) -> String {
+pub fn farewell(lang: Lang, w: &World, (spent, unpriced): (u64, bool), demo: bool) -> String {
     let t = lang.text();
     let mut parts = vec!["⁙ imece".to_string()];
     let waiting = w.open_inbox().len();
@@ -893,8 +897,8 @@ pub fn farewell(lang: Lang, w: &World, spent: u64, demo: bool) -> String {
             n => fill(t.bye_asleep, &[&n.to_string()]),
         });
     }
-    if spent > 0 {
-        parts.push(fill(t.bye_spent, &[&crate::model::dollars(spent)]));
+    if spent > 0 || unpriced {
+        parts.push(fill(t.bye_spent, &[&w.money(spent, unpriced)]));
     }
     parts.push(if demo { t.bye_demo } else { t.bye_resume }.to_string());
     parts.join(" · ")
@@ -1177,8 +1181,8 @@ pub fn check_mark(lang: Lang, check: &Check) -> Option<(&'static str, Option<boo
 /// What a change cost (record 113): the dollars, the time worked (whole
 /// seconds under a minute, else minutes, hours and minutes), and the
 /// rounds when there was more than one: `$0.84 · 12 min`, `$1.20 · 25 min
-/// · 3 rounds`.
-pub fn spend(lang: Lang, s: &Spend) -> String {
+/// · 3 rounds`; the dollars as [`World::money`] says them (record 132).
+pub fn spend(lang: Lang, w: &World, s: &Spend) -> String {
     let t = lang.text();
     let seconds = s.ticks * SECONDS_PER_TICK;
     let time = if seconds < 60 {
@@ -1186,7 +1190,7 @@ pub fn spend(lang: Lang, s: &Spend) -> String {
     } else {
         ago(lang, seconds)
     };
-    let mut out = format!("{} · {time}", dollars(s.cost));
+    let mut out = format!("{} · {time}", w.money(s.cost, s.unpriced));
     if s.rounds > 1 {
         out.push_str(&fill(t.spend_rounds, &[&s.rounds.to_string()]));
     }
@@ -1470,25 +1474,39 @@ mod tests {
     fn the_farewell_says_what_waits_who_sleeps_what_the_run_spent_and_how_to_go_on() {
         let mut w = crate::live::testing::team(2);
         assert_eq!(
-            farewell(Lang::En, &w, 0, false),
+            farewell(Lang::En, &w, (0, false), false),
             "⁙ imece · 3 agents asleep · resume: imece"
         );
         assert_eq!(
-            farewell(Lang::Tr, &w, 24_000, false),
+            farewell(Lang::Tr, &w, (24_000, false), false),
             "⁙ imece · 3 agent uykuda · bu oturumda $2.40 · devam: imece"
         );
         w.agents[1].gone = true;
         w.agents[2].gone = true;
         assert_eq!(
-            farewell(Lang::En, &w, 1, false),
+            farewell(Lang::En, &w, (1, false), false),
             "⁙ imece · 1 agent asleep · <$0.01 spent this run · resume: imece"
         );
+        // Never $0 for what is not known (record 132).
+        assert_eq!(
+            farewell(Lang::En, &w, (0, true), false),
+            "⁙ imece · 1 agent asleep · ? spent this run · resume: imece"
+        );
+        w.estimated = true;
+        assert_eq!(
+            farewell(Lang::En, &w, (24_000, true), false),
+            "⁙ imece · 1 agent asleep · ≈$2.40+? spent this run · resume: imece"
+        );
+        w.estimated = false;
         w.agents[0].gone = true;
-        assert_eq!(farewell(Lang::En, &w, 0, false), "⁙ imece · resume: imece");
+        assert_eq!(
+            farewell(Lang::En, &w, (0, false), false),
+            "⁙ imece · resume: imece"
+        );
         w.agents[0].gone = false;
         w.projects[0].closed = true;
         assert_eq!(
-            farewell(Lang::En, &w, 0, false),
+            farewell(Lang::En, &w, (0, false), false),
             "⁙ imece · resume: imece",
             "a closed project's agents are not this run's"
         );
@@ -1505,15 +1523,15 @@ mod tests {
             });
         }
         assert_eq!(
-            farewell(Lang::Tr, &w, 0, false),
+            farewell(Lang::Tr, &w, (0, false), false),
             "⁙ imece · 2 karar bekliyor · 1 agent uykuda · devam: imece"
         );
         assert_eq!(
-            farewell(Lang::En, &w, 8_500, true),
+            farewell(Lang::En, &w, (8_500, false), true),
             "⁙ imece · 2 to decide · $0.85 spent this run · the demo keeps nothing"
         );
         assert_eq!(
-            farewell(Lang::Tr, &w, 0, true),
+            farewell(Lang::Tr, &w, (0, false), true),
             "⁙ imece · 2 karar bekliyor · demo hiçbir şey saklamaz"
         );
     }
@@ -2628,29 +2646,39 @@ mod tests {
             cost,
             ticks,
             rounds,
+            unpriced: false,
         };
-        assert_eq!(spend(Lang::En, &s(8_400, 144, 1)), "$0.84 · 12 min");
+        assert_eq!(spend(Lang::En, &w, &s(8_400, 144, 1)), "$0.84 · 12 min");
         assert_eq!(
-            spend(Lang::En, &s(12_000, 300, 3)),
+            spend(Lang::En, &w, &s(12_000, 300, 3)),
             "$1.20 · 25 min · 3 rounds"
         );
         assert_eq!(
-            spend(Lang::En, &s(100, 5, 1)),
+            spend(Lang::En, &w, &s(100, 5, 1)),
             "$0.01 · 25 s",
             "seconds under a minute"
         );
-        assert_eq!(spend(Lang::En, &s(100, 11, 1)), "$0.01 · 55 s");
+        assert_eq!(spend(Lang::En, &w, &s(100, 11, 1)), "$0.01 · 55 s");
         assert_eq!(
-            spend(Lang::En, &s(100, 12, 1)),
+            spend(Lang::En, &w, &s(100, 12, 1)),
             "$0.01 · 1 min",
             "from a minute"
         );
         assert_eq!(
-            spend(Lang::En, &s(0, 1_500, 2)),
+            spend(Lang::En, &w, &s(0, 1_500, 2)),
             "$0.00 · 2 h 5 min · 2 rounds"
         );
-        assert_eq!(spend(Lang::Tr, &s(12_000, 300, 3)), "$1.20 · 25 dk · 3 tur");
-        assert_eq!(spend(Lang::Tr, &s(100, 5, 1)), "$0.01 · 25 sn");
+        assert_eq!(
+            spend(Lang::Tr, &w, &s(12_000, 300, 3)),
+            "$1.20 · 25 dk · 3 tur"
+        );
+        assert_eq!(spend(Lang::Tr, &w, &s(100, 5, 1)), "$0.01 · 25 sn");
+        // Never $0.00 for what is not known (record 132).
+        let unknown = Spend {
+            unpriced: true,
+            ..s(0, 1_500, 2)
+        };
+        assert_eq!(spend(Lang::En, &w, &unknown), "? · 2 h 5 min · 2 rounds");
         let say = |e: Event| event(Lang::En, &w, &e);
         assert_eq!(
             say(Event::ChangeReady {

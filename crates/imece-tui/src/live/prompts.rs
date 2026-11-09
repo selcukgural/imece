@@ -527,6 +527,7 @@ mod tests {
             cost: 8_400,
             ticks: 1,
             rounds: 1,
+            unpriced: false,
         });
         let mail = |from, kind, outcome, card| Mail {
             from,

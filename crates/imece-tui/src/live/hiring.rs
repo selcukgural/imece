@@ -119,6 +119,8 @@ impl Live {
         self.models[id] = self.claude.ladder.standard.clone();
         self.tiered[id] = false;
         let texts = std::mem::take(&mut self.inflight[id]);
+        // The turn that failed said what it cost: no turn is cut.
+        self.turns[id] = self.turns[id].saturating_sub(1);
         self.end(w, id);
         self.forget(w, id, true);
         w.agents[id].trace(
@@ -138,6 +140,8 @@ impl Live {
     /// prompts the old one had.
     pub(super) fn renew(&mut self, w: &mut World, id: AgentId) {
         let texts = std::mem::take(&mut self.inflight[id]);
+        // The turn at the cap said what it cost: no turn is cut.
+        self.turns[id] = self.turns[id].saturating_sub(1);
         self.end(w, id);
         self.forget(w, id, true);
         self.renewed[id] = true;

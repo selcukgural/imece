@@ -344,7 +344,8 @@ fn a_live_app_starts_with_where_you_left_off_and_any_key_closes_it() {
 /// Code signed in.
 pub(super) fn fake_look() -> welcome::Answers {
     let (tx, rx) = std::sync::mpsc::channel();
-    tx.send(here("2.1.3", Login::Yes)).unwrap();
+    tx.send(here("2.1.3", Login::Yes { subscription: true }))
+        .unwrap();
     rx
 }
 
@@ -362,6 +363,28 @@ pub(super) fn live_welcome(look: welcome::Look) -> App {
     let mut app = App::with(w, Engine::Live(Box::new(live)), Lang::En);
     app.look = Some(look);
     app
+}
+
+/// What the run spent is unpriced by a gap since it began or a turn the
+/// quit cuts, never by one from before (record 132).
+#[test]
+fn the_run_s_figure_is_unpriced_by_a_gap_since_its_start_or_a_turn_the_quit_cuts() {
+    let mut w = crate::live::testing::team(1);
+    w.agents[1].unpriced.gaps = 2;
+    w.agents[1].cost = 1_000;
+    let live = crate::live::testing::idle_live(2);
+    let mut app = App::with(w, Engine::Live(Box::new(live)), Lang::En);
+    for a in &mut app.world.agents {
+        a.status = Status::Idle;
+    }
+    assert_eq!(app.spent_this_run(), (0, false), "the gaps were there");
+    app.world.agents[1].cost = 1_500;
+    assert_eq!(app.spent_this_run(), (500, false));
+    app.world.agents[0].status = Status::Working;
+    assert_eq!(app.spent_this_run(), (500, true), "cut by the quit");
+    app.world.agents[0].status = Status::Idle;
+    app.world.agents[0].unpriced.session = true;
+    assert_eq!(app.spent_this_run(), (500, true), "a gap since");
 }
 
 /// Leaving tells the store when, so the next start can say how long

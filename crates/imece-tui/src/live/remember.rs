@@ -138,6 +138,9 @@ impl Live {
             }
             if !cut.is_empty() {
                 self.interrupted[id] = cut;
+                // Its session ended mid-turn: no figure says what that
+                // turn cost (record 132).
+                w.agents[id].unpriced.gaps += 1;
                 let card = w.agents[id].card;
                 w.agents[id].trace(w.tick, "turn cut short when imece closed");
                 w.story(card, StoryEvent::Interrupted);
@@ -732,6 +735,7 @@ mod tests {
                     cost: 8_400,
                     ticks: 144,
                     rounds: 2,
+                    unpriced: false,
                 },
             )]),
         };
@@ -771,6 +775,11 @@ mod tests {
         assert!(
             live.interrupted[2].is_empty(),
             "a gone agent's turn is nobody's"
+        );
+        // What the cut turn cost no figure will say (record 132).
+        assert_eq!(
+            w.agents.iter().map(|a| a.unpriced.gaps).collect::<Vec<_>>(),
+            [0, 1, 0, 0]
         );
         assert!(matches!(
             w.cards[c].story.last().map(|s| &s.event),

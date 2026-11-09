@@ -251,6 +251,11 @@ const STOPPED: &str = "the session ended: the process exited with code 1";
 /// done says so, and no change comes of it.
 const FAIL_EVERY: u32 = 7;
 
+/// Every this many changes done in a run, the turn that ends with one
+/// says no figure, as a Claude Code result may (record 132): its cost
+/// reads `+?`, and the agent's until a later turn says the whole.
+const UNPRICED_EVERY: u32 = 5;
+
 /// Every this many failed test runs, the worker goes round on it: the
 /// same run fails again until imece tells its leader (record 128).
 const LOOP_EVERY: u32 = 4;
@@ -803,6 +808,8 @@ struct Extras {
     told: u32,
     /// First tries at a card finished this run, failed ones included.
     firsts: u32,
+    /// Changes done this run: every [`UNPRICED_EVERY`]th is unpriced.
+    changes_done: u32,
     /// How many test runs of its workers failed: every
     /// [`LOOP_EVERY`]th goes round (record 128).
     test_fails: u32,
@@ -932,7 +939,7 @@ const REFUSED: &str = "the session could not resume session 5f1c… (error_durin
 pub fn seen() -> crate::welcome::Seen {
     crate::welcome::Seen::Here {
         version: "2.1.0 (Claude Code) · demo".into(),
-        login: imece_agent::Login::Yes,
+        login: imece_agent::Login::Yes { subscription: true },
     }
 }
 
@@ -988,6 +995,8 @@ pub fn world(
         journal: Vec::new(),
         inbox: Vec::new(),
         budget: 200 * 10_000,
+        // Said by its sign-in once the screen has it (`App::take_plan`).
+        estimated: false,
         max_researchers,
         research_queue: VecDeque::new(),
         changes: Vec::new(),
@@ -4224,6 +4233,12 @@ impl Sim {
         };
         let (added, removed) = change.counts();
         let n = change.files.len();
+        // Its turn ends with the change: priced, or not (record 132).
+        self.extras.changes_done += 1;
+        if self.extras.changes_done.is_multiple_of(UNPRICED_EVERY) {
+            w.turn_unpriced(id, None);
+        }
+        w.turn_priced(id);
         let a = &mut w.agents[id];
         a.progress = 0;
         a.activity = None;
@@ -5602,6 +5617,7 @@ diff --git a/b.rs b/b.rs
                     cost: 1,
                     ticks: 1,
                     rounds: 1,
+                    unpriced: false,
                 }),
             })
         };
@@ -5753,6 +5769,29 @@ diff --git a/b.rs b/b.rs
     }
 
     #[test]
+    fn every_fifth_demo_change_is_unpriced_and_the_next_priced_turn_covers_its_agent() {
+        let (mut w, mut s, worker, _) = one_at_work();
+        s.extras.changes_done = UNPRICED_EVERY - 2;
+        let done = |w: &mut World, s: &mut Sim| {
+            // At work again: its round opens at the busy tick.
+            w.agents[worker].status = Status::Working;
+            s.step(w);
+            s.done(w, worker);
+            let spend = w.change_of(worker).unwrap().spend.unwrap();
+            w.changes.retain(|c| c.agent != worker);
+            (spend.unpriced, w.agents[worker].unpriced.any())
+        };
+        assert_eq!(done(&mut w, &mut s), (false, false), "the fourth");
+        assert_eq!(done(&mut w, &mut s), (true, true), "the fifth");
+        assert!(
+            (w.agents[worker].trace.iter())
+                .any(|l| l.contains("cost unknown: the turn's result said none")),
+            "traced"
+        );
+        assert_eq!(done(&mut w, &mut s), (false, false), "the sixth covers it");
+    }
+
+    #[test]
     fn a_demo_change_says_what_it_cost_its_rounds_add_up_and_an_apply_drops_them() {
         let (mut w, mut s, worker, card) = one_at_work();
         // The round opens at the first busy tick, from the cost then.
@@ -5782,7 +5821,8 @@ diff --git a/b.rs b/b.rs
             Spend {
                 cost: expected,
                 ticks: w.tick - (t0 + 1),
-                rounds: 1
+                rounds: 1,
+                unpriced: false,
             }
         );
         assert!(w.journal.iter().any(|e| matches!(

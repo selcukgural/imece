@@ -855,6 +855,7 @@ pub fn world(o: Options) -> Result<(World, Live), String> {
                 journal: Vec::new(),
                 inbox: Vec::new(),
                 budget: DEFAULT_BUDGET,
+                estimated: false,
                 max_researchers: 0,
                 research_queue: Default::default(),
                 plans: Vec::new(),
@@ -1858,7 +1859,9 @@ mod tests {
             look(claude).iter().collect::<Vec<_>>(),
             [Seen::Here {
                 version: "2.1.3 (Claude Code)".into(),
-                login: Login::Yes
+                login: Login::Yes {
+                    subscription: false
+                }
             }]
         );
         let gone: &'static str = Box::leak(dir.join("gone").display().to_string().into_boxed_str());

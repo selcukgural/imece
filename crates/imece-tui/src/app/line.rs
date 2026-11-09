@@ -264,9 +264,9 @@ impl App {
             // 125 and says now only when pressing.
             "budget" => {
                 let w = &self.world;
-                let mut said = fill(t.budget, &[&dollars(w.spent()), &dollars(w.budget)]);
+                let mut said = fill(t.budget, &[&w.spent_words(), &dollars(w.budget)]);
                 said += " · ";
-                said += &fill(t.per_hour, &[&dollars(w.rate_per_hour())]);
+                said += &fill(t.per_hour, &[&w.money(w.rate_per_hour(), false)]);
                 if let Some(minutes) = w.pot_lasts() {
                     said += ", ";
                     said += &fill(t.pot_lasts, &[&ui::words::ago(self.lang, minutes * 60)]);

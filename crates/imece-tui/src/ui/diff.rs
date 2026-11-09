@@ -427,6 +427,7 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, id: AgentId) {
         app.review_whole,
         usize::from(inner.width),
         usize::from(inner.height / 2),
+        w.estimated,
     );
     let tree = inner.width >= TREE_WIDE && c.files.len() > 1;
     let mut files = if tree {
@@ -437,7 +438,7 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, id: AgentId) {
     if let Some(split) = kinds_line(app.lang, &c.files) {
         files.insert(0, split);
     }
-    if let Some(cost) = spend_line(app.lang, c.spend) {
+    if let Some(cost) = spend_line(app.lang, w, c.spend) {
         files.insert(0, cost);
     }
     let rows = |n: usize| u16::try_from(n).unwrap_or(u16::MAX);
@@ -893,12 +894,12 @@ pub(crate) fn proposal_lines(lang: Lang, p: &StoreProposal) -> Vec<Line<'static>
 
 /// What the change cost (record 113), above its kinds and files: `cost ·
 /// $0.84 · 12 min`, dim; nothing until its worker's turn ended.
-fn spend_line(lang: Lang, spend: Option<Spend>) -> Option<Line<'static>> {
+fn spend_line(lang: Lang, w: &World, spend: Option<Spend>) -> Option<Line<'static>> {
     let s = spend?;
     Some(Line::from(Span::styled(
         format!(
             " {}",
-            fill(lang.text().diff_spend, &[&words::spend(lang, &s)])
+            fill(lang.text().diff_spend, &[&words::spend(lang, w, &s)])
         ),
         dim(),
     )))
@@ -952,6 +953,7 @@ pub(crate) fn review_lines(
     whole: bool,
     width: usize,
     room: usize,
+    estimated: bool,
 ) -> Vec<Line<'static>> {
     let t = lang.text();
     let Some(r) = review else {
@@ -961,7 +963,14 @@ pub(crate) fn review_lines(
         let said = fill(t.review_under_way, &[CLAUDE]);
         return vec![Line::from(Span::styled(said, dim()))];
     };
-    let head = fill(t.review_head, &[CLAUDE, &r.model, &dollars(r.cost)]);
+    let head = fill(
+        t.review_head,
+        &[
+            CLAUDE,
+            &r.model,
+            &crate::model::money(r.cost, false, estimated),
+        ],
+    );
     let mut out = vec![Line::from(Span::styled(head, bold(pal().accent)))];
     let body: Vec<Line<'static>> = (r.text.lines())
         .flat_map(|l| super::wrap(Line::from(clean(l)), width.max(1)))
@@ -1280,9 +1289,9 @@ mod tests {
 
     #[test]
     fn a_review_shows_its_head_and_first_rows_and_counts_the_rest() {
-        let none = review_lines(Lang::En, None, false, false, 40, 30);
+        let none = review_lines(Lang::En, None, false, false, 40, 30, false);
         assert!(none.is_empty(), "nothing asked: nothing");
-        let asked = review_lines(Lang::En, None, true, false, 40, 30);
+        let asked = review_lines(Lang::En, None, true, false, 40, 30, false);
         assert_eq!(texts(&asked), ["✎ claude reads this change…"]);
         let lines = |n: usize| {
             (1..=n)
@@ -1291,26 +1300,74 @@ mod tests {
                 .join("\n")
         };
         let six = a_review(&lines(REVIEW_ROWS));
-        let got = texts(&review_lines(Lang::En, Some(&six), false, false, 40, 30));
+        let got = texts(&review_lines(
+            Lang::En,
+            Some(&six),
+            false,
+            false,
+            40,
+            30,
+            false,
+        ));
         assert_eq!(got[0], "✎ review · claude · default · $0.00");
         assert_eq!(got.len(), 1 + REVIEW_ROWS, "all of it, nothing counted");
         assert_eq!(got[REVIEW_ROWS], "l6");
         let nine = a_review(&lines(REVIEW_ROWS + 3));
-        let got = texts(&review_lines(Lang::En, Some(&nine), true, false, 40, 30));
+        let got = texts(&review_lines(
+            Lang::En,
+            Some(&nine),
+            true,
+            false,
+            40,
+            30,
+            false,
+        ));
         assert_eq!(got.len(), 2 + REVIEW_ROWS, "{got:?}");
         assert_eq!(got.last().unwrap(), "… +3 lines · R shows all");
         // Whole: as many as the room leaves (its head and the count line
         // aside), never fewer than folded.
-        let got = texts(&review_lines(Lang::En, Some(&nine), false, true, 40, 30));
+        let got = texts(&review_lines(
+            Lang::En,
+            Some(&nine),
+            false,
+            true,
+            40,
+            30,
+            false,
+        ));
         assert_eq!(got.len(), 1 + REVIEW_ROWS + 3, "all of it");
-        let got = texts(&review_lines(Lang::En, Some(&nine), false, true, 40, 10));
+        let got = texts(&review_lines(
+            Lang::En,
+            Some(&nine),
+            false,
+            true,
+            40,
+            10,
+            false,
+        ));
         assert_eq!(got.len(), 1 + 8 + 1, "{got:?}");
         assert_eq!(got.last().unwrap(), "… +1 lines · R shows all");
-        let got = texts(&review_lines(Lang::En, Some(&nine), false, true, 40, 4));
+        let got = texts(&review_lines(
+            Lang::En,
+            Some(&nine),
+            false,
+            true,
+            40,
+            4,
+            false,
+        ));
         assert_eq!(got.len(), 2 + REVIEW_ROWS, "folded at least");
         // Long lines wrap at the width and count as rows; text is cleaned.
         let long = a_review("abcdefghij klmnopqrst\u{1b}[2J");
-        let got = texts(&review_lines(Lang::En, Some(&long), false, false, 11, 30));
+        let got = texts(&review_lines(
+            Lang::En,
+            Some(&long),
+            false,
+            false,
+            11,
+            30,
+            false,
+        ));
         assert_eq!(&got[1..], ["abcdefghij", "klmnopqrst", "[2J"], "{got:?}");
     }
 
@@ -2222,20 +2279,31 @@ diff --git a/c.rs b/c.rs
 
     #[test]
     fn what_the_change_cost_stands_dim_above_its_files_once_known() {
-        assert!(spend_line(Lang::En, None).is_none());
+        let mut w = crate::live::testing::team(1);
+        assert!(spend_line(Lang::En, &w, None).is_none());
         let s = Spend {
             cost: 8_400,
             ticks: 144,
             rounds: 1,
+            unpriced: false,
         };
-        let line = spend_line(Lang::En, Some(s)).unwrap();
+        let line = spend_line(Lang::En, &w, Some(s)).unwrap();
         assert_eq!(
             texts(std::slice::from_ref(&line)),
             ["cost · $0.84 · 12 min"]
         );
         assert_eq!(line.spans[0].style, dim());
-        let line = spend_line(Lang::Tr, Some(s)).unwrap();
+        let line = spend_line(Lang::Tr, &w, Some(s)).unwrap();
         assert_eq!(texts(&[line]), ["maliyet · $0.84 · 12 dk"]);
+        // A plan's figure is API-equivalent; a part never priced makes it
+        // what it came to at least (record 132).
+        w.estimated = true;
+        let s = Spend {
+            unpriced: true,
+            ..s
+        };
+        let line = spend_line(Lang::En, &w, Some(s)).unwrap();
+        assert_eq!(texts(&[line]), ["cost · ≈$0.84+? · 12 min"]);
     }
 
     #[test]

@@ -783,7 +783,7 @@ fn change_lines(lang: Lang, w: &World, c: &Change, lines: &mut Vec<Line<'static>
     if let Some(s) = c.spend {
         lines.push(labelled(
             cost,
-            vec![Span::styled(words::spend(lang, &s), dim())],
+            vec![Span::styled(words::spend(lang, w, &s), dim())],
         ));
     }
     if let Some(p) = w.proposal_of(c.agent) {
@@ -930,8 +930,8 @@ fn preview_lines(app: &App, row: HomeRow, room: usize, rows: usize) -> Vec<Line<
     ));
     // A heading is the project: its leader and cost follow the name.
     let tail = match row {
-        HomeRow::Project(_) => format!("  {} · {}", clean(&a.name), dollars(a.cost)),
-        _ => format!("  {project} · {} · {}", clean(&a.name), dollars(a.cost)),
+        HomeRow::Project(_) => format!("  {} · {}", clean(&a.name), w.spent_by(a.id)),
+        _ => format!("  {project} · {} · {}", clean(&a.name), w.spent_by(a.id)),
     };
     head.push(Span::styled(tail, dim()));
     let mut lines = vec![Line::from(head), Line::default()];
