@@ -14,7 +14,7 @@ cd sizin/checkout
 imece
 ```
 
-Dizin commit'i olan bir git checkout'u olmalıdır (`--repo DİZİN` başkasını adlandırır); git'siz bir klasörde yalnız bir solo başlar (`imece --solo claude`, bkz. [solo oturumlar](../concepts/solo.md#gitsiz-bir-klasörde)).
+Dizin commit'i olan bir git checkout'u olmalıdır (`--repo DİZİN` başkasını adlandırır); git'siz bir klasörde yalnız bir solo başlar (`imece --solo claude`, bkz. [solo oturumlar](../concepts/solo.md#gitsiz-bir-klasörde)). Bir açılışın ihtiyaç duyduğu her şeyin yerinde olduğunu önce görmek için (Claude Code girişi, git, terminaliniz) [`imece doctor`](doctor.md) çalıştırın: hiçbir şey harcamaz.
 
 ### Hoş geldin penceresi
 

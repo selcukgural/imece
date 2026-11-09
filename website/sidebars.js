@@ -14,7 +14,7 @@ const sidebars = {
       type: 'category',
       label: 'Getting started',
       collapsed: false,
-      items: ['getting-started/install', 'getting-started/first-run', 'getting-started/demo'],
+      items: ['getting-started/install', 'getting-started/first-run', 'getting-started/doctor', 'getting-started/demo'],
     },
     'cheat-sheet',
     {

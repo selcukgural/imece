@@ -9,6 +9,8 @@ imece kapalı düşer (fail closed): bir dosya, bir oturum ya da bir değişikli
 
 ## Başlangıç
 
+Listeye girmeden önce: `imece doctor` bir açılışın ihtiyaç duyduğu her şeyi tek seferde denetler (Claude Code girişi, git, çalışma kopyası, Lonca, terminal, dosyalarınız) ve yanlış olan için ne yapılacağını söyler; hiçbir şey başlatmaz ([imece doctor](getting-started/doctor.md)).
+
 ### `another imece is running on …; open the other checkout from it with :open`
 
 **Ne görürsünüz.** `imece` o satırla hemen durur.

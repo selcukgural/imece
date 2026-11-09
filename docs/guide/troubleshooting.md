@@ -9,6 +9,8 @@ imece fails closed: when a file, a session or a change is not what it expects, i
 
 ## Start
 
+Before going through the list: `imece doctor` checks what a start needs in one go (Claude Code signed in, git, the checkout, Lonca, the terminal, your files) and says what to do about what is wrong, without starting anything ([imece doctor](getting-started/doctor.md)).
+
 ### `another imece is running on …; open the other checkout from it with :open`
 
 **What you see.** `imece` stops at once with that line.

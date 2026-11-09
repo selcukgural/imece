@@ -14,7 +14,7 @@ cd your/checkout
 imece
 ```
 
-The directory must be a git checkout with a commit (`--repo DIR` names another); in a folder without git, only a solo starts (`imece --solo claude`, see [solo sessions](../concepts/solo.md#in-a-folder-without-git)).
+The directory must be a git checkout with a commit (`--repo DIR` names another); in a folder without git, only a solo starts (`imece --solo claude`, see [solo sessions](../concepts/solo.md#in-a-folder-without-git)). To check first that everything a start needs is there (Claude Code signed in, git, your terminal), run [`imece doctor`](doctor.md): it spends nothing.
 
 ### The welcome window
 

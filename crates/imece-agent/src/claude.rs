@@ -98,6 +98,63 @@ fn login_in(said: &str) -> crate::Login {
     }
 }
 
+/// Every option imece gives Claude Code on some command line ([`args`],
+/// [`session_args`], [`once_args`]): what `imece doctor` looks for in
+/// `claude --help`, so a Claude Code that dropped one is found before a
+/// session fails to start on it. A test holds the list to what [`args`]
+/// writes.
+pub const FLAGS: [&str; 26] = [
+    "--print",
+    "--input-format",
+    "--output-format",
+    "--verbose",
+    "--replay-user-messages",
+    "--no-chrome",
+    "--permission-mode",
+    "--permission-prompts",
+    "--permission-prompt-tool",
+    "--restricted",
+    "--strict-mcp-config",
+    "--tools",
+    "--disallowedTools",
+    "--allowedTools",
+    "--max-budget-usd",
+    "--name",
+    "--add-dir",
+    "--append-system-prompt",
+    "--system-prompt",
+    "--no-session-persistence",
+    "--model",
+    "--effort",
+    "--resume",
+    "--fork-session",
+    "--session-id",
+    "--settings",
+];
+
+/// The options of [`FLAGS`] (and `--mcp-config`) Claude Code's own help
+/// does not name; none when it did not answer. Asked offline and free:
+/// `claude --help` starts no session.
+pub fn flags_missing(program: &str) -> Option<Vec<&'static str>> {
+    let mut cmd = child::command(program, &std::env::temp_dir(), ENV);
+    cmd.arg("--help");
+    let (status, said) = child::ask(cmd, crate::ASK_WAIT)?;
+    status.success().then(|| flags_missing_in(&said))
+}
+
+/// The options imece passes that the help text `help` does not name as a
+/// whole word (`--tools` is not found in `--allowed-tools`).
+fn flags_missing_in(help: &str) -> Vec<&'static str> {
+    let named: std::collections::HashSet<&str> = help
+        .split(|c: char| !(c.is_ascii_alphanumeric() || c == '-'))
+        .filter(|w| w.starts_with("--"))
+        .collect();
+    (FLAGS.iter().chain(&["--mcp-config"]))
+        .copied()
+        .filter(|f| !named.contains(f))
+        .collect()
+}
+
 /// Edits inside the agent's directory need nobody's approval; everything
 /// that would ask goes to imece's `approve` tool when the level gives a
 /// shell and the session has imece's server, and is denied otherwise
@@ -1480,6 +1537,57 @@ mod tests {
             mcp: None,
             resume: None,
         }
+    }
+
+    #[test]
+    fn every_option_a_command_line_has_is_one_doctor_looks_for() {
+        let mut full = on_lonca(&["Read", "Bash"]);
+        full.confine = Confine::Standard;
+        full.model = Some("opus".into());
+        full.effort = Some("high".into());
+        full.scratch = Some(PathBuf::from("/work/scratch"));
+        full.notes = Some(PathBuf::from("/work/notes"));
+        full.resume = Some(Resume {
+            session: "old".into(),
+            spent: 0,
+            fork: Some("new".into()),
+            models: None,
+        });
+        let mut strict = spec(&["Read"]);
+        strict.write = false;
+        let mut open = with_bus(&["Read"]);
+        open.confine = Confine::Open;
+        let mut seen = std::collections::BTreeSet::new();
+        for s in [&full, &strict, &open] {
+            for a in session_args(s).into_iter().chain(once_args(s)) {
+                if a == "-p" {
+                    seen.insert("--print".to_string());
+                } else if a.starts_with("--") {
+                    seen.insert(a);
+                }
+            }
+        }
+        let known: std::collections::BTreeSet<String> = (FLAGS.iter())
+            .chain(&["--mcp-config"])
+            .map(|f| f.to_string())
+            .collect();
+        assert_eq!(seen, known);
+    }
+
+    #[test]
+    fn an_option_the_help_does_not_name_whole_is_missing() {
+        let all = FLAGS
+            .map(|f| format!("  {f} <value>   what it does"))
+            .join("\n");
+        let help = format!("{all}\n  --mcp-config <configs...>  servers\n");
+        assert!(flags_missing_in(&help).is_empty());
+        // Named as part of another option only, or after a comma.
+        let help = help
+            .replace("  --tools <value>", "  --allowed-tools, --disallowed-tools")
+            .replace("  --mcp-config <configs...>", "  -m,--mcp-config=<x>");
+        assert_eq!(flags_missing_in(&help), ["--tools"]);
+        assert_eq!(flags_missing_in("").len(), FLAGS.len() + 1);
+        assert!(flags_missing_in("").contains(&"--mcp-config"));
     }
 
     fn with_bus(tools: &[&str]) -> Spec {

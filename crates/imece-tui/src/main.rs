@@ -9,6 +9,7 @@ mod away;
 mod checks;
 mod clip;
 mod complete;
+mod doctor;
 mod edit;
 mod editor;
 mod health;
@@ -54,6 +55,7 @@ const USAGE: &str = "usage: imece [--repo DIR] [--agents N] [--helpers N]
              [--budget USD] [--fresh] [--awake] [--confine standard|strict|open]
              [--lang en|tr] [--theme NAME|FILE]
        imece --demo [--projects N] [--agents N] [--researchers N] [--seed N]
+       imece doctor [--repo DIR] [--verbose] [--json]
        imece --version
 
 imece runs coding agents on the checkout DIR is in: a leader that reads it
@@ -112,6 +114,12 @@ as a project of its own, with its own leader, and :solo [PATH] [CHOICE]
                     catppuccin-mocha, tokyo-night-dark, solarized-dark, …) or
                     a colour file in Ghostty's or Kitty's format; or
                     IMECE_THEME; the last choice (T, :theme) is remembered
+
+  doctor            one report of what a start needs (Claude Code signed in,
+                    git, the checkout's tests, Lonca, the terminal, your
+                    files), with what to do about what is wrong; --verbose
+                    lists every finding, --json is for scripts; it spends
+                    nothing and exits 1 when something does not work
 
   --demo            fake agents instead, to see the screen at work
   --projects N      projects worked on at once (1-4, default 2)
@@ -368,6 +376,11 @@ fn main() -> std::io::Result<()> {
     if first.as_ref().is_some_and(|a| a == "stand-in") {
         let rest: Vec<String> = argv.map(|a| a.to_string_lossy().into_owned()).collect();
         std::process::exit(imece_agent::stand_in::main(&rest));
+    }
+    // One report of what a start needs (record 138): no screen, no agent.
+    if first.as_ref().is_some_and(|a| a == "doctor") {
+        let rest: Vec<String> = argv.map(|a| a.to_string_lossy().into_owned()).collect();
+        std::process::exit(doctor::main(&rest));
     }
     if first.is_some_and(|a| a == "mcp-relay") {
         let path = argv.next().map(PathBuf::from).unwrap_or_default();

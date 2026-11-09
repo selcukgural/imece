@@ -2320,6 +2320,78 @@ pub fn set_settings(path: &Path, set: &[(&str, &str)], unset: &[&str]) -> Result
     write().map_err(|e| format!("{}: {e}", path.display()))
 }
 
+/// What `imece doctor` reads of a store without taking it: the layout it
+/// was left at, and the Lonca repository of each open project by its
+/// checkout.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Peek {
+    /// `meta.schema_version`; 0 for a file from before it was written.
+    pub schema: i64,
+    /// `(checkout, repository)` of the open projects on Lonca.
+    pub lonca: Vec<(String, String)>,
+}
+
+/// Looks at the file at `path` read-only: nothing is made, migrated or
+/// locked, so it is safe beside a running imece and on a file of a newer
+/// one. None when there is no file.
+pub fn peek(path: &Path) -> Result<Option<Peek>, String> {
+    if !path.exists() {
+        return Ok(None);
+    }
+    let said = |e: rusqlite::Error| e.to_string();
+    let conn = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .map_err(said)?;
+    conn.busy_timeout(std::time::Duration::from_secs(1))
+        .map_err(said)?;
+    let schema: Option<String> = conn
+        .query_row(
+            "SELECT value FROM meta WHERE key = 'schema_version'",
+            [],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(said)?;
+    // A file from before schema 27 has no such column: no project of it
+    // is on Lonca.
+    let lonca = conn
+        .prepare("SELECT repo, lonca FROM projects WHERE closed = 0 AND lonca IS NOT NULL")
+        .and_then(|mut q| {
+            q.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+                .collect::<rusqlite::Result<Vec<(String, String)>>>()
+        })
+        .unwrap_or_default();
+    Ok(Some(Peek {
+        schema: schema.and_then(|v| v.parse().ok()).unwrap_or(0),
+        lonca,
+    }))
+}
+
+/// Whether another process holds the lock of the store at `path` (an
+/// imece running on it). Asked with a shared lock on the lock file as it
+/// is, let go at once; no lock file, or one that can not be opened, is
+/// nobody's. One that is only being let go of is given the while a start
+/// gives it ([`lock_file`]), so an imece just gone is not one running.
+pub fn held(path: &Path) -> bool {
+    use std::os::unix::io::AsRawFd;
+    let mut lock_path = path.as_os_str().to_owned();
+    lock_path.push(".lock");
+    let Ok(f) = std::fs::File::open(&lock_path) else {
+        return false;
+    };
+    for _ in 0..LOCK_TRIES {
+        // SAFETY: flock on a descriptor this process owns; closing it
+        // lets go.
+        if unsafe { libc::flock(f.as_raw_fd(), libc::LOCK_SH + libc::LOCK_NB) } == 0 {
+            return false;
+        }
+        if std::io::Error::last_os_error().kind() != std::io::ErrorKind::WouldBlock {
+            return false;
+        }
+        std::thread::sleep(LOCK_WAIT);
+    }
+    true
+}
+
 /// Takes the file's lock for this process: `WouldBlock` when another
 /// process has it. A lock that is only being let go of (an imece that is
 /// just quitting, or a child of this process between fork and exec, which
@@ -3597,6 +3669,51 @@ mod tests {
         assert!(second.is_ok(), "{:?}", second.err());
         letting_go.join().unwrap();
         let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn a_peek_reads_the_layout_and_who_is_on_lonca_and_changes_nothing() {
+        let d = dir("peek");
+        let file = d.join(FILE);
+        assert_eq!(peek(&file), Ok(None), "no file, and none made");
+        assert!(!file.exists() && !held(&file));
+        {
+            let mut store = Store::open(&file).unwrap();
+            assert!(
+                held(&file),
+                "the store's own lock is another's to a new look"
+            );
+            let mut w = world();
+            // A closed project's repository is nobody's to ask about.
+            w.on_lonca(0, Some("shelf".into()));
+            w.on_lonca(1, Some("gone".into()));
+            store.save(&w, &kept().kept()).unwrap();
+            let seen = peek(&file).unwrap().unwrap();
+            assert_eq!(seen.schema, SCHEMA_VERSION);
+            assert_eq!(seen.lonca, [("/work/one".to_string(), "shelf".to_string())]);
+        }
+        assert!(!held(&file), "let go with the store");
+        // A newer imece's file is read, not refused, and stays as it was.
+        let conn = Connection::open(&file).unwrap();
+        conn.execute(
+            "UPDATE meta SET value = '99' WHERE key = 'schema_version'",
+            [],
+        )
+        .unwrap();
+        conn.execute("UPDATE projects SET closed = 1", []).unwrap();
+        drop(conn);
+        assert_eq!(
+            peek(&file),
+            Ok(Some(Peek {
+                schema: 99,
+                lonca: vec![]
+            }))
+        );
+        // What is not a store says why.
+        let junk = d.join("junk.sqlite");
+        std::fs::write(&junk, "not a database, however long this line gets to be").unwrap();
+        assert!(peek(&junk).is_err());
+        assert!(junk.exists() && !held(&junk));
     }
 
     #[test]

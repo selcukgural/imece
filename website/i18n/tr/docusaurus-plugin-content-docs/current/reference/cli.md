@@ -15,6 +15,7 @@ usage: imece [--repo DIR] [--agents N] [--helpers N]
              [--budget USD] [--fresh] [--awake] [--confine standard|strict|open]
              [--lang en|tr] [--theme NAME|FILE]
        imece --demo [--projects N] [--agents N] [--researchers N] [--seed N]
+       imece doctor [--repo DIR] [--verbose] [--json]
        imece --version
 ```
 
@@ -23,6 +24,7 @@ imece                                              # içinde olduğunuz çalış
 imece --agents 8 --budget 10 --model sonnet
 imece --demo --projects 3 --agents 30              # sahte ajanlar, ekranı iş başında görmek için
 imece --demo --lang tr                             # ya da IMECE_LANG=tr
+imece doctor                                       # bir açılışın neye ihtiyacı var, ne yanlış
 ```
 
 ## Bayraklar nasıl okunur
@@ -33,6 +35,7 @@ imece --demo --lang tr                             # ya da IMECE_LANG=tr
 - `--projects`, `--researchers` ve `--seed` `--demo`'ya aittir. Onsuz verilirse imece `--projects is for --demo` der ve kullanımı yazar.
 - `-h` ya da `--help` kullanım metnini yazar. Reddedilen her komut satırı gibi 2 çıkış koduyla biter.
 - İlk bayrak `--version` (ya da `-V`) ise stdout'a `imece 0.1.0` yazar ve 0 çıkış koduyla biter; kurulum betiği yerine koyduğu dosyayı böyle denetler.
+- `imece doctor` bir açılışın neye ihtiyaç duyduğunun ve yanlış olan için ne yapılacağının tek raporunu yazar; ekran yok, ajan yok, harcama yok. Yalnızca `--repo DIR`, `--verbose` (`-v`), `--json` ve `--lang` alır ([imece doctor](../getting-started/doctor.md)).
 - `--live` kabul edilir ve yok sayılır: canlı ajanlar varsayılan olmadan önce onlar bu bayrakla istenirdi.
 - `imece mcp-relay SOCKET` sizin için değildir: Claude Code imece'yi bu biçimde kendi MCP sunucusu olarak başlatır ve süreç yalnızca CLI ile imece'nin o ajana ait soketi arasında bayt taşır ([mesaj türleri](message-types.md)).
 - `imece stand-in ARGS…` de sizin için değildir: imece'nin kendi testleri için Claude Code'u oynar. PATH'te `imece stand-in "$@"` çağıran bir `claude` betiği onu çalıştırınca imece'nin `claude`a verdiği bayrakları alır (`0.0.0 (imece stand-in)` basan `--version`'ı ve giriş yapılmış olduğunu söyleyen `auth status --json`'ı da), imece'nin veri yoluyla Claude Code'un MCP istemcisi gibi konuşur ve aynı olayları akıtır: bir lider bir işçi alır ve ona son paragrafınızı görev olarak verir, bir işçi `stand-in/<ad>.md` yazar ve `done` gönderir, her tur uydurma bir sente. Hiçbir modele sorulmaz, hiçbir şey harcanmaz. imece'nin uçtan uca testi gerçek takımı bunun üstünde çalıştırır.
@@ -41,8 +44,8 @@ imece --demo --lang tr                             # ya da IMECE_LANG=tr
 
 | Kod | Ne zaman | Ne görürsünüz |
 | --- | --- | --- |
-| 0 | `--version`, ya da olağan bir çıkış (`q q`, `:quit`, ya da dışarıdan SIGTERM, SIGHUP ve SIGINT; imece bunları olağan bir çıkışa çevirir ki oturumlar dursun ve veriyolunun soketleri kaldırılsın; terminalin kendisi gidince de aynısı: sekmesi ya da penceresi kapandığında, tmux sunucusu bittiğinde) | kabuğunuzun başlığı geri gelir |
-| 1 | Bayraklar okunduktan sonra başlangıç başarısız oldu: PATH'te kodlama ajanı yok, `--repo` bir git çalışma kopyası değil, depoyu başka bir imece tutuyor, depo okunamıyor, bir oturum başlatılamadı | ekran geri getirildikten sonra stderr'de `imece: <neden>` |
+| 0 | `--version`, çalışmayan bir şey bulmayan `imece doctor` (uyarılar dahil), ya da olağan bir çıkış (`q q`, `:quit`, ya da dışarıdan SIGTERM, SIGHUP ve SIGINT; imece bunları olağan bir çıkışa çevirir ki oturumlar dursun ve veriyolunun soketleri kaldırılsın; terminalin kendisi gidince de aynısı: sekmesi ya da penceresi kapandığında, tmux sunucusu bittiğinde) | kabuğunuzun başlığı geri gelir |
+| 1 | `imece doctor` çalışmayan bir şey buldu (bir `[✗]` başlığı). Ya da bayraklar okunduktan sonra başlangıç başarısız oldu: PATH'te kodlama ajanı yok, `--repo` bir git çalışma kopyası değil, depoyu başka bir imece tutuyor, depo okunamıyor, bir oturum başlatılamadı | ekran geri getirildikten sonra stderr'de `imece: <neden>` |
 | 2 | Bir bayrak yanlış, ya da `--help` | stderr'de mesaj; eksik değerde, bilinmeyen seçenekte ve canlıda verilen demo bayrağında ardından kullanım metni |
 
 Çıkış kodu 1'in bazı mesajları, aynen: `another imece is running on <yol>/imece.sqlite; open the other checkout from it with :open`.
