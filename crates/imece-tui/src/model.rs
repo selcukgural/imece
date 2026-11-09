@@ -2644,7 +2644,7 @@ pub enum InboxKind {
     /// the person allows or refuses it. Closes with the decision or when
     /// the session ends.
     Approval,
-    /// A live agent's turn failed on a API error only the person mends
+    /// A live agent's turn failed on an API error only the person mends
     /// (the account: signed out, a key, a quota, a bill), or on a passing
     /// one imece tried again until its tries ran out; the detail is the
     /// Claude Code's words. Closes when the person writes to the agent.
@@ -5213,7 +5213,7 @@ impl World {
     }
 
     /// The person wrote to agent `id`, or its session ended: what it
-    /// waited on for a API error closes.
+    /// waited on for an API error closes.
     pub fn close_faults(&mut self, id: AgentId) {
         for i in &mut self.inbox {
             if i.kind == InboxKind::Fault && i.agent == id {

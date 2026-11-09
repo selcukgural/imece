@@ -1257,7 +1257,7 @@ pub struct Text {
     /// An agent's row while a retry waits: the try, the tries, how long
     /// until it goes.
     pub retry_row: &'static str,
-    /// An agent's row while a API error waits for the person.
+    /// An agent's row while an API error waits for the person.
     pub fault_row: &'static str,
     pub ev_posted: &'static str,
     pub ev_claimed: &'static str,
@@ -2393,7 +2393,7 @@ pub const EN: Text = Text {
     notice_approval: "imece · {} asks to run something",
     notice_sensitive: "imece · {}: something sensitive waits for you",
     notice_stuck: "imece · {} is stuck",
-    notice_fault: "imece · {} hit a API error that needs you",
+    notice_fault: "imece · {} hit an API error that needs you",
     notify_many: "imece · {} things wait for you",
     theme_is: "theme: {}",
     helpers: "{} helpers",
@@ -2476,7 +2476,7 @@ pub const EN: Text = Text {
     ev_rejected: "sent back: {}",
     ev_stopped: "{}: session ended: {}",
     ev_interrupted: "{}'s turn was cut short when imece closed; it hears of it when it wakes",
-    ev_retrying: "{} hit a API error: {} · imece tries again in {} ({}/{})",
+    ev_retrying: "{} hit an API error: {} · imece tries again in {} ({}/{})",
     retry_row: "↻ {}/{} in {}",
     fault_row: "■ API error",
     ev_posted: "{} posted {} {}",

@@ -404,7 +404,7 @@ impl App {
             self.world.inbox[item].kind,
             InboxKind::Question | InboxKind::Fault
         ) {
-            // A question is answered by writing back, and a API error
+            // A question is answered by writing back, and an API error
             // the person mended is told the same way: the composer opens
             // to the agent, and the item closes when the message goes.
             let name = self.world.agents[self.world.inbox[item].agent].name.clone();
