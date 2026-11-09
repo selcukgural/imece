@@ -70,7 +70,7 @@ The 12-turn and 10-post counters start again every time you write to any agent: 
 
 ### Cards and the bus
 
-A message to an idle worker opens a card titled by its first line (an `assign`'s first line when there is one), owning the `assign`'s `paths` ([the paths a card owns](../concepts/messages-and-board.md#the-paths-a-card-owns)); the card closes when the turn it started ends with the agent's reply. A worker's `done` to its leader does not close the leader's card: the leader's own turn does. A helper's `done` to its worker marks it leaving; it leaves when that turn ends, so the turn's cost is still reported. See [messages and board](../concepts/messages-and-board.md) and [cards](../screen/cards.md).
+A teammate's message to an idle worker opens a card titled by its first line (an `assign`'s first line when there is one), owning the `assign`'s `paths` ([the paths a card owns](../concepts/messages-and-board.md#the-paths-a-card-owns)); the card follows its change. Your own message to an idle worker opens none until its work comes to a change, which opens the card, titled by your message. A worker's `done` to its leader does not close the leader's card: the leader's own turn does. A helper's `done` to its worker marks it leaving; it leaves when that turn ends, so the turn's cost is still reported. See [messages and board](../concepts/messages-and-board.md) and [cards](../screen/cards.md).
 
 ## Message numbers and replies
 

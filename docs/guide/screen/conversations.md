@@ -36,7 +36,7 @@ The title names the two parties and where the selection stands, `4/5`, then `✎
 
 `a` and `r` decide nothing while a conversation is open: what is selected under it is not what you see. `esc` first, then open the change.
 
-A message to an idle worker opens a card for it (the first line is the card's title), and its answer closes the card. So writing `@claude-2 text` from the window is a card as well as a message.
+A message to an idle worker opens no card by itself: the line waits as the worker's own task, and only when the work comes to a change does a card open for it, titled by the line's first line, waiting for you with the change. A line that comes to nothing (a question, a one-word answer) never becomes a card; the answer comes to you as ever.
 
 ## Reading
 

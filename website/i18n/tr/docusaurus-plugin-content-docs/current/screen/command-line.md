@@ -26,7 +26,7 @@ Alt satır yazdığınız yerdir. `/` (ya da vim'deki gibi `i`) onu seçili proj
 | Satır | Nereye |
 | --- | --- |
 | düz metin | seçili projenin liderine; isteği kartlara böler |
-| `@name text` | tek bir agent'a (Türkçe yardımda `@ad mesaj`). Boşta bir işçiye mesaj onun için bir kart açar; yanıtı kartı kapatır. Bir odakta, izde ya da değişiklikte `@` agent'ın adını doldurur |
+| `@name text` | tek bir agent'a (Türkçe yardımda `@ad mesaj`). Boşta bir işçiye mesaj, işi bir değişikliğe varana dek kart açmaz; o zaman kart mesajın başlığıyla açılır. Bir odakta, izde ya da değişiklikte `@` agent'ın adını doldurur |
 | `/cmd`, `@name /cmd` | agent'ın kendi komut satırı, mesaj değil (Türkçe yardımda `/kmt`): `/clear`, `/compact`, `/cost`, `/context`, Claude Code ne biliyorsa. Bir tur olarak çalışır ve yanıtı bir cevap gibi döner |
 | `:komut` | imece'nin kendisine; aşağıda |
 | `!cmd` | kendi kabuğunuza (Türkçe yardımda `!kmt`) |
@@ -34,7 +34,7 @@ Alt satır yazdığınız yerdir. `/` (ya da vim'deki gibi `i`) onu seçili proj
 
 Baştaki etiket nereye gittiğini söyler: `lead için:`, `claude-1 için:`, `komut:`, `kabuk:`, `iş:`, ya da bir değişikliğin notu yazılırken `dosya:satır için not ▸`. Agent adları tamamlanır: `@cl` `tab` → `@claude-1 `.
 
-Bir mesaj birkaç satıra yayılabilir; kart açan bir mesajın ilk satırı kartın başlığıdır. Biten bir bütçe sözleri ve komutları reddeder: `:budget` artırana dek hiçbir şey tur başlatmaz.
+Bir mesaj birkaç satıra yayılabilir; işi kart açan bir mesajın ilk satırı kartın başlığıdır. Biten bir bütçe sözleri ve komutları reddeder: `:budget` artırana dek hiçbir şey tur başlatmaz.
 
 ## `:` komutları
 

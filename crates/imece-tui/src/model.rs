@@ -926,7 +926,7 @@ impl Unpriced {
 /// came to is carried when it leaves unapplied (sent back, replaced, part
 /// applied) into the next change of the agent's, and dropped once one is
 /// applied whole or the worktree holds nothing.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Task {
     /// The round open now: the agent's cost when it opened, and the tick.
     pub round: Option<(u64, u64)>,
@@ -939,6 +939,21 @@ pub struct Task {
     /// at its close leave the round unpriced.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub gaps: u32,
+    /// The person's own line to a worker with no card at work (record
+    /// 126): no card opens for it until a change of it shows
+    /// (`World::own_line`, `change_ready`). Kept with the round it opened,
+    /// so a restart keeps both.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub own: Option<Own>,
+}
+
+/// The person's line a worker works on with no card yet (record 126):
+/// its first line, the card's title once a change of it shows, and the
+/// tick it was written, the card's start.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct Own {
+    pub title: String,
+    pub tick: u64,
 }
 
 fn is_zero(n: &u32) -> bool {
@@ -4513,6 +4528,7 @@ impl World {
         let agent = change.agent;
         self.carry_spend(agent);
         self.forget_change(agent);
+        self.own_card(agent);
         self.move_cards(agent, Column::Working, Column::Review);
         let cards = self.owned_in(agent, Column::Review);
         self.count_round(agent, &cards, false);
@@ -4691,9 +4707,80 @@ impl World {
         true
     }
 
+    /// The person wrote to worker `id` (record 126): with no card at work
+    /// (none, or one that is through), no card opens for the line now. It
+    /// waits as the worker's own task, and a change of it opens the card
+    /// (`own_card`); a line while one waits is part of it, the first
+    /// line's title kept. The card it last had, through or handed on, is
+    /// not its own now: what it says and spends from now is no part of it.
+    pub fn own_line(&mut self, id: AgentId, title: &str) {
+        let tick = self.tick;
+        if self.agents[id].role != Role::Worker {
+            return;
+        }
+        if let Some(c) = self.agents[id].card
+            && (self.cards[c].over() || self.cards[c].owner != Some(id))
+        {
+            let a = &mut self.agents[id];
+            a.card = None;
+            // Its spending goes on a row with no card again.
+            if (a.meter.row).is_some_and(|i| self.ledger[i].card.is_some()) {
+                a.meter.row = None;
+            }
+        }
+        let task = &mut self.agents[id].task;
+        if task.own.is_none() {
+            task.own = Some(Own {
+                title: title.to_string(),
+                tick,
+            });
+        }
+    }
+
+    /// Worker `id`'s change shows: the person's own line it worked on
+    /// opens its card now (record 126), titled by the line, at work from
+    /// when it was written, the worker's, its first try; what the worker
+    /// spent on it with no card is that try's row. A card of its own at
+    /// work already holds the change, and the line is part of it.
+    fn own_card(&mut self, id: AgentId) {
+        let Some(own) = self.agents[id].task.own.take() else {
+            return;
+        };
+        if !self.owned_in(id, Column::Working).is_empty() {
+            return;
+        }
+        let card = self.cards.len();
+        self.cards.push(Card {
+            id: card,
+            project: self.agents[id].project,
+            title: own.title,
+            owner: Some(id),
+            column: Column::Working,
+            story: Vec::new(),
+            symbols: Vec::new(),
+            paths: Vec::new(),
+            checks: Vec::new(),
+            started: own.tick,
+            finished: 0,
+            attempt: 1,
+            breaker: Default::default(),
+            after: Vec::new(),
+        });
+        self.row_to_card(id, card);
+        self.takes(id, card);
+        self.story(Some(card), StoryEvent::Took { agent: id });
+    }
+
+    /// Worker `id`'s own task (record 126) came to nothing to show: no
+    /// card ever opens for it.
+    pub fn own_none(&mut self, id: AgentId) {
+        self.agents[id].task.own = None;
+    }
+
     /// Agent `id`'s worktree holds no change (a done with nothing in it,
     /// or the rest of a part applied was nothing): nothing is carried on.
     pub fn change_none(&mut self, id: AgentId) {
+        self.own_none(id);
         let mut done = self.move_cards(id, Column::Working, Column::Done);
         done.extend(self.move_cards(id, Column::Review, Column::Done));
         // A turn of a solo's with nothing changed ends no row of its own.
@@ -4812,7 +4899,10 @@ impl World {
     }
 
     /// Agent `id` takes card `c` for its turn, at the card's attempt now.
+    /// A card taken holds what the worker works on from now: the
+    /// person's own line it had no card for is part of it (record 126).
     pub fn takes(&mut self, id: AgentId, c: CardId) {
+        self.agents[id].task.own = None;
         self.agents[id].card = Some(c);
         self.agents[id].attempt = self.cards[c].attempt;
         self.row_takes(id, c);
@@ -7738,6 +7828,64 @@ mod tests {
             text: text.into(),
             cost: 7,
         }
+    }
+
+    #[test]
+    fn the_person_s_own_line_waits_for_a_change_to_open_its_card() {
+        let mut w = world(vec![
+            agent(0, Role::Leader, Status::Idle),
+            agent(1, Role::Worker, Status::Idle),
+            agent(2, Role::Solo, Status::Idle),
+        ]);
+        // A leader's or a solo's line is never a worker's own task.
+        w.own_line(0, "plan it");
+        w.own_line(2, "look");
+        assert_eq!(
+            (w.agents[0].task.own.clone(), w.agents[2].task.own.clone()),
+            (None, None)
+        );
+        // A card handed on is not the worker's now; one through neither.
+        w.cards.push(card(0, Some(0), Vec::new()));
+        w.agents[1].card = Some(0);
+        w.tick = 7;
+        w.own_line(1, "hi");
+        assert_eq!(w.agents[1].card, None, "handed on");
+        assert_eq!(
+            w.agents[1].task.own,
+            Some(Own {
+                title: "hi".into(),
+                tick: 7
+            })
+        );
+        w.own_none(1);
+        let mut done = card(1, Some(1), Vec::new());
+        done.column = Column::Done;
+        w.cards.push(done);
+        w.agents[1].card = Some(1);
+        w.own_line(1, "hi");
+        assert_eq!(w.agents[1].card, None, "through");
+        // Its own change waiting on Lonca keeps its card.
+        w.own_none(1);
+        let mut review = card(2, Some(1), Vec::new());
+        review.column = Column::Review;
+        w.cards.push(review);
+        w.agents[1].card = Some(2);
+        w.own_line(1, "hi");
+        assert_eq!(w.agents[1].card, Some(2));
+        // A card it takes holds what it works on: the line is part of it.
+        w.takes(1, 2);
+        assert_eq!(w.agents[1].task.own, None);
+        // A change while a card of its own is at work is that card's: no
+        // other opens, and the line is through.
+        w.cards[2].column = Column::Working;
+        w.agents[1].task.own = Some(Own::default());
+        w.change_ready(change(1, "Fix", &[("a.rs", 1, 0)]));
+        assert_eq!(w.cards.len(), 3);
+        assert_eq!(w.cards[2].column, Column::Review);
+        assert_eq!(w.agents[1].task.own, None);
+        // A solo's change opens no card.
+        w.change_ready(change(2, "Look", &[("b.rs", 1, 0)]));
+        assert_eq!(w.cards.len(), 3);
     }
 
     #[test]

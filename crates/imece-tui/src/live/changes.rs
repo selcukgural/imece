@@ -2218,6 +2218,80 @@ mod tests {
     }
 
     #[test]
+    fn the_person_s_line_to_a_worker_opens_a_card_only_when_a_done_shows_a_change() {
+        let repo = checkout("own-repo");
+        let root = trees("own");
+        let mut w = team(1);
+        let mut live = Live::new(
+            2,
+            claude_at("/nonexistent/claude"),
+            repo.clone(),
+            root.clone(),
+        );
+        let tree = worker_in(&mut live, &mut w, 1, &repo, &root);
+        let (cut, _) = mpsc::channel();
+        live.ready_tx = cut;
+        // A line of talk: no card, and a done with nothing in the
+        // worktree opens none either (record 126).
+        w.agents[1].status = Status::Idle;
+        live.told(&mut w, 1, "are you there? Answer in one word.")
+            .unwrap();
+        assert!(w.cards.is_empty(), "no card for a line");
+        assert!(w.agents[1].task.own.is_some());
+        let got = sent(&mut live, &mut w, 1, &msg("lead", "done", "Yes")).unwrap();
+        assert!(got.contains("your worktree holds no change"), "{got}");
+        assert!(w.cards.is_empty(), "nothing shown, no card");
+        assert!(w.change_of(1).is_none());
+        assert_eq!(w.agents[1].task.own, None);
+        // A line that comes to a change: its card opens with the change,
+        // titled by the line, in review, and the change is its.
+        hear(
+            &live,
+            1,
+            AgentEvent::TurnDone {
+                ok: true,
+                text: "Yes.".into(),
+                cost: 10_000,
+                denied: 0,
+            },
+        );
+        live.step(&mut w);
+        w.tick = 30;
+        live.told(&mut w, 1, "Add b\nat the end").unwrap();
+        assert!(w.cards.is_empty());
+        std::fs::write(tree.join("a.txt"), "a\nb\n").unwrap();
+        sent(&mut live, &mut w, 1, &msg("lead", "done", "Added b")).unwrap();
+        assert_eq!(w.cards.len(), 1, "a card with the change");
+        let card = &w.cards[0];
+        assert_eq!(card.title, "Add b");
+        assert_eq!(
+            (card.owner, card.column, card.attempt, card.started),
+            (Some(1), Column::Review, 1, 30)
+        );
+        assert_eq!(w.agents[1].card, Some(0));
+        let item = (w.inbox.iter()).find(|i| i.kind == InboxKind::Change);
+        assert_eq!(item.unwrap().card, Some(0));
+        // What the worker spent with no card is the card's try.
+        hear(
+            &live,
+            1,
+            AgentEvent::TurnDone {
+                ok: true,
+                text: "Done.".into(),
+                cost: 30_000,
+                denied: 0,
+            },
+        );
+        live.step(&mut w);
+        let s = w.change_of(1).unwrap().spend.unwrap();
+        assert_eq!(s.cost, 300, "from the first line's round on");
+        let row = (w.ledger.iter()).find(|r| r.agent == 1).unwrap();
+        assert_eq!((row.card, row.attempt, row.cost), (Some(0), 1, 300));
+        assert_eq!((w.ledger.iter()).filter(|r| r.agent == 1).count(), 1);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn a_done_s_change_is_checked_by_the_repository_s_check_in_its_worktree() {
         let repo = checkout("check-repo");
         let root = trees("check");

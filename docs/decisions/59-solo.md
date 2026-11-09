@@ -103,7 +103,10 @@ private directory follows its tree name (`solo-N`), its helpers' their own
 names; a solo's turn that ends while a helper is mid-turn is not a report
 (as a leader's), so its answer waits in its story and the Δ comes with the
 next answer; the two kinds of project are told apart only by the head's
-role.
+role. A solo has no cards: neither the person's line nor its Δ opens one
+(`World::own_line` passes over every role but a worker; record 126, "The
+person's line opens no card", 2026-11-09, where a worker's line waits for
+its change).
 
 The pick screen, `:effort` and `:model` (PR 3, the `solo-pick` branch,
 2026-11-01): a bare `:solo` (no `VENDOR[:MODEL][@EFFORT]` word) opens a

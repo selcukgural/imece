@@ -934,7 +934,9 @@ mod tests {
         let text = &queued(&live, 2)[0];
         assert!(text.contains("You had no task in hand."), "{text}");
         assert!(!text.contains("messages wait") && text.contains("The board has 1 open"));
-        // A finished card is said to be, and a new task gets a new card.
+        // A finished card is said to be, and the person's new line waits
+        // as the worker's own task, with no card until a change shows
+        // (record 126).
         let mut w = team(1);
         let c = with_card(&mut w, 1);
         w.cards[c].column = Column::Done;
@@ -943,7 +945,9 @@ mod tests {
         w.agents[1].status = Status::Asleep;
         live.told(&mut w, 1, "next").unwrap();
         assert!(queued(&live, 1)[0].contains("#1 fix it (done)"));
-        assert_eq!(w.agents[1].card, Some(1));
+        assert_eq!(w.agents[1].card, None);
+        assert_eq!(w.cards.len(), 1);
+        assert_eq!(w.agents[1].task.own.as_ref().unwrap().title, "next");
         // Where its card stands now (record 126).
         for (column, owner, said) in [
             (Column::Review, 1, "(done, its change waits for the person)"),
@@ -1177,7 +1181,8 @@ mod tests {
     }
 
     #[test]
-    fn a_worker_told_again_goes_on_with_an_unfinished_card_and_gets_a_new_one_after_a_done_one() {
+    fn a_worker_told_again_goes_on_with_an_unfinished_card_and_a_new_line_opens_one_only_with_a_change()
+     {
         let mut w = team(1);
         let mut live = idle_live(2);
         let c = with_card(&mut w, 1);
@@ -1185,12 +1190,64 @@ mod tests {
         live.told(&mut w, 1, "try again").unwrap();
         assert_eq!(w.agents[1].card, Some(c));
         assert_eq!(w.cards.len(), 1, "the stopped task goes on");
+        assert_eq!(w.agents[1].task.own, None, "its card holds the line");
+        // Its card done, the person's next line opens no card (record
+        // 126): it waits as the worker's own task.
         w.cards[c].column = Column::Done;
         w.agents[1].status = Status::Idle;
         live.turns[1] = 0;
-        live.told(&mut w, 1, "next").unwrap();
+        w.tick = 40;
+        live.told(&mut w, 1, "are you there?\nAnswer in one word.")
+            .unwrap();
+        assert_eq!(w.cards.len(), 1, "no card for a line");
+        assert_eq!(w.agents[1].card, None, "the done card is not its own now");
+        let own = |w: &World| w.agents[1].task.own.clone();
+        assert_eq!(
+            own(&w),
+            Some(Own {
+                title: "are you there?".into(),
+                tick: 40,
+            })
+        );
+        // Its turn ends with an answer and nothing to show: no card ever.
+        w.agents[1].status = Status::Idle;
+        live.turns[1] = 0;
+        // A done with nothing in its worktree: still none, and the line
+        // is through.
+        w.change_none(1);
+        assert_eq!(w.cards.len(), 1);
+        assert_eq!(own(&w), None);
+        // The next line waits; one more while it waits is part of it.
+        w.tick = 50;
+        live.told(&mut w, 1, "fix the footer").unwrap();
+        w.tick = 52;
+        live.told(&mut w, 1, "and its test").unwrap();
+        assert_eq!(own(&w).unwrap().title, "fix the footer");
+        assert_eq!(w.cards.len(), 1);
+        // A change of it shows: its card opens now, titled by the first
+        // line, the worker's, from when it was written, and waits with
+        // the change.
+        w.tick = 60;
+        w.change_ready(Change {
+            agent: 1,
+            title: "Footer fixed".into(),
+            files: Vec::new(),
+            patch: String::new(),
+            runs: Vec::new(),
+            check: Check::None,
+            spend: None,
+        });
+        assert_eq!(w.cards.len(), 2);
+        let card = &w.cards[1];
+        assert_eq!(card.title, "fix the footer");
+        assert_eq!(
+            (card.owner, card.column, card.attempt, card.started),
+            (Some(1), Column::Review, 1, 50)
+        );
+        assert!(matches!(card.story[0].event, StoryEvent::Took { agent: 1 }));
         assert_eq!(w.agents[1].card, Some(1));
-        assert_eq!(w.cards[1].title, "next");
+        assert_eq!(own(&w), None, "the card holds it now");
+        assert_eq!(w.inbox.last().unwrap().card, Some(1));
     }
 
     #[test]
@@ -1228,7 +1285,8 @@ mod tests {
         });
         assert_eq!(w.cards[c].column, Column::Review);
         // The leader's helper or a solo has no card to go on with; a
-        // worker with nothing waiting gets one of its own.
+        // worker with nothing waiting gets none for a line (record 126),
+        // only once a change of it shows.
         assert!(w.word_goes_on(0).is_empty());
         w.change_applied(1, "m".into(), true);
         assert_eq!(w.cards[c].column, Column::Done);
@@ -1236,7 +1294,8 @@ mod tests {
         w.agents[1].status = Status::Idle;
         live.turns[1] = 0;
         live.told(&mut w, 1, "next").unwrap();
-        assert_eq!(w.cards.len(), 2);
+        assert_eq!(w.cards.len(), 1);
+        assert!(w.agents[1].task.own.is_some());
     }
 
     #[test]

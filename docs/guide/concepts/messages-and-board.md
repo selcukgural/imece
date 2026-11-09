@@ -82,7 +82,7 @@ Two things in TO DECIDE hold nothing: an answer waiting to be read, and a worker
 
 ## You on the bus
 
-Plain text in the command line goes to the leader of the project at hand; `@name text` goes to one agent. A message to an idle worker opens a card; its change closes it ([a card's tries](#a-cards-tries)). Your messages have no number. An agent's answer to you waits in TO DECIDE ("claude-1 answered you: …") until you open it (`enter`), dismiss it (`r`) or just write back.
+Plain text in the command line goes to the leader of the project at hand; `@name text` goes to one agent. A message to an idle worker opens no card by itself: a card opens, titled by it, only when its work comes to a change, and that change closes it ([a card's tries](#a-cards-tries)); a line that comes to nothing (a question, a hello) is never a card, so the board and its counts hold work alone. Your messages have no number. An agent's answer to you waits in TO DECIDE ("claude-1 answered you: …") until you open it (`enter`), dismiss it (`r`) or just write back.
 
 ## The board
 

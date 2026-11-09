@@ -9,7 +9,9 @@ spend apart.
 A row is an attempt (`ledger::Attempt`): a worker's try at a card, the
 card's `attempt` (record 126) at the time; or a worker's spending with
 no card (a solo, a worker told directly), one row per worker open until
-a change of it is applied. It keeps the project, the card and try, the
+a change of it is applied. A worker's row with no card becomes the first
+try of the card its change opens (record 126, "The person's line opens
+no card": `World::row_to_card`). It keeps the project, the card and try, the
 worker, the model Claude Code said its session runs on (`init`'s
 `model`, `Agent.meter.model`), what it spent (its helpers' counted in,
 in ten-thousandths of a dollar), whether part of that was never priced

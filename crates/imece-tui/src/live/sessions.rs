@@ -506,7 +506,8 @@ impl Live {
     }
 
     /// Gives agent `id` the person's message, starting its session first
-    /// if it has none. An idle worker gets a new card for it. Mail that
+    /// if it has none. An idle worker gets no card for it: the line waits
+    /// as its own task until a change of it shows (record 126). Mail that
     /// waited for this word goes with it (record 107).
     pub fn told(&mut self, w: &mut World, id: AgentId, text: &str) -> Result<(), Refusal> {
         if self.over_budget(w) {
@@ -582,7 +583,8 @@ impl Live {
     }
 
     /// Gives agent `id` a prompt, starting its session first if it has
-    /// none. An idle worker gets a new card from `opening`, if there is one.
+    /// none. An idle worker gets a new card from `opening`, if there is one
+    /// and it is not the person's own line (`World::own_line`).
     pub(super) fn prompt(
         &mut self,
         w: &mut World,
@@ -665,7 +667,9 @@ impl Live {
         // A worker between tasks gets a card for this one; a task it has
         // not finished (its session stopped or slept under it, or it
         // ended a turn without a done) goes on. A card handed again is
-        // taken at the attempt it is on (record 126).
+        // taken at the attempt it is on (record 126). The person's own
+        // line opens none: it waits as the worker's own task until a
+        // change of it shows (`World::own_line`).
         let unfinished = a.card.is_some_and(|c| {
             let c = &w.cards[c];
             c.column == Column::Working && c.owner == Some(id)
@@ -675,6 +679,12 @@ impl Live {
             && a.role == Role::Worker
         {
             w.takes(id, c);
+        } else if let Some(o) = opening.as_ref().filter(|o| o.person)
+            && a.role == Role::Worker
+            && a.status != Status::Working
+            && !unfinished
+        {
+            w.own_line(id, o.title);
         } else if let Some(o) = opening
             && a.role == Role::Worker
             && a.status != Status::Working

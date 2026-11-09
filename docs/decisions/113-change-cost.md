@@ -21,7 +21,11 @@ one round, and the helpers' open rounds' cost; the helpers' rounds close
 with it, a helper hired mid-round counts from its first prompt. A round
 not closed (a question answered between changes) counts into the next
 change. Not the time the change waited for the person: a round opens at
-the next prompt, after the wait.
+the next prompt, after the wait. The person's own line to a worker with
+no card (record 126, "The person's line opens no card") opens the round
+as any prompt; the card that opens once its change shows is costed from
+there, and `Task.own` (the line waiting for a change) is kept beside the
+round in `agents.task`.
 
 When. A worker's `done` comes mid-turn, and Claude Code says a turn's cost
 only at its end, so `changes::read` puts the change before the person
