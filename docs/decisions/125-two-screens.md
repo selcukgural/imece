@@ -236,8 +236,10 @@ two of four (`Content.ask_options`). Left for the step: the detail's tabs
 
 Step 3's detail frame as built (its third piece): `App::detail` names the
 piece of work on screen and its tab (`app/detail.rs`: `Tab` Diff/Talk/Log;
-a conversation first (`thread_agent`: the first line's writer, else the
-one written to), else `Zoom::Diff` → diff, `Zoom::Focus`/`Trace` → log);
+a conversation first (`thread_agent`: the agent whose talk tab opened it,
+`Thread.about`, so a worker's detail stays the worker's though its leader
+wrote the conversation's first line, 2026-11-09; opened from a line, the
+first line's writer, else the one written to), else `Zoom::Diff` → diff, `Zoom::Focus`/`Trace` → log);
 `tab`/`⇧tab` (`next_tab`, before the conversation's and the zooms' keys)
 go round to the next tab that has something (`tab_has`: a change, a line
 said with the person else with anyone; the log always), `open_tab` (the

@@ -736,6 +736,7 @@ mod tests {
             words: None,
             folds: Folds::default(),
             room: Cell::new(usize::MAX),
+            about: None,
         });
         assert_eq!(app.diff_zoom(), None);
         app.command("fold");
