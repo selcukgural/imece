@@ -545,6 +545,37 @@ mod tests {
     }
 
     #[test]
+    fn a_worker_s_row_with_no_card_ends_only_when_it_is_its_own_open_one() {
+        let mut w = team(2);
+        let c = with_card(&mut w, 1);
+        let row = |agent, card, outcome| Attempt {
+            agent,
+            card,
+            outcome,
+            ..Attempt::default()
+        };
+        w.ledger = vec![
+            row(1, None, Outcome::Open),
+            // Newer, each unlike it in one way: another's with no card,
+            // its own on a card, its own with no card ended already.
+            row(2, None, Outcome::Open),
+            row(1, Some(c), Outcome::Open),
+            row(1, None, Outcome::Applied),
+        ];
+        w.close_rows(1, &[], Outcome::Failed);
+        let ended: Vec<Outcome> = w.ledger.iter().map(|r| r.outcome).collect();
+        assert_eq!(
+            ended,
+            [
+                Outcome::Failed,
+                Outcome::Open,
+                Outcome::Open,
+                Outcome::Applied
+            ]
+        );
+    }
+
+    #[test]
     fn what_claude_code_did_not_price_marks_the_row() {
         let mut w = team(1);
         spend(&mut w, 1, 10);
