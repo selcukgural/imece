@@ -854,6 +854,7 @@ fn why_it_waits(t: &Text, why: &str) -> String {
         written,
         unhooked,
         unhooked_critical,
+        replaces,
     ] = t.diff_whys;
     match word {
         "unobserved_session" => unwatched.to_string(),
@@ -865,22 +866,20 @@ fn why_it_waits(t: &Text, why: &str) -> String {
         }
         "scope_path" => fill(outside, &[path]),
         "unobserved_write" => fill(written, &[path]),
+        // The change it names is Lonca's id, which says nothing here.
+        "replaces" => replaces.to_string(),
         _ => clean(why),
     }
     .trim_end_matches([':', ' '])
     .to_string()
 }
 
-/// Which proposal in Lonca a change is (record 120): its number, why it
-/// waits, how many older ones of the worker's it holds; then what the
-/// patch below does not show, loud.
+/// Which proposal in Lonca a change is (record 120): its number and why
+/// it waits; then what the patch below does not show, loud.
 pub(crate) fn proposal_lines(lang: Lang, p: &StoreProposal) -> Vec<Line<'static>> {
     let t = lang.text();
     let why: Vec<String> = p.why.iter().map(|w| why_it_waits(t, w)).collect();
-    let mut said = fill(t.diff_proposal, &[&why.join(", "), &p.seq.to_string()]);
-    if !p.older.is_empty() {
-        said.push_str(&fill(t.diff_proposal_older, &[&p.older.len().to_string()]));
-    }
+    let said = fill(t.diff_proposal, &[&why.join(", "), &p.seq.to_string()]);
     let mut lines = vec![Line::from(Span::styled(said, dim()))];
     let loud = |text: String| Line::from(Span::styled(text, fg(pal().warn)));
     if !p.redacted.is_empty() {
@@ -1186,6 +1185,10 @@ mod tests {
             (
                 "unhooked_critical_path",
                 "it changes a critical path from a session whose hooks did not run",
+            ),
+            (
+                "replaces:wxmztzlwytrl",
+                "it takes the place of its earlier proposal",
             ),
             ("something_new", "something_new"),
         ] {
@@ -2352,7 +2355,6 @@ diff --git a/c.rs b/c.rs
         StoreProposal {
             seq: 5,
             change: "c5".into(),
-            older: Vec::new(),
             why: vec!["unobserved_session".into(), "approvals=1".into()],
             redacted: Vec::new(),
             cut: false,
@@ -2382,20 +2384,6 @@ diff --git a/c.rs b/c.rs
             [" needs your yes: nobody watched this session's tools, approvals=1 · proposal 5"]
         );
         assert_eq!(lines[0].spans[0].style, dim());
-    }
-
-    #[test]
-    fn a_proposal_counts_the_older_ones_it_holds() {
-        let p = StoreProposal {
-            older: vec![2, 3],
-            ..a_proposal()
-        };
-        let line = proposal_lines(Lang::En, &p);
-        assert!(
-            said(&line)[0].ends_with(" · holds 2 older"),
-            "{:?}",
-            said(&line)
-        );
     }
 
     #[test]

@@ -474,7 +474,6 @@ mod tests {
             StoreProposal {
                 seq: 4,
                 change: "demo2".into(),
-                older: Vec::new(),
                 why: Vec::new(),
                 redacted: Vec::new(),
                 cut: false,

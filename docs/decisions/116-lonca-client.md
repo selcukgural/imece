@@ -19,7 +19,10 @@ boxes that read them come next, and they are tried against a real daemon.
 (lonca#52), and the epic says imece must. The socket is `LONCA_SOCKET`, else
 `$LONCA_HOME/lonca.sock`, else `~/.lonca/lonca.sock`. It must be a socket
 (no link) owned by the person, the peer listening on it must be the person
-(`getpeereid`, `SO_PEERCRED`), and `ping` must say protocol 1: all of that
+(`getpeereid`, `SO_PEERCRED`), and `ping` must say protocol 1 and a `version`
+of at least `LEAST`, 0.2.1 (`new_enough`: its three numbers, a suffix not
+counted; none, or older, is `Down::Old`, worded `the daemon is older than Lonca
+0.2.1, which imece needs`; 2026-11-09, record 120 says why): all of that
 before the token leaves. So imece runs against cooperative mode; a hardened
 daemon runs as its own user and is refused (`not your daemon`) until #52
 says where a client reads the expected uid.
