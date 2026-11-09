@@ -23,7 +23,7 @@ daemon protocol **number 1** as `docs/protocol.md` of lonca `v0.2.1`
 number is refused. The protocol
 says a client copies nothing from its crates, so none of them is here: the
 socket, its peer, the framing and the session file come from Lonca's
-published `lonca-client` crate (`=0.2.1`, a dependency of `imece-agent`,
+published `lonca-client` crate (`=0.2.2` since 2026-11-10, a dependency of `imece-agent`,
 record 116), not a copy.
 
 The site's pages (`docs/guide`, `website/i18n`) and the video scenarios

@@ -12,7 +12,8 @@ closes) is `live/lonca.rs`. Written from the protocol document, which says a
 client copies nothing from Lonca's crates, so `VENDORED.md` records the
 number instead of a copy. Since 2026-11-09 (user, 2026-11-08: once it is on
 crates.io, as a version dependency) the socket half is Lonca's own
-`lonca-client` (`=0.2.1`): connecting through `Trust` (the socket a socket,
+`lonca-client` (`=0.2.2` since 2026-11-10, when Lonca 0.2.2 came out; the
+oldest daemon taken stays 0.2.1, `LEAST`): connecting through `Trust` (the socket a socket,
 not a link, of the expected uid; the peer that uid), the framing, the
 timeout (`set_timeout`, 5 s, a held `log` longer), a request sent again once
 on a new connection when the daemon closed a quiet one before reading it,
