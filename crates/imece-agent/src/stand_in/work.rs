@@ -5,7 +5,11 @@
 //! first a command imece holds no routine (so the person is asked through
 //! the permission prompt), and tells its leader `done` with what it did.
 //! Sometimes it asks the person a question once it has read the code, ends
-//! its turn, and goes on with the person's answer in the next.
+//! its turn, and goes on with the person's answer in the next. Sometimes
+//! it hires a helper for the tests once it has made the change, ends its
+//! turn, and goes on when the helper says done (or does them itself when
+//! the helper stops first); the helper notes them in the test file, runs
+//! them and tells its worker.
 //! A directory with nothing to change gets the task written in a file of
 //! its own. Its commands are never run: what they say is made up.
 
@@ -37,6 +41,7 @@ pub const PAUSE_VAR: &str = "IMECE_STAND_IN_PAUSE_MS";
 pub const ASKS_VAR: &str = "IMECE_STAND_IN_ASKS";
 pub const SEED_VAR: &str = "IMECE_STAND_IN_SEED";
 pub const QUESTIONS_VAR: &str = "IMECE_STAND_IN_QUESTIONS";
+pub const HELPERS_VAR: &str = "IMECE_STAND_IN_HELPERS";
 
 /// What a worker asks the person about the file it read (`{}`), with the
 /// answers it offers: every other one offers some, as live agents are
@@ -65,15 +70,21 @@ pub const PASSED: &str = "All 12 tests passed.";
 /// What any other command says.
 pub const RAN: &str = "Done.";
 
+/// How a helper's `done` begins when it wrote the tests.
+pub const WROTE_TESTS: &str = "Wrote the tests in ";
+
 /// How a stand-in works: the pause between its steps, how often a worker
 /// runs a command that needs the person's yes first (one assign in
 /// `asks`, never at 0), how often it asks the person a question (one
-/// assign in `questions`, never at 0), and the seed of its choices.
+/// assign in `questions`, never at 0), how often it hires a helper for
+/// the tests (one assign in `helpers`, never at 0), and the seed of its
+/// choices.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Habits {
     pub pause: Duration,
     pub asks: u64,
     pub questions: u64,
+    pub helpers: u64,
     pub seed: u64,
 }
 
@@ -90,6 +101,7 @@ impl Habits {
             pause: Duration::from_millis(n(PAUSE_VAR).min(PAUSE_MOST)),
             asks: n(ASKS_VAR),
             questions: n(QUESTIONS_VAR),
+            helpers: n(HELPERS_VAR),
             seed: n(SEED_VAR),
         }
     }
@@ -97,10 +109,11 @@ impl Habits {
     /// The variables that give these habits, for a shell's command line.
     pub fn vars(&self) -> String {
         format!(
-            "{PAUSE_VAR}={} {ASKS_VAR}={} {QUESTIONS_VAR}={} {SEED_VAR}={}",
+            "{PAUSE_VAR}={} {ASKS_VAR}={} {QUESTIONS_VAR}={} {HELPERS_VAR}={} {SEED_VAR}={}",
             self.pause.as_millis(),
             self.asks,
             self.questions,
+            self.helpers,
             self.seed
         )
     }
@@ -116,6 +129,12 @@ impl Habits {
     pub fn questions_now(&self, roll: u64) -> bool {
         self.questions > 0 && (roll >> 16).is_multiple_of(self.questions)
     }
+
+    /// Whether the assign `roll` stands for hires a helper for the
+    /// tests, by other bits of it than the two above's.
+    pub fn helps_now(&self, roll: u64) -> bool {
+        self.helpers > 0 && (roll >> 32).is_multiple_of(self.helpers)
+    }
 }
 
 /// The question the assign `roll` stands for asks about file `path`, and
@@ -125,28 +144,71 @@ pub fn question(path: &str, roll: u64) -> (String, &'static [&'static str]) {
     (text.replace("{}", path), options)
 }
 
-/// A worker's task while it waits for the person's answer: the task, and
-/// its to-do list's tasks by step.
+/// A worker's task while it waits: the task, its to-do list's tasks by
+/// step, the helper it waits for (none: the person's answer), and what
+/// the person said when it asked them.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Waiting {
     pub task: String,
     pub list: Vec<Option<u64>>,
+    pub helper: Option<String>,
+    pub said: Option<String>,
 }
 
 impl Waiting {
     pub fn to_json(&self) -> serde_json::Value {
-        json!({ "task": self.task, "list": self.list })
+        json!({ "task": self.task, "list": self.list, "helper": self.helper, "said": self.said })
     }
 
     /// What a transcript kept; none without a task.
     pub fn from_json(v: &serde_json::Value) -> Option<Waiting> {
+        let text = |k: &str| v[k].as_str().map(String::from);
         Some(Waiting {
-            task: v["task"].as_str()?.to_string(),
+            task: text("task")?,
             list: (v["list"].as_array().into_iter().flatten())
                 .map(serde_json::Value::as_u64)
                 .collect(),
+            helper: text("helper"),
+            said: text("said"),
         })
     }
+}
+
+/// What a worker gives its helper: the test file to write in, the file
+/// it changed, and the task, as [`part_of`] reads them back.
+pub fn helper_task(test: &str, main: &str, task: &str) -> String {
+    format!("Write the tests in {test} for the change to {main}:\n\n{task}")
+}
+
+/// The test file, the file changed and the task of a helper's assign
+/// `body` ([`helper_task`]'s); none for anything else.
+pub fn part_of(body: &str) -> Option<(&str, &str, &str)> {
+    let (head, task) = body.split_once("\n\n").unwrap_or((body, ""));
+    let rest = head
+        .strip_prefix("Write the tests in ")?
+        .strip_suffix(':')?;
+    let (test, main) = rest.split_once(" for the change to ")?;
+    Some((test, main, task.trim()))
+}
+
+/// Whether helper `name` was lost before its done, as imece tells its
+/// worker in a note (`helper_lost` in the screen's crate).
+fn lost(prompt: &str, name: &str) -> bool {
+    prompt.contains(&format!(
+        "Your helper {name} stopped before it sent you done"
+    ))
+}
+
+/// The body of the first `done` helper `name` sent in a mail prompt.
+fn done_from(prompt: &str, name: &str) -> Option<String> {
+    let mut lines = prompt.lines();
+    lines.find(|l| {
+        l.strip_prefix("[done").is_some_and(|l| {
+            (l.starts_with(' ') || l.starts_with(']')) && l.ends_with(&format!("] from {name}:"))
+        })
+    })?;
+    let body: Vec<&str> = lines.take_while(|l| !l.starts_with('[')).collect();
+    Some(body.join("\n").trim().to_string())
 }
 
 /// The person's words in prompt `prompt`: its last paragraph before the
@@ -463,14 +525,20 @@ fn append(hands: &mut impl Hands, path: &str, text: &str) -> Result<(), String> 
 impl Mind {
     /// A worker's turn: the first `assign` of its mail done, else
     /// nothing; when it waits for the person's answer, the task goes on
-    /// with the person's words.
+    /// with the person's words, and when it waits for its helper, with
+    /// the helper's done (or without it, the helper lost).
     pub(super) fn work(&mut self, hands: &mut impl Hands, prompt: &str) -> String {
         if let Some(waiting) = self.waiting.take() {
-            let Some(said) = heard(prompt) else {
-                self.waiting = Some(waiting);
-                return "I still wait for the person's answer.".into();
+            return match waiting.helper.clone() {
+                Some(helper) => self.helped(hands, prompt, waiting, &helper),
+                None => match heard(prompt) {
+                    Some(said) => self.go_on(hands, &waiting.task, List(waiting.list), Some(&said)),
+                    None => {
+                        self.waiting = Some(waiting);
+                        "I still wait for the person's answer.".into()
+                    }
+                },
             };
-            return self.go_on(hands, &waiting.task, List(waiting.list), Some(&said));
         }
         let Some(task) = body_of(prompt, "assign") else {
             return "Nothing assigned to me.".into();
@@ -495,7 +563,11 @@ impl Mind {
             let (q, options) = question(main, roll);
             let ask = json!({ "to": "you", "type": "ask", "body": q, "options": options });
             if hands.call("send", ask).is_ok() {
-                self.waiting = Some(Waiting { task, list: list.0 });
+                self.waiting = Some(Waiting {
+                    task,
+                    list: list.0,
+                    ..Waiting::default()
+                });
                 return format!("I asked you: {q}");
             }
         }
@@ -510,8 +582,15 @@ impl Mind {
             .to_string()
     }
 
-    /// The task after its code was read: the change, its tests, a run of
-    /// them and `done`, with what the person said when it asked them.
+    /// The roll of the assign at hand.
+    fn roll_now(&self, hands: &impl Hands) -> u64 {
+        let me = self.me.get("name").map_or("", String::as_str);
+        roll(hands.habits().seed, me, self.worked)
+    }
+
+    /// The task after its code was read: the change, then its tests by a
+    /// helper (the turn ends) or by itself, a run of them and `done`,
+    /// with what the person said when it asked them.
     fn go_on(
         &mut self,
         hands: &mut impl Hands,
@@ -521,8 +600,7 @@ impl Mind {
     ) -> String {
         let me = self.me.get("name").cloned().unwrap_or_default();
         let lead = self.lead_of();
-        let habits = *hands.habits();
-        let roll = roll(habits.seed, &me, self.worked);
+        let roll = self.roll_now(hands);
         let files = hands.files();
         let Some((main, test)) = pick(&files, task, roll) else {
             return write_up(hands, &me, &lead, task);
@@ -533,30 +611,82 @@ impl Mind {
         }
         list.mark(hands, 1, "completed");
         list.begin(hands, 2);
-        let mut changed = vec![main.to_string()];
-        let mut notes: Vec<String> = said
-            .map(|s| format!("The person said: {s}"))
-            .into_iter()
-            .collect();
-        if let Some(t) = test {
-            match append(hands, t, &format!("covers: {}", first_line(task))) {
-                Ok(()) => changed.push(t.to_string()),
-                Err(why) => notes.push(format!("{t} not changed: {why}")),
-            }
+        if let Some(t) = test
+            && hands.habits().helps_now(roll)
+            && let Some(helper) = hire_for(hands, t, main, task)
+        {
+            self.waiting = Some(Waiting {
+                task: task.to_string(),
+                list: list.0,
+                helper: Some(helper.clone()),
+                said: said.map(String::from),
+            });
+            return format!("{helper} writes the tests in {t}; I wait for its done.");
         }
+        let mut notes = said_note(said);
+        let changed = tested(hands, main, test, task, &mut notes);
+        self.finish(hands, task, list, changed, notes)
+    }
+
+    /// A worker that waits for helper `helper` hears prompt `prompt`:
+    /// with the helper's done, its tests are the helper's; with the
+    /// helper lost, or a done that wrote none, it writes them itself;
+    /// else it waits on.
+    fn helped(
+        &mut self,
+        hands: &mut impl Hands,
+        prompt: &str,
+        waiting: Waiting,
+        helper: &str,
+    ) -> String {
+        let done = done_from(prompt, helper);
+        if done.is_none() && !lost(prompt, helper) {
+            self.waiting = Some(waiting);
+            return format!("I still wait for {helper}.");
+        }
+        let roll = self.roll_now(hands);
+        let files = hands.files();
+        let Some((main, test)) = pick(&files, &waiting.task, roll) else {
+            return format!("I can no longer find what {helper} tested.");
+        };
+        let mut notes = said_note(waiting.said.as_deref());
+        let task = waiting.task.as_str();
+        let changed = match done {
+            Some(d) if d.starts_with(WROTE_TESTS) => {
+                notes.push(format!("{helper}: {}", first_line(&d)));
+                let mut changed = vec![main.to_string()];
+                changed.extend(test.map(String::from));
+                changed
+            }
+            d => {
+                let why = d.as_deref().map_or("it stopped", first_line).to_string();
+                notes.push(format!("{helper} did not write the tests ({why}); I did."));
+                tested(hands, main, test, task, &mut notes)
+            }
+        };
+        self.finish(hands, task, List(waiting.list), changed, notes)
+    }
+
+    /// The task's last steps: a run of the tests, and `done` with what
+    /// changed and `notes`.
+    fn finish(
+        &self,
+        hands: &mut impl Hands,
+        task: &str,
+        list: List,
+        changed: Vec<String>,
+        mut notes: Vec<String>,
+    ) -> String {
+        let lead = self.lead_of();
+        let roll = self.roll_now(hands);
+        let habits = *hands.habits();
         list.mark(hands, 2, "completed");
         list.begin(hands, 3);
         if hands.has(crate::claude::SHELL_TOOL) {
-            let kind = kind_of(main);
+            let kind = kind_of(&changed[0]);
             let asked = (habits.asks_now(roll) && !kind.asks.is_empty())
                 .then(|| kind.asks[((roll >> 8) % kind.asks.len() as u64) as usize]);
-            for command in asked.into_iter().chain(kind.test) {
-                let input = json!({ "command": command, "description": first_line(task) });
-                match hands.tool(crate::claude::SHELL_TOOL, input) {
-                    Ok(out) => notes.push(format!("{command}: {}", first_line(&out))),
-                    Err(why) => notes.push(format!("{command} did not run: {why}")),
-                }
-            }
+            notes.extend(run(hands, asked.into_iter().chain(kind.test), task));
         }
         list.mark(hands, 3, "completed");
         list.begin(hands, 4);
@@ -574,6 +704,109 @@ impl Mind {
             ),
         }
     }
+
+    /// A helper's turn: the tests its worker's assign names written in
+    /// their file, run, and its worker told with `done` (imece lets it
+    /// go then).
+    pub(super) fn help(&mut self, hands: &mut impl Hands, prompt: &str) -> String {
+        let Some(body) = body_of(prompt, "assign") else {
+            return "Nothing assigned to me.".into();
+        };
+        let worker = (self.me.get("you answer to"))
+            .and_then(|o| o.strip_suffix(", who hired you"))
+            .unwrap_or_default()
+            .to_string();
+        self.worked += 1;
+        let said = match part_of(&body) {
+            None => "I could not tell which tests to write.".to_string(),
+            Some((test, main, task)) => {
+                hands.pause();
+                match append(hands, test, &format!("covers: {}", first_line(task))) {
+                    Err(why) => format!("I could not write the tests in {test}: {why}"),
+                    Ok(()) => {
+                        hands.pause();
+                        let ran = if hands.has(crate::claude::SHELL_TOOL) {
+                            run(hands, kind_of(main).test, task)
+                        } else {
+                            Vec::new()
+                        };
+                        let mut said = format!("{WROTE_TESTS}{test}.");
+                        for r in ran {
+                            said.push_str(&format!("\n{r}"));
+                        }
+                        said
+                    }
+                }
+            }
+        };
+        let done = json!({ "to": worker, "type": "done", "body": said });
+        match hands.call("send", done) {
+            Ok(_) => first_line(&said).to_string(),
+            Err(why) => format!(
+                "{}, but {worker} did not hear: {why}",
+                first_line(&said).trim_end_matches('.')
+            ),
+        }
+    }
+}
+
+/// What the person said, as a line of a done.
+fn said_note(said: Option<&str>) -> Vec<String> {
+    said.map(|s| format!("The person said: {s}"))
+        .into_iter()
+        .collect()
+}
+
+/// The worker's tests written in `test` itself: the files changed, with
+/// what failed in `notes`.
+fn tested(
+    hands: &mut impl Hands,
+    main: &str,
+    test: Option<&str>,
+    task: &str,
+    notes: &mut Vec<String>,
+) -> Vec<String> {
+    let mut changed = vec![main.to_string()];
+    if let Some(t) = test {
+        match append(hands, t, &format!("covers: {}", first_line(task))) {
+            Ok(()) => changed.push(t.to_string()),
+            Err(why) => notes.push(format!("{t} not changed: {why}")),
+        }
+    }
+    changed
+}
+
+/// Runs `commands` in the shell, described by the task's first line: a
+/// line each of what they said.
+fn run<'a>(
+    hands: &mut impl Hands,
+    commands: impl IntoIterator<Item = &'a str>,
+    task: &str,
+) -> Vec<String> {
+    let mut said = Vec::new();
+    for command in commands {
+        let input = json!({ "command": command, "description": first_line(task) });
+        said.push(match hands.tool(crate::claude::SHELL_TOOL, input) {
+            Ok(out) => format!("{command}: {}", first_line(&out)),
+            Err(why) => format!("{command} did not run: {why}"),
+        });
+    }
+    said
+}
+
+/// Hires a helper for the tests in `test` of the change to `main` and
+/// gives it them: its name, none when it could not be hired or told.
+fn hire_for(hands: &mut impl Hands, test: &str, main: &str, task: &str) -> Option<String> {
+    let said = hands.call("hire", json!({ "tier": "cheap" })).ok()?;
+    let name = said
+        .split(' ')
+        .next()
+        .filter(|n| !n.is_empty())?
+        .to_string();
+    let part = helper_task(test, main, task);
+    let assign = json!({ "to": name, "type": "assign", "body": part });
+    hands.call("send", assign).ok()?;
+    Some(name)
 }
 
 /// A worker's turn in a directory with nothing to change: the task in a
@@ -599,42 +832,46 @@ mod tests {
 
     #[test]
     fn habits_come_from_their_variables_and_go_back_to_them() {
-        let vars = |pause: &str, asks: &str, questions: &str, seed: &str| {
-            let [pause, asks, questions, seed] = [pause, asks, questions, seed].map(String::from);
+        let vars = |pause: &str, asks: &str, questions: &str, helpers: &str, seed: &str| {
+            let [pause, asks, questions, helpers, seed] =
+                [pause, asks, questions, helpers, seed].map(String::from);
             Habits::of(move |k| match k {
                 PAUSE_VAR => Some(pause.clone()),
                 ASKS_VAR => Some(asks.clone()),
                 QUESTIONS_VAR => Some(questions.clone()),
+                HELPERS_VAR => Some(helpers.clone()),
                 SEED_VAR => Some(seed.clone()),
                 _ => None,
             })
         };
-        let h = vars(" 1500 ", "3", "4", "42");
+        let h = vars(" 1500 ", "3", "4", "5", "42");
         assert_eq!(
             h,
             Habits {
                 pause: Duration::from_millis(1500),
                 asks: 3,
                 questions: 4,
+                helpers: 5,
                 seed: 42
             }
         );
         assert_eq!(
             h.vars(),
-            "IMECE_STAND_IN_PAUSE_MS=1500 IMECE_STAND_IN_ASKS=3 IMECE_STAND_IN_QUESTIONS=4 IMECE_STAND_IN_SEED=42"
+            "IMECE_STAND_IN_PAUSE_MS=1500 IMECE_STAND_IN_ASKS=3 IMECE_STAND_IN_QUESTIONS=4 \
+             IMECE_STAND_IN_HELPERS=5 IMECE_STAND_IN_SEED=42"
         );
         assert_eq!(Habits::of(|_| None), Habits::default());
         assert_eq!(
-            vars("x", "-1", "y", ""),
+            vars("x", "-1", "y", "z", ""),
             Habits::default(),
             "not numbers: 0"
         );
         assert_eq!(
-            vars("10000", "0", "0", "0").pause,
+            vars("10000", "0", "0", "0", "0").pause,
             Duration::from_millis(10_000)
         );
         assert_eq!(
-            vars("10001", "0", "0", "0").pause,
+            vars("10001", "0", "0", "0", "0").pause,
             Duration::from_millis(PAUSE_MOST),
             "at most"
         );
@@ -1080,6 +1317,7 @@ mod tests {
             Some(Waiting {
                 task: "Round money half up".into(),
                 list: vec![Some(1), Some(2), Some(3), Some(4), Some(5)],
+                ..Waiting::default()
             })
         );
         let last = used(&f).pop().unwrap();
@@ -1213,5 +1451,378 @@ mod tests {
         f.refuse.insert("TaskCreate".into(), "no".into());
         Mind::default().turn(&mut f, &assign("x"));
         assert!(!used(&f).iter().any(|(t, _)| t == "TaskUpdate"));
+    }
+    #[test]
+    fn one_assign_in_helpers_hires_a_helper_by_other_bits_never_at_0() {
+        let h = |helpers| Habits {
+            helpers,
+            ..Habits::default()
+        };
+        assert!(!h(0).helps_now(0));
+        assert!(h(1).helps_now(5));
+        assert!(h(3).helps_now(6 << 32) && !h(3).helps_now(7 << 32));
+        assert!(!h(3).helps_now(8 << 32));
+        assert!(!h(2).helps_now(1 << 32), "the upper bits, not the roll");
+        assert!(h(2).helps_now((1 << 32) - 1), "below them nothing counts");
+    }
+
+    #[test]
+    fn a_helper_s_part_is_read_back_and_its_done_and_its_loss_are_heard() {
+        let part = helper_task("tests/T.cs", "src/A.cs", "Round up\nhalf");
+        assert_eq!(
+            part,
+            "Write the tests in tests/T.cs for the change to src/A.cs:\n\nRound up\nhalf"
+        );
+        assert_eq!(
+            part_of(&part),
+            Some(("tests/T.cs", "src/A.cs", "Round up\nhalf"))
+        );
+        assert_eq!(
+            part_of("Write the tests in t for the change to a:"),
+            Some(("t", "a", "")),
+            "no task"
+        );
+        assert_eq!(part_of("Write the tests in t for the change to a"), None);
+        assert_eq!(part_of("Write tests in t for the change to a:"), None);
+        assert_eq!(part_of("Write the tests in t for a:"), None);
+        assert_eq!(part_of("Round up"), None);
+        let mail = format!(
+            "{MAIL}:\n\n[done 5] from claude-1.10:\nnot it\n\n[inform 6] from claude-1.1:\nhi\n\n\
+             [done 7, re 6] from claude-1.1:\n  Wrote it.\nAll passed.\n\n[done 8] from claude-1.1:\nlater"
+        );
+        assert_eq!(
+            done_from(&mail, "claude-1.1").as_deref(),
+            Some("Wrote it.\nAll passed.")
+        );
+        assert_eq!(done_from(&mail, "claude-1.10").as_deref(), Some("not it"));
+        assert_eq!(done_from(&mail, "claude-2"), None);
+        assert_eq!(
+            done_from("[done] from h:\nx", "h").as_deref(),
+            Some("x"),
+            "a heading without a number"
+        );
+        assert_eq!(done_from("[doner 3] from h:\nx", "h"), None);
+        assert_eq!(done_from("[assign 3] from h:\nx", "h"), None);
+        let note = "imece: Your helper claude-1.1 stopped before it sent you done (gone).";
+        assert!(lost(note, "claude-1.1"));
+        assert!(!lost(note, "claude-1.2"));
+        assert!(!lost("[done 3] from claude-1.1:\nx", "claude-1.1"));
+    }
+
+    const HIRED: &str = "claude-1.1 joins the team (cheap, haiku)";
+
+    /// A worker that hires a helper at every assign.
+    fn helped(files: &[(&str, &str)]) -> Fake {
+        let mut f = worker(files);
+        f.habits.helpers = 1;
+        f.answers.insert("hire".into(), Ok(HIRED.into()));
+        f
+    }
+
+    const MONEY: &[(&str, &str)] = &[
+        ("src/Money.cs", "// Money\n"),
+        ("tests/MoneyTests.cs", "// MoneyTests\n"),
+    ];
+
+    fn done_mail(from: &str, body: &str) -> String {
+        format!("{MAIL}:\n\n[done 7, re 6] from {from}:\n{body}\n")
+    }
+
+    #[test]
+    fn a_worker_hires_a_helper_for_its_tests_waits_and_goes_on_with_its_done() {
+        let mut f = helped(MONEY);
+        let mut m = Mind::default();
+        let said = m.turn(&mut f, &assign("Round money half up"));
+        assert_eq!(
+            said,
+            "claude-1.1 writes the tests in tests/MoneyTests.cs; I wait for its done."
+        );
+        assert_eq!(f.calls[1], ("hire".to_string(), json!({ "tier": "cheap" })));
+        assert_eq!(
+            f.calls[2],
+            (
+                "send".to_string(),
+                json!({ "to": "claude-1.1", "type": "assign", "body":
+                    helper_task("tests/MoneyTests.cs", "src/Money.cs", "Round money half up") })
+            )
+        );
+        assert_eq!(f.calls.len(), 3, "no done yet");
+        assert_eq!(
+            f.files["src/Money.cs"],
+            "// Money\n// Round money half up\n"
+        );
+        assert_eq!(
+            f.files["tests/MoneyTests.cs"], "// MoneyTests\n",
+            "the helper's"
+        );
+        assert_eq!(
+            m.waiting,
+            Some(Waiting {
+                task: "Round money half up".into(),
+                list: vec![Some(1), Some(2), Some(3), Some(4), Some(5)],
+                helper: Some("claude-1.1".into()),
+                said: None,
+            })
+        );
+        assert_eq!(
+            used(&f).pop().unwrap(),
+            ("TaskUpdate".to_string(), "in_progress".to_string()),
+            "its tests' step goes on"
+        );
+        // Other mail, another's done, or the person's words: it waits on.
+        f.used.clear();
+        for prompt in [
+            done_mail("claude-2", "Wrote the tests in x."),
+            "Hurry up".to_string(),
+        ] {
+            assert_eq!(m.turn(&mut f, &prompt), "I still wait for claude-1.1.");
+        }
+        assert!(f.used.is_empty() && m.waiting.is_some());
+        // Its done: the tests are the helper's, run, and said.
+        let said = m.turn(
+            &mut f,
+            &done_mail("claude-1.1", "Wrote the tests in tests/MoneyTests.cs.\nok"),
+        );
+        assert_eq!(said, "Done: changed src/Money.cs, tests/MoneyTests.cs.");
+        assert_eq!(m.waiting, None);
+        assert_eq!(m.worked, 1);
+        assert_eq!(f.files["tests/MoneyTests.cs"], "// MoneyTests\n");
+        assert_eq!(
+            used(&f),
+            pairs(&[
+                ("TaskUpdate", "completed"),
+                ("TaskUpdate", "in_progress"),
+                ("Bash", "dotnet test"),
+                ("TaskUpdate", "completed"),
+                ("TaskUpdate", "in_progress"),
+                ("TaskUpdate", "completed"),
+            ])
+        );
+        assert_eq!(f.used[0].1["taskId"], "3");
+        assert_eq!(
+            f.calls.last().unwrap().1,
+            json!({ "to": "lead", "type": "done", "body":
+                "Round money half up\n\nChanged src/Money.cs, tests/MoneyTests.cs.\n\
+                 claude-1.1: Wrote the tests in tests/MoneyTests.cs.\n\
+                 dotnet test: All 12 tests passed." })
+        );
+    }
+
+    #[test]
+    fn a_helper_lost_or_without_tests_leaves_them_to_its_worker() {
+        for (prompt, why) in [
+            (
+                "imece's notes:\n- Your helper claude-1.1 stopped before it sent you done (x).\n\n\
+                 Go on with your task."
+                    .to_string(),
+                "it stopped",
+            ),
+            (
+                done_mail("claude-1.1", "I could not write the tests in t: full\nmore"),
+                "I could not write the tests in t: full",
+            ),
+        ] {
+            let mut f = helped(MONEY);
+            let mut m = Mind::default();
+            m.turn(&mut f, &assign("Round money half up"));
+            let said = m.turn(&mut f, &prompt);
+            assert_eq!(said, "Done: changed src/Money.cs, tests/MoneyTests.cs.");
+            assert_eq!(
+                f.files["tests/MoneyTests.cs"],
+                "// MoneyTests\n// covers: Round money half up\n"
+            );
+            assert_eq!(
+                f.calls.last().unwrap().1["body"],
+                format!(
+                    "Round money half up\n\nChanged src/Money.cs, tests/MoneyTests.cs.\n\
+                     claude-1.1 did not write the tests ({why}); I did.\n\
+                     dotnet test: All 12 tests passed."
+                )
+            );
+        }
+        // Its own tests failing too: said.
+        let mut f = helped(MONEY);
+        let mut m = Mind::default();
+        m.turn(&mut f, &assign("Round money half up"));
+        f.refuse.insert("Edit".into(), "locked".into());
+        m.turn(&mut f, &done_mail("claude-1.1", "no"));
+        let body = f.calls.last().unwrap().1["body"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        assert!(
+            body.starts_with("Round money half up\n\nChanged src/Money.cs.\n")
+                && body.contains("\ntests/MoneyTests.cs not changed: locked\n"),
+            "{body}"
+        );
+        // Its files gone meanwhile: nothing to finish.
+        let mut f = helped(MONEY);
+        let mut m = Mind::default();
+        m.turn(&mut f, &assign("Round money half up"));
+        f.files.clear();
+        assert_eq!(
+            m.turn(&mut f, &done_mail("claude-1.1", "x")),
+            "I can no longer find what claude-1.1 tested."
+        );
+    }
+
+    #[test]
+    fn what_the_person_said_waits_with_the_helper_and_goes_into_the_done() {
+        let mut f = helped(MONEY);
+        f.habits.questions = 1;
+        let mut m = Mind::default();
+        m.turn(&mut f, &assign("Round money half up"));
+        assert!(
+            m.turn(&mut f, "behind a flag")
+                .starts_with("claude-1.1 writes")
+        );
+        assert_eq!(
+            m.waiting.as_ref().unwrap().said.as_deref(),
+            Some("behind a flag")
+        );
+        m.turn(
+            &mut f,
+            &done_mail("claude-1.1", "Wrote the tests in tests/MoneyTests.cs."),
+        );
+        let body = f.calls.last().unwrap().1["body"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        assert!(
+            body.contains(
+                "\nThe person said: behind a flag\nclaude-1.1: Wrote the tests in tests/MoneyTests.cs.\n"
+            ),
+            "{body}"
+        );
+    }
+
+    #[test]
+    fn no_helper_without_a_test_file_a_hire_or_its_assign() {
+        // No test file: nothing for a helper.
+        let mut f = helped(&[("src/Money.cs", "// Money\n")]);
+        assert_eq!(
+            Mind::default().turn(&mut f, &assign("Round money")),
+            "Done: changed src/Money.cs."
+        );
+        assert!(f.calls.iter().all(|(t, _)| t != "hire"));
+        // A hire refused, or one that names nobody: the worker's own tests.
+        for hired in [Err("the team is full".to_string()), Ok(String::new())] {
+            let mut f = helped(MONEY);
+            f.answers.insert("hire".into(), hired);
+            let mut m = Mind::default();
+            let said = m.turn(&mut f, &assign("Round money half up"));
+            assert_eq!(said, "Done: changed src/Money.cs, tests/MoneyTests.cs.");
+            assert_eq!(m.waiting, None);
+            assert_eq!(f.calls.len(), 3, "whoami, hire, done");
+        }
+        // Its assign not sent: not waited for.
+        let mut f = helped(MONEY);
+        f.answers.insert("send".into(), Err("gone".into()));
+        let mut m = Mind::default();
+        let said = m.turn(&mut f, &assign("Round money half up"));
+        assert!(
+            said.starts_with("Changed src/Money.cs, tests/MoneyTests.cs, but"),
+            "{said}"
+        );
+        assert_eq!(m.waiting, None);
+        // Never at 0.
+        let mut f = helped(MONEY);
+        f.habits.helpers = 0;
+        Mind::default().turn(&mut f, &assign("Round money half up"));
+        assert!(f.calls.iter().all(|(t, _)| t != "hire"));
+    }
+
+    const HELPER: &str = "name: claude-1.1\nrole: a helper\nproject: repo\n\
+                          you answer to: claude-1, who hired you\n";
+
+    fn helper(files: &[(&str, &str)]) -> Fake {
+        let mut f = fake(HELPER);
+        f.tools = strings(ALL);
+        for (p, t) in files {
+            f.files.insert(p.to_string(), t.to_string());
+        }
+        f
+    }
+
+    fn part(body: &str) -> String {
+        format!("{MAIL}:\n\n[assign 6] from claude-1:\n{body}\n")
+    }
+
+    #[test]
+    fn a_helper_writes_and_runs_the_tests_and_tells_its_worker() {
+        let task = helper_task(
+            "tests/MoneyTests.cs",
+            "src/Money.cs",
+            "Round money\nhalf up",
+        );
+        let mut f = helper(MONEY);
+        let mut m = Mind::default();
+        let said = m.turn(&mut f, &part(&task));
+        assert_eq!(said, "Wrote the tests in tests/MoneyTests.cs.");
+        assert_eq!(m.worked, 1);
+        assert_eq!(
+            f.files["tests/MoneyTests.cs"],
+            "// MoneyTests\n// covers: Round money\n"
+        );
+        assert_eq!(f.files["src/Money.cs"], "// Money\n");
+        assert_eq!(
+            used(&f),
+            pairs(&[
+                ("Read", "tests/MoneyTests.cs"),
+                ("Edit", "tests/MoneyTests.cs"),
+                ("Bash", "dotnet test"),
+            ])
+        );
+        assert_eq!(f.used[2].1["description"], "Round money");
+        assert_eq!(f.pauses, 2);
+        assert_eq!(
+            f.calls[1],
+            (
+                "send".to_string(),
+                json!({ "to": "claude-1", "type": "done", "body":
+                    "Wrote the tests in tests/MoneyTests.cs.\ndotnet test: All 12 tests passed." })
+            )
+        );
+        // Without a shell, nothing runs.
+        let mut f = helper(MONEY);
+        f.tools = strings(&["Read", "Edit", "Write"]);
+        Mind::default().turn(&mut f, &part(&task));
+        assert_eq!(
+            f.calls[1].1["body"],
+            "Wrote the tests in tests/MoneyTests.cs."
+        );
+        // Its edit refused, a part it can not read, no assign, no worker
+        // that hears: said.
+        let mut f = helper(MONEY);
+        f.refuse.insert("Edit".into(), "locked".into());
+        assert_eq!(
+            Mind::default().turn(&mut f, &part(&task)),
+            "I could not write the tests in tests/MoneyTests.cs: locked"
+        );
+        assert_eq!(
+            f.calls[1].1["body"],
+            "I could not write the tests in tests/MoneyTests.cs: locked"
+        );
+        assert!(!used(&f).iter().any(|(t, _)| t == "Bash"));
+        let mut f = helper(MONEY);
+        assert_eq!(
+            Mind::default().turn(&mut f, &part("Write some tests")),
+            "I could not tell which tests to write."
+        );
+        assert_eq!(f.calls[1].1["to"], "claude-1");
+        assert!(f.used.is_empty());
+        let mut f = helper(MONEY);
+        let mail = format!("{MAIL}:\n\n[inform 6] from claude-1:\nhi\n");
+        assert_eq!(
+            Mind::default().turn(&mut f, &mail),
+            "Nothing assigned to me."
+        );
+        assert_eq!(f.calls.len(), 1);
+        let mut f = helper(MONEY);
+        f.answers.insert("send".into(), Err("gone".into()));
+        assert_eq!(
+            Mind::default().turn(&mut f, &part(&task)),
+            "Wrote the tests in tests/MoneyTests.cs, but claude-1 did not hear: gone"
+        );
     }
 }

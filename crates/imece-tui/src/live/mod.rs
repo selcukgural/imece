@@ -317,6 +317,17 @@ pub(super) const RETRY_PROMPT: &str = "From imece (not from the person or a team
 /// what happened.
 pub(super) const GO_ON: &str = "Go on with your task.";
 
+/// How many buses this process has opened: the last part of a bus's
+/// directory, so two opened in the same microsecond (macOS's clock, tests
+/// that run at once) do not take one name.
+static BUSES: AtomicU32 = AtomicU32::new(0);
+
+/// The directory of process `pid`'s `n`th bus, opened at `nanos`, under
+/// `tmp`.
+fn bus_dir(tmp: &Path, pid: u32, nanos: u32, n: u32) -> PathBuf {
+    tmp.join(format!("imece-{pid}-{nanos:x}-{n}"))
+}
+
 /// The most of a helper's last words its worker is told.
 pub(super) const LOST_SAID: usize = 200;
 
@@ -1093,7 +1104,8 @@ impl Live {
             .map_or(0, |d| d.subsec_nanos());
         // Short (socket paths are limited to about 100 bytes), private, and
         // new: an existing directory is refused, not reused.
-        let dir = std::env::temp_dir().join(format!("imece-{}-{nanos:x}", std::process::id()));
+        let n = BUSES.fetch_add(1, Ordering::Relaxed);
+        let dir = bus_dir(&std::env::temp_dir(), std::process::id(), nanos, n);
         std::os::unix::fs::DirBuilderExt::mode(&mut std::fs::DirBuilder::new(), 0o700)
             .create(&dir)?;
         self.bus = Some(Bus {
@@ -1535,6 +1547,35 @@ pub fn today() -> u64 {
 mod tests {
     use super::*;
     use crate::live::testing::*;
+
+    #[test]
+    fn a_bus_s_directory_is_its_process_s_its_time_s_and_its_number_s() {
+        let dir = |pid, nanos, n| bus_dir(Path::new("/t"), pid, nanos, n);
+        assert_eq!(dir(7, 255, 2), Path::new("/t/imece-7-ff-2"));
+        assert_ne!(dir(7, 255, 2), dir(7, 255, 3), "one microsecond, two buses");
+        // Two opened at once in this process take two names.
+        let w = team(0);
+        let mut one = Live::new(
+            1,
+            claude_at("claude"),
+            PathBuf::from("."),
+            PathBuf::from("t"),
+        );
+        let mut two = Live::new(
+            1,
+            claude_at("claude"),
+            PathBuf::from("."),
+            PathBuf::from("t"),
+        );
+        one.open_bus(&w, "relay".into()).unwrap();
+        two.open_bus(&w, "relay".into()).unwrap();
+        let (a, b) = (
+            &one.bus.as_ref().unwrap().dir,
+            &two.bus.as_ref().unwrap().dir,
+        );
+        assert_ne!(a, b);
+        assert!(a.is_dir() && b.is_dir());
+    }
 
     /// What a step says when `put` has put something in, on a step that
     /// left the clock where it was (the clock moving says so by itself).
