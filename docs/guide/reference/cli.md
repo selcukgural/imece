@@ -160,7 +160,7 @@ imece --run npm,make
 imece --run npm --run pnpm       # repeatable; duplicates dropped
 ```
 
-Programs workers and helpers may run with their `run` tool, next to `cargo` and git's reading commands. Names on PATH only; a path is refused: `--run: "./bin/x" is a path; name a program on PATH`. The leader never gets them. Under `standard` and `open` the same list also decides which shell commands a session may run without asking you (the routine rule, [approvals](../concepts/approvals-and-questions.md)).
+Programs workers and helpers may run with their `run` tool, next to `cargo`, git's reading commands and the test commands a Python, JavaScript or Go checkout's files call for (`python3 -m pytest`, `npm test`, `go test`: those need no `--run`, see [the tests a checkout calls for](../concepts/approvals-and-questions.md#the-tests-a-checkout-calls-for)). A program named here runs whole, with any arguments, so name one only when its tests' shapes are not enough. Names on PATH only; a path is refused: `--run: "./bin/x" is a path; name a program on PATH`. The leader never gets them. Under `standard` and `open` the same list also decides which shell commands a session may run without asking you (the routine rule, [approvals](../concepts/approvals-and-questions.md)).
 
 ### `--run-timeout S`
 

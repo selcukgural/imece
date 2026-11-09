@@ -1284,6 +1284,15 @@ pub(crate) fn wrap(line: Line<'static>, width: usize) -> Vec<Line<'static>> {
     rows
 }
 
+/// An agent's words as the Markdown they are (headings, lists, a table:
+/// [`markdown_src`]), each drawn line wrapped at `width`: a worker's
+/// `- **Added:** …` lists read as lists, not one run-on paragraph.
+pub(crate) fn markdown_rows(text: &str, width: usize) -> Vec<Line<'static>> {
+    (markdown_src(text, "", width).into_iter())
+        .flat_map(|(line, _)| wrap(line, width))
+        .collect()
+}
+
 /// How many characters of the words a note is on the command line shows
 /// while the note is written.
 pub(crate) const NOTE_QUOTE: usize = 24;
@@ -1465,10 +1474,13 @@ fn doing_status(lang: Lang, w: &World, a: &Agent) -> Vec<Span<'static>> {
                 fit(doing, 40).trim_end().to_string(),
                 fg(pal().ok),
             )],
-            None => vec![
+            // The demo's made-up phases; a live agent has none: between
+            // its calls it thinks.
+            None if w.demo => vec![
                 Span::styled(bar(a.progress), fg(pal().ok)),
                 Span::raw(format!(" {}", Phase::of(a.progress).label())),
             ],
+            None => vec![Span::styled(t.thinking, fg(pal().ok))],
         },
         Status::Asking { to, .. } => vec![
             Span::styled(bar(a.progress), dim()),
@@ -1642,7 +1654,8 @@ pub(crate) fn header_parts(app: &App) -> Vec<HeadPart> {
     if !project_spans.is_empty() {
         parts.push(part(project_spans, 8));
     }
-    let open = w.open_inbox().len();
+    // A reply asks for nothing: counted apart, never as a decision.
+    let open = w.open_decisions();
     if open > 0 {
         parts.push(part(
             vec![Span::styled(
@@ -1650,6 +1663,16 @@ pub(crate) fn header_parts(app: &App) -> Vec<HeadPart> {
                 attention(),
             )],
             KEEP,
+        ));
+    }
+    let replies = w.open_inbox().len() - open;
+    if replies > 0 {
+        parts.push(part(
+            vec![Span::styled(
+                fill(t.replies_waiting, &[&replies.to_string()]),
+                dim(),
+            )],
+            7,
         ));
     }
     let spent = fill(t.budget, &[&w.spent_words(), &dollars(w.budget)]);
@@ -2142,11 +2165,13 @@ pub(crate) fn home_hints(app: &App) -> Vec<(&'static str, &'static str)> {
                     ("s", t.home_hide),
                 ]
             }
-            _ => vec![
+            Some(_) => vec![
                 ("enter", t.home_open),
                 ("s", t.home_hide),
                 ("@", t.write_this),
             ],
+            // Nothing listed: no agent to write to, the lead to write to.
+            None => vec![("/", t.write_lead)],
         },
     };
     keys.push(("?", t.help));
@@ -5106,10 +5131,20 @@ mod tests {
         app.speed = 2;
         assert_eq!(keeps(&app, "×2").map(|k| k.1), Some(3));
         waiting(&mut app, 1);
+        // A reply asks for nothing: read, not decided, and the first to
+        // go on a narrow screen after the projects.
+        assert_eq!(keeps(&app, "to decide"), None);
+        assert_eq!(keeps(&app, " 1 to read "), Some((1, 7)));
+        app.world.inbox[0].kind = InboxKind::Question;
+        assert_eq!(keeps(&app, "to read"), None);
         // The projects first, then what is to decide.
         let name = app.world.projects[0].name.clone();
         assert_eq!(keeps(&app, &name), Some((0, 8)), "the projects");
-        assert_eq!(keeps(&app, "to decide"), Some((1, KEEP)));
+        assert_eq!(keeps(&app, " ! 1 to decide "), Some((1, KEEP)));
+        waiting(&mut app, 1);
+        assert_eq!(keeps(&app, " ! 1 to decide "), Some((1, KEEP)));
+        assert_eq!(keeps(&app, " 1 to read "), Some((2, 7)));
+        app.world.inbox.pop();
         assert_eq!(keeps(&app, " of $").map(|k| k.1), Some(KEEP));
         let window = |used| Limit {
             minutes: 300,
@@ -6126,6 +6161,27 @@ mod tests {
     }
 
     #[test]
+    fn a_live_agent_at_work_with_nothing_said_thinks_and_only_the_demo_has_phases() {
+        let mut app = app_after(1, 2, 0, Lang::En);
+        assert!(app.world.demo, "the simulation's world");
+        assert!(!crate::live::testing::team(1).demo, "a live one");
+        let id = (app.world.agents.iter())
+            .find(|a| a.role == Role::Worker)
+            .unwrap()
+            .id;
+        let said =
+            |app: &App| spans_text(&status_spans(app.lang, &app.world, &app.world.agents[id]));
+        let a = &mut app.world.agents[id];
+        (a.status, a.starting, a.activity, a.progress) = (Status::Working, false, None, 50);
+        a.plan.clear();
+        assert_eq!(said(&app), format!("{} impl", bar(50)));
+        app.world.demo = false;
+        assert_eq!(said(&app), "thinking…");
+        app.lang = Lang::Tr;
+        assert_eq!(said(&app), "düşünüyor…");
+    }
+
+    #[test]
     fn home_shows_imece_s_mark_while_no_project_has_a_worker() {
         let mut app = App::new(1, 0, 4, 7, Lang::En);
         let screen = render(&app, 120, 30);
@@ -6154,6 +6210,34 @@ mod tests {
         let screen = render(&app, 120, 30);
         assert!(!screen.contains("imece v"), "{screen}");
         assert!(!app.mark_drawn.get());
+        // Idle with a change waiting it has no row under AT WORK, yet the
+        // project has a worker: still no mark (the field, 2026-11-09).
+        let id = app.world.agents.len() - 1;
+        app.world.inbox.push(InboxItem {
+            kind: InboxKind::Change,
+            agent: id,
+            detail: String::new(),
+            researcher: None,
+            open: true,
+            tick: 0,
+            card: None,
+        });
+        assert!(
+            !(app.home_rows().iter()).any(|r| r.1 == crate::app::HomeRow::Agent(id)),
+            "listed only as its change"
+        );
+        let screen = render(&app, 120, 30);
+        assert!(!screen.contains("imece v"), "{screen}");
+        // Gone, or its project put away: the mark is back.
+        app.world.inbox.clear();
+        app.world.agents[id].gone = true;
+        assert!(render(&app, 120, 30).contains("imece v"));
+        app.world.agents[id].gone = false;
+        app.world.agents[id].role = Role::Leader;
+        assert!(
+            render(&app, 120, 30).contains("imece v"),
+            "a leader is no worker"
+        );
     }
     #[test]
     fn the_welcome_and_news_windows_open_under_imece_s_mark_when_it_fits() {
@@ -13833,7 +13917,7 @@ after | not a table";
             cost: 0,
             tick: 0,
         };
-        let lines = overlay::plan_lines(&app, &p);
+        let lines = overlay::plan_lines(&app, &p, usize::MAX);
         let texts: Vec<String> = lines.iter().map(|l| l.to_string()).collect();
         assert_eq!(
             texts,
@@ -13855,6 +13939,52 @@ after | not a table";
         assert_eq!(lines[4].spans[0].style, dim());
         assert_eq!(lines[5].spans[0].style, dim());
         assert_eq!(lines[6].spans[0].style, dim());
+        // Narrow: every line wraps under the card's indent, none cut.
+        let mut p = p;
+        p.cards[0].title = "a title of six words".into();
+        p.cards[0].body = "one two three four".into();
+        let lines = overlay::plan_lines(&app, &p, 14);
+        let texts: Vec<String> = lines
+            .iter()
+            .map(|l| l.to_string().trim_end().to_string())
+            .collect();
+        assert_eq!(
+            texts[..6],
+            [
+                "1. a title",
+                "   of six",
+                "   words ·",
+                "   cheap",
+                "   one two",
+                "   three four",
+            ]
+        );
+        assert!(texts.iter().all(|l| l.chars().count() <= 14), "{texts:?}");
+    }
+
+    #[test]
+    fn the_plan_window_wraps_its_lines_and_j_k_scroll_the_wrapped_ones() {
+        let (mut app, item, _) = crate::app::tests::asking_plan();
+        let p = app.world.projects[0].plan.proposal.as_mut().unwrap();
+        p.cards[0].body = "word ".repeat(40).trim_end().to_string();
+        app.plan_window = Some((item, 0));
+        let s = render(&app, 60, 40);
+        // The window is 52 wide, 50 inside: the head's last words show,
+        // and the body's forty words, each whole.
+        assert!(s.contains("has your yes)"), "{s}");
+        assert_eq!(s.matches("word").count(), 40, "{s}");
+        assert!(!s.contains("wor│") && !s.contains("wo│"), "{s}");
+        // The drawing told the keys how wide: they scroll its lines.
+        assert_eq!(app.plan_width.get(), 50);
+        let wrapped = overlay::plan_lines(
+            &app,
+            app.world.projects[0].plan.proposal.as_ref().unwrap(),
+            50,
+        )
+        .len();
+        assert!(wrapped > 8, "{wrapped}");
+        app.on_key(KeyEvent::new(KeyCode::Char('G'), KeyModifiers::NONE));
+        assert_eq!(app.plan_window, Some((item, wrapped - 1)));
     }
 
     #[test]
@@ -14101,6 +14231,14 @@ after | not a table";
                 assert!(s.contains(shown), "{shown}: {s}");
             }
             assert!(!s.contains("693d62952cd8"), "{s}");
+            // Under the home: `~`, as every folder on the screen.
+            app.home = Some("/Users/me".into());
+            if let Some(ask) = app.importing.as_mut() {
+                ask.checkout = "/Users/me/code/shelf".into();
+            }
+            let s = render(&app, 120, 30);
+            assert!(s.contains("~/code/shelf"), "{s}");
+            assert!(!s.contains("/Users/me"), "{s}");
         }
     }
 

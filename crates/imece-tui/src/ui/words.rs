@@ -313,6 +313,13 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
         } => shell(lang, command, *ended, *took),
         Event::Opened { leader, path } => fill(t.ev_opened, &[project(w, *leader), path]),
         Event::NoGit { leader, path } => fill(t.ev_no_git, &[name(w, *leader), path]),
+        Event::TestsFound { leader, commands } => {
+            let project = &w.projects[w.agents[*leader].project].name;
+            match commands.is_empty() {
+                true => fill(t.ev_tests_none, &[project]),
+                false => fill(t.ev_tests_found, &[project, &commands.join(", ")]),
+            }
+        }
         Event::StoreDown { leader, repo, why } => fill(
             t.ev_store_down,
             &[project(w, *leader), repo, store_down(t, *why)],
@@ -858,7 +865,8 @@ pub fn said_in_story(me: AgentId, e: &StoryEvent) -> Option<Said<'_>> {
 /// A span of `seconds` as the person reads it: minutes under an hour,
 /// hours and minutes under a day, days and hours from then on.
 /// The terminal's title: what a tab in the background shows, `waiting`
-/// being the count of open inbox items (the header's).
+/// being the count of open items to decide (the header's, replies left
+/// out).
 pub fn title(lang: Lang, waiting: usize, progress: Progress) -> String {
     let words = if waiting == 0 {
         "imece".to_string()
@@ -884,7 +892,7 @@ pub fn title(lang: Lang, waiting: usize, progress: Progress) -> String {
 pub fn farewell(lang: Lang, w: &World, (spent, unpriced): (u64, bool), demo: bool) -> String {
     let t = lang.text();
     let mut parts = vec!["⁙ imece".to_string()];
-    let waiting = w.open_inbox().len();
+    let waiting = w.open_decisions();
     if waiting > 0 {
         parts.push(fill(t.bye_waiting, &[&waiting.to_string()]));
     }
@@ -1531,6 +1539,12 @@ mod tests {
         assert_eq!(
             farewell(Lang::Tr, &w, (0, false), true),
             "⁙ imece · 2 karar bekliyor · demo hiçbir şey saklamaz"
+        );
+        // A reply is read, never decided: not counted.
+        w.inbox[0].kind = InboxKind::Reply;
+        assert_eq!(
+            farewell(Lang::En, &w, (0, false), true),
+            "⁙ imece · 1 to decide · the demo keeps nothing"
         );
     }
 

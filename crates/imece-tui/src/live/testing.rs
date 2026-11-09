@@ -16,6 +16,7 @@ pub(crate) fn team(workers: usize) -> World {
         tick: 3,
         // Begun just now: a step puts the tick at 0.
         started_at: now(),
+        demo: false,
         run_spent: 0,
         spending: Spending::default(),
         projects: vec![Project {
@@ -36,6 +37,7 @@ pub(crate) fn team(workers: usize) -> World {
                 ..PlanGate::default()
             },
             no_git: false,
+            runners: Runners::default(),
             lonca: None,
             archived: None,
         }],

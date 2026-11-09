@@ -1671,6 +1671,7 @@ impl Store {
             limits: Vec::new(),
             tick: 0,
             started_at,
+            demo: false,
             run_spent: 0,
             spending: Spending::default(),
             projects: Vec::new(),
@@ -1752,6 +1753,7 @@ impl Store {
                 allowed,
                 plan,
                 no_git: false,
+                runners: crate::runners::Runners::default(),
                 // Asked again: a store's state is never kept.
                 lonca: lonca.map(|repo| OnLonca {
                     repo,
@@ -2374,6 +2376,7 @@ mod tests {
             limits: Vec::new(),
             tick: 77,
             started_at: 1_700_000_000,
+            demo: false,
             run_spent: 5,
             spending: Spending::default(),
             projects: vec![
@@ -2390,6 +2393,7 @@ mod tests {
                     allowed: Vec::new(),
                     plan: PlanGate::default(),
                     no_git: false,
+                    runners: crate::runners::Runners::default(),
                     lonca: None,
                     archived: None,
                 },
@@ -2406,6 +2410,7 @@ mod tests {
                     allowed: Vec::new(),
                     plan: PlanGate::default(),
                     no_git: false,
+                    runners: crate::runners::Runners::default(),
                     lonca: None,
                     archived: None,
                 },

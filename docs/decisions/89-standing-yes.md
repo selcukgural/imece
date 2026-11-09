@@ -95,3 +95,5 @@ A yes for one agent until its turn ends is record 104 (`e`, `:yes`).
 Not done: a rule for one agent or for this run only, an expiry, a rule
 for a file edit or a fetch, rules across projects, a wider match than
 program + first argument.
+
+Since record 136 a Python interpreter's `-m MODULE` is a rule too (`python3 -m pip …`: program, `-m` and the module, stored as `sub: "-m pip"`, named by `:allow python3 -m pip`); the interpreter alone, `-c`, a script or another option first still have none. The routine part of a line counts the tests its project's files call for.

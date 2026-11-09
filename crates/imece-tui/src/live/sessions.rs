@@ -36,7 +36,10 @@ pub fn apply(w: &mut World, id: AgentId, e: AgentEvent, before: u64) {
             if !commands.iter().any(|c| c == "/clear") {
                 commands.push("/clear".into());
             }
-            w.agents[id].trace(t, format!("commands {}", commands.join(" ")));
+            // The trace says how many, not which: the list is the
+            // person's own setup (their skills and commands), noise on
+            // the screen and private in a recording; the agent keeps it.
+            w.agents[id].trace(t, format!("commands: {}", commands.len()));
             w.agents[id].commands = commands;
         }
         AgentEvent::Text(text) => {
@@ -1276,7 +1279,7 @@ mod tests {
             w.agents[1]
                 .trace
                 .iter()
-                .any(|l| l.contains("commands /compact /cost /clear")),
+                .any(|l| l.ends_with(" commands: 3")),
             "{:?}",
             w.agents[1].trace
         );
@@ -1289,6 +1292,13 @@ mod tests {
             0,
         );
         assert_eq!(w.agents[1].commands, ["/clear", "/stats"]);
+        // The trace counts them and names none: the person's own setup.
+        assert!((w.agents[1].trace.back().unwrap()).ends_with(" commands: 2"));
+        assert!(
+            !(w.agents[1].trace.iter()).any(|l| l.contains("/compact") || l.contains("/stats")),
+            "{:?}",
+            w.agents[1].trace
+        );
         apply(&mut w, 1, AgentEvent::Commands(vec![]), 0);
         assert_eq!(w.agents[1].commands, ["/clear"]);
         // No list at all: the trace and the journal say so, and the

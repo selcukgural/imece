@@ -498,6 +498,10 @@ pub struct Project {
     /// works straight in it: no worktree, no change to review. Found at
     /// each open and start, not saved.
     pub no_git: bool,
+    /// The test commands the checkout's files call for (record 136),
+    /// routine and the run tool's beside cargo's: read with its files on
+    /// the checkout's thread (live), from its kit (the demo); not saved.
+    pub runners: crate::runners::Runners,
     /// The Lonca repository the person named for this project (`:lonca`,
     /// record 116) and what its daemon said last.
     pub lonca: Option<OnLonca>,
@@ -2029,6 +2033,14 @@ pub enum Event {
         leader: AgentId,
         path: String,
     },
+    /// The test commands `leader`'s project runs without the person's
+    /// yes, beside cargo's (record 136), changed as its files were read:
+    /// `commands` as [`crate::runners::Runners::lines`] names them, none
+    /// when the files call for none any more.
+    TestsFound {
+        leader: AgentId,
+        commands: Vec<String>,
+    },
     /// The Lonca repository `repo` of `leader`'s project can not be read:
     /// said once, until it comes back.
     StoreDown {
@@ -2377,6 +2389,7 @@ impl Event {
             | Event::WorktreeMoved { .. }
             | Event::Copied { .. }
             | Event::FilesCut { .. }
+            | Event::TestsFound { .. }
             | Event::NoGit { .. }
             | Event::StoreDown { .. }
             | Event::StoreBack { .. }
@@ -2481,6 +2494,7 @@ impl Event {
         match *self {
             Event::Plan { leader, .. }
             | Event::FilesCut { leader, .. }
+            | Event::TestsFound { leader, .. }
             | Event::NoGit { leader, .. }
             | Event::StoreDown { leader, .. }
             | Event::StoreBack { leader, .. }
@@ -3113,6 +3127,9 @@ pub struct World {
     /// world remembered from an earlier run keeps its first start, so ticks
     /// stay monotonic across runs; the simulation has none (0).
     pub started_at: u64,
+    /// The simulation's world (`--demo`, `sim.rs`): its agents go through
+    /// made-up progress phases (`Phase`); a live agent has none.
+    pub demo: bool,
     /// What was spent when this run of imece began, for the rate of this
     /// run alone.
     pub run_spent: u64,
@@ -3540,6 +3557,7 @@ impl World {
                 allowed: Vec::new(),
                 plan: PlanGate::default(),
                 no_git: false,
+                runners: crate::runners::Runners::default(),
                 lonca: None,
                 archived: None,
             }),
@@ -3848,6 +3866,7 @@ impl World {
         World {
             tick: self.tick,
             started_at: self.started_at,
+            demo: self.demo,
             run_spent: self.run_spent,
             spending: self.spending.clone(),
             projects,
@@ -3908,6 +3927,7 @@ impl World {
                         e.event,
                         Event::Opened { .. }
                             | Event::NoGit { .. }
+                            | Event::TestsFound { .. }
                             | Event::StoreDown { .. }
                             | Event::StoreBack { .. }
                             | Event::StoreSignedIn { .. }
@@ -4067,6 +4087,14 @@ impl World {
             .filter(|(_, i)| !self.in_archive(i.agent))
             .map(|(n, _)| n)
             .collect()
+    }
+
+    /// How many open items ask the person to decide something: all but
+    /// the replies, which are read (the header's `! N to decide`).
+    pub fn open_decisions(&self) -> usize {
+        (self.open_inbox().into_iter())
+            .filter(|&i| self.inbox[i].kind != InboxKind::Reply)
+            .count()
     }
 
     /// The card agent `id` works on: its own, or for a helper its
@@ -5824,6 +5852,7 @@ mod tests {
             limits: Vec::new(),
             tick: 0,
             started_at: 0,
+            demo: false,
             run_spent: 0,
             spending: Spending::default(),
             projects: vec![Project {
@@ -5839,6 +5868,7 @@ mod tests {
                 allowed: Vec::new(),
                 plan: PlanGate::default(),
                 no_git: false,
+                runners: crate::runners::Runners::default(),
                 lonca: None,
                 archived: None,
             }],
@@ -6496,6 +6526,14 @@ mod tests {
             item(InboxKind::Reply, 2, true),
         ];
         assert_eq!(w.open_inbox(), [0, 2]);
+        // An open reply is read, not decided; a closed item is neither.
+        assert_eq!(w.open_decisions(), 1);
+        w.inbox[1].kind = InboxKind::Reply;
+        assert_eq!(w.open_decisions(), 1);
+        w.inbox[2].kind = InboxKind::Question;
+        assert_eq!(w.open_decisions(), 2);
+        w.inbox[1].kind = InboxKind::Sensitive;
+        w.inbox[2].kind = InboxKind::Reply;
         let card = |column| Card {
             id: 0,
             project: 0,
@@ -6663,6 +6701,7 @@ mod tests {
             allowed: Vec::new(),
             plan: PlanGate::default(),
             no_git: false,
+            runners: crate::runners::Runners::default(),
             lonca: None,
             archived: None,
         });
@@ -8479,6 +8518,7 @@ mod tests {
             allowed: Vec::new(),
             plan: PlanGate::default(),
             no_git: false,
+            runners: crate::runners::Runners::default(),
             lonca: None,
             archived: None,
         });
@@ -8687,6 +8727,7 @@ mod tests {
                 allowed: Vec::new(),
                 plan: PlanGate::default(),
                 no_git: false,
+                runners: crate::runners::Runners::default(),
                 lonca: None,
                 archived: Some(Archived {
                     at,
@@ -8730,6 +8771,7 @@ mod tests {
             allowed: Vec::new(),
             plan: PlanGate::default(),
             no_git: false,
+            runners: crate::runners::Runners::default(),
             lonca: None,
             archived: None,
         });

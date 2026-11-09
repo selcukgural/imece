@@ -617,6 +617,17 @@ mod tests {
         app.command("allow a && b");
         assert!(flash(&app).starts_with("this line runs more than plain commands"));
         assert_eq!(app.world.projects[p].allowed.len(), 1);
+        // A Python module by its interpreter and -m (record 136).
+        app.command("allow python3 -m pip");
+        assert_eq!(
+            flash(&app),
+            format!("{name}: yes from now on to python3 -m pip …")
+        );
+        app.command("allow python3 -m pip");
+        assert_eq!(
+            flash(&app),
+            format!("{name}: no yes from now on to python3 -m pip … any more")
+        );
         // A in waiting for you on a line no rule can hold: that line alone,
         // its ask goes on; `:allow` with the line, as listed or bare, takes
         // it back, and never adds one.
@@ -1042,20 +1053,21 @@ mod tests {
     #[test]
     fn capital_w_goes_on_after_what_it_opened_or_what_the_person_picked() {
         use InboxKind::{Reply, Sensitive};
+        // Replies alone: one waits after every decision (record 125).
         // A reply is read when opened: W goes on after it all the same.
-        let mut app = waiting(&[Reply, Sensitive, Sensitive, Sensitive]);
+        let mut app = waiting(&[Reply; 4]);
         app.on_key(key(KeyCode::Char('W')));
         assert!(!app.world.inbox[0].open, "read");
         assert_eq!(app.waiting_at, Some(0));
         assert_eq!(press(&mut app, 'W'), Some(1));
         // Put off: nothing closed is put off.
-        let mut app = waiting(&[Reply, Sensitive, Sensitive, Sensitive]);
+        let mut app = waiting(&[Reply; 4]);
         app.on_key(key(KeyCode::Char('W')));
         assert_eq!(press(&mut app, 'S'), Some(1));
         assert!(app.deferred.is_empty(), "{:?}", app.deferred);
         // The person picks another row by hand: W goes on from there. The
         // focus W opened takes `j k gg G` itself: back to the panel first.
-        let mut app = waiting(&[Reply, Sensitive, Sensitive, Sensitive]);
+        let mut app = waiting(&[Reply; 4]);
         app.on_key(key(KeyCode::Char('W')));
         app.on_key(key(KeyCode::Char('j')));
         assert_eq!(app.waiting_at, Some(0), "the focus stepped");
@@ -1063,7 +1075,7 @@ mod tests {
         app.on_key(key(KeyCode::Char('j')));
         assert_eq!(app.waiting_at, Some(2), "picked 2 (0 was read and went)");
         assert_eq!(press(&mut app, 'W'), Some(3), "after the picked 2");
-        let mut app = waiting(&[Reply, Sensitive, Sensitive, Sensitive]);
+        let mut app = waiting(&[Reply; 4]);
         app.on_key(key(KeyCode::Char('W')));
         app.on_key(key(KeyCode::Esc));
         app.on_key(key(KeyCode::Char('G')));
@@ -1284,8 +1296,8 @@ mod rank_tests {
         assert_eq!(app.waiting_rank(0), (2, false, 0));
         // Put off: after everything, in the order put off.
         app.deferred = vec![3, 2];
-        assert_eq!(app.waiting_rank(3), (3, false, 0));
-        assert_eq!(app.waiting_rank(2), (3, false, 1));
+        assert_eq!(app.waiting_rank(3), (4, false, 0));
+        assert_eq!(app.waiting_rank(2), (4, false, 1));
         assert!(app.waiting_rank(3) < app.waiting_rank(2));
         assert!(
             app.waiting_rank(0) < app.waiting_rank(3),
