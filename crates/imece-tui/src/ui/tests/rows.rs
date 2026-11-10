@@ -1653,3 +1653,122 @@ fn under_the_floor_no_key_acts_but_ctrl_c_and_no_paste_lands() {
     ctrl(&mut app, 'c');
     assert!(app.quit, "ctrl-c always");
 }
+
+/// Home's last row before the status line, in a drawing `width` wide.
+fn lead_row(app: &App, width: u16, height: u16) -> String {
+    let s = render(app, width, height);
+    let rows: Vec<&str> = s.lines().collect();
+    rows[rows.len() - 2].trim_end().to_string()
+}
+
+#[test]
+fn the_leader_has_a_line_of_its_own_at_the_foot_of_home() {
+    let mut app = app_after(1, 2, 0, Lang::En);
+    app.world.journal.clear();
+    let lead = app.world.projects[0].leader;
+    app.world.agents[lead].status = Status::Idle;
+    app.world.agents[lead].activity = None;
+    // Nothing said yet: its glyph, its name, the key that writes to it
+    // at the right edge.
+    let row = lead_row(&app, 100, 24);
+    assert!(row.starts_with(" ○ lead  nothing said yet"), "{row}");
+    assert!(row.ends_with(" /  write to the lead"), "{row}");
+    assert_eq!(row.chars().count(), 99, "a cell from the edge: {row}");
+    // Its newest words to the person, the first line of them, and how
+    // long ago from a minute on; not what it told a worker.
+    app.world.note(Event::Replied {
+        agent: lead,
+        text: "older".into(),
+    });
+    app.world.note(Event::Replied {
+        agent: lead,
+        text: "\nThree cards are **out**.\nMore under it.".into(),
+    });
+    app.world.note(sent(lead, 1, MsgKind::Inform, 4, None));
+    let row = lead_row(&app, 100, 24);
+    assert!(row.starts_with(" ○ lead  Three cards are out.  "), "{row}");
+    assert!(!row.contains("min"), "under a minute: {row}");
+    app.world.tick += 60 / SECONDS_PER_TICK - 1;
+    assert!(!lead_row(&app, 100, 24).contains("min"));
+    app.world.tick += 1;
+    let row = lead_row(&app, 100, 24);
+    assert!(
+        row.starts_with(" ○ lead  Three cards are out. · 1 min"),
+        "{row}"
+    );
+    // Too long for the row, its words give way, never the key.
+    app.world.note(Event::Replied {
+        agent: lead,
+        text: "long ".repeat(40),
+    });
+    let row = lead_row(&app, 60, 24);
+    assert!(
+        row.contains("long l…") && row.ends_with(" /  write to the lead"),
+        "{row}"
+    );
+    assert!(row.chars().count() <= 60);
+    // Mid-turn it says what it does.
+    app.world.agents[lead].status = Status::Working;
+    app.world.agents[lead].activity = Some("Read README.md".into());
+    let row = lead_row(&app, 100, 24);
+    assert!(row.starts_with(" ● lead  "), "{row}");
+    assert!(!row.contains("long"), "{row}");
+    // Its words are looked for in the journal's newest lines only: past
+    // them the line says nothing, never that nothing was said.
+    app.world.agents[lead].status = Status::Idle;
+    let said = app.world.journal.len();
+    for _ in 0..home::LEAD_BACK - 1 {
+        app.world.note(sent(1, 2, MsgKind::Inform, 9, None));
+    }
+    assert!(
+        lead_row(&app, 100, 24).contains("long long"),
+        "the last one read"
+    );
+    app.world.note(sent(1, 2, MsgKind::Inform, 9, None));
+    let row = lead_row(&app, 100, 24);
+    assert!(
+        row.starts_with(" ○ lead   ") && !row.contains("said"),
+        "{row}"
+    );
+    app.world.journal.truncate(said);
+    app.world.agents[lead].status = Status::Working;
+    // On the smallest screen imece draws on too.
+    let floor = render(&app, 100, 12);
+    assert!(floor.contains("write to the lead"), "{floor}");
+    // Turkish.
+    app.lang = Lang::Tr;
+    app.world.journal.clear();
+    app.world.agents[lead].status = Status::Idle;
+    let row = lead_row(&app, 100, 24);
+    assert!(
+        row.contains("henüz bir şey söylenmedi") && row.ends_with("lidere yaz"),
+        "{row}"
+    );
+}
+
+#[test]
+fn the_leader_s_line_is_the_project_at_hand_s_and_no_solo_or_gone_leader_has_one() {
+    let mut app = app_after(2, 2, 0, Lang::En);
+    let leads: Vec<AgentId> = app.world.projects.iter().map(|p| p.leader).collect();
+    let name = |app: &App, id: AgentId| app.world.agents[id].name.clone();
+    let line = |app: &App| home::lead_line(app, 100).map(|l| line_text(&l));
+    app.selected = Sel::Project(0);
+    app.pane = Pane::Salon;
+    assert!(
+        line(&app)
+            .unwrap()
+            .contains(&format!(" {}  ", name(&app, leads[0])))
+    );
+    app.selected = Sel::Project(1);
+    assert!(
+        line(&app)
+            .unwrap()
+            .contains(&format!(" {}  ", name(&app, leads[1])))
+    );
+    // A solo has a row of its own in the list.
+    app.world.agents[leads[1]].role = Role::Solo;
+    assert_eq!(line(&app), None);
+    app.world.agents[leads[1]].role = Role::Leader;
+    app.world.agents[leads[1]].gone = true;
+    assert_eq!(line(&app), None);
+}

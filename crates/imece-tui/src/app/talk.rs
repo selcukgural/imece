@@ -13,14 +13,22 @@ impl App {
         let Some(th) = &mut self.thread else {
             return;
         };
-        let Some(&first) = th.entries.first() else {
-            return;
+        // A chat nothing was said in yet follows its agent and the person.
+        let pair = match (th.entries.first(), th.about) {
+            (Some(&first), _) => {
+                ui::words::said(&self.world.journal[first].event).map(|s| s.pair())
+            }
+            (None, Some(id)) => {
+                let me = Party::Agent(id);
+                Some((me.min(Party::Person), me.max(Party::Person)))
+            }
+            (None, None) => None,
         };
-        let Some(pair) = ui::words::said(&self.world.journal[first].event).map(|s| s.pair()) else {
+        let Some(pair) = pair else {
             return;
         };
         let from = th.entries.last().map_or(0, |&l| l + 1);
-        let at_end = th.sel + 1 == th.entries.len();
+        let at_end = th.sel + 1 >= th.entries.len();
         let mut written = false;
         for (i, e) in self.world.journal.iter().enumerate().skip(from) {
             if ui::words::said(&e.event).is_some_and(|s| s.pair() == pair) {
@@ -50,12 +58,111 @@ impl App {
         }
     }
 
+    /// The agent the open conversation is the person's with: a chat
+    /// (record 144), where a line written goes to that agent and stays
+    /// open. None over a conversation between two agents, or an event.
+    pub fn chat_agent(&self) -> Option<AgentId> {
+        ui::chat_with(&self.world, self.thread.as_ref()?)
+    }
+
+    /// Opens the person's conversation with agent `id` at its newest
+    /// line; with nothing said yet it opens empty, to be written in.
+    pub(crate) fn open_chat(&mut self, id: AgentId) {
+        let entries = ui::chat_of(&self.world, id);
+        let sel = entries.len().saturating_sub(1);
+        self.thread = Some(Thread {
+            entries,
+            sel,
+            scroll: Cell::new(0),
+            follow: Cell::new(true),
+            page: Cell::new(10),
+            copy: None,
+            words: None,
+            folds: Folds::every(self.fold_talk),
+            room: Cell::new(usize::MAX),
+            about: Some(id),
+            passing: false,
+        });
+    }
+
+    /// `/` `i` (the leader of the project at hand) and `@` (the agent at
+    /// hand): the conversation with agent `id` above, the line to write
+    /// on under it. A chat with that agent already open is written in as
+    /// it stands, wherever the person reads in it.
+    pub(super) fn write_to(&mut self, id: AgentId) {
+        // An archive is read: nothing is written to its agents, so no
+        // chat opens for a line that will be refused.
+        if self.chat_agent() != Some(id) && !self.viewing_archive() {
+            self.open_chat(id);
+        }
+        self.typing = true;
+        self.input.clear();
+        self.after = 0;
+        self.menu = None;
+    }
+
+    /// While a message is written, the conversation with the agent its
+    /// line names (`@claude-1 `, the name whole) stands above the line, so
+    /// what was said before is read while writing; it goes when the line
+    /// is sent, dropped or names that agent no more. Not over a change:
+    /// what is written there is about the lines in view. Called after
+    /// every key of the line.
+    pub(super) fn chat_follows(&mut self) {
+        let passing = self.thread.as_ref().is_some_and(|th| th.passing);
+        let named = self.named_on_line();
+        match named {
+            Some(id) if self.chat_agent() == Some(id) => {}
+            // Its conversation, in place of nothing or of one opened the
+            // same way; one the person opened stays.
+            Some(id) if passing || (self.thread.is_none() && self.diff_zoom().is_none()) => {
+                self.open_chat(id);
+                if let Some(th) = &mut self.thread {
+                    th.passing = true;
+                }
+            }
+            None if passing => self.thread = None,
+            _ => {}
+        }
+    }
+
+    /// The agent the message being written names, its name whole
+    /// (`@claude-1 `); none when nothing is written to an agent.
+    fn named_on_line(&self) -> Option<AgentId> {
+        if !self.typing || self.noting.is_some() || self.rejecting.is_some() || self.searching {
+            return None;
+        }
+        let rest = self.input.strip_prefix('@')?;
+        let (name, _) = rest.split_once(char::is_whitespace)?;
+        let id = self.world.agent_by_name(name)?;
+        (!self.world.agents[id].gone).then_some(id)
+    }
+
     /// A key for the open conversation; `false` leaves it to the rest of
     /// the screen (typing, switching views, quitting).
     pub(super) fn thread_key(&mut self, k: KeyEvent) -> bool {
         let Some(th) = &mut self.thread else {
             return false;
         };
+        // A chat nothing was said in yet has no message to move over,
+        // copy or fold: its keys do nothing, the rest work as anywhere.
+        if th.entries.is_empty() {
+            return match k.code {
+                KeyCode::Esc => {
+                    self.thread = None;
+                    true
+                }
+                KeyCode::Up
+                | KeyCode::Down
+                | KeyCode::Left
+                | KeyCode::Right
+                | KeyCode::PageUp
+                | KeyCode::PageDown
+                | KeyCode::Home
+                | KeyCode::End => true,
+                KeyCode::Char(c) => "jk G[]%cyCYvhln".contains(c),
+                _ => false,
+            };
+        }
         let last = th.entries.len().saturating_sub(1);
         match k.code {
             KeyCode::Esc => self.thread = None,
@@ -285,6 +392,7 @@ impl App {
             folds: Folds::every(self.fold_talk),
             room: Cell::new(usize::MAX),
             about: None,
+            passing: false,
         });
     }
 
@@ -996,5 +1104,209 @@ mod tests {
         assert_eq!(next_of(&[1, 3], Some(3)), Some(1));
         assert_eq!(next_of(&[], Some(3)), None);
         assert_eq!(next_of(&[], None), None);
+    }
+
+    fn said_to(app: &App) -> Vec<(AgentId, String)> {
+        (app.world.journal.iter())
+            .filter_map(|e| match &e.event {
+                Event::YouSaid { to, text } => Some((*to, text.clone())),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn slash_opens_the_leaders_chat_and_its_line_stays_open_after_a_message() {
+        let (mut app, _) = four_idle();
+        app.world.journal.clear();
+        let lead = app.world.projects[0].leader;
+        for open in ['/', 'i'] {
+            app.on_key(key(KeyCode::Char(open)));
+            assert!(app.typing && app.input.is_empty(), "{open}");
+            assert_eq!(app.chat_agent(), Some(lead), "{open}");
+            let th = app.thread.as_ref().unwrap();
+            assert!(th.entries.is_empty() && !th.passing, "nothing said yet");
+            assert_eq!(app.typing_target(), app.world.agents[lead].name);
+            app.on_key(key(KeyCode::Esc));
+            assert!(!app.typing && app.thread.is_some(), "esc leaves the line");
+            app.on_key(key(KeyCode::Esc));
+            assert!(app.thread.is_none(), "esc again leaves the chat");
+        }
+        app.on_key(key(KeyCode::Char('/')));
+        type_in(&mut app, "hello");
+        app.on_key(key(KeyCode::Enter));
+        assert_eq!(said_to(&app), [(lead, "hello".to_string())]);
+        assert!(app.typing && app.input.is_empty(), "the line stays open");
+        let th = app.thread.as_ref().unwrap();
+        assert_eq!((th.entries.len(), th.sel), (1, 0), "it stands in the chat");
+        type_in(&mut app, "again");
+        app.on_key(key(KeyCode::Enter));
+        let th = app.thread.as_ref().unwrap();
+        assert_eq!((th.entries.len(), th.sel), (2, 1));
+        // Reading further up, `/` writes in the chat as it stands.
+        app.on_key(key(KeyCode::Esc));
+        app.on_key(key(KeyCode::Char('k')));
+        assert_eq!(app.thread.as_ref().unwrap().sel, 0);
+        app.on_key(key(KeyCode::Char('/')));
+        assert!(app.typing);
+        assert_eq!(app.thread.as_ref().unwrap().sel, 0, "not opened anew");
+        // A `:` command from the chat's line is a command: the line ends.
+        type_in(&mut app, ":lang en");
+        app.on_key(key(KeyCode::Enter));
+        assert!(!app.typing && app.thread.is_some());
+    }
+
+    #[test]
+    fn a_line_written_in_a_chat_goes_to_its_agent_unless_it_names_another() {
+        let (mut app, workers) = four_idle();
+        app.world.journal.clear();
+        let (one, two) = (workers[0], workers[1]);
+        let lead = app.world.projects[0].leader;
+        app.open_chat(one);
+        assert_eq!(app.chat_agent(), Some(one));
+        app.on_key(key(KeyCode::Char('/')));
+        assert_eq!(app.typing_target(), app.world.agents[one].name);
+        type_in(&mut app, "to you");
+        app.on_key(key(KeyCode::Enter));
+        assert_eq!(said_to(&app), [(one, "to you".to_string())]);
+        // `@` in a chat writes in it too: no name is asked for.
+        app.on_key(key(KeyCode::Esc));
+        app.on_key(key(KeyCode::Char('@')));
+        assert!(app.typing && app.input.is_empty());
+        // A name on its line goes there; the chat the person opened stays.
+        let other = app.world.agents[two].name.clone();
+        type_in(&mut app, &format!("@{other} and you"));
+        assert_eq!(app.chat_agent(), Some(one), "the open chat is kept");
+        app.on_key(key(KeyCode::Enter));
+        assert_eq!(said_to(&app).last(), Some(&(two, "and you".to_string())));
+        assert!(app.typing, "still the chat's line");
+        // A conversation between two agents is no chat: the leader's opens.
+        app.on_key(key(KeyCode::Esc));
+        app.world.note(Event::Talk {
+            from: one,
+            to: two,
+            text: "between us".into(),
+        });
+        app.open_thread(app.world.journal.len() - 1);
+        assert_eq!(app.chat_agent(), None);
+        app.on_key(key(KeyCode::Char('/')));
+        assert_eq!(app.chat_agent(), Some(lead));
+    }
+
+    #[test]
+    fn a_name_on_the_line_brings_its_conversation_which_goes_with_the_line() {
+        let (mut app, workers) = four_idle();
+        app.world.journal.clear();
+        let (one, two) = (workers[0], workers[1]);
+        let (a, b) = (
+            app.world.agents[one].name.clone(),
+            app.world.agents[two].name.clone(),
+        );
+        app.on_key(key(KeyCode::Char('@')));
+        type_in(&mut app, &a);
+        assert!(app.thread.is_none(), "the name is not whole yet");
+        type_in(&mut app, " ");
+        assert_eq!(app.chat_agent(), Some(one));
+        assert!(app.thread.as_ref().unwrap().passing);
+        // Another name: its conversation instead; no name: none.
+        app.input = format!("@{b} ");
+        type_in(&mut app, "x");
+        assert_eq!(app.chat_agent(), Some(two));
+        app.input = "@nobody ".into();
+        type_in(&mut app, "x");
+        assert!(app.thread.is_none());
+        app.input = format!("@{a} ");
+        type_in(&mut app, "hi");
+        assert_eq!(app.chat_agent(), Some(one));
+        // Sent: the conversation goes with the line, back where one was.
+        app.on_key(key(KeyCode::Enter));
+        assert_eq!(said_to(&app), [(one, "hi".to_string())]);
+        assert!(!app.typing && app.thread.is_none());
+        // Dropped: the same.
+        app.on_key(key(KeyCode::Char('@')));
+        type_in(&mut app, &format!("{a} "));
+        assert!(app.thread.is_some());
+        app.on_key(key(KeyCode::Esc));
+        app.on_key(key(KeyCode::Esc));
+        assert!(!app.typing && app.thread.is_none());
+        // Not over a change: what is written there is about its lines.
+        app.zoom = Zoom::Diff(one);
+        app.on_key(key(KeyCode::Char('@')));
+        assert_eq!(app.input, format!("@{a} "));
+        type_in(&mut app, "x");
+        assert!(app.thread.is_none());
+        app.on_key(key(KeyCode::Esc));
+        app.on_key(key(KeyCode::Esc));
+        // On its log the name is filled in, so the conversation is there
+        // at once.
+        app.zoom = Zoom::Focus(one);
+        app.on_key(key(KeyCode::Char('@')));
+        assert_eq!(app.chat_agent(), Some(one));
+        // Not while a note is written, whatever its text starts with.
+        app.thread = None;
+        app.zoom = Zoom::None;
+        app.typing = true;
+        app.input = format!("@{a} x");
+        app.searching = true;
+        app.chat_follows();
+        assert!(app.thread.is_none());
+    }
+
+    #[test]
+    fn a_chat_nothing_was_said_in_takes_its_keys_and_follows_the_first_line() {
+        let (mut app, workers) = four_idle();
+        app.world.journal.clear();
+        let one = workers[0];
+        app.open_chat(one);
+        let sel = app.selected;
+        for c in "jkG[]%cyCYvhln ".chars() {
+            app.on_key(key(KeyCode::Char(c)));
+            assert!(app.thread.is_some() && !app.copying(), "{c:?}");
+        }
+        for code in [
+            KeyCode::Up,
+            KeyCode::Down,
+            KeyCode::Left,
+            KeyCode::Right,
+            KeyCode::PageUp,
+            KeyCode::PageDown,
+            KeyCode::Home,
+            KeyCode::End,
+        ] {
+            app.on_key(key(code));
+        }
+        keys(&mut app, "ggzazMzRm'");
+        assert!(app.thread.is_some() && app.copy.is_none());
+        assert_eq!(app.selected, sel, "nothing under it moved");
+        // The agent's line comes first: followed, selected.
+        app.world.note(Event::Replied {
+            agent: one,
+            text: "hello".into(),
+        });
+        app.follow_thread();
+        let th = app.thread.as_ref().unwrap();
+        assert_eq!((th.entries.len(), th.sel), (1, 0));
+        // A line between others is not its.
+        app.world.note(Event::Replied {
+            agent: workers[1],
+            text: "not here".into(),
+        });
+        app.follow_thread();
+        assert_eq!(app.thread.as_ref().unwrap().entries.len(), 1);
+        app.on_key(key(KeyCode::Esc));
+        assert!(app.thread.is_none());
+    }
+
+    #[test]
+    fn a_message_refused_closes_the_chats_line_so_the_reason_is_seen() {
+        let (mut app, _) = four_idle();
+        app.world.budget = 0;
+        app.on_key(key(KeyCode::Char('/')));
+        type_in(&mut app, "hello");
+        app.on_key(key(KeyCode::Enter));
+        assert!(said_to(&app).is_empty());
+        assert!(!app.typing && app.thread.is_some());
+        let said = app.flash.as_ref().map(|f| f.0.clone());
+        assert_eq!(said, Some(ui::words::pot_spent(Lang::En, &app.world)));
     }
 }

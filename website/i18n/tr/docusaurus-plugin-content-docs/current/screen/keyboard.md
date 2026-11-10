@@ -23,8 +23,8 @@ Bir akorun ilk tuşu ikincisini beklerken satır ikinci tuşun ne olabileceğini
 
 | Tuş | Ne yapar |
 | --- | --- |
-| `/`  `i` | seçili projenin liderine yaz |
-| `@name text` | tek bir agent'a yaz: `@name` agent, `text` mesaj |
+| `/`  `i` | seçili projenin liderine yaz, onunla konuşmanız satırın üstünde; bir agent'la kendi konuşmanızdayken o agent'a |
+| `@name text` | tek bir agent'a yaz: `@name` agent, `text` mesaj; yazarken onunla konuşmanız satırın üstünde görünür |
 | `/cmd`  `@name /cmd` | agent'ın kendi komut satırı (`/clear`, `/compact`, `/cost` …) |
 | `:` | imece'ye bir komut; menü hepsini değerleriyle listeler: `‹ 12` ve `+40 tane daha ›` görünmeyenleri sayar, altındaki satır nerede olduğunu söyler (`3/63`), `tab` birini satıra koyunca ne yaptığı tuşların ardından görünür, yazmaya devam edince kaybolur |
 | `$` | `:` menüsünde: bu komut sonraki faturayı büyütür |

@@ -36,6 +36,41 @@ The title names the two parties and where the selection stands, `4/5`, then `✎
 
 `a` and `r` decide nothing while a conversation is open: what is selected under it is not what you see. `esc` first, then open the change.
 
+## Your conversation with an agent
+
+The conversation between you and one agent reads as Claude Code's own screen does and is written in the same way: what was said above, the line to write on below. It is the whole body of the screen, under a rule, with no window around it.
+
+```text
+ CONVERSATION · lead ⇄ you · 3/3 ─────────────────────────────────────────────
+  14:02
+  › The price list is slow on the first request after a deploy. Find out why
+    and fix it; keep the public API as it is.
+    ⎿ → claude-1 [assign]: #17 Price list cache
+    ⎿ hired claude-2 (sonnet)
+    ⎿ → claude-2 [assign]: #16 Search result ranking
+
+  14:04
+  ● Two things cause it: the cache is filled lazily, and ranking reads the
+    whole list once per result. Two cards are out.
+
+▌ 14:31
+▌ › Also warm the cache at start-up, not only after a deploy.
+
+  ● ▸ Read the code around it · Read src/Pricing/PriceListCache.cs
+
+──────────────────────────────────────────────────────────────────────────────
+ › to lead:    enter send · ⇧enter new line · esc cancel
+```
+
+- `/` (or `i`) opens it with the leader of the project at hand, the line to write on under it, from Home or anywhere else; with nothing said yet it opens empty. In a conversation of yours that is open already (a worker's talk tab, opened with `v` or `tab`), `/` and `@` write to that agent: no name is needed, the line says `to claude-1:`.
+- `enter` sends and the line stays open: the answer comes above it. `esc` leaves the line and the conversation is read with the keys below (`/` writes again); `esc` once more closes it. A message that could not go (the pot is spent) closes the line, so the reason is seen.
+- Your words start with `›` and are bold, the agent's with `●` in its colour. The row above each is its time, and its kind when it has one (`[ask]`, `[done]`); copied, that row still says who to whom.
+- Between the messages, dim rows led by `⎿` say what the agent did after the message above them: what it told a teammate, whom it hired, its plan, the files it changed, what became of its change. At most five under a message, the newest; `… 3 earlier · tab log` counts the rest, and the log tab has them all. A folded message hides them. Only the journal's newest 2,000 lines are read for them.
+- While the agent is mid-turn the last row says what it does right now: the step of its own list it is on, the call it makes.
+- From anywhere else, a line that names an agent (`@claude-1 `, the name whole) shows your conversation with it above the line while you write; it goes when the line is sent or dropped, and you are back where you were. Not over a change, where what you write is about the lines in view.
+
+A conversation between two agents is as it was: a window, each message headed by who to whom.
+
 A message to an idle worker opens no card by itself: the line waits as the worker's own task, and only when the work comes to a change does a card open for it, titled by the line's first line, waiting for you with the change. A line that comes to nothing (a question, a one-word answer) never becomes a card; the answer comes to you as ever. Once its turn ends with the worktree as it was, the line is through, so the next thing you ask names the card; a line written while that turn still runs is part of it.
 
 ## Reading
@@ -148,7 +183,7 @@ Live, the files are what git lists in the checkout: tracked, and untracked but n
 
 ## The conversation follows
 
-An open window keeps up with the talk: journal lines of its pair that arrive are appended. Your own line, written from the window with `@`, is selected, and so is a line that comes while the last one was selected; a selection further up stays where you are reading. Before this you had to close and reopen to see an answer.
+An open window keeps up with the talk: journal lines of its pair that arrive are appended. Your own line, written from it, is selected, and so is a line that comes while the last one was selected; a selection further up stays where you are reading. Before this you had to close and reopen to see an answer.
 
 ## The trace
 

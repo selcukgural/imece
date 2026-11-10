@@ -726,6 +726,7 @@ mod tests {
             folds: Folds::default(),
             room: Cell::new(usize::MAX),
             about: None,
+            passing: false,
         });
         app.inbox_sel = 3;
         app.selected = Sel::Project(0);

@@ -23,8 +23,8 @@ While the first key of a chord waits for its second, the row lists what the seco
 
 | Key | What it does |
 | --- | --- |
-| `/`  `i` | write to the lead of the selected project |
-| `@name text` | write to one agent: `@name` is the agent, `text` the message |
+| `/`  `i` | write to the lead of the selected project, your conversation with it above the line; in a conversation of yours with an agent, to that agent |
+| `@name text` | write to one agent: `@name` is the agent, `text` the message; your conversation with it shows above the line while you write |
 | `/cmd`  `@name /cmd` | the agent's own command line (`/clear`, `/compact`, `/cost` …) |
 | `:` | a command to imece; the menu lists them all with their values: `‹ 12` and `+40 more ›` count the ones out of view, the line under it says where you are (`3 of 63`), and once `tab` puts one on the line, what it does follows the keys until you write on |
 | `$` | in the `:` menu: this command raises the next bill |

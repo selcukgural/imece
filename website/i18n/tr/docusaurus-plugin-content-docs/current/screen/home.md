@@ -25,6 +25,8 @@ Ana ekran, imece'nin açıldığı ve karar verdiğiniz ekrandır; `:home` geri 
  ● #17  Fiyat listesi önbelleği   Çevresindeki kodu oku · 27 dk
  ● #16  Arama sonuç sıralaması    Değişikliği yap · 3 dk
  ● #7   Ödeme dokümanı            Lidere yaz · 5 dk
+
+ ○ lead  Üç kart çıktı; ayrıştırıcı claude-2'de. · 2 dk                      /  lidere yaz
  ana ekran · shop-api · #1 Kargo ücret hesabı    enter  aç   a  evet   r  hayır   ?  yardım
 ```
 
@@ -45,6 +47,10 @@ Ana ekran, imece'nin açıldığı ve karar verdiğiniz ekrandır; `:home` geri 
 Satır işin kendisidir: `!` (ya da ajanın işareti), birden çok proje açıkken ve liste daraltılmamışken projesi, kartı ve başlığı (bir değişikliğin kendi başlığı; kartı olmayan bir ajanın adı), sonra istek ya da durum. Bir istek kendi sütununun altına bütün olarak sarılır; kısa bir satırda değişikliğin parçaları alt alta geçer; ajanın durumu kesilir. Sütunundan uzun bir başlık, tek satırlık bir satırın durumundan (ve eldeyse tuşlarından) sonra boş kalan yeri alır. Ajanın adı önizlemededir. `W`'nin sırası bu listenin sırasıdır: izinler, sorular, değişiklikler, yanıtlar, ertelenenler.
 
 Liste ancak eldeki satır ekrandan çıkacaksa kayar: altında bir satırla göründüğü sürece KARAR BEKLEYEN ve grup satırları, üstüne yeni satırlar gelse bile görünür kalır. Listede hiçbir şey yokken liste bunu bir kez, tüm genişlikte söyler ve durum satırı `/ lidere yaz` önerir; hiçbir projenin işçisi yokken (değişikliği bekleyen boştaki bir işçi bile yokken) boş satırlarda imece'nin işareti durur.
+
+## Liderin satırı
+
+Liderin çalışanlar arasında satırı yoktur; bu yüzden eldeki projenin liderinin listenin altında, hep aynı yerde kendi satırı durur: işareti ve adı, tur ortasındayken o an ne yaptığı, değilse size son sözünün ilk satırı ve ne kadar önce söylendiği (ilk sözünden önce `henüz bir şey söylenmedi`), sağda da ona yazan tuş. `/` [onunla konuşmanızı](conversations.md#bir-agentla-kendi-konuşmanız) altında yazı satırıyla açar. Kimin lideri olduğunu eldeki satır belirler; bir solonun böyle bir satırı yoktur (kendi satırı vardır), kaldırılmış bir projenin de. Sözleri defterin en yeni 2.000 satırında aranır.
 
 ## Önizleme
 
@@ -68,7 +74,8 @@ imece ssh üzerinden bir telefonda da çalışır. 80 sütunun altında her sat�
 | `e` `A` | bir istekte: bu tur evet · bundan sonra evet |
 | `s`  `:settle` | sonra: öge KARAR BEKLEYEN'in sonundaki `sonraya` grubuna gider, listede kalırsınız; bir ajanın satırında ya da projenin başlığında: size ihtiyacı olana dek gizlenir ([ekip](salon.md#biteni-kaldırmak); `:unsettle` hepsini geri getirir) |
 | `h` `l`  `za` `zM` `zR`  `:fold` `:unfold` | eldeki satırın projesini başlığına katla · aç · değiştir · her projeyi · hiçbirini; yalnız projeler satırların başındayken |
-| `@` | eldeki ajana yazar |
+| `/` `i` | eldeki projenin liderine yazar, onunla konuşmanız satırın üstünde |
+| `@` | tek bir ajana yazar: önce adı (`tab` tamamlar); ad tamamlanınca onunla konuşmanız satırın üstünde görünür |
 | `W` | sıradaki ögeyi açar, listenin sırasıyla |
 
 Diğer tuşlar her yerdeki gibi çalışır; durum satırının tuşları eldeki satırınkilerdir.

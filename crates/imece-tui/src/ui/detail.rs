@@ -583,9 +583,10 @@ mod tests {
             rows[3].contains("diff · ") && rows[3].contains("talk"),
             "{s}"
         );
+        // The person's conversation with it is a chat: a rule, no box.
         assert!(
-            rows[4].contains('┌'),
-            "the window starts under the tabs: {s}"
+            rows[4].contains("CONVERSATION · claude-1 ⇄ you · 2/2 ──") && !rows[4].contains('┌'),
+            "the conversation starts under the tabs: {s}"
         );
     }
 

@@ -4,7 +4,7 @@
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Margin, Position, Rect};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Paragraph, Wrap};
+use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
 
 use super::*;
 use crate::app::{
@@ -1867,6 +1867,169 @@ pub(crate) fn talk_notes_message(w: &World, notes: &[&TalkNote]) -> String {
     out
 }
 
+/// The person's lead in a chat, and an agent's.
+const SAYS_YOU: &str = "› ";
+const SAYS_AGENT: &str = "● ";
+
+/// A chat's message as Claude Code's own screen has it: the first line of
+/// its text led by who says it (`›` the person, bold; `●` the agent, in
+/// its colour) in the indent's place. A text that starts with no indent
+/// of its own (a table) is left as it is.
+fn speak(body: &mut [(Line<'static>, String)], from: Party) {
+    let (lead, mine) = match from {
+        Party::Person => (Span::styled(SAYS_YOU, bold(pal().accent)), true),
+        Party::Agent(id) => (Span::styled(SAYS_AGENT, fg(speaker_color(id))), false),
+    };
+    if let Some(first) = body.first_mut().and_then(|(l, _)| l.spans.first_mut())
+        && first.content == "  "
+    {
+        *first = lead;
+    }
+    if mine {
+        for (line, _) in body.iter_mut() {
+            for span in line.spans.iter_mut().skip(1) {
+                span.style = span.style.add_modifier(Modifier::BOLD);
+            }
+        }
+    }
+}
+
+/// The journal lines between the person and agent `id`, oldest first.
+pub(crate) fn chat_of(w: &World, id: AgentId) -> Vec<usize> {
+    let me = Party::Agent(id);
+    let pair = (me.min(Party::Person), me.max(Party::Person));
+    (w.journal.iter().enumerate())
+        .filter(|(_, e)| words::said(&e.event).is_some_and(|s| s.pair() == pair))
+        .map(|(n, _)| n)
+        .collect()
+}
+
+/// The agent conversation `th` is the person's with: by its first line,
+/// else (nothing said yet) the agent it was opened for. None between two
+/// agents, or over an event.
+pub(crate) fn chat_with(w: &World, th: &Thread) -> Option<AgentId> {
+    let Some(&first) = th.entries.first() else {
+        return th.about;
+    };
+    let s = words::said(&w.journal.get(first)?.event)?;
+    match (s.from, s.to) {
+        (Party::Person, Party::Agent(id)) | (Party::Agent(id), Party::Person) => Some(id),
+        _ => None,
+    }
+}
+
+/// Whether journal event `e` is something agent `id` did, to be read
+/// between the lines of its chat: what it told a teammate, whom it
+/// hired, its plan, and what became of its work. Not what it said to the
+/// person (the chat's own lines), nor a project's news kept under its
+/// leader's name (the pot, the store, the person's own shell).
+fn did(e: &Event, id: AgentId) -> bool {
+    if let Some(s) = words::said(e) {
+        return s.from == Party::Agent(id) && s.to != Party::Person;
+    }
+    match e {
+        Event::Hired { by, .. } => *by == id,
+        Event::FilesCut { .. }
+        | Event::TestsFound { .. }
+        | Event::NoGit { .. }
+        | Event::StoreDown { .. }
+        | Event::StoreBack { .. }
+        | Event::StoreSignedIn { .. }
+        | Event::StoreImported { .. }
+        | Event::StoreCriticalKept { .. }
+        | Event::StoreSynced { .. }
+        | Event::StoreFailed { .. }
+        | Event::Budget { .. }
+        | Event::PotLow { .. }
+        | Event::Suggested { .. }
+        | Event::SuggestFailed { .. }
+        | Event::Shell { .. }
+        | Event::Confine { .. }
+        | Event::Opened { .. }
+        | Event::Closed { .. }
+        | Event::Archived { .. }
+        | Event::Restored { .. }
+        | Event::Standing { .. }
+        | Event::Renamed { .. }
+        | Event::ChangeCost { .. }
+        | Event::Copied { .. }
+        | Event::CopySkipped { .. }
+        | Event::IncludeRefused { .. }
+        | Event::Pushed { .. }
+        | Event::PushFailed { .. }
+        | Event::Item { .. }
+        | Event::Health { .. } => false,
+        _ => e.agent() == id,
+    }
+}
+
+/// The most rows of what an agent did under one message of its chat; of
+/// more, the newest, the rest counted (the log tab has them all).
+pub(crate) const DID_ROWS: usize = 5;
+
+/// How far back in the journal a chat reads what its agent did: under
+/// older messages nothing is listed (the log tab has it).
+pub(crate) const DID_BACK: usize = 2_000;
+
+/// What agent `id` did, each with its tick, oldest first: the journal's
+/// lines about it ([`did`], with their index) and the files it changed
+/// (its cards' stories).
+struct Deeds {
+    journal: Vec<(usize, String)>,
+    files: Vec<(u64, String)>,
+}
+
+impl Deeds {
+    fn of(lang: Lang, w: &World, id: AgentId, from: usize) -> Deeds {
+        let journal = (w.journal.iter().enumerate().skip(from))
+            .filter(|(_, e)| did(&e.event, id))
+            .map(|(n, e)| {
+                // What it told a teammate: to whom, the kind, its first
+                // words; anything else as the journal words it.
+                let text = match words::said(&e.event) {
+                    Some(s) => {
+                        let spans = said_spans(lang, w, &s);
+                        let told: String =
+                            (spans.iter().skip(1)).map(|s| s.content.as_ref()).collect();
+                        told.trim_start().to_string()
+                    }
+                    None => words::event(lang, w, &e.event),
+                };
+                (n, text)
+            })
+            .collect();
+        let since = w.journal.get(from).map_or(0, |e| e.tick);
+        let mut files: Vec<(u64, String)> = (w.cards.iter())
+            .filter(|c| c.owner == Some(id))
+            .flat_map(|c| {
+                (c.story.iter())
+                    .filter(move |s| s.tick >= since && matches!(s.event, StoryEvent::Touched(_)))
+                    .map(move |s| (s.tick, words::story(lang, w, c, &s.event)))
+            })
+            .collect();
+        files.sort_by_key(|f| f.0);
+        Deeds { journal, files }
+    }
+
+    /// What it did after journal line `i` and before line `next` (none:
+    /// until now): a file changed in the tick of a line stands after it.
+    fn between(&self, w: &World, i: usize, next: Option<usize>) -> Vec<&str> {
+        let tick = |n: usize| w.journal.get(n).map_or(u64::MAX, |e| e.tick);
+        let (start, end) = (tick(i), next.map_or(u64::MAX, tick));
+        let mut out: Vec<(u64, &str)> = (self.journal.iter())
+            .filter(|(n, _)| *n > i && next.is_none_or(|x| *n < x))
+            .map(|(n, text)| (tick(*n), text.as_str()))
+            .collect();
+        out.extend(
+            (self.files.iter())
+                .filter(|(at, _)| *at >= start && *at < end)
+                .map(|(at, text)| (*at, text.as_str())),
+        );
+        out.sort_by_key(|d| d.0);
+        out.into_iter().map(|d| d.1).collect()
+    }
+}
+
 /// A message's lines before wrapping, each with what copying it takes:
 /// its head (when, who to whom, the kind) and the line it answers as
 /// read, its text as written ([`markdown_src`]), `room` cells wide.
@@ -1874,20 +2037,39 @@ fn message_lines(lang: Lang, w: &World, i: usize, room: usize) -> Vec<(Line<'sta
     let e = &w.journal[i];
     let mut head = Line::from(vec![Span::styled(format!("{} ", clock(e.tick)), dim())]);
     let mut rest = Vec::new();
+    // What copying the head takes: who to whom always, drawn or not.
+    let mut whole = None;
     match words::said(&e.event) {
         Some(s) => {
+            let chat = s.from == Party::Person || s.to == Party::Person;
             let mut said = said_spans(lang, w, &s);
             said.pop(); // the one-line text; it follows whole below
+            // Between the person and an agent who speaks is told by the
+            // text's lead (below): the head keeps the time and the kind.
+            if chat {
+                let mut named = head.clone();
+                named.spans.extend(said.iter().cloned());
+                whole = Some(line_text(&named));
+                said.drain(..3.min(said.len()));
+                // The time ends with a blank already.
+                if let Some(first) = said.first_mut() {
+                    first.content = first.content.trim_start().to_string().into();
+                }
+            }
             head.spans.extend(said);
             rest.extend(re_row(lang, w, &s).map(|l| {
                 let text = line_text(&l);
                 (l, text)
             }));
-            rest.extend(markdown_src(s.text, "  ", room));
+            let mut body = markdown_src(s.text, "  ", room);
+            if chat {
+                speak(&mut body, s.from);
+            }
+            rest.extend(body);
         }
         None => head.spans.push(Span::raw(words::event(lang, w, &e.event))),
     }
-    let text = line_text(&head);
+    let text = whole.unwrap_or_else(|| line_text(&head));
     let mut lines = vec![(head, text)];
     lines.extend(rest);
     lines
@@ -1984,6 +2166,25 @@ pub(crate) fn thread_layout(
     let mut ranges = Vec::new();
     let mut line_ranges = Vec::new();
     let mut above = day(w.tick);
+    // In a chat, what its agent did between the lines (record 144).
+    let chat = chat_with(w, th).filter(|&id| id < w.agents.len());
+    // Read from the chat's first line, the journal's newest `DID_BACK`
+    // lines at most: every frame reads them.
+    let deeds = match (chat, th.entries.first()) {
+        (Some(id), Some(&first)) => {
+            let from = first.max(w.journal.len().saturating_sub(DID_BACK));
+            Some(Deeds::of(lang, w, id, from))
+        }
+        _ => None,
+    };
+    let dim_row = |text: String| {
+        let row = Line::from(vec![
+            Span::raw("    "),
+            Span::styled("⎿ ", dim()),
+            Span::styled(text, dim()),
+        ]);
+        cut(row, text_width).0
+    };
     for (n, &i) in th.entries.iter().enumerate() {
         let e = &w.journal[i];
         let of = day(e.tick);
@@ -2085,6 +2286,48 @@ pub(crate) fn thread_layout(
             rows.push(row);
         }
         ranges.push((start, rows.len()));
+        if let Some(deeds) = &deeds {
+            let done = deeds.between(w, i, th.entries.get(n + 1).copied());
+            let hidden = done.len().saturating_sub(DID_ROWS);
+            if hidden > 0 {
+                rows.push(dim_row(fill(t.did_earlier, &[&hidden.to_string()])));
+            }
+            // Its own name leads most of them: in its chat it goes
+            // without saying.
+            let own = chat.map(|id| format!("{} ", w.agents[id].name));
+            for text in &done[hidden..] {
+                let short = own.as_deref().and_then(|n| text.strip_prefix(n));
+                rows.push(dim_row(plain(&clean(short.unwrap_or(text)))));
+            }
+        }
+        rows.push(Line::raw(""));
+    }
+    // What the chat's agent does right now, at its foot.
+    if let Some(a) = chat.map(|id| &w.agents[id])
+        && glyph(a).0 == "●"
+        && !a.gone
+    {
+        let mut row = Line::from(vec![
+            Span::raw("  "),
+            Span::styled(SAYS_AGENT, fg(speaker_color(a.id))),
+        ]);
+        // The step of its own list it is on, then the call it makes;
+        // with neither, its status as its row has it.
+        let step = on_step(w, a).map(|s| format!("▸ {}", plain(&clean(s))));
+        let doing = match a.activity.as_deref() {
+            Some("") => Some(t.thinking.to_string()),
+            Some(d) => Some(plain(&clean(d))),
+            None => None,
+        };
+        let parts: Vec<String> = step.into_iter().chain(doing).collect();
+        if parts.is_empty() {
+            let status = status_spans(lang, w, a);
+            row.spans
+                .extend(status.into_iter().map(|s| Span::styled(s.content, dim())));
+        } else {
+            row.spans.push(Span::styled(parts.join(" · "), dim()));
+        }
+        rows.push(cut(row, usize::from(width)).0);
         rows.push(Line::raw(""));
     }
     (rows, ranges, line_ranges)
@@ -2097,28 +2340,43 @@ pub fn thread(f: &mut Frame, app: &App, th: &Thread, within: Rect) -> Rect {
     let t = app.lang.text();
     // On a narrow screen (record 131) it takes the whole body: two
     // columns either side would only show what is under it.
+    // A chat (record 144) is the person's with one agent: it is the
+    // screen, as wide as the body, nothing of what is under it beside it.
+    let chat = chat_with(w, th);
     let margin = if within.width < NARROW { 0 } else { 4 };
-    let area = centered(
-        within,
-        within.width.saturating_sub(margin).min(120),
-        within.height,
-    );
+    let area = match chat {
+        Some(_) => within,
+        None => centered(
+            within,
+            within.width.saturating_sub(margin).min(120),
+            within.height,
+        ),
+    };
     shade(f, area);
     clear(f, area);
     let first = th.entries.first().map(|&i| &w.journal[i].event);
-    let title = match first.and_then(words::said) {
-        Some(s) => {
+    // Named by its two parties, with nothing said yet too.
+    let pair = match (first.and_then(words::said), chat) {
+        (Some(s), _) => Some(s.pair()),
+        (None, Some(id)) => {
+            let me = Party::Agent(id);
+            Some((me.min(Party::Person), me.max(Party::Person)))
+        }
+        (None, None) => None,
+    };
+    let title = match pair {
+        Some((a, b)) => {
             let name = |p: Party| match p {
-                Party::Agent(id) => w.agents[id].name.clone(),
+                Party::Agent(id) => clean(&w.agents[id].name),
                 Party::Person => t.you.to_string(),
             };
-            let (a, b) = s.pair();
+            let at = (th.sel + 1).min(th.entries.len());
             fill(
                 t.thread_title,
                 &[
                     &name(a),
                     &name(b),
-                    &(th.sel + 1).to_string(),
+                    &at.to_string(),
                     &th.entries.len().to_string(),
                 ],
             )
@@ -2139,15 +2397,27 @@ pub fn thread(f: &mut Frame, app: &App, th: &Thread, within: Rect) -> Rect {
         ),
         None => (title, &t.thread_hints[..]),
     };
-    let block = Block::bordered()
-        .title(title)
-        .border_style(fg(pal().accent));
+    // A chat reads as Claude Code's own screen: no box, a rule above it
+    // and one between it and the line to write on; while that line is
+    // open its keys are the line's, so the conversation takes their row.
+    let block = match chat {
+        Some(_) => Block::new().borders(Borders::TOP | Borders::BOTTOM),
+        None => Block::bordered(),
+    };
+    let block = block.title(title).border_style(fg(pal().accent));
     let inner = block.inner(area);
     f.render_widget(block, area);
-    let [body, keys] = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(inner);
+    let writing = chat.is_some() && app.typing;
+    let [body, keys] =
+        Layout::vertical([Constraint::Min(0), Constraint::Length(u16::from(!writing))])
+            .areas(inner);
     f.render_widget(Paragraph::new(Line::from(hint_spans(hints))), keys);
 
-    let (rows, ranges, lines) = thread_layout(app.lang, w, &app.talk_notes, th, body.width);
+    let (mut rows, ranges, lines) = thread_layout(app.lang, w, &app.talk_notes, th, body.width);
+    if th.entries.is_empty() {
+        let none = Line::from(Span::styled(format!("  {}", t.chat_empty), dim()));
+        rows.splice(0..0, [none, Line::default()]);
+    }
     th.room.set(usize::from(body.width).saturating_sub(GUTTER));
     let height = usize::from(body.height);
     let max = rows.len().saturating_sub(height);
