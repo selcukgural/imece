@@ -198,7 +198,15 @@ impl App {
     /// behind, the theme previewed, what is seen and kept.
     fn around(&mut self, act: impl FnOnce(&mut Self)) {
         let was = self.place();
+        let pointed = self.pointed;
         act(self);
+        // The first key after the log's line opened a change ends the
+        // light its lines kept.
+        if let Some(p) = &mut self.pointed
+            && pointed == Some(*p)
+        {
+            p.fresh = false;
+        }
         // A key that took the person elsewhere leaves the place behind;
         // `^o` going back does not.
         // Lines of a change being chosen to copy go with the change.
@@ -207,6 +215,13 @@ impl App {
             .is_some_and(|(id, _, _)| self.zoom != Zoom::Diff(id))
         {
             self.diff_copy = None;
+        }
+        // Lines pointed at from the log go with the change they are in.
+        if self
+            .pointed
+            .is_some_and(|p| self.zoom != Zoom::Diff(p.worker))
+        {
+            self.pointed = None;
         }
         self.keep_reading();
         let back = std::mem::take(&mut self.went_back);

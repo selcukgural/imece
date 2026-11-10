@@ -340,6 +340,20 @@ impl Folds {
     }
 }
 
+/// A file of a worker's change the person opened from the log's line
+/// about it (record 141): its lines are marked as the ones asked for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Pointed {
+    pub worker: AgentId,
+    /// The change it is a file of, by its patch ([`patch_key`]).
+    pub patch: u64,
+    /// The file's number in the patch, from 0.
+    pub file: usize,
+    /// No key since it opened: its lines keep the light's last, faintest
+    /// step until the first one.
+    pub fresh: bool,
+}
+
 /// Where the person reads an agent up close (record 102): the story
 /// entry at hand on its focus and how far down the focus and its raw
 /// stream are scrolled, which of the focus's entries are cut, for the
@@ -1005,6 +1019,9 @@ pub struct App {
     /// The files of a change folded to their headers (`h l za zM zR`):
     /// whose change, by its patch, and which of its files.
     pub diff_folds: Option<(AgentId, u64, Folds)>,
+    /// The file of the open change that a line of the log opened it at
+    /// (record 141); gone when the person leaves that change.
+    pub pointed: Option<Pointed>,
     /// Rows the last drawing of a change had, for paging.
     pub diff_page: Cell<u16>,
     /// The selected journal line (a journal index).
@@ -1318,6 +1335,7 @@ impl App {
             chosen: Vec::new(),
             diff_copy: None,
             diff_folds: None,
+            pointed: None,
             diff_page: Cell::new(10),
             journal_sel: None,
             outputs: BTreeMap::new(),

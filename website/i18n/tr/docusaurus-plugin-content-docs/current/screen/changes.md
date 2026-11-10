@@ -83,7 +83,13 @@ Yama, git'in `diff --git` yazdığı yerde dosyanın yolunu gösterir ve ilk hun
 | `w` | uzun satırları alt alta sar (küçültülmüş bir dosya, uzun bir dize); yine basılınca kenarda keser. Kaydırma yine yama satırlarını sayar, böylece `j` kaç satır kaplasa da bütün bir satır gider. Kapatılana dek her değişiklik için açık; çalıştırmalar arasında saklanmaz |
 | `R` | ikinci okuma (`:review`), dosya listesinin üstünde: ilk altı satırı ya da tamamı ([değişiklikler](../concepts/changes.md#ikinci-bir-okuma)) |
 | `v` | kopyalanacak satırları seç (aşağıda) |
-| `esc` | değişikliğin satırının olduğu ana ekrana geri |
+| `esc` | değişikliğin satırının olduğu ana ekrana geri; değişikliği log'un bir satırı açtıysa log'a geri (aşağıda) |
+
+### Log'un bir satırından {#from-a-line-of-the-log}
+
+Bir worker'ın log'unda (odağında) değiştirdiği her dosya için bir satır vardır: `Δ değişiklik  değiştirdi: src/parser/manifest.rs`. Böyle bir satırda `enter`, değişikliği o dosyada açar: görünüm tüm değişikliğin tepesinden değil dosyanın başlığından başlar, dosya katlıysa açılır ve başlık ` ← log'daki satır` der; hangi satırları istediğinizi ilk bakışta görürsünüz. Dosyanın satırları, yumuşakça, temanın vurgu renginde yanar: 1,5 saniye boyunca her 300 ms'de bir kademe söner; sonra en soluk kademe ilk tuşunuza kadar kalır, gözünüzü kaçırsanız da satırlar işaretli durur. Hiçbir şey yanıp sönmez. `:motion off` ile ya da odağı olmayan bir terminalde hiçbir şey sönmez: satırlar baştan o en soluk ışıktadır, ilk tuşa kadar. Renkleri karıştırılamayan bir temada (`mono`, terminalin kendi on altı rengi) hiçbir şey yanmaz; dosyayı başlıktaki sözcükler işaretler. Sözcükler o değişikliği okuduğunuz sürece kalır; `esc` log'a, geldiğiniz satıra döner.
+
+Log'da, worker dosyayı kaç kez düzenlemiş olursa olsun, dosya başına bir satır vardır; bu yüzden yanan, dosyanın değişiklikteki bütün kısmıdır. Worker'ın bekleyen bir değişikliği henüz yoksa (hâlâ turun ortasındaysa ya da değişiklik uygulandıysa) satır bunu söyler: `claude-1 henüz bir değişiklik göstermiyor: src/a.rs biri bekleyince burada açılır`. Değişiklikte o dosya artık yoksa (düzenleme geri alındıysa) `src/a.rs şu an claude-1 tarafından gösterilen değişiklikte yok` der. Böyle bir satırda ham akış `t` ile açılır; diğer her satırda `enter` eskisi gibi onu açar.
 
 Eklenen ve silinen satırların kendi renkleri vardır; başlıklar öne çıkar. Her satır çizilen her şeyin geçtiği temizlikten geçer.
 

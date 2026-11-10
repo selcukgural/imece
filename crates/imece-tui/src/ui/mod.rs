@@ -37,8 +37,8 @@ use crate::motion::{GlowOn, Lit};
 use crate::screen::{Look, Shape};
 pub(crate) use crate::theme::pal;
 pub(crate) use diff::{
-    QUOTE_LINES, Shown, clash_message, copy_patch, file_of, file_starts, hunk_at, notes_message,
-    place, quote,
+    QUOTE_LINES, Shown, clash_message, copy_patch, file_of, file_starts, head_path, hunk_at,
+    notes_message, place, quote,
 };
 pub(crate) use footer::caret_in;
 use footer::{completions, footer, input_rows};
@@ -491,22 +491,31 @@ pub(crate) fn glyph_style(app: &App, a: &Agent, rung: Rung, color: Color) -> Sty
 /// How a row lit for a moment looks: reversed for a blink; settling, a
 /// background from the theme's own `ok` toward its background in three
 /// steps where both are RGB, else reversed, then the changed rows' look.
+/// Lines pointed at light the same way from the theme's `accent`, in
+/// five steps, and not at all where the colours cannot be blended: many
+/// rows reversed would be loud, and what marks them then does not move.
 pub(crate) fn lit_style(lit: Lit) -> Style {
-    let step = match lit {
-        Lit::Reversed => return Style::new().add_modifier(Modifier::REVERSED),
-        Lit::Settle(step) => step,
-    };
     let p = pal();
-    match (p.ok, p.bg) {
+    let (tone, shades, step): (Color, &[u8], u8) = match lit {
+        Lit::Reversed => return Style::new().add_modifier(Modifier::REVERSED),
+        Lit::Settle(step) => (p.ok, &SETTLE_SHADES, step),
+        Lit::Point(step) => (p.accent, &POINT_SHADES, step),
+    };
+    match (tone, p.bg) {
         (Color::Rgb(r, g, b), Color::Rgb(br, bg, bb)) => {
-            let percent = SETTLE_SHADES[usize::from(step).min(SETTLE_SHADES.len() - 1)];
+            let percent = shades[usize::from(step).min(shades.len() - 1)];
             let c = crate::theme::Rgb(br, bg, bb).blend(crate::theme::Rgb(r, g, b), percent);
             Style::new().bg(Color::Rgb(c.0, c.1, c.2))
         }
+        _ if matches!(lit, Lit::Point(_)) => Style::new(),
         _ if step == 0 => Style::new().add_modifier(Modifier::REVERSED),
         _ => changed(),
     }
 }
+
+/// How much of the theme's `accent` the background of lines pointed at
+/// has, step by step.
+const POINT_SHADES: [u8; 5] = [30, 24, 18, 12, 6];
 
 /// How much of the theme's `ok` a settling row's background has, step by
 /// step.

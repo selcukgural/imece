@@ -191,11 +191,25 @@ fn a_lit_row_blinks_or_settles_and_the_selection_stays_reversed() {
     assert_eq!(lit_style(Lit::Settle(2)), shade(8));
     assert_eq!(lit_style(Lit::Settle(9)), shade(8), "no step past the last");
     assert_ne!(shade(35), shade(20));
+    // Lines pointed at: the theme's `accent`, five steps.
+    let (Color::Rgb(ar, ag, ab), true) = (pal().accent, pal().accent != pal().ok) else {
+        panic!("an accent of its own");
+    };
+    let soft = |percent| {
+        let c = crate::theme::Rgb(br, bg, bb).blend(crate::theme::Rgb(ar, ag, ab), percent);
+        Style::new().bg(Color::Rgb(c.0, c.1, c.2))
+    };
+    for (step, percent) in [(0, 30), (1, 24), (2, 18), (3, 12), (4, 6), (9, 6)] {
+        assert_eq!(lit_style(Lit::Point(step)), soft(percent), "step {step}");
+    }
     // A theme of the terminal's own colours: reversed, then calmer.
     assert!(crate::theme::set("terminal"));
     assert_eq!(lit_style(Lit::Settle(0)), reversed);
     assert_eq!(lit_style(Lit::Settle(1)), changed());
     assert_eq!(lit_style(Lit::Settle(2)), changed());
+    // Many rows are never reversed: lines pointed at stay as they are.
+    assert_eq!(lit_style(Lit::Point(0)), Style::new());
+    assert_eq!(lit_style(Lit::Point(3)), Style::new());
     let (mut app, w, _) = calm_team();
     let row = |app: &App, id: AgentId| {
         salon::agent_line(app, &app.world.agents[id], "", &app.rungs(), 200).style
@@ -221,6 +235,123 @@ fn a_lit_row_blinks_or_settles_and_the_selection_stays_reversed() {
     app.motion = Motion::Off;
     app.frame_after(ms(0));
     assert_eq!(row(&app, w[1]), Style::default(), "off: nothing lit");
+}
+
+#[test]
+fn a_change_opened_from_its_log_line_marks_the_file_and_lights_it_while_motion_moves() {
+    use crate::motion::{Glow, GlowOn, Lit, Motion};
+    use ratatui::crossterm::event::{KeyCode, KeyEvent};
+    let ms = std::time::Duration::from_millis;
+    assert!(crate::theme::set("gruvbox-dark-medium"));
+    let mut app = app_after(1, 2, 0, Lang::En);
+    let id = app.world.projects[0].leader + 1;
+    let c = app.world.cards[0].id;
+    app.world.agents[id].card = Some(c);
+    app.world.cards[c].story.clear();
+    app.world.story(Some(c), StoryEvent::Touched("b.rs".into()));
+    app.zoom = Zoom::Focus(id);
+    let foot = |app: &App| render(app, 100, 30).lines().last().unwrap().to_string();
+    // The footer says what `enter` opens on a change line.
+    let calm = foot(&app);
+    assert!(
+        calm.contains("   enter  its lines   @  write to this agent   esc  back"),
+        "{calm}"
+    );
+    // Three keys for an ask leave it to the help.
+    app.world.asks_you(id, "Bash: make");
+    let asked = foot(&app);
+    assert!(
+        asked.contains("   a  allow once   r  refuse   e  yes this turn"),
+        "{asked}"
+    );
+    assert!(!asked.contains("its lines"), "{asked}");
+    let ask = app.world.open_inbox()[0];
+    app.world.decided(ask, true);
+    app.world.change_ready(crate::model::Change {
+        agent: id,
+        title: "did it".into(),
+        files: Vec::new(),
+        patch: "diff --git a/a.rs b/a.rs\n@@ -1 +1 @@\n-a\n+b\n\
+                diff --git a/b.rs b/b.rs\n@@ -2 +2 @@\n-c\n+d\n"
+            .into(),
+        runs: Vec::new(),
+        check: Check::None,
+        spend: None,
+    });
+    let change = foot(&app);
+    assert!(
+        change.contains("   enter  its lines   a  approve   r  send back   esc  back"),
+        "{change}"
+    );
+    app.lang = Lang::Tr;
+    assert!(
+        foot(&app).contains("   enter  satırları   a  "),
+        "{}",
+        foot(&app)
+    );
+    app.lang = Lang::En;
+    app.motion = Motion::Calm;
+    app.on_key(KeyEvent::from(KeyCode::Enter));
+    assert_eq!(app.zoom, Zoom::Diff(id));
+    // The background of the first cell of the row that reads `text`.
+    let back = |app: &App, text: &str| {
+        let mut t = Terminal::new(TestBackend::new(100, 30)).unwrap();
+        t.draw(|f| draw(f, app)).unwrap();
+        let buf = t.backend().buffer();
+        let rows: Vec<String> = (buf.content.chunks(100))
+            .map(|row| row.iter().map(|c| c.symbol()).collect())
+            .collect();
+        let y = (rows.iter().position(|r| r.contains(text))).unwrap_or_else(|| panic!("{rows:#?}"));
+        let x = rows[y].find(text).unwrap();
+        let x = rows[y][..x].chars().count();
+        buf[(x as u16, y as u16)].bg
+    };
+    let shade = |step| lit_style(Lit::Point(step)).bg.unwrap();
+    app.frame_after(ms(0));
+    app.light_now(GlowOn::Lines, Glow::Point);
+    // The header is the line at hand, and says where it came from;
+    // the file's lines under it are lit, a step calmer each beat.
+    assert_eq!(back(&app, "b.rs  ← the log's line"), pal().selection);
+    assert_eq!(back(&app, "@@ -2 +2 @@"), shade(0));
+    assert_eq!(back(&app, "+d"), shade(0));
+    assert_ne!(
+        back(&app, "cost ·"),
+        shade(0),
+        "what is above the patch is not lit"
+    );
+    app.frame_after(ms(300));
+    assert_eq!(back(&app, "+d"), shade(1));
+    app.frame_after(ms(1200));
+    assert_eq!(back(&app, "+d"), shade(4));
+    assert_ne!(shade(4), shade(0));
+    // The glow over, the faintest step stays until the first key.
+    app.frame_after(ms(1500));
+    let plain = back(&app, "cost ·");
+    assert_ne!(plain, shade(4));
+    assert_eq!(back(&app, "+d"), shade(4), "it stays");
+    assert_eq!(back(&app, "b.rs  ← the log's line"), pal().selection);
+    // Nothing moves: the same faint light, which does not move either.
+    app.frame_after(ms(0));
+    app.motion = Motion::Off;
+    assert_eq!(back(&app, "+d"), shade(4));
+    app.motion = Motion::Calm;
+    // The first key ends it; the words on the header stay.
+    app.on_key(KeyEvent::from(KeyCode::Char('w')));
+    app.frame_after(ms(1500));
+    assert_eq!(back(&app, "+d"), plain);
+    assert_eq!(back(&app, "b.rs  ← the log's line"), pal().selection);
+    // A theme whose colours cannot be blended lights nothing.
+    assert!(crate::theme::set("terminal"));
+    app.pointed.as_mut().unwrap().fresh = true;
+    assert_eq!(back(&app, "+d"), back(&app, "cost ·"));
+    assert!(crate::theme::set("gruvbox-dark-medium"));
+    app.pointed.as_mut().unwrap().fresh = false;
+    // Opened as any change is, it has no mark and no light.
+    app.motion = Motion::Calm;
+    app.pointed = None;
+    assert_eq!(back(&app, "+d"), plain);
+    assert!(!render(&app, 100, 30).contains("the log's line"));
+    assert!(crate::theme::set("terminal"));
 }
 
 #[test]

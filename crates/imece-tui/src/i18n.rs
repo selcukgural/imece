@@ -1071,6 +1071,16 @@ pub struct Text {
     pub asks_you_head: &'static str,
     pub write_own: &'static str,
     pub diff_gone: &'static str,
+    /// `enter` on a change line of the log with no change of the agent's
+    /// waiting: the agent, the file.
+    pub line_no_change: &'static str,
+    /// The same when its change no longer has the file: the file, the
+    /// agent.
+    pub line_not_in_change: &'static str,
+    /// After the header of the file the log's line opened the change at.
+    pub from_log: &'static str,
+    /// The footer's word for `enter` on a change line of the log.
+    pub line_opens: &'static str,
     pub journal_keys: &'static str,
     pub thread_title: &'static str,
     pub event_title: &'static str,
@@ -2353,6 +2363,10 @@ pub const EN: Text = Text {
     asks_you_head: "{} asks you",
     write_own: "write your own answer",
     diff_gone: "nothing of {}'s waits any more",
+    line_no_change: "{} shows no change yet: {} opens here once one waits",
+    line_not_in_change: "{} is not in the change {} shows now",
+    from_log: "← the log's line",
+    line_opens: "its lines",
     journal_keys: "  enter open the conversation · c copy the message · m mark",
     thread_title: " CONVERSATION · {} ⇄ {} · {}/{} ",
     re_line: "↩ re {}: {}",
@@ -3018,7 +3032,10 @@ pub const EN: Text = Text {
         ("← →  h l", "fold/unfold: project, message, entry, file"),
         ("za  zM  zR", "fold: toggle · all (:fold) · none (:unfold)"),
         ("s  :settle", "hide the row at hand until it needs you"),
-        ("enter  K", "focus, then raw stream · K :peek over all"),
+        (
+            "enter  K",
+            "focus, then raw stream; a change line: its file · K :peek",
+        ),
         ("tab", "on a piece of work: its diff · talk · log"),
         ("t  :trace", "the raw stream of the agent at hand"),
         ("v  :talk", "its conversation with you"),
@@ -3899,6 +3916,10 @@ pub const TR: Text = Text {
     asks_you_head: "{} sana soruyor",
     write_own: "kendi yanıtını yaz",
     diff_gone: "{} için bekleyen bir şey kalmadı",
+    line_no_change: "{} henüz bir değişiklik göstermiyor: {} biri bekleyince burada açılır",
+    line_not_in_change: "{} şu an {} tarafından gösterilen değişiklikte yok",
+    from_log: "← log'daki satır",
+    line_opens: "satırları",
     journal_keys: "  enter konuşmayı aç · c mesajı kopyala · m işaretle",
     thread_title: " KONUŞMA · {} ⇄ {} · {}/{} ",
     re_line: "↩ {} yanıtı: {}",
@@ -4576,7 +4597,10 @@ pub const TR: Text = Text {
         ("← →  h l", "katla / aç: proje, mesaj, kayıt, dosya"),
         ("za  zM  zR", "katla: değiştir · hepsi :fold · hiç :unfold"),
         ("s  :settle", "eldeki satırı seni bekleyene dek gizle"),
-        ("enter  K", "odak, sonra ham akış · K :peek üstte bak"),
+        (
+            "enter  K",
+            "odak, sonra ham akış; değişiklik satırı: dosyası · K :peek",
+        ),
         ("tab", "bir işte: diff · konuşma · log sekmeleri"),
         ("t  :trace", "eldeki agent'ın ham akışı"),
         ("v  :talk", "onun seninle konuşması"),
@@ -5557,6 +5581,10 @@ mod tests {
             (e.approving, t.approving),
             (e.say_why, t.say_why),
             (e.diff_gone, t.diff_gone),
+            (e.line_no_change, t.line_no_change),
+            (e.line_not_in_change, t.line_not_in_change),
+            (e.from_log, t.from_log),
+            (e.line_opens, t.line_opens),
             (e.ev_change_ready, t.ev_change_ready),
             (e.ev_change_ready_spent, t.ev_change_ready_spent),
             (e.ev_change_cost, t.ev_change_cost),

@@ -343,9 +343,19 @@ pub(super) fn footer(f: &mut Frame, area: Rect, app: &App) -> Option<Position> {
                 keys
             }
             Zoom::None => home_hints(app),
-            Zoom::Focus(_) => {
-                let mut keys =
-                    ask_hints(app).unwrap_or_else(|| vec![("enter", t.trace), ("@", t.write_this)]);
+            Zoom::Focus(id) => {
+                // On a change line `enter` opens that file's lines, said
+                // beside what decides the change while three keys fit.
+                let lines = app.change_line(id).is_some();
+                let enter = ("enter", if lines { t.line_opens } else { t.trace });
+                let mut keys = match ask_hints(app) {
+                    Some(mut keys) if lines && keys.len() < 3 => {
+                        keys.insert(0, enter);
+                        keys
+                    }
+                    Some(keys) => keys,
+                    None => vec![enter, ("@", t.write_this)],
+                };
                 tail(&mut keys, true);
                 keys
             }
