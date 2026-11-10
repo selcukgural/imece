@@ -26,8 +26,26 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # No release without a passing acceptance run on what is tagged
+  # (docs/acceptance, record 147): docs/acceptance/runs/<tag>.md whole, no
+  # case failed, and nothing changed since the run's commit but the
+  # report. Nothing is built before it passes.
+  acceptance:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0 # the run's commit and what changed since
+      - name: The acceptance run for this tag passed
+        run: python3 -I tools/acceptance.py gate "$TAG"
+
   build:
     name: build (${{ matrix.target }})
+    needs: acceptance
     strategy:
       # Every build runs to its end, so one failure shows all there are;
       # publish needs all four anyway.

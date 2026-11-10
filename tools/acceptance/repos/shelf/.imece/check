@@ -1,0 +1,4 @@
+#!/bin/sh
+# imece runs this in a worker's worktree on each change (record 112).
+set -eu
+python3 -m unittest -q
