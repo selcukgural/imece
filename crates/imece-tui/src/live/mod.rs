@@ -347,11 +347,9 @@ const MAX_BRIEFING_LINE: usize = 300;
 /// What imece's notes to an agent start with, ahead of the first.
 const FROM_IMECE: &str = "From imece (not from the person or a teammate):\n- ";
 
-/// What a failed turn tried again says: the failed prompt is still in
-/// the session (Claude Code keeps it), so it is not sent again.
-pub(super) const RETRY_PROMPT: &str = "From imece (not from the person or a teammate): your \
-     last turn stopped on an error at Claude's API (overloaded, a server error or a lost \
-     connection). Carry on from where you stopped.";
+/// What a failed turn tried again says (`imece_agent`'s, so the stand-in
+/// knows it).
+pub(super) use imece_agent::RETRY_PROMPT;
 
 /// What wakes a worker whose helper stopped: the note before it says
 /// what happened.

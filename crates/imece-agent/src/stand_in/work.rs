@@ -42,6 +42,12 @@ pub const ASKS_VAR: &str = "IMECE_STAND_IN_ASKS";
 pub const SEED_VAR: &str = "IMECE_STAND_IN_SEED";
 pub const QUESTIONS_VAR: &str = "IMECE_STAND_IN_QUESTIONS";
 pub const HELPERS_VAR: &str = "IMECE_STAND_IN_HELPERS";
+pub const FAULTS_VAR: &str = "IMECE_STAND_IN_FAULTS";
+
+/// Of the turns that fail at Claude's API, one in this many is the
+/// account's (it waits for the person); the rest pass (imece tries them
+/// again), as the simulation's two to one.
+pub const ACCOUNT_IN: u64 = 3;
 
 /// What a worker asks the person about the file it read (`{}`), with the
 /// answers it offers: every other one offers some, as live agents are
@@ -77,14 +83,16 @@ pub const WROTE_TESTS: &str = "Wrote the tests in ";
 /// runs a command that needs the person's yes first (one assign in
 /// `asks`, never at 0), how often it asks the person a question (one
 /// assign in `questions`, never at 0), how often it hires a helper for
-/// the tests (one assign in `helpers`, never at 0), and the seed of its
-/// choices.
+/// the tests (one assign in `helpers`, never at 0), how often a turn of
+/// any session fails at Claude's API (one in `faults`, never at 0), and
+/// the seed of its choices.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Habits {
     pub pause: Duration,
     pub asks: u64,
     pub questions: u64,
     pub helpers: u64,
+    pub faults: u64,
     pub seed: u64,
 }
 
@@ -102,6 +110,7 @@ impl Habits {
             asks: n(ASKS_VAR),
             questions: n(QUESTIONS_VAR),
             helpers: n(HELPERS_VAR),
+            faults: n(FAULTS_VAR),
             seed: n(SEED_VAR),
         }
     }
@@ -109,11 +118,13 @@ impl Habits {
     /// The variables that give these habits, for a shell's command line.
     pub fn vars(&self) -> String {
         format!(
-            "{PAUSE_VAR}={} {ASKS_VAR}={} {QUESTIONS_VAR}={} {HELPERS_VAR}={} {SEED_VAR}={}",
+            "{PAUSE_VAR}={} {ASKS_VAR}={} {QUESTIONS_VAR}={} {HELPERS_VAR}={} {FAULTS_VAR}={} \
+             {SEED_VAR}={}",
             self.pause.as_millis(),
             self.asks,
             self.questions,
             self.helpers,
+            self.faults,
             self.seed
         )
     }
@@ -134,6 +145,19 @@ impl Habits {
     /// tests, by other bits of it than the two above's.
     pub fn helps_now(&self, roll: u64) -> bool {
         self.helpers > 0 && (roll >> 32).is_multiple_of(self.helpers)
+    }
+
+    /// The fault the turn `roll` stands for fails on at Claude's API, if
+    /// it fails, by the roll's bits from the 40th (its kind by those from
+    /// the 48th): none at 0.
+    pub fn fault_now(&self, roll: u64) -> Option<crate::Fault> {
+        if self.faults == 0 || !(roll >> 40).is_multiple_of(self.faults) {
+            None
+        } else if (roll >> 48).is_multiple_of(ACCOUNT_IN) {
+            Some(crate::Fault::Account)
+        } else {
+            Some(crate::Fault::Passing)
+        }
     }
 }
 
@@ -832,19 +856,20 @@ mod tests {
 
     #[test]
     fn habits_come_from_their_variables_and_go_back_to_them() {
-        let vars = |pause: &str, asks: &str, questions: &str, helpers: &str, seed: &str| {
-            let [pause, asks, questions, helpers, seed] =
-                [pause, asks, questions, helpers, seed].map(String::from);
+        let vars = |[pause, asks, questions, helpers, faults, seed]: [&str; 6]| {
+            let [pause, asks, questions, helpers, faults, seed] =
+                [pause, asks, questions, helpers, faults, seed].map(String::from);
             Habits::of(move |k| match k {
                 PAUSE_VAR => Some(pause.clone()),
                 ASKS_VAR => Some(asks.clone()),
                 QUESTIONS_VAR => Some(questions.clone()),
                 HELPERS_VAR => Some(helpers.clone()),
+                FAULTS_VAR => Some(faults.clone()),
                 SEED_VAR => Some(seed.clone()),
                 _ => None,
             })
         };
-        let h = vars(" 1500 ", "3", "4", "5", "42");
+        let h = vars([" 1500 ", "3", "4", "5", "6", "42"]);
         assert_eq!(
             h,
             Habits {
@@ -852,26 +877,27 @@ mod tests {
                 asks: 3,
                 questions: 4,
                 helpers: 5,
+                faults: 6,
                 seed: 42
             }
         );
         assert_eq!(
             h.vars(),
             "IMECE_STAND_IN_PAUSE_MS=1500 IMECE_STAND_IN_ASKS=3 IMECE_STAND_IN_QUESTIONS=4 \
-             IMECE_STAND_IN_HELPERS=5 IMECE_STAND_IN_SEED=42"
+             IMECE_STAND_IN_HELPERS=5 IMECE_STAND_IN_FAULTS=6 IMECE_STAND_IN_SEED=42"
         );
         assert_eq!(Habits::of(|_| None), Habits::default());
         assert_eq!(
-            vars("x", "-1", "y", "z", ""),
+            vars(["x", "-1", "y", "z", "f", ""]),
             Habits::default(),
             "not numbers: 0"
         );
         assert_eq!(
-            vars("10000", "0", "0", "0", "0").pause,
+            vars(["10000", "0", "0", "0", "0", "0"]).pause,
             Duration::from_millis(10_000)
         );
         assert_eq!(
-            vars("10001", "0", "0", "0", "0").pause,
+            vars(["10001", "0", "0", "0", "0", "0"]).pause,
             Duration::from_millis(PAUSE_MOST),
             "at most"
         );
@@ -886,6 +912,31 @@ mod tests {
         assert!(!h(0).asks_now(0));
         assert!(h(1).asks_now(5));
         assert!(h(3).asks_now(6) && !h(3).asks_now(7) && !h(3).asks_now(8));
+    }
+
+    #[test]
+    fn one_turn_in_faults_fails_by_the_40th_bit_on_one_in_three_the_account_s() {
+        use crate::Fault::{Account, Passing};
+        let h = |faults| Habits {
+            faults,
+            ..Habits::default()
+        };
+        let at = |fails: u64, kind: u64| (fails << 40) | (kind << 48);
+        assert_eq!(h(0).fault_now(0), None, "never at 0");
+        // One in `faults` by the bits from the 40th; those below count
+        // for nothing.
+        assert_eq!(h(1).fault_now(at(5, 1)), Some(Passing));
+        assert_eq!(h(4).fault_now(at(8, 1) | 0xff_ffff_ffff), Some(Passing));
+        assert_eq!(h(4).fault_now(at(9, 1)), None);
+        assert_eq!(h(4).fault_now(at(12, 1)), Some(Passing));
+        assert_eq!(h(4).fault_now(1 << 40), None);
+        // Of those, one in three is the account's, by the bits from the
+        // 48th (which the fault's own bits include).
+        assert_eq!(ACCOUNT_IN, 3);
+        assert_eq!(h(1).fault_now(at(0, 0)), Some(Account));
+        assert_eq!(h(1).fault_now(at(0, 3)), Some(Account));
+        assert_eq!(h(1).fault_now(at(0, 2)), Some(Passing));
+        assert_eq!(h(1).fault_now(at(0, 4)), Some(Passing));
     }
 
     #[test]

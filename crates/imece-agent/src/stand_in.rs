@@ -5,8 +5,9 @@
 //! `imece mcp-relay`), and does a small, fixed piece of work per role: a
 //! leader hires a worker and assigns it the person's words, a worker
 //! changes a file of its directory as a task list says ([`work`]) and says
-//! done. It asks no model and spends nothing; the cost it reports is made
-//! up, the same every run.
+//! done. Sometimes a turn fails as Claude Code says an API error, and the
+//! next does the prompt that failed. It asks no model and spends nothing;
+//! the cost it reports is made up, the same every run.
 //!
 //! It is what the demo runs on the real `Live` (record 111, `--demo-live`
 //! for now), and what tests run the real `Live` on end to end. Under
@@ -60,6 +61,18 @@ pub const OUT_DIR: &str = "stand-in";
 /// to ask, as Claude Code words it.
 pub const NOT_GRANTED: &str =
     "Claude requested permissions to use {}, but you haven't granted it yet.";
+
+/// What a turn that failed at Claude's API says, as Claude Code does
+/// (record 79's probe): an overloaded API after its own three tries, and
+/// a refused request for a bill unpaid, at once.
+pub const OVERLOADED: &str = "API Error: Repeated 529 Overloaded errors. The API is at capacity.";
+pub const NO_CREDIT: &str = "Credit balance is too low";
+
+/// The tries Claude Code makes of an overloaded API before it gives up,
+/// of the most it would make, and how long it waits before the first.
+pub const TRIES: u64 = 3;
+pub const TRIES_MOST: u64 = 10;
+pub const TRY_WAIT_MS: u64 = 500;
 
 /// The stand-in as a program: `args` without the program's name; what it
 /// exits with.
@@ -158,6 +171,8 @@ pub struct Args {
     pub fork: bool,
     /// `--replay-user-messages`: each prompt taken is echoed back.
     pub replay: bool,
+    /// `--name`: what imece calls the session (`imece claude-1`).
+    pub name: String,
 }
 
 impl Args {
@@ -189,11 +204,11 @@ impl Args {
                 "--fork-session" => a.fork = true,
                 "--replay-user-messages" => a.replay = true,
                 "--mcp-config" => a.servers = servers_of(&value()?)?,
+                "--name" => a.name = value()?,
                 // Flags that take a value the stand-in does not read.
                 "--input-format"
                 | "--output-format"
                 | "--permission-prompts"
-                | "--name"
                 | "--add-dir"
                 | "--append-system-prompt"
                 | "--system-prompt"
@@ -455,13 +470,51 @@ pub struct Mind {
     /// The task a worker waits on, for the person's answer or its
     /// helper's done.
     pub waiting: Option<work::Waiting>,
+    /// The prompts the session has taken.
+    pub turns: u64,
+    /// The prompt whose turn failed at Claude's API: still in the
+    /// session, as Claude Code keeps it, for the next turn to do.
+    pub failed: Option<Failed>,
+}
+
+/// A prompt whose turn failed at Claude's API, and whether on the
+/// account's fault (the person mends it) or a passing one.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Failed {
+    pub prompt: String,
+    pub account: bool,
+}
+
+impl Failed {
+    /// The prompts the next turn does after this failure, the next prompt
+    /// being `prompt`: imece's try again is the failed prompt alone; after
+    /// the account's fault, the person's words are what lets it go on
+    /// (imece holds mail while it waits); any other prompt comes after the
+    /// failed one, in the same turn.
+    pub fn then<'a>(&'a self, prompt: &'a str) -> Vec<&'a str> {
+        let again = prompt == crate::RETRY_PROMPT;
+        if again || (self.account && !prompt.starts_with(MAIL)) {
+            vec![&self.prompt]
+        } else {
+            vec![&self.prompt, prompt]
+        }
+    }
 }
 
 impl Mind {
     /// The mind as a transcript keeps it.
     pub fn to_json(&self) -> Value {
         let waiting = self.waiting.as_ref().map(work::Waiting::to_json);
-        json!({ "me": self.me, "hired": self.hired, "worked": self.worked, "waiting": waiting })
+        let failed =
+            (self.failed.as_ref()).map(|f| json!({ "prompt": f.prompt, "account": f.account }));
+        json!({
+            "me": self.me,
+            "hired": self.hired,
+            "worked": self.worked,
+            "waiting": waiting,
+            "turns": self.turns,
+            "failed": failed,
+        })
     }
 
     /// A mind a transcript kept; what is not text is left out.
@@ -476,6 +529,11 @@ impl Mind {
                 .collect(),
             worked: v["worked"].as_u64().unwrap_or(0),
             waiting: work::Waiting::from_json(&v["waiting"]),
+            turns: v["turns"].as_u64().unwrap_or(0),
+            failed: text(&v["failed"]["prompt"]).map(|prompt| Failed {
+                prompt,
+                account: v["failed"]["account"] == true,
+            }),
         }
     }
 
@@ -642,6 +700,45 @@ impl<W: Write> Stream<W> {
             "type": "result",
             "subtype": "success",
             "is_error": false,
+            "result": text,
+            "total_cost_usd": usd,
+            "permission_denials": [],
+            "modelUsage": self.usage(),
+        }));
+    }
+
+    /// A turn that failed at Claude's API on `fault`, in session
+    /// `session`: Claude Code's own tries of an overloaded API, `wait`
+    /// called between them, then a result that is an API error; nothing
+    /// spent, as no answer came. The account's fault is a bill unpaid,
+    /// refused at once.
+    fn failure(&mut self, fault: crate::Fault, session: &str, mut wait: impl FnMut()) {
+        let (status, text) = match fault {
+            crate::Fault::Account => (400, NO_CREDIT),
+            crate::Fault::Passing => {
+                for attempt in 1..=TRIES {
+                    self.line(&json!({
+                        "type": "system",
+                        "subtype": "api_retry",
+                        "attempt": attempt,
+                        "max_retries": TRIES_MOST,
+                        "retry_delay_ms": TRY_WAIT_MS << (attempt - 1),
+                        "error_status": 529,
+                        "error": "overloaded",
+                        "session_id": session,
+                    }));
+                    wait();
+                }
+                (529, OVERLOADED)
+            }
+        };
+        let usd = self.spent as f64 / 1_000_000.0;
+        self.line(&json!({
+            "type": "result",
+            "subtype": "success",
+            "is_error": true,
+            "terminal_reason": "api_error",
+            "api_error_status": status,
             "result": text,
             "total_cost_usd": usd,
             "permission_denials": [],
@@ -990,6 +1087,25 @@ pub fn run(
             // commands (`/clear` above) are not echoed.
             stream.line(&replayed(&prompt, &session));
         }
+        let roll = work::roll(habits.seed, &a.name, mind.turns);
+        mind.turns += 1;
+        // A turn fails at Claude's API before any work; the one after a
+        // failure goes through, so imece's tries are never used up.
+        if mind.failed.is_none()
+            && let Some(fault) = habits.fault_now(roll)
+        {
+            stream.failure(fault, &session, || std::thread::sleep(habits.pause));
+            mind.failed = Some(Failed {
+                prompt,
+                account: fault == crate::Fault::Account,
+            });
+            kept_now(&session, &mind, &stream);
+            continue;
+        }
+        let failed = mind.failed.take();
+        let prompts = failed
+            .as_ref()
+            .map_or(vec![prompt.as_str()], |f| f.then(&prompt));
         let mut hands = Busy {
             stream: &mut stream,
             servers: &mut servers,
@@ -998,7 +1114,10 @@ pub fn run(
             tools: &tools,
             habits,
         };
-        let text = mind.turn(&mut hands, &prompt);
+        let texts: Vec<String> = (prompts.into_iter())
+            .map(|p| mind.turn(&mut hands, p))
+            .collect();
+        let text = texts.join("\n\n");
         // Claude Code's last message is the turn's text, then its result.
         hands.say(&text);
         stream.context += CONTEXT_TURN;
@@ -1151,6 +1270,7 @@ mod tests {
                 session_id: Some("new".into()),
                 fork: true,
                 replay: false,
+                name: "imece lead".into(),
             },
             "a value that looks like a flag is a value"
         );
@@ -1436,14 +1556,45 @@ mod tests {
                 helper: Some("claude-1.1".into()),
                 said: Some("behind a flag".into()),
             }),
+            turns: 4,
+            failed: Some(Failed {
+                prompt: "Round up".into(),
+                account: true,
+            }),
         };
         assert_eq!(Mind::from_json(&mind.to_json()), mind);
+        let passing = Mind {
+            failed: Some(Failed {
+                prompt: "p".into(),
+                account: false,
+            }),
+            ..mind.clone()
+        };
+        assert_eq!(Mind::from_json(&passing.to_json()), passing);
         let odd = json!({ "me": { "role": 3, "name": "x" }, "hired": ["a", 4], "worked": "2",
             "waiting": { "task": "t", "list": ["1", 2], "helper": 1, "said": ["x"] } });
         let read = Mind::from_json(&odd);
         assert_eq!(read.me, BTreeMap::from([("name".into(), "x".into())]));
         assert_eq!(read.hired, ["a"]);
         assert_eq!(read.worked, 0);
+        assert_eq!((read.turns, read.failed), (0, None));
+        let odd_failed = json!({ "turns": "3", "failed": { "prompt": "x", "account": "yes" } });
+        let read = Mind::from_json(&odd_failed);
+        assert_eq!(read.turns, 0);
+        assert_eq!(
+            read.failed,
+            Some(Failed {
+                prompt: "x".into(),
+                account: false
+            }),
+            "only true is the account's"
+        );
+        assert_eq!(
+            Mind::from_json(&json!({ "failed": { "prompt": 1, "account": true } })).failed,
+            None,
+            "no prompt, no failure"
+        );
+        let read = Mind::from_json(&odd);
         let waiting = read.waiting.unwrap();
         assert_eq!(
             (waiting.task.as_str(), waiting.list),
@@ -1455,9 +1606,17 @@ mod tests {
         assert_eq!(
             Mind {
                 waiting: None,
-                ..mind
+                ..mind.clone()
             }
             .to_json()["waiting"],
+            json!(null)
+        );
+        assert_eq!(
+            Mind {
+                failed: None,
+                ..mind
+            }
+            .to_json()["failed"],
             json!(null)
         );
         assert_eq!(Mind::from_json(&json!(null)), Mind::default());
@@ -1730,6 +1889,249 @@ mod tests {
     }
 
     #[test]
+    fn after_a_failure_a_try_again_does_the_failed_prompt_and_other_words_come_after_it() {
+        let passing = Failed {
+            prompt: "Write a greeting".into(),
+            account: false,
+        };
+        let account = Failed {
+            account: true,
+            ..passing.clone()
+        };
+        let mail = format!("{MAIL}:\n\n[done 3] from claude-1: ok");
+        for f in [&passing, &account] {
+            assert_eq!(f.then(crate::RETRY_PROMPT), ["Write a greeting"]);
+            assert_eq!(f.then(&mail), ["Write a greeting", mail.as_str()]);
+        }
+        // The person's words: new work after a passing fault, the word to
+        // go on after the account's.
+        assert_eq!(
+            passing.then("And in French"),
+            ["Write a greeting", "And in French"]
+        );
+        assert_eq!(account.then("Paid it, go on"), ["Write a greeting"]);
+        // Only imece's words are its try again.
+        let near = format!("{} ", crate::RETRY_PROMPT);
+        assert_eq!(passing.then(&near), ["Write a greeting", near.as_str()]);
+    }
+
+    #[test]
+    fn a_failure_streams_claude_code_s_tries_then_an_api_error_and_spends_nothing() {
+        let mut s = stream();
+        s.spent = 20_000;
+        let mut waited = 0;
+        s.failure(crate::Fault::Passing, "s1", || waited += 1);
+        let lines: Vec<Value> = (String::from_utf8(std::mem::take(&mut s.out)).unwrap())
+            .lines()
+            .map(|l| serde_json::from_str(l).unwrap())
+            .collect();
+        assert_eq!(waited, TRIES);
+        assert_eq!(lines.len(), 4);
+        let tries: Vec<(u64, u64)> = (lines[..3].iter())
+            .map(|l| {
+                assert_eq!(
+                    (
+                        &l["subtype"],
+                        &l["max_retries"],
+                        &l["error_status"],
+                        &l["error"]
+                    ),
+                    (
+                        &json!("api_retry"),
+                        &json!(10),
+                        &json!(529),
+                        &json!("overloaded")
+                    )
+                );
+                assert_eq!(l["session_id"], "s1");
+                (
+                    l["attempt"].as_u64().unwrap(),
+                    l["retry_delay_ms"].as_u64().unwrap(),
+                )
+            })
+            .collect();
+        assert_eq!(tries, [(1, 500), (2, 1_000), (3, 2_000)]);
+        let end = &lines[3];
+        assert_eq!(
+            (
+                &end["type"],
+                &end["subtype"],
+                &end["is_error"],
+                &end["terminal_reason"]
+            ),
+            (
+                &json!("result"),
+                &json!("success"),
+                &json!(true),
+                &json!("api_error")
+            )
+        );
+        assert_eq!(
+            (&end["api_error_status"], &end["result"]),
+            (&json!(529), &json!(OVERLOADED))
+        );
+        assert_eq!(
+            end["total_cost_usd"],
+            json!(0.02),
+            "what was spent before, no more"
+        );
+        assert_eq!(end["modelUsage"]["m"]["contextWindow"], json!(WINDOW));
+        assert_eq!(s.spent, 20_000);
+        // The account's: refused at once, no tries.
+        s.failure(crate::Fault::Account, "s1", || waited += 1);
+        let out = String::from_utf8(s.out).unwrap();
+        let lines: Vec<Value> = out
+            .lines()
+            .map(|l| serde_json::from_str(l).unwrap())
+            .collect();
+        assert_eq!((lines.len(), waited), (1, TRIES));
+        assert_eq!(
+            (
+                &lines[0]["api_error_status"],
+                &lines[0]["result"],
+                &lines[0]["is_error"]
+            ),
+            (&json!(400), &json!(NO_CREDIT), &json!(true))
+        );
+    }
+
+    #[test]
+    fn a_turn_fails_as_its_habits_say_and_the_one_after_a_failure_goes_through() {
+        use crate::{Event, Fault};
+        let name = "imece lead";
+        let habits = |seed| Habits {
+            faults: 1,
+            seed,
+            ..Habits::default()
+        };
+        // Seeds whose first and third turns fail on a passing fault, and
+        // on the account's.
+        let seed_of = |kind| {
+            let fault = |s, n| habits(s).fault_now(work::roll(s, name, n));
+            (0..1_000u64)
+                .find(|&s| fault(s, 0) == Some(kind) && fault(s, 2) == Some(kind))
+                .unwrap()
+        };
+        let run_on = |seed, home: &Path, prompts: &[&str]| {
+            let a = Args::parse(&strings(&[
+                "--name",
+                name,
+                "--permission-mode",
+                "acceptEdits",
+            ]))
+            .unwrap();
+            let input: String = (prompts.iter())
+                .map(|p| crate::claude::prompt_line(p) + "\n")
+                .collect();
+            let mut out = Vec::new();
+            let cwd = Path::new("/work");
+            run(
+                &a,
+                cwd,
+                Some(home),
+                &habits(seed),
+                input.as_bytes(),
+                &mut out,
+            );
+            let session = (String::from_utf8(out.clone()).unwrap().lines())
+                .find_map(|l| {
+                    serde_json::from_str::<Value>(l).ok()?["session_id"]
+                        .as_str()
+                        .map(String::from)
+                })
+                .unwrap();
+            (
+                parsed(&String::from_utf8(out).unwrap(), &a),
+                kept(home, &session).unwrap(),
+            )
+        };
+        let home =
+            std::env::temp_dir().join(format!("imece-stand-in-faults-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        let ends = |events: &[Event]| -> Vec<(bool, String, u64)> {
+            (events.iter())
+                .filter_map(|e| match e {
+                    Event::TurnDone { ok, text, cost, .. } => Some((*ok, text.clone(), *cost)),
+                    _ => None,
+                })
+                .collect()
+        };
+        let (events, k) = run_on(seed_of(Fault::Passing), &home, &["one", "two", "three"]);
+        let failed = (false, OVERLOADED.to_string(), 0);
+        let worked = (
+            true,
+            "Nothing for me to do here.\n\nNothing for me to do here.".to_string(),
+            TURN_COST,
+        );
+        // Every turn fails but the one after a failure, which does the
+        // failed prompt and the new one.
+        assert_eq!(
+            ends(&events),
+            [
+                failed.clone(),
+                worked,
+                (false, OVERLOADED.into(), TURN_COST)
+            ]
+        );
+        let notes = (events.iter())
+            .filter(|e| matches!(e, Event::Note(n) if n.contains("api error 529")))
+            .count();
+        assert_eq!(
+            notes,
+            2 * TRIES as usize,
+            "Claude Code's own tries, as trace notes"
+        );
+        assert_eq!(
+            events
+                .iter()
+                .filter(|e| **e == Event::Failed(Fault::Passing))
+                .count(),
+            2
+        );
+        // The transcript keeps the failed prompt for a resume.
+        assert_eq!(k.mind.turns, 3);
+        assert_eq!(
+            k.mind.failed,
+            Some(Failed {
+                prompt: "three".into(),
+                account: false
+            })
+        );
+        let (events, k) = run_on(seed_of(Fault::Account), &home, &["one"]);
+        assert_eq!(ends(&events), [(false, NO_CREDIT.to_string(), 0)]);
+        assert!(events.contains(&Event::Failed(Fault::Account)));
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, Event::Note(n) if n.contains("api error")))
+        );
+        assert!(k.mind.failed.is_some_and(|f| f.account));
+        // Without the habit, nothing fails.
+        let a = Args::parse(&strings(&[
+            "--name",
+            name,
+            "--permission-mode",
+            "acceptEdits",
+        ]))
+        .unwrap();
+        let mut out = Vec::new();
+        let input = crate::claude::prompt_line("one") + "\n";
+        run(
+            &a,
+            Path::new("/work"),
+            None,
+            &Habits::default(),
+            input.as_bytes(),
+            &mut out,
+        );
+        assert_eq!(
+            ends(&parsed(&String::from_utf8(out).unwrap(), &a)),
+            [(true, "Nothing for me to do here.".to_string(), TURN_COST)]
+        );
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
     fn a_session_on_the_background_s_model_says_its_whole_cost_as_that_model_s() {
         let mut s = stream();
         s.spent = 16_000;
@@ -1824,6 +2226,7 @@ mod tests {
             asks: 3,
             questions: 5,
             helpers: 6,
+            faults: 8,
             seed: 7,
         };
         let claude = install(&dir, &imece, &home, &habits).unwrap();
@@ -1838,11 +2241,11 @@ mod tests {
         // Its habits reach the stand-in.
         std::fs::write(
             &imece,
-            "#!/bin/sh\nprintf '%s|' \"$IMECE_STAND_IN_PAUSE_MS\" \"$IMECE_STAND_IN_ASKS\" \"$IMECE_STAND_IN_QUESTIONS\" \"$IMECE_STAND_IN_HELPERS\" \"$IMECE_STAND_IN_SEED\"\n",
+            "#!/bin/sh\nprintf '%s|' \"$IMECE_STAND_IN_PAUSE_MS\" \"$IMECE_STAND_IN_ASKS\" \"$IMECE_STAND_IN_QUESTIONS\" \"$IMECE_STAND_IN_HELPERS\" \"$IMECE_STAND_IN_FAULTS\" \"$IMECE_STAND_IN_SEED\"\n",
         )
         .unwrap();
         let out = Command::new(&claude).output().unwrap();
-        assert_eq!(String::from_utf8_lossy(&out.stdout), "250|3|5|6|7|");
+        assert_eq!(String::from_utf8_lossy(&out.stdout), "250|3|5|6|8|7|");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

@@ -284,4 +284,45 @@ Next: faults and retries, rate limits and context, strays and the plan
 gate, the leader's board and cards, informs to the person, the commit and
 review one-shots; then Lonca's fake daemon, then `Engine::Sim` goes.
 
+## A turn that fails at Claude's API (2026-11-10)
+
+One turn in `Habits.faults` (`IMECE_STAND_IN_FAULTS`, never at 0; by the
+bits from the 40th of `roll(seed, --name, the session's turn)`, so any
+session's turn, the leader's too) fails before any work, as Claude Code
+says an API error (record 79's probe): of those, one in `ACCOUNT_IN` 3
+(the bits from the 48th) is the account's, a bill unpaid refused at once
+(`api_error_status` 400, `Credit balance is too low`), the rest an
+overloaded API after Claude Code's own `TRIES` 3 tries, each an
+`api_retry` line (`max_retries` 10, 500 ms doubling, the habits' pause
+between them), then `is_error` true, `terminal_reason` `api_error`,
+status 529. Nothing is spent on it. imece's parser and `World::turn_failed`
+do the rest as with Claude Code: a passing fault is tried again after
+30 s with `RETRY_PROMPT` (now `imece_agent`'s, so the stand-in knows it),
+the account's waits in TO DECIDE until the person writes.
+
+The failed prompt stays in the session, as Claude Code keeps it
+(`Mind.failed: Failed { prompt, account }`, with `Mind.turns` in the
+transcript, so a resumed session still owes it). The next turn never
+fails, so imece's three tries are never used up, and does what
+`Failed::then` says: imece's try again is the failed prompt alone; after
+the account's fault the person's words are the word to go on (imece
+holds the agent's mail while it waits, record 107); any other prompt
+(mail, or the person's words after a passing fault) is done after the
+failed one in the same turn, the two texts a blank line apart. `--name`
+is read for the roll. The demo fails one turn in eight (`FAULTS` 8). The
+test `a_turn_that_fails_at_the_api_is_tried_again_and_the_account_s_waits_for_the_person`
+runs it on the real `Live`: the leader's first turn fails and is tried
+again once the clock says so (moved in the test, not waited for), then
+hires and assigns; its worker's first turn fails on the account, waits
+with no retry, and does its assign at the person's word.
+
+`Sim` fails only answers to the person, every third and seventh; the
+stand-in fails any turn, so a worker's and a helper's fail too. A
+passing fault past its third try is not made to happen (as in `Sim`),
+and a helper is not lost mid-part by it: its turn is tried again.
+
+Next: rate limits and context, strays and the plan gate, the leader's
+board and cards, informs to the person, the commit and review one-shots;
+then Lonca's fake daemon, then `Engine::Sim` goes.
+
 Under `--replay-user-messages` (every session since record 135) it echoes each prompt as it takes it, `"isReplay": true`, before the turn's work; its commands (`/clear`) are not echoed, as Claude Code's are not.
