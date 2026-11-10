@@ -56,8 +56,9 @@ impl Owned {
 /// The paths `v` (a tool call's `paths`) lists: nothing when it is not
 /// given, else an array of at most [`MAX_PATHS`] strings, each a path
 /// relative to the repository of at most [`MAX_PATH`] characters, no
-/// control character, no `..`; one ending in ` shared` is shared. A
-/// leading `./` and a trailing `/` are dropped. Refused whole with why.
+/// control character, no `..`; one ending in ` shared` is shared. Each
+/// path is kept as git reads it ([`normal`]: no `.` part, no empty part,
+/// so `././x/` is `x`). Refused whole with why.
 pub fn parse(v: &Value) -> Result<Vec<Owned>, String> {
     if v.is_null() {
         return Ok(Vec::new());
@@ -78,8 +79,8 @@ pub fn parse(v: &Value) -> Result<Vec<Owned>, String> {
             Some(before) if before.ends_with(char::is_whitespace) => (before.trim_end(), true),
             _ => (text, false),
         };
-        let path = path.strip_prefix("./").unwrap_or(path);
-        let path = path.strip_suffix('/').unwrap_or(path);
+        let given = path;
+        let path = normal(given);
         if path.is_empty() {
             return Err("a path is empty".into());
         }
@@ -89,9 +90,9 @@ pub fn parse(v: &Value) -> Result<Vec<Owned>, String> {
         if path.chars().any(char::is_control) {
             return Err(format!("{path:?} has a control character"));
         }
-        if path.starts_with('/') {
+        if given.starts_with('/') {
             return Err(format!(
-                "paths are relative to the repository; {path:?} starts with /"
+                "paths are relative to the repository; {given:?} starts with /"
             ));
         }
         if path.split('/').any(|part| part == "..") {
@@ -100,37 +101,46 @@ pub fn parse(v: &Value) -> Result<Vec<Owned>, String> {
         if out.iter().any(|o| o.path == path) {
             return Err(format!("paths lists {path:?} twice"));
         }
-        out.push(Owned {
-            path: path.to_string(),
-            shared,
-        });
+        out.push(Owned { path, shared });
     }
     Ok(out)
 }
 
-/// Whether `pattern` names `target`: the same path, a directory it is
-/// under, or a pattern it matches (`*` for anything), whole or as a
-/// directory it is under.
-fn names(pattern: &str, target: &str) -> bool {
-    let target = target.strip_prefix("./").unwrap_or(target);
-    let p: Vec<char> = pattern.chars().collect();
-    glob(&p, &target.chars().collect::<Vec<char>>())
-        || target
-            .char_indices()
-            .filter(|&(_, c)| c == '/')
-            .any(|(i, _)| glob(&p, &target[..i].chars().collect::<Vec<char>>()))
+/// `path` with its `.` parts and empty ones left out (`./a//b/.` is
+/// `a/b`), as git reads a path: one file has one name, so a card that owns
+/// `././x` owns the `x` an agent writes. Nothing else changes: `..` and a
+/// leading `/` are refused by [`parse`], not read away.
+fn normal(path: &str) -> String {
+    (path.split('/'))
+        .filter(|part| !part.is_empty() && *part != ".")
+        .collect::<Vec<_>>()
+        .join("/")
 }
 
-/// Whether `p` matches the whole of `t`, `*` standing for any run of
-/// characters. Pattern character by pattern character over every length
-/// of `t` (no backtracking: a pattern of many stars, which an agent may
-/// send, costs no more than its length times the target's).
-fn glob(p: &[char], t: &[char]) -> bool {
+/// Whether `pattern` names `target`: the same path, a directory it is
+/// under, or a pattern it matches (`*` for anything), whole or as a
+/// directory it is under. One pass over the target answers for every
+/// directory it is under at once: a written path is the agent's, and one
+/// of thousands of directories costs no more than its length times the
+/// pattern's.
+fn names(pattern: &str, target: &str) -> bool {
+    // A card saved before paths were kept [`normal`] may own `./x`.
+    let p: Vec<char> = normal(pattern).chars().collect();
+    let t: Vec<char> = normal(target).chars().collect();
+    let matched = prefixes(&p, &t);
+    matched[t.len()] || (t.iter().zip(&matched)).any(|(&c, &m)| c == '/' && m)
+}
+
+/// For every `j`, whether `p` matches the whole of `t[..j]`, `*` standing
+/// for any run of characters. Pattern character by pattern character over
+/// every length of `t` (no backtracking: a pattern of many stars, which an
+/// agent may send, costs no more than its length times the target's).
+fn prefixes(p: &[char], t: &[char]) -> Vec<bool> {
     // Whether the pattern so far matches the first `j` characters of `t`.
     let mut sofar = vec![false; t.len() + 1];
     sofar[0] = true;
+    let mut next = vec![false; t.len() + 1];
     for &c in p {
-        let mut next = vec![false; t.len() + 1];
         if c == '*' {
             // A star takes any run: the pattern with it matches `t[..j]`
             // when the pattern before it matched some `t[..k]`, k ≤ j.
@@ -140,13 +150,14 @@ fn glob(p: &[char], t: &[char]) -> bool {
                 next[j] = reached;
             }
         } else {
+            next[0] = false;
             for j in 1..=t.len() {
                 next[j] = sofar[j - 1] && t[j - 1] == c;
             }
         }
-        sofar = next;
+        std::mem::swap(&mut sofar, &mut next);
     }
-    sofar[t.len()]
+    sofar
 }
 
 /// Whether writing `target` strays from `paths`: the card owns paths
@@ -212,6 +223,11 @@ mod tests {
             Ok(vec![Owned::new("unshared")])
         );
         assert_eq!(parse(&json!(["a/b/"])), Ok(vec![Owned::new("a/b")]));
+        // Every `.` part and empty one goes, wherever it is.
+        assert_eq!(
+            parse(&json!(["././x", "a/./b//c/.", ".//d"])),
+            Ok(vec![Owned::new("x"), Owned::new("a/b/c"), Owned::new("d")])
+        );
         assert_eq!(
             parse(&json!(["a/b/ shared"])),
             Ok(vec![Owned::shared("a/b")])
@@ -230,6 +246,13 @@ mod tests {
         assert_eq!(refused(json!(["a", ""])), "a path is empty");
         assert_eq!(refused(json!(["./"])), "a path is empty");
         assert_eq!(refused(json!(["/"])), "a path is empty");
+        assert_eq!(refused(json!(["."])), "a path is empty");
+        assert_eq!(refused(json!(["././"])), "a path is empty");
+        assert_eq!(
+            refused(json!(["//etc"])),
+            "paths are relative to the repository; \"//etc\" starts with /"
+        );
+        assert_eq!(refused(json!(["x", "./x/"])), "paths lists \"x\" twice");
         assert_eq!(
             refused(json!(["/etc/passwd"])),
             "paths are relative to the repository; \"/etc/passwd\" starts with /"
@@ -270,6 +293,8 @@ mod tests {
     fn a_path_names_itself_what_is_under_it_and_what_its_star_matches() {
         assert!(names("src/a.rs", "src/a.rs"));
         assert!(names("src/a.rs", "./src/a.rs"));
+        assert!(names("src/a.rs", "././src//./a.rs"));
+        assert!(names("src", "src/./deep//a.rs"));
         assert!(!names("src/a.rs", "src/a.rs.bak"));
         assert!(!names("src/a.rs", "src/a"));
         assert!(!names("src/a.rs", "lib/src/a.rs"));
@@ -308,6 +333,14 @@ mod tests {
         let long = "ab".repeat(100);
         assert!(names(&stars, &long));
         assert!(!names(&format!("{stars}c"), &long));
+        // Nor does a written path of many directories: each one it is
+        // under is answered by the same pass (looked at one by one, this
+        // took hours).
+        let deep = "a/".repeat(50_000);
+        let pattern = format!("{}x", "a*".repeat(MAX_PATH / 2 - 1));
+        assert!(!names(&pattern, &deep));
+        assert!(names(&format!("{}a", "a/".repeat(9)), &deep));
+        assert!(names("a/a/*/a", &deep));
     }
 
     #[test]
@@ -321,6 +354,14 @@ mod tests {
         );
         assert!(strays(&paths, "src/b.rs"));
         assert!(strays(&paths, "Cargo.toml"));
+        // A path the card owns, however either side writes it.
+        let dotted = owned(&["././x", "a/./b"]);
+        for own in ["x", "./x", "././x", "a/b", "a//b/c", "./a/./b/c"] {
+            assert!(!strays(&dotted, own), "{own}");
+        }
+        assert!(strays(&dotted, "y"));
+        // A card saved before kept `./x` as it was given.
+        assert!(!strays(&[Owned::new("./x")], "x"));
     }
 
     #[test]
