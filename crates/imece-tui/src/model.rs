@@ -19,6 +19,14 @@ pub type ProjectId = usize;
 
 /// Seconds per tick.
 pub const SECONDS_PER_TICK: u64 = 5;
+
+/// How long a session's ask waits for the person's yes, in ticks: 24
+/// days. Claude Code waits on imece's answer at most
+/// `claude::CALL_TIMEOUT_MS` (24 days 20 h), so the no imece gives then
+/// (`claude::UNANSWERED`) still reaches the session that waits, and an
+/// open ask always has a session behind it (record 146, part 4).
+pub const ASK_LIFE: u64 = 24 * 24 * 3600 / SECONDS_PER_TICK;
+
 /// How many of a checkout's files are kept for completion.
 pub const FILES_MAX: usize = 20_000;
 /// How far back the spending rate looks, in ticks: long enough for a few
@@ -1958,6 +1966,12 @@ pub enum Event {
         what: String,
         allowed: bool,
     },
+    /// What a live agent's session asked had no answer while the session
+    /// could wait for one ([`ASK_LIFE`]): the session was told no.
+    AskExpired {
+        agent: AgentId,
+        what: String,
+    },
     /// The person said yes to everything `agent` asks until its turn
     /// ends.
     TurnYes {
@@ -2684,6 +2698,7 @@ impl Event {
             | Event::CardFailed { .. }
             | Event::Stopped { .. }
             | Event::TurnFailed { .. }
+            | Event::AskExpired { .. }
             | Event::Halted { .. }
             | Event::Interrupted { .. }
             | Event::SuggestFailed { .. }
@@ -2795,6 +2810,7 @@ impl Event {
             | Event::Approved { agent, .. }
             | Event::Rejected { agent }
             | Event::Decided { agent, .. }
+            | Event::AskExpired { agent, .. }
             | Event::TurnYes { agent }
             | Event::TurnYesEnded { agent, .. }
             | Event::Replied { agent, .. }
@@ -6088,6 +6104,30 @@ impl World {
         true
     }
 
+    /// The open asks that came `life` ticks ago ([`ASK_LIFE`] live) or
+    /// more, in the inbox's order (oldest first): whoever drives their sessions answers them no
+    /// ([`World::ask_expired`]).
+    pub fn asks_expired(&self, life: u64) -> Vec<usize> {
+        (self.inbox.iter().enumerate())
+            .filter(|(_, i)| i.open && i.kind == InboxKind::Approval)
+            .filter(|(_, i)| self.tick.saturating_sub(i.tick) >= life)
+            .map(|(n, _)| n)
+            .collect()
+    }
+
+    /// Open ask `item` had no answer in time: closed, the journal says so.
+    /// Anything else is left alone.
+    pub fn ask_expired(&mut self, item: usize) {
+        let Some(it) =
+            (self.inbox.get_mut(item)).filter(|i| i.open && i.kind == InboxKind::Approval)
+        else {
+            return;
+        };
+        it.open = false;
+        let (agent, what) = (it.agent, it.detail.clone());
+        self.note(Event::AskExpired { agent, what });
+    }
+
     /// The person allowed or refused what open item `item` asks: it
     /// closes and the journal says so. Anything but an open approval is
     /// left alone.
@@ -6108,7 +6148,6 @@ impl World {
         });
     }
 
-    /// Agent `id`'s session is over: what it asked waits for nobody.
     /// The person said yes to the setup script `key`: kept, the newest
     /// last, the oldest let go past [`SETUP_KEPT`].
     pub fn approve_setup(&mut self, key: String) {
@@ -6140,6 +6179,7 @@ impl World {
         }
     }
 
+    /// Agent `id`'s session is over: what it asked waits for nobody.
     pub fn close_approvals(&mut self, id: AgentId) {
         for i in &mut self.inbox {
             if i.kind == InboxKind::Approval && i.agent == id {
@@ -9207,6 +9247,42 @@ mod tests {
             allowed: true,
         };
         assert_eq!((e.kind(), e.agent()), (EntryKind::Person, 2));
+    }
+
+    #[test]
+    fn an_ask_left_for_its_life_expires_from_the_tick_it_reaches_it_and_only_once() {
+        let mut w = crate::live::testing::team(2);
+        w.tick = 10;
+        w.asks_you(1, "Bash: make a");
+        w.tick = 12;
+        w.asks_you(2, "Bash: make b\nc");
+        w.asked_you(1, "Which?");
+        w.inbox[2].tick = 0;
+        w.tick = 15;
+        assert!(w.asks_expired(6).is_empty(), "one tick short of its life");
+        assert_eq!(w.asks_expired(5), [0], "the equal case expires");
+        assert_eq!(w.asks_expired(3), [0, 1], "in order; a question never");
+        w.tick = 5;
+        assert!(w.asks_expired(1).is_empty(), "a tick before the ask");
+        w.tick = 15;
+        let journal = w.journal.len();
+        w.ask_expired(1);
+        assert!(!w.inbox[1].open && w.inbox[0].open);
+        assert!(matches!(
+            &w.journal.last().unwrap().event,
+            Event::AskExpired { agent: 2, what } if what == "Bash: make b\nc"
+        ));
+        w.ask_expired(1);
+        w.ask_expired(2);
+        w.ask_expired(99);
+        assert_eq!(w.journal.len(), journal + 1, "once, and never a question");
+        assert!(w.inbox[2].open);
+        assert_eq!(w.asks_expired(3), [0]);
+        let e = Event::AskExpired {
+            agent: 2,
+            what: "x".into(),
+        };
+        assert_eq!((e.kind(), e.agent()), (EntryKind::Failed, 2));
     }
 
     #[test]

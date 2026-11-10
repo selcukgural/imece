@@ -165,6 +165,20 @@ const PERMISSION_MODE: &str = "acceptEdits";
 pub const REFUSED: &str = "The person refused this. Do not try it another way; if you \
      need it, ask them (send to you, type ask) and go on with what does not depend on it.";
 
+/// What a session reads when nobody answered what it asked while it could
+/// wait (imece's `ASK_LIFE`, record 146 part 4).
+pub const UNANSWERED: &str = "Nobody answered this in 24 days, so it was not done. If you \
+     still need it, ask the person (send to you, type ask) and go on with what does not \
+     depend on it.";
+
+/// The longest Claude Code waits on a call to an MCP server, in
+/// milliseconds: it holds any longer one to this (2^31 - 1, 24 days 20 h;
+/// the probe of 2026-11-10, Claude Code 2.1.322). imece's server asks it
+/// by name (`timeout`), so a session waits on the person's yes as long as
+/// it can, whatever Claude Code's default (1e8 ms, 27.8 h) or the
+/// person's `MCP_TOOL_TIMEOUT`.
+pub const CALL_TIMEOUT_MS: u64 = 2_147_483_647;
+
 /// Claude Code names a tool of an MCP server `mcp__<server>__<tool>`, which
 /// is the name the screen uses.
 pub use crate::{APPROVE_TOOL, Ask, Confine, MCP_SERVER, Mcp, mcp_tool};
@@ -522,6 +536,7 @@ pub fn args(spec: &Spec) -> Vec<String> {
             "type": "stdio",
             "command": mcp.command,
             "args": mcp.args,
+            "timeout": CALL_TIMEOUT_MS,
         });
         servers.insert(MCP_SERVER.into(), server);
         allowed.extend(mcp.tools.iter().map(|t| mcp_tool(t)));
@@ -612,11 +627,15 @@ fn detail(input: &Value) -> String {
 /// is refused with [`REFUSED`].
 pub fn decision(allow: bool, input: &Value) -> String {
     if allow {
-        serde_json::json!({ "behavior": "allow", "updatedInput": input })
+        serde_json::json!({ "behavior": "allow", "updatedInput": input }).to_string()
     } else {
-        serde_json::json!({ "behavior": "deny", "message": REFUSED })
+        denied(REFUSED)
     }
-    .to_string()
+}
+
+/// The `approve` tool's no, with what the session reads about it.
+pub fn denied(message: &str) -> String {
+    serde_json::json!({ "behavior": "deny", "message": message }).to_string()
 }
 
 /// A prompt Claude Code would run as a slash command of its own (`/clear`,
@@ -1669,6 +1688,10 @@ mod tests {
         assert_eq!(lonca["command"], "/opt/my tools/lon'ca");
         assert_eq!(lonca["args"], serde_json::json!(["mcp"]));
         assert_eq!(config["mcpServers"]["imece"]["command"], "/opt/imece");
+        // A call to imece waits as long as Claude Code lets it: the
+        // person's yes may come days later. Lonca's keep the default.
+        assert_eq!(config["mcpServers"]["imece"]["timeout"], 2_147_483_647u64);
+        assert!(lonca.get("timeout").is_none(), "{lonca}");
         // Allowed by exact name, the bus's tools still.
         let allowed = after(&a, "--allowedTools").unwrap();
         let allowed: Vec<&str> = allowed.split(',').collect();
@@ -2282,6 +2305,12 @@ mod tests {
             serde_json::json!({ "behavior": "deny", "message": REFUSED })
         );
         assert!(REFUSED.contains("send to you, type ask"), "{REFUSED}");
+        let late: Value = serde_json::from_str(&denied(UNANSWERED)).unwrap();
+        assert_eq!(
+            late,
+            serde_json::json!({ "behavior": "deny", "message": UNANSWERED })
+        );
+        assert!(UNANSWERED.contains("24 days"), "{UNANSWERED}");
     }
 
     #[test]

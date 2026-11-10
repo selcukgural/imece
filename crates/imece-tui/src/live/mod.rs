@@ -411,9 +411,12 @@ const MAX_POSTS: u32 = 10;
 /// How long a tool call waits for the screen's loop to answer it.
 const CALL_WAIT: Duration = Duration::from_secs(30);
 
-/// How long a session's ask waits for the person's yes: the person may be
-/// away for hours, and the session waits with them.
-const APPROVE_WAIT: Duration = Duration::from_secs(24 * 3600);
+/// How long a session's ask waits on its socket for the person's yes: the
+/// person may be away for days, and the session waits with them. Longer
+/// than [`ASK_LIFE`], so the no imece gives then still finds the call
+/// waiting; shorter than `claude::CALL_TIMEOUT_MS`, so Claude Code never
+/// gives up first.
+const APPROVE_WAIT: Duration = Duration::from_secs(ASK_LIFE * SECONDS_PER_TICK + 3600);
 
 /// How long one run may take unless `--run-timeout` says otherwise.
 pub const DEFAULT_RUN_TIMEOUT: Duration = Duration::from_secs(600);
@@ -1538,6 +1541,7 @@ impl Live {
             };
             let _ = reply.send(answer);
         }
+        self.expire_asks(w);
         self.post_office(w);
         self.look_health(w);
         self.look_blocks(w);

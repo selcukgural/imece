@@ -4251,12 +4251,13 @@ impl Sim {
         // A session that waits for the person's yes does nothing else,
         // until it stops waiting.
         if let Some(i) =
-            (w.inbox.iter_mut()).find(|i| i.open && i.kind == InboxKind::Approval && i.agent == id)
+            (w.inbox.iter()).position(|i| i.open && i.kind == InboxKind::Approval && i.agent == id)
         {
-            // The demo does not wait as live does, up to a day: nobody may
-            // be there, and the show goes on.
-            if t >= i.tick + APPROVAL_WAIT {
-                i.open = false;
+            // The demo does not wait as live does, 24 days (`ASK_LIFE`):
+            // nobody may be there, and the show goes on. It is told no
+            // as live's session is, with the same journal line.
+            if w.asks_expired(APPROVAL_WAIT).contains(&i) {
+                w.ask_expired(i);
                 w.agents[id].trace(t, "no answer in time; the tool call was refused");
             }
             return;
@@ -7774,6 +7775,11 @@ diff --git a/b.rs b/b.rs
         s.step(&mut w);
         assert!(!w.inbox[item].open);
         assert_eq!(decided(&w), before, "nobody decided");
+        // The journal says so, as live's does.
+        let expired = (w.journal.iter())
+            .filter(|e| matches!(&e.event, Event::AskExpired { agent, .. } if *agent == worker))
+            .count();
+        assert_eq!(expired, 1);
         assert_eq!(APPROVAL_WAIT, 20);
     }
 

@@ -230,7 +230,7 @@ A worker's or helper's run is kept with the tree its worktree had before and aft
 | `input` | object | yes |
 | `tool_use_id` | string | no |
 
-Only on a Claude agent's socket, and only under `standard` and `open`: Claude Code calls it itself (`--permission-prompt-tool mcp__imece__approve`) before a tool call its own rules would ask about, and hides it from the model. A routine command (one line, one program and its arguments, allowed by the `run` policy for the role and your `--run` list) is allowed at once, with a trace line `allowed on its own`; anything else is a `⚑` item in TO DECIDE, shown whole, and the call waits up to a day for your `a` or `r`. A refusal answers `The person refused this. Do not try it another way; if you need it, ask them …`. See [approvals and questions](../concepts/approvals-and-questions.md).
+Only on a Claude agent's socket, and only under `standard` and `open`: Claude Code calls it itself (`--permission-prompt-tool mcp__imece__approve`) before a tool call its own rules would ask about, and hides it from the model. A routine command (one line, one program and its arguments, allowed by the `run` policy for the role and your `--run` list) is allowed at once, with a trace line `allowed on its own`; anything else is a `⚑` item in TO DECIDE, shown whole, and the call waits up to 24 days for your `a` or `r` (then the session is told nobody answered, and the item closes). A refusal answers `The person refused this. Do not try it another way; if you need it, ask them …`. See [approvals and questions](../concepts/approvals-and-questions.md).
 
 ## What an agent is told
 

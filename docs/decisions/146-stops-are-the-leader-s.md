@@ -28,7 +28,8 @@ row that looks idle; SILENT: nowhere.
   `session ended` while the session lived); a passing API fault (LOUD,
   heals itself); a setup script that failed (QUIET); a permission ask
   Claude Code gave up on (stale: the item stays and holds the worker's
-  mail; how long Claude Code waits is not in the code).
+  mail; how long Claude Code waits is not in the code; part 4 probed
+  it: 27.8 hours, and fixed it).
 - Waiting for what never comes: a teammate's `ask` with no answer
   (QUIET; `Status::Asking` is never set live, so health's `Waiting`
   never fires there); a proposal Lonca sent back (QUIET, the worker
@@ -356,6 +357,54 @@ tick they are posted at as `started`, as live's do. The tests' person
 (`answer_all`) leaves an item an earlier answer closed; one seeded test
 took a new seed (1).
 
+## Part 4, as built
+
+**The probe** (2026-11-10, Claude Code 2.1.322, haiku, imece's flags
+with a stub server that never answers `approve`):
+
+- The permission tool's call is an MCP tool call like any other: it
+  waits `timeout` of the server's entry in `--mcp-config`, else
+  `MCP_TOOL_TIMEOUT`, else 1e8 ms (27.8 hours), held to 1,000 ms at
+  least and 2^31 - 1 ms (24 days 20 hours) at most (read from the
+  binary; `MCP_TOOL_TIMEOUT=5000` and `"timeout": 4000` each gave up at
+  their time). imece clears the environment (`child::command`), so its
+  sessions waited 27.8 hours.
+- Giving up, Claude Code sends `notifications/cancelled` (`requestId`,
+  `SdkError: Request timed out`), the tool call fails with `<tool_use_error>
+  Error calling tool (Bash): MCP server "imece" tool "approve" timed out
+  after 5s`, and the model tries the same command again: a new ask.
+- A sibling tool call that fails in the same message does not cancel an
+  ask that waits (two parallel Bash calls, a failing `touch` and an
+  asking `curl`: the ask waited until the run was ended). imece starts no
+  interrupt of a turn. So only two things leave an ask with nobody
+  behind it: the session's end (`Live::end` closes them, as before) and
+  that wait.
+- imece's side waited longer than Claude Code: `APPROVE_WAIT` 24 hours,
+  and once taken another 24 (`answer_of`'s late wait). Between 27.8 and
+  48 hours an ask stood open with no session waiting on it, held the
+  worker's mail, and the person's yes reached nobody; imece's `serve`
+  answers one call at a time, so the cancellation and the retried ask
+  were read only after that, and the retry came as a second item.
+
+**The fix**: imece's server entry asks Claude Code to wait as long as it
+can (`"timeout": claude::CALL_TIMEOUT_MS`, 2^31 - 1; Lonca's entry keeps
+the default), so neither its default nor the person's variable decides.
+An ask lives `ASK_LIFE` (24 days, in ticks); `Live::expire_asks`, each
+step before the post office, answers each open ask that reached it
+(`World::asks_expired(life)`, the equal tick included, oldest first)
+with `claude::denied(claude::UNANSWERED)` ("Nobody answered this in 24
+days, so it was not done. If you still need it, ask the person …"),
+closes it (`World::ask_expired`, `Event::AskExpired`, a `Failed` line:
+`claude-1 asked and had no answer in time, so it was told no: Bash: …`)
+and traces it. `APPROVE_WAIT` is `ASK_LIFE` and an hour, inside Claude
+Code's 24 days 20 hours, so the no reaches a call that still waits and
+an open ask always has a session behind it. What the worker does with
+the no is parts 1-3's: it says it is blocked, or goes on.
+
+**The demo**: its asks wait 100 s (`APPROVAL_WAIT`, nobody may be
+watching) and now close through the same `World::ask_expired`, with the
+same journal line; before, only a trace said so.
+
 ## The points of the list
 
 - **Growth**: one `Option<Block>` per agent (record 143's), one `bool`
@@ -390,6 +439,7 @@ took a new seed (1).
   rows, the same rule; `Status::Asking` is not saved (a start puts every
   agent asleep). 3b: `InboxKind::Waits` and the three card events are
   new names in saved rows, the same rule.
+  4: `Event::AskExpired` is a new name in saved rows, the same rule.
 - **Failure**: the block and `revived` are memory only. After a restart
   a stopped worker is asleep with its session remembered, as before, and
   its leader is not told again; one that came to the person is an inbox
@@ -397,7 +447,14 @@ took a new seed (1).
 
 ## Gaps
 
-- Part 4 is not built.
+- Part 4: `serve` still answers one call at a time, so two asks of one
+  session in the same message come one after the other, and a
+  cancellation is read only once the call before it is answered; with
+  the timeouts above nothing can be cancelled while an ask waits, so it
+  is not changed. An ask's life is memory: after a start the store's
+  open asks close (the process is gone), as before. 24 days is not
+  shortened by `:health`: an ask is the person's, and `:notify`, the
+  title and Home already say it waits.
 - Part 3b: a wait is memory only; after a start it is found again and
   its leader told once more. Who a card nobody took was offered to is
   the bus's and not said. A card whose holder (an `assign` held for it)
