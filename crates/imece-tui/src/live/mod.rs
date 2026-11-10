@@ -893,6 +893,7 @@ pub fn world(o: Options) -> Result<(World, Live), String> {
                 journal: Vec::new(),
                 inbox: Vec::new(),
                 stops: Vec::new(),
+                card_waits: Vec::new(),
                 halts: Default::default(),
                 budget: DEFAULT_BUDGET,
                 estimated: false,
@@ -1541,6 +1542,7 @@ impl Live {
         self.look_health(w);
         self.look_blocks(w);
         self.look_stops(w);
+        self.look_card_waits(w);
         for id in 0..self.lost.len() {
             let a = &w.agents[id];
             if self.lost[id]

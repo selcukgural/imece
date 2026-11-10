@@ -7,6 +7,7 @@ mod archives;
 mod awake;
 mod away;
 mod blocked;
+mod card_wait;
 mod checks;
 mod clip;
 mod closes;

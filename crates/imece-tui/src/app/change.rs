@@ -295,7 +295,9 @@ impl App {
         self.diff_zoom().or_else(|| {
             let i = self.waiting_at_hand().or_else(|| match self.home_at()? {
                 HomeRow::Item(i) => Some(i),
-                HomeRow::Agent(_) | HomeRow::Project(_) | HomeRow::Stop(..) => None,
+                HomeRow::Agent(_) | HomeRow::Project(_) | HomeRow::Stop(..) | HomeRow::Card(_) => {
+                    None
+                }
             })?;
             let it = &self.world.inbox[i];
             (it.open && it.kind == InboxKind::Change).then_some(it.agent)

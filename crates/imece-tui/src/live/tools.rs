@@ -697,15 +697,16 @@ pub(super) fn send_tool() -> Tool {
                                     to an ask, and a done for an assign, carry it. Only \
                                     a message sent to you, and the reply goes to its \
                                     sender. The leader's ask to the person about a \
-                                    worker's blocked carries the blocked's number (to: \
-                                    you, with tried and risk).",
+                                    worker's blocked or a card's wait carries its \
+                                    number (to: you, with tried and risk).",
                 },
                 "tried": {
                     "type": "string",
                     "description": "With the leader's ask to the person about a worker's \
-                                    blocked (to: you, re: its number): what you looked at \
-                                    and ruled out before asking, in a few lines. The \
-                                    person reads it under the worker's own words.",
+                                    blocked or a card's wait (to: you, re: its number): \
+                                    what you looked at and ruled out before asking, in a \
+                                    few lines. The person reads it under the worker's \
+                                    own words.",
                     "maxLength": crate::blocked::TRIED_MAX,
                 },
                 "risk": {

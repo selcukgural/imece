@@ -409,11 +409,13 @@ pub(crate) fn home_hints(app: &App) -> Vec<(&'static str, &'static str)> {
     };
     let mut keys = match kind {
         Some(InboxKind::Change) => vec![("enter", t.home_read), ("a", t.apply), ("r", t.reject)],
-        Some(InboxKind::Question | InboxKind::Fault | InboxKind::Blocked) => vec![
-            ("a", t.home_answer),
-            ("enter", t.home_open),
-            ("s", t.home_later),
-        ],
+        Some(InboxKind::Question | InboxKind::Fault | InboxKind::Blocked | InboxKind::Waits) => {
+            vec![
+                ("a", t.home_answer),
+                ("enter", t.home_open),
+                ("s", t.home_later),
+            ]
+        }
         Some(InboxKind::Approval) => vec![("a", t.allow_once), ("r", t.refuse), ("e", t.this_turn)],
         Some(InboxKind::Reply) => vec![
             ("enter", t.home_open),
@@ -549,6 +551,10 @@ fn place_spans(app: &App) -> Vec<Span<'static>> {
                 (item.map(|item| item.agent), item.and_then(|item| item.card))
             }
             Some(crate::app::HomeRow::Agent(id)) => (Some(id), None),
+            Some(crate::app::HomeRow::Card(c)) => {
+                let leader = w.cards.get(c).map(|card| w.projects[card.project].leader);
+                (leader, Some(c))
+            }
             // A project's heading is about no card: the project is named.
             Some(crate::app::HomeRow::Project(_) | crate::app::HomeRow::Stop(..)) | None => {
                 (None, None)

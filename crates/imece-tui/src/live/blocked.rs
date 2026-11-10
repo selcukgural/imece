@@ -17,6 +17,15 @@ impl Live {
                 self.notes[id].push(said);
             }
         }
+        // The cards' waits it read and let lie (record 146, part 3b).
+        for c in w.waits_unsolved(id, stopped) {
+            if stopped {
+                continue;
+            }
+            let said = crate::i18n::fill(WAIT_UNSOLVED, &[&format!("#{}", c + 1)]);
+            w.agents[id].trace(w.tick, format!("told: {said}"));
+            self.notes[id].push(said);
+        }
     }
 
     /// The blocks older than `:health stall` allows come to the person;
@@ -33,6 +42,30 @@ impl Live {
             );
             w.agents[leader].trace(w.tick, format!("told: {said}"));
             self.notes[leader].push(said);
+        }
+        for c in w.waits_too_long() {
+            let Some(leader) = w.card_wait(c).map(|cw| cw.leader) else {
+                continue;
+            };
+            let said = crate::i18n::fill(WAIT_TOO_LONG, &[&format!("#{}", c + 1)]);
+            w.agents[leader].trace(w.tick, format!("told: {said}"));
+            self.notes[leader].push(said);
+        }
+    }
+
+    /// The cards that wait for what never comes from now (record 146,
+    /// part 3b): their leader hears it, and what it may do, with a prompt
+    /// that comes now.
+    pub(super) fn look_card_waits(&mut self, w: &mut World) {
+        for c in w.look_card_waits() {
+            let Some(cw) = w.card_wait(c) else {
+                continue;
+            };
+            let leader = cw.leader;
+            let said = wait_note(w, cw);
+            w.agents[leader].trace(w.tick, format!("told: {said}"));
+            self.notes[leader].push(said);
+            self.lost[leader] = true;
         }
     }
 
@@ -96,6 +129,61 @@ fn stop_note(w: &World, worker: AgentId, b: &crate::blocked::Block) -> String {
              to another worker (assign with card), {ask}.",
             b.said
         ),
+    }
+}
+
+/// A card's wait the leader let lie is before the person now.
+const WAIT_UNSOLVED: &str = "{}'s wait is before the person now: your turn ended without \
+     solving it or asking the person about it. Leave it to them unless you have the way on.";
+
+/// A card's wait the leader had too long is before the person now.
+const WAIT_TOO_LONG: &str = "{}'s wait went unsolved too long and is before the person now. \
+     Leave it to them unless you have the way on.";
+
+/// What a leader is told of card wait `cw`: what the card waits for, and
+/// the ways on it has.
+pub(super) fn wait_note(w: &World, cw: &crate::card_wait::CardWait) -> String {
+    use crate::card_wait::Why;
+    let c = cw.card;
+    let card = format!("#{} {}", c + 1, w.cards[c].title);
+    let n = cw.msg;
+    let ask = format!(
+        "or ask the person (an ask to you with re: {n}, what you tried, and the risk if \
+         there is one)"
+    );
+    match cw.why {
+        Why::After(d) => {
+            let on = format!("#{} {}", d + 1, w.cards[d].title);
+            let why = if w.cards[d].column == Column::Withdrawn {
+                "was withdrawn"
+            } else if w.cards[d].breaker.stopped {
+                "the person failed for good"
+            } else {
+                "failed"
+            };
+            let ways = if w.cards[d].column == Column::Withdrawn || w.cards[d].breaker.stopped {
+                format!("withdraw #{} if it is not needed without it", c + 1)
+            } else {
+                format!(
+                    "hand #{} again (assign with card), withdraw #{} if it is not needed \
+                     without it",
+                    d + 1,
+                    c + 1
+                )
+            };
+            format!(
+                "{card} waits on {on}, which {why}, so it never begins as it is. It is yours \
+                 to solve (stop {n}): {ways}, {ask}."
+            )
+        }
+        Why::Untaken => {
+            let minutes = crate::card_wait::minutes_in(w.tick.saturating_sub(cw.since));
+            format!(
+                "{card} has been on the board {minutes} min and nobody took it. It is yours \
+                 to solve (stop {n}): assign it to a worker (assign with card), hire one if \
+                 you may, withdraw it if it is not needed, {ask}."
+            )
+        }
     }
 }
 
@@ -270,15 +358,16 @@ mod tests {
         let told = with(msg("claude-1", "answer", "x"), "tried", json!("Looked."));
         assert_eq!(
             refused(&mut live, &mut w, 0, &told),
-            "tried and risk go with an ask to the person about a worker's blocked (to: you, \
-             re: the blocked's number)"
+            "tried and risk go with an ask to the person about a worker's blocked or a card's \
+             wait (to: you, re: its number)"
         );
         let risky = with(msg("you", "inform", "x"), "risk", json!("It may."));
         assert!(refused(&mut live, &mut w, 0, &risky).starts_with("tried and risk go with"));
         assert_eq!(
             refused(&mut live, &mut w, 0, &with(ask(), "re", json!(7))),
-            "message 7 is no open blocked of a worker of yours: to the person, re goes only \
-             on an ask about such a blocked, and their own messages have no number"
+            "message 7 is no open blocked of a worker of yours nor a card's wait: to the \
+             person, re goes only on an ask about one of those, and their own messages have no \
+             number"
         );
         // Another agent's is not its.
         assert!(
@@ -292,8 +381,8 @@ mod tests {
                 2,
                 &with(ask(), "tried", json!("Looked."))
             ),
-            "tried and risk are for an ask about a worker's blocked: name it with re, its \
-             number"
+            "tried and risk are for an ask about a worker's blocked or a card's wait: name it \
+             with re, its number"
         );
         assert_eq!(
             refused(&mut live, &mut w, 0, &about(json!(3), json!(null))),
@@ -814,5 +903,121 @@ mod tests {
         assert!(!w.agents[1].revived);
         assert_eq!(w.agents[1].block, None);
         assert_eq!(open(&w), [(InboxKind::Reply, 0)]);
+    }
+
+    #[test]
+    fn a_card_nobody_takes_is_its_leader_s_and_its_question_and_turn_end_follow() {
+        let (mut w, mut live) = idle_team();
+        w.agents[0].status = Status::Idle;
+        live.post(&mut w, 0, &card("Docs", "Write them")).unwrap();
+        let c = w.cards.len() - 1;
+        w.tick = w.cards[c].started + 119;
+        live.look_card_waits(&mut w);
+        assert!(
+            live.notes[0].is_empty() && !live.lost[0],
+            "not before the stall"
+        );
+        w.tick += 1;
+        live.look_card_waits(&mut w);
+        let n = w.card_wait(c).unwrap().msg;
+        assert_eq!(
+            live.notes[0],
+            [format!(
+                "#{} Docs has been on the board 10 min and nobody took it. It is yours to solve \
+                 (stop {n}): assign it to a worker (assign with card), hire one if you may, \
+                 withdraw it if it is not needed, or ask the person (an ask to you with re: \
+                 {n}, what you tried, and the risk if there is one).",
+                c + 1
+            )]
+        );
+        assert!(live.lost[0], "woken");
+        // Its next prompt takes it.
+        w.stops_read(0);
+        assert!(w.card_wait(c).unwrap().read);
+        // It asks the person about it, naming it.
+        let ask = with(
+            with(msg("you", "ask", "Withdraw it?"), "re", json!(n)),
+            "tried",
+            json!("Offered it twice."),
+        );
+        sent(&mut live, &mut w, 0, &ask).unwrap();
+        assert_eq!(
+            w.card_wait(c).unwrap().stage,
+            Stage::Asked {
+                tried: "Offered it twice.".into(),
+                risk: None
+            }
+        );
+        let q = w.open_item(0, InboxKind::Question).unwrap();
+        assert_eq!(q.card, Some(c), "the question stands on the card");
+        // The person answers; the leader's turn ends with the card still
+        // on the board: it is before the person, the leader told so.
+        w.said(0, "Leave it for now.");
+        live.notes[0].clear();
+        live.unsolved(&mut w, 0, false);
+        assert_eq!(
+            live.notes[0],
+            [format!(
+                "#{}'s wait is before the person now: your turn ended without solving it or \
+                 asking the person about it. Leave it to them unless you have the way on.",
+                c + 1
+            )]
+        );
+        assert!(open(&w).contains(&(InboxKind::Waits, 0)));
+        // Withdrawn after all: the wait is over and so is the item.
+        live.withdraw(&mut w, 0, &json!({ "card": c + 1, "why": "Not needed." }))
+            .unwrap();
+        live.look_card_waits(&mut w);
+        assert!(w.card_wait(c).is_none());
+        assert!(!open(&w).contains(&(InboxKind::Waits, 0)));
+    }
+
+    #[test]
+    fn a_card_after_a_withdrawn_one_is_told_its_ways_and_too_long_comes_to_the_person() {
+        let (mut w, mut live) = idle_team();
+        w.agents[0].status = Status::Idle;
+        live.post(&mut w, 0, &card("Schema", "Add it")).unwrap();
+        let first = w.cards.len() - 1;
+        let mut after = card("Import", "Read CSV");
+        after["after"] = json!([first + 1]);
+        live.post(&mut w, 0, &after).unwrap();
+        let c = w.cards.len() - 1;
+        live.withdraw(
+            &mut w,
+            0,
+            &json!({ "card": first + 1, "why": "Not needed." }),
+        )
+        .unwrap();
+        live.look_card_waits(&mut w);
+        let n = w.card_wait(c).unwrap().msg;
+        assert_eq!(
+            live.notes[0],
+            [format!(
+                "#{} Import waits on #{} Schema, which was withdrawn, so it never begins as it \
+                 is. It is yours to solve (stop {n}): withdraw #{} if it is not needed without \
+                 it, or ask the person (an ask to you with re: {n}, what you tried, and the \
+                 risk if there is one).",
+                c + 1,
+                first + 1,
+                c + 1
+            )]
+        );
+        // Too long with its leader: before the person, the leader told.
+        live.notes[0].clear();
+        w.tick = w.card_wait(c).unwrap().at + 120;
+        live.look_blocks(&mut w);
+        assert_eq!(
+            live.notes[0],
+            [format!(
+                "#{}'s wait went unsolved too long and is before the person now. Leave it to \
+                 them unless you have the way on.",
+                c + 1
+            )]
+        );
+        assert!(open(&w).contains(&(InboxKind::Waits, 0)));
+        // The person's word gives it back to the leader, the item closes.
+        w.said(0, "Withdraw it.");
+        assert!(!open(&w).contains(&(InboxKind::Waits, 0)));
+        assert_eq!(w.card_wait(c).unwrap().stage, Stage::Leader);
     }
 }

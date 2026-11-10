@@ -265,7 +265,7 @@ impl App {
             Note::Done(_) => false,
             Note::Item(i) => matches!(
                 self.world.inbox[i].kind,
-                InboxKind::Fault | InboxKind::Blocked
+                InboxKind::Fault | InboxKind::Blocked | InboxKind::Waits
             ),
         });
         self.notice_count += 1;

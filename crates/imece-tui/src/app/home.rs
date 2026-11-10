@@ -16,6 +16,9 @@ pub enum HomeRow {
     Agent(AgentId),
     Project(ProjectId),
     Stop(ProjectId, crate::halt::Halt),
+    /// A card that waits for what never comes, its leader on it (record
+    /// 146, part 3b).
+    Card(CardId),
 }
 
 /// The groups of Home's list, in their order (record 125): what stops a
@@ -35,6 +38,7 @@ pub enum HomeGroup {
     Later,
     Team,
     Stuck,
+    Waits,
     Work,
     Quiet,
 }
@@ -55,6 +59,7 @@ impl HomeGroup {
             | InboxKind::Research
             | InboxKind::Fault
             | InboxKind::Blocked
+            | InboxKind::Waits
             | InboxKind::Plan
             | InboxKind::Tries
             | InboxKind::Rounds
@@ -74,9 +79,11 @@ impl HomeGroup {
             | HomeGroup::Change
             | HomeGroup::Reply
             | HomeGroup::Later => Heading::Decide,
-            HomeGroup::Team | HomeGroup::Stuck | HomeGroup::Work | HomeGroup::Quiet => {
-                Heading::Work
-            }
+            HomeGroup::Team
+            | HomeGroup::Stuck
+            | HomeGroup::Waits
+            | HomeGroup::Work
+            | HomeGroup::Quiet => Heading::Work,
         }
     }
 }
@@ -206,6 +213,12 @@ impl App {
                 .collect();
             loose.sort_by_key(|&(group, _)| group);
             under.extend(loose.into_iter().map(|(g, id)| (g, HomeRow::Agent(id))));
+            // The cards that wait for what never comes while their leader
+            // is on it (record 146, part 3b), after the stuck agents.
+            let at = under.partition_point(|&(g, _)| g < HomeGroup::Waits);
+            let cards =
+                (w.waits_with_leader(p).into_iter()).map(|c| (HomeGroup::Waits, HomeRow::Card(c)));
+            under.splice(at..at, cards);
             // A heading stands over rows, or folded over the rows it hides;
             // a project with nobody on the list has none.
             if under.is_empty() {
@@ -235,6 +248,7 @@ impl App {
         let w = &self.world;
         Some(match self.home_at()? {
             HomeRow::Project(p) | HomeRow::Stop(p, _) => p,
+            HomeRow::Card(c) => w.cards[c].project,
             HomeRow::Agent(id) => w.agents[id].project,
             HomeRow::Item(i) => w.agents[w.inbox[i].agent].project,
         })
@@ -319,6 +333,12 @@ impl App {
             Some(HomeRow::Agent(id)) => {
                 self.pane = Pane::Salon;
                 self.selected = Sel::Agent(id);
+            }
+            // A card's wait is its leader's: what the keys write to.
+            Some(HomeRow::Card(c)) => {
+                self.pane = Pane::Salon;
+                let p = self.world.cards[c].project;
+                self.selected = Sel::Agent(self.world.projects[p].leader);
             }
             Some(HomeRow::Project(p) | HomeRow::Stop(p, _)) => {
                 self.pane = Pane::Salon;
@@ -418,6 +438,12 @@ impl App {
                     self.open_halt(p, halt);
                 }
             }
+            // A card that waits opens its screen (record 146, part 3b).
+            KeyCode::Enter if matches!(self.at_home.at, Some(HomeRow::Card(_))) => {
+                if let Some(HomeRow::Card(c)) = self.at_home.at {
+                    self.open_card(c);
+                }
+            }
             // A project's heading opens its leader's work.
             KeyCode::Enter if matches!(self.at_home.at, Some(HomeRow::Project(_))) => {
                 if let Some(HomeRow::Project(p)) = self.at_home.at {
@@ -448,7 +474,11 @@ impl App {
         }
         match self.home_at()? {
             HomeRow::Item(i) if w.inbox[i].kind == InboxKind::Question => Some(i),
-            HomeRow::Item(_) | HomeRow::Agent(_) | HomeRow::Project(_) | HomeRow::Stop(..) => None,
+            HomeRow::Item(_)
+            | HomeRow::Agent(_)
+            | HomeRow::Project(_)
+            | HomeRow::Stop(..)
+            | HomeRow::Card(_) => None,
         }
     }
 
@@ -643,7 +673,7 @@ mod tests {
         assert!(of_p.len() < all);
         let shown = |r: &(HomeGroup, HomeRow)| match r.1 {
             HomeRow::Agent(id) => app.world.agents[id].project == 0,
-            HomeRow::Item(_) | HomeRow::Project(_) | HomeRow::Stop(..) => false,
+            HomeRow::Item(_) | HomeRow::Project(_) | HomeRow::Stop(..) | HomeRow::Card(_) => false,
         };
         assert!(of_p.iter().all(shown), "narrowed: no heading either");
         app.home_key(key(KeyCode::Char(']')));
@@ -730,6 +760,47 @@ mod tests {
         // Seen once, the next key decides it.
         app.home_key(key(KeyCode::Char('a')));
         assert!(!app.home_key(key(KeyCode::Char('a'))));
+    }
+
+    #[test]
+    fn a_card_s_wait_is_answered_by_writing_to_its_leader_and_its_row_opens_the_card() {
+        let mut app = quiet();
+        let w = workers(&app);
+        let p = app.world.agents[w[0]].project;
+        let lead = app.world.projects[p].leader;
+        let c = (app.world.cards.iter())
+            .position(|c| c.project == p)
+            .unwrap();
+        app.world.cards[c].column = Column::Failed;
+        let mut waits = app.world.cards[c].clone();
+        waits.id = app.world.cards.len();
+        waits.column = Column::Waiting;
+        waits.owner = None;
+        waits.after = vec![c];
+        let d = waits.id;
+        app.world.cards.push(waits);
+        app.world.agents[lead].status = Status::Idle;
+        assert_eq!(app.world.look_card_waits(), [d]);
+        // Its row while the leader is on it: `enter` opens the card.
+        app.at_home.at = Some(HomeRow::Card(d));
+        app.home_settle();
+        assert_eq!(app.selected, Sel::Agent(lead), "the leader is at hand");
+        assert!(app.home_key(key(KeyCode::Enter)));
+        assert_eq!(app.card, Some(d));
+        // Let lie: `a` writes to the leader, never a yes.
+        app.leave_card();
+        app.zoom = Zoom::None;
+        app.world.waits_read(lead);
+        app.world.waits_unsolved(lead, false);
+        let i = (app.world.open_inbox().into_iter())
+            .find(|&i| app.world.inbox[i].kind == InboxKind::Waits)
+            .unwrap();
+        app.at_home.at = Some(HomeRow::Item(i));
+        app.home_settle();
+        app.key(key(KeyCode::Char('a')));
+        let name = app.world.agents[lead].name.clone();
+        assert_eq!(app.input, format!("@{name} "));
+        assert!(app.world.inbox[i].open, "open until the word goes");
     }
 
     #[test]
