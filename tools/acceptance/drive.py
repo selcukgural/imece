@@ -54,8 +54,8 @@ variable, and `$ACC_SOURCE`, the checkout the tools come from).
 Each case runs in a directory of its own under $ACC/s/<ID> (its state,
 config, Claude Code home and copy of the checkouts), so cases do not see
 each other and `--jobs` runs several at once. At its end the screen's
-terminal goes, and a process still working in the case's directory five
-seconds later fails it (imece quits when its terminal goes, its sessions
+terminal goes, and a process still working in the case's directory ten
+seconds later (fifteen for a real case) fails it (imece quits when its terminal goes, its sessions
 with it). A case that fails leaves its screen in $ACC/out/<ID>.txt.
 
 Standard library only; run with `python3 -I`.
@@ -88,7 +88,7 @@ SEE_WAIT = 30.0
 LOOK_EVERY = 0.2
 KEY_GAP = 0.15
 ESCAPE_GAP = 0.5
-LEFT_WAIT = float(os.environ.get("ACC_LEFT_WAIT", "5"))
+LEFT_WAIT = float(os.environ.get("ACC_LEFT_WAIT", "10"))
 
 _log_lock = threading.Lock()
 
@@ -516,7 +516,7 @@ def run(args: argparse.Namespace) -> int:
         for r in results.values()
         if r[0] == "pass" and (m := re.search(r"\$([0-9.]+)", r[2]))
     ]
-    if dollars:
+    if dollars and args.real:
         print(f"drive: what the passed cases' headers say they spent: ${sum(dollars):.2f}")
     print(
         f"drive: {len(results) - len(failed)} of {len(results)} passed in "

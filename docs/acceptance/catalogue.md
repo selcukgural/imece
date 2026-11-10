@@ -504,7 +504,7 @@ Steps: `scenarios/SESS-8.scn`: a task done, then `/` `!true`, and the
 terminal closed while imece waits for a key after it.
 
 Expect: imece quits as on `:quit`: nothing that worked in the case's
-directory is running five seconds later (the runner checks this after
+directory is running ten seconds later (the runner checks this after
 every scripted case). Until 2026-11-10 imece spun at full CPU here, deaf
 to SIGTERM.
 

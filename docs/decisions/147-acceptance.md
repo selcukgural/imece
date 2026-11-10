@@ -204,7 +204,9 @@ What the real scripts found:
 - A session of real Claude Code sometimes outlives imece's quit when the
   terminal closes: ASK-7's worker (`claude`) still ran 15 s after imece
   itself was gone, where record 02 kills a session within 1.5 s. Once in
-  four runs; ASK-7 fails on it until it is mended.
+  four runs; ASK-7 fails on it until it is mended. On the stand-in at six
+  jobs, a quit once took more than 5 s too (SCR-8): the runner waits 10 s
+  for a stand-in case, 15 s for a real one.
 - A Lonca session file of another daemon (a reinstall) makes the import
   go through and the team stop at once as signed out; the stop offers
   "look again", not `:lonca login`.

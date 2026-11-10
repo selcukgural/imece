@@ -97,8 +97,8 @@ tools/acceptance/drive.py run --jobs 4 --report docs/acceptance/runs/vX.Y.Z.md
   with `sh`). Decide on the first thing to decide with `gd`; `W` opens it.
 - Each case runs in `$ACC/s/<ID>` with its own state and copy of the
   checkouts; `--jobs` runs several at once. At its end its terminal goes,
-  and anything still working in its directory five seconds later fails
-  it. A failure's screen is in `$ACC/out/<ID>.txt`, every key in
+  and anything still working in its directory ten seconds later (fifteen
+  for a real case) fails it. A failure's screen is in `$ACC/out/<ID>.txt`, every key in
   `$ACC/drive.log`.
 - The 49 scripts (48 stand-in cases and the demo's) take about 95 s at 6
   jobs, most of it TEAM-12's minute of waiting; 15 cases stay real.
