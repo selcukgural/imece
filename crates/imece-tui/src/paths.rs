@@ -110,27 +110,28 @@ pub fn parse(v: &Value) -> Result<Vec<Owned>, String> {
 
 /// Whether `pattern` names `target`: the same path, a directory it is
 /// under, or a pattern it matches (`*` for anything), whole or as a
-/// directory it is under.
+/// directory it is under. One pass over the target answers for every
+/// directory it is under at once: a written path is the agent's, and one
+/// of thousands of directories costs no more than its length times the
+/// pattern's.
 fn names(pattern: &str, target: &str) -> bool {
     let target = target.strip_prefix("./").unwrap_or(target);
     let p: Vec<char> = pattern.chars().collect();
-    glob(&p, &target.chars().collect::<Vec<char>>())
-        || target
-            .char_indices()
-            .filter(|&(_, c)| c == '/')
-            .any(|(i, _)| glob(&p, &target[..i].chars().collect::<Vec<char>>()))
+    let t: Vec<char> = target.chars().collect();
+    let matched = prefixes(&p, &t);
+    matched[t.len()] || (t.iter().zip(&matched)).any(|(&c, &m)| c == '/' && m)
 }
 
-/// Whether `p` matches the whole of `t`, `*` standing for any run of
-/// characters. Pattern character by pattern character over every length
-/// of `t` (no backtracking: a pattern of many stars, which an agent may
-/// send, costs no more than its length times the target's).
-fn glob(p: &[char], t: &[char]) -> bool {
+/// For every `j`, whether `p` matches the whole of `t[..j]`, `*` standing
+/// for any run of characters. Pattern character by pattern character over
+/// every length of `t` (no backtracking: a pattern of many stars, which an
+/// agent may send, costs no more than its length times the target's).
+fn prefixes(p: &[char], t: &[char]) -> Vec<bool> {
     // Whether the pattern so far matches the first `j` characters of `t`.
     let mut sofar = vec![false; t.len() + 1];
     sofar[0] = true;
+    let mut next = vec![false; t.len() + 1];
     for &c in p {
-        let mut next = vec![false; t.len() + 1];
         if c == '*' {
             // A star takes any run: the pattern with it matches `t[..j]`
             // when the pattern before it matched some `t[..k]`, k ≤ j.
@@ -140,13 +141,14 @@ fn glob(p: &[char], t: &[char]) -> bool {
                 next[j] = reached;
             }
         } else {
+            next[0] = false;
             for j in 1..=t.len() {
                 next[j] = sofar[j - 1] && t[j - 1] == c;
             }
         }
-        sofar = next;
+        std::mem::swap(&mut sofar, &mut next);
     }
-    sofar[t.len()]
+    sofar
 }
 
 /// Whether writing `target` strays from `paths`: the card owns paths
@@ -308,6 +310,14 @@ mod tests {
         let long = "ab".repeat(100);
         assert!(names(&stars, &long));
         assert!(!names(&format!("{stars}c"), &long));
+        // Nor does a written path of many directories: each one it is
+        // under is answered by the same pass (looked at one by one, this
+        // took hours).
+        let deep = "a/".repeat(50_000);
+        let pattern = format!("{}x", "a*".repeat(MAX_PATH / 2 - 1));
+        assert!(!names(&pattern, &deep));
+        assert!(names(&format!("{}a", "a/".repeat(9)), &deep));
+        assert!(names("a/a/*/a", &deep));
     }
 
     #[test]

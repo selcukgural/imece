@@ -9,11 +9,6 @@
 use crate::owned::{MAX_PATH, MAX_PATHS, parse, strays};
 use serde_json::Value;
 
-/// The longest written path tried against the list. `strays` looks at
-/// every directory a path is under, each against every pattern: a path of
-/// thousands of directories costs seconds, which is no crash (record 139).
-const TRIED: usize = 256;
-
 pub fn check(data: &[u8]) {
     let Some((split, rest)) = crate::choice(data) else {
         return;
@@ -42,8 +37,5 @@ pub fn check(data: &[u8]) {
             assert!(!strays(&paths, p), "{p:?} strays from its own card");
         }
     }
-    let written = crate::text(written);
-    if written.chars().count() <= TRIED {
-        strays(&paths, &written);
-    }
+    strays(&paths, &crate::text(written));
 }

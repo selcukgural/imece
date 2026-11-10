@@ -67,11 +67,11 @@ a yes gave a tool call's input back with a float off in its last place
 carriage returns were lost from a part the person applies (now
 `split_inclusive`, each line's end kept). Both inputs are regressions.
 
-**Gaps.** `strays` looks at every directory a written path is under, each
-against every pattern: quadratic in the path's length, so `paths` tries
-written paths of at most 256 characters (a path an agent writes is
-bounded by the system's, 1,024 on macOS, 4,096 on Linux); a path that owns
-`././x` is kept as `./x` and a write to `x` strays from it. Not targets
+**Gaps.** Found while the targets were written and fixed after: `strays`
+looked at every directory a written path is under one by one, each
+against every pattern, quadratic in the path's length (a path of 50,000
+directories took hours; `paths::prefixes` answers for all of them in one
+pass now, and `paths` tries a written path of any length). Not targets
 yet: the key file (`keys.rs`, the person's own), Lonca's replies (the
 daemon is checked to be the person's), the pty output (`shell`), the
 Markdown of a conversation, a standing yes's command split
