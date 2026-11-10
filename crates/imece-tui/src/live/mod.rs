@@ -52,6 +52,7 @@ use crate::store::{self, Found, Kept, Store};
 use crate::ui::words;
 use crate::welcome::{Answers, Seen};
 
+mod blocked;
 mod bus;
 mod changes;
 pub mod demo;
@@ -1402,6 +1403,8 @@ impl Live {
             };
             if stopped {
                 self.end(w, id);
+                // What it was to solve is the person's now (record 143).
+                self.unsolved(w, id, true);
             }
             // A file written outside the card's paths (record 114).
             let wrote = match &e {
@@ -1434,6 +1437,12 @@ impl Live {
                 self.stand(w, id);
                 self.turns[id] = self.turns[id].saturating_sub(ends);
                 self.took[id] = 0;
+                if self.turns[id] == 0 {
+                    // A leader's turn that leaves a block it read with
+                    // no word to the worker and no question to the
+                    // person leaves it to the person (record 143).
+                    self.unsolved(w, id, false);
+                }
                 if self.turns[id] == 0 && self.leaving[id] {
                     self.release(w, id);
                     continue;
@@ -1518,6 +1527,7 @@ impl Live {
         }
         self.post_office(w);
         self.look_health(w);
+        self.look_blocks(w);
         for id in 0..self.lost.len() {
             let a = &w.agents[id];
             if self.lost[id]

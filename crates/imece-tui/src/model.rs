@@ -937,6 +937,9 @@ pub struct Agent {
     /// What imece follows of it for its health notices (record 128).
     /// Memory only.
     pub watch: crate::health::Watch,
+    /// It told its leader it is blocked and nothing has ended that yet
+    /// (record 143). Memory only.
+    pub block: Option<crate::blocked::Block>,
     /// What of its spending is booked on the ledger, and where its next
     /// goes (record 133). Memory only.
     pub meter: crate::ledger::Meter,
@@ -1175,6 +1178,7 @@ impl Agent {
             unpriced: Unpriced::default(),
             attempt: 0,
             watch: Default::default(),
+            block: None,
             meter: Default::default(),
             gone: false,
         }
@@ -2056,6 +2060,22 @@ pub enum Event {
         agent: AgentId,
         sign: crate::health::Sign,
     },
+    /// Leader `by` sent blocked worker `agent` word, `text` its first
+    /// line, `minutes` after the worker said it was blocked (record 143).
+    Unblocked {
+        agent: AgentId,
+        by: AgentId,
+        text: String,
+        minutes: u16,
+    },
+    /// Worker `agent`'s block, `text` its first line, came to the person:
+    /// `leader` let it lie, `why` (record 143).
+    StillBlocked {
+        agent: AgentId,
+        leader: AgentId,
+        why: crate::blocked::Unsolved,
+        text: String,
+    },
     /// The person ended process `pid`, named `name`, under agent
     /// `agent`'s session (`:ps`, record 129).
     Killed {
@@ -2574,7 +2594,10 @@ impl Event {
             | Event::LateDone { .. }
             | Event::WorktreeKept { .. }
             | Event::OffLonca { .. } => EntryKind::Assumption,
-            Event::Blocked { .. } | Event::Capped { .. } => EntryKind::Blocked,
+            Event::Blocked { .. } | Event::Capped { .. } | Event::StillBlocked { .. } => {
+                EntryKind::Blocked
+            }
+            Event::Unblocked { .. } => EntryKind::Assumption,
             Event::Health { sign, .. } if sign.wakes() => EntryKind::Blocked,
             Event::Health { .. } => EntryKind::Assumption,
             Event::ResearchOpened { .. }
@@ -2692,6 +2715,8 @@ impl Event {
             Event::Assign { agent, .. }
             | Event::Assumption { agent, .. }
             | Event::Blocked { agent, .. }
+            | Event::StillBlocked { agent, .. }
+            | Event::Unblocked { by: agent, .. }
             | Event::FromCache { agent, .. }
             | Event::Sensitive { agent, .. }
             | Event::Merged { agent, .. }
@@ -2836,6 +2861,13 @@ pub enum InboxKind {
     /// it open. The agent is the leader, the card the item's, the detail
     /// its title. Nobody waits: the leader's mail goes on.
     Close,
+    /// A worker told its leader it is blocked and the leader let it lie
+    /// (record 143): its turn ended with no word to the worker and no
+    /// question to the person, the block grew too old, or the leader
+    /// stopped. The agent is the worker, the detail its message's first
+    /// line. Closes when the person writes to the worker, or the leader
+    /// does after all. Its mail waits.
+    Blocked,
 }
 
 impl InboxKind {
@@ -2863,7 +2895,11 @@ impl InboxKind {
     pub fn closes_on_word(self) -> bool {
         matches!(
             self,
-            InboxKind::Reply | InboxKind::Question | InboxKind::Fault | InboxKind::Plan
+            InboxKind::Reply
+                | InboxKind::Question
+                | InboxKind::Fault
+                | InboxKind::Plan
+                | InboxKind::Blocked
         )
     }
 }
@@ -3684,6 +3720,7 @@ impl World {
         a.set_status(Status::Idle, t);
         a.gone = true;
         a.trace(t, "left");
+        self.block_over(id);
     }
 
     /// What the head of project `project`, named `name`, is called: `lead`
@@ -5295,6 +5332,8 @@ impl World {
     pub fn hand(&mut self, c: CardId, to: AgentId) {
         // The try at work ends here (record 133).
         self.close_card_row(c, crate::ledger::Outcome::HandedOn);
+        // Whoever was blocked on it is not on it now (record 143).
+        self.blocks_on(c, Some(to));
         let card = &mut self.cards[c];
         let from = card.owner;
         card.owner = Some(to);
@@ -5392,6 +5431,7 @@ impl World {
     pub fn withdraw(&mut self, c: CardId, by: AgentId, why: &str) {
         let tick = self.tick;
         self.close_card_row(c, crate::ledger::Outcome::Withdrawn);
+        self.blocks_on(c, None);
         let card = &mut self.cards[c];
         card.column = Column::Withdrawn;
         card.finished = tick;
@@ -6021,6 +6061,8 @@ impl World {
         self.close_questions(id);
         self.close_faults(id);
         self.close_plans(id);
+        // Their word is the answer a blocked worker waited for.
+        self.block_over(id);
         // The person's word is the next try: a new count from it.
         self.agents[id].retry = None;
         self.agents[id].tries = 0;

@@ -178,7 +178,20 @@ pub(super) fn system_prompt(
                      branch, a tag, a commit or a pull request, hire with from (#N for a \
                      pull request) and that worker's worktree starts there and stays. \
                      Workers answer with done, blocked or ask; their \
-                     messages start your next turn.{}",
+                     messages start your next turn. A worker's blocked is yours to \
+                     solve first: read the code, search, and send it the way on (an \
+                     answer, re its number), or hand its card to another worker. Ask \
+                     the person only when the way on is risky, or when you found none. \
+                     Risky is: deleting or overwriting work; reaching outside the \
+                     repository (credentials, installs, network services, money); \
+                     widening what the card owns or its task; dropping a requirement \
+                     or skipping a test; changing something the person decided. Such \
+                     an ask goes to you with re the blocked's number, tried (what you \
+                     looked at and ruled out), risk (one line why it is risky; left \
+                     out when you found no way) and options, and once they answer \
+                     you send the worker the way on. A turn of yours that ends with a \
+                     blocked you read neither answered nor asked about puts it before \
+                     the person as one you did not solve.{}",
                     lonca_checks(w, a.project)
                 )
             };
@@ -1101,7 +1114,7 @@ mod tests {
         let on = system_prompt(&w, 0, 4, 0, Confine::Standard);
         assert!(
             on.contains(
-                "messages start your next turn. This project is on Lonca: a card may also ask \
+                "as one you did not solve. This project is on Lonca: a card may also ask \
                  for checks the repository's Lonca policy defines (checks: names from \
                  verification.checks, on an assign, a post or a plan card); the person's yes \
                  to its change has Lonca's merge queue run them too, and a failure goes back \

@@ -19,7 +19,7 @@ Her mesaj, türlü bir zarf ile serbest metin bir gövdedir: `send(to, type, bod
 | `inform` (bilgi) | bilinmesi iyi olan bir şey, eylem yok | hayır |
 | `handoff` (devir) | başka bir ajana devredilen görev | evet |
 | `done` (bitti) | görev bitti; bir işçinin `done`'ı bir değişiklik olur | evet |
-| `blocked` (takıldı) | devam edilemiyor ve nedeni | evet |
+| `blocked` (takıldı) | devam edilemiyor ve nedeni; işçinin liderine gönderdiğini önce lider çözer ([takılan işçi](#takılan-işçi)) | evet |
 | `progress` (ilerleme) | işin neresinde olunduğu | hayır |
 | `notice` (duyuru) | ekibe kısa bir not | hayır |
 | `cancel` (iptal) | görev geri çekildi | evet |
@@ -68,9 +68,20 @@ Bus size `you` olarak ulaşır: `send(to: "you", type, body)`.
 - Size bir `ask`, KARAR BEKLEYEN'de bir soru olur (`?`, "claude-1 sana soruyor: …"). Soru açıkken ajan o satırın kendisidir ve ÇALIŞAN altında listelenmez. Aynı ajandan daha yeni bir soru eskisinin yerini alır. Ajana yazarak yanıt verirsiniz (`@claude-1 …`, ya da öğede `a`/`r`, ikisi de yazma satırını açar) ve bu onun sonraki turunu başlatır.
 - Size `inform`, `progress`, `notice`, `done`, `blocked` ve `answer` yalnız bilgilendirir: konuşmada ve hikâyede bir satır, öğe yok, kimse uyanmaz. Bir işçinin size `done`'ı değişikliğini her `done` gibi gösterir.
 - Size `assign`, `handoff` ve `cancel` reddedilir.
-- Size mesajlar numara ve `re` almaz; sizin mesajlarınızın da numarası yoktur. Size giden hiçbir şey posta sınırlarına ya da bütçeye sayılmaz.
+- Size mesajlar numara ve `re` almaz; tek istisna liderin bir işçinin takılması hakkındaki `ask` mesajıdır, o takılmayı numarasıyla adlandırır ([takılan işçi](#takılan-işçi)); sizin mesajlarınızın da numarası yoktur. Size giden hiçbir şey posta sınırlarına ya da bütçeye sayılmaz.
 
 İstemler ne zaman sorulacağını söyler: lider görev ortasında size sorabilir; bir işçi önce liderine sorar ve size yalnız sizin karar verebileceğinizi gönderir; bir yardımcı yalnız hiçbir ekip arkadaşının yanıtlayamayacağını. Daha fazlası [onaylar ve sorular](../concepts/approvals-and-questions.md) sayfasında.
+
+## Takılan işçi
+
+Devam edemeyen işçi liderine `blocked` gönderir. Lider önce kendisi çözmeye çalışır: kodu okur, arar ve işçiye yolu söyler, ya da kartı başka bir işçiye verir. Siz ancak lider size sorduğunda ya da takılmayı kendi hâline bıraktığında duyarsınız.
+
+- **Lider ilgilenirken** işçi ÇALIŞAN altında, dikkat renginde bir `■` ile kalır: `takıldı "the retry test needs a clock" · lead ilgileniyor`. Sıra sizde değildir: takılanlara sayılmaz, hiçbir şey çalmaz. Önizlemesi işçinin mesajını bütün olarak ve liderin o ana dek ne yaptığını okutur.
+- **Çözüldü.** Liderin o işçiye gönderdiği uyandıran her mesaj (bir `answer`, yeni bir `assign`) takılmayı bitirir ve günlük `lead, claude-2 için takılmayı 3 dk sonra çözdü: World::at is there for tests` der. Kartın başka bir işçiye verilmesi ya da geri çekilmesi, işçinin kendi `done` mesajı ve sizin işçiye yazdığınız söz de bitirir.
+- **Soruldu.** Lider size yalnızca yol riskliyse ya da bir yol bulamadıysa sorar. Riskli olan: iş silmek ya da üstüne yazmak; deponun dışına uzanmak (kimlik bilgisi, kurulum, ağ servisi, para); kartın sahip olduğu yolları ya da görevini genişletmek; bir gereği düşürmek ya da bir testi atlamak; sizin karar verdiğiniz bir şeyi değiştirmek. Böyle bir `ask`, hangi takılmayla ilgili olduğunu söyler (`re`: numarası) ve liderin ne denediğini (`tried`) ve neden riskli olduğunu (`risk`; çözemediyse boş bırakılır) taşır. Home'da soru, takılan işin satırıdır: `claude-2 takıldı · lead soruyor: Let it into live/mod.rs?`, sunduğu yanıtlar altında. Önizlemesi ve ayrıntısı `lead sana soruyor · riskli: it widens what #6 owns` (ya da `· çözemedi`) diye başlar, sonra işçinin sözleri, liderin denedikleri, soru ve yanıtlar gelir. Yanıtınız lidere gider, lider işçiye yolu söyler; siz yanıtlayana dek işçinin satırı `· lead sana sordu` der.
+- **Kendi hâline bırakıldı.** Liderin, okuduğu bir takılmayı ne yanıtlayıp ne de size sorduğu bir turu bitince takılma önünüze gelir: sorular altında bir satır, `takıldı: the retry test needs a clock · lead çözmedi`; `a` işçiye yazar, `enter` açar. [`:health stall`](../reference/commands.md#health-stallidleloop-value) süresinden eski bir takılma (varsayılan on dakika: `lead zamanında çözmedi`) ve lideri duran bir takılma da öyle gelir. Bu kez sıra sizdedir: sayılır, başka pencerede çalar ve işçinin postası onunla bekler. İşçiye yazdığınız söz onu bitirir, liderin sonradan yazdığı söz de; lider, sizin elinizde olduğunu sonraki isteminde duyar.
+
+İşçinin lideri olmayan bir takım arkadaşına gönderilen `blocked`, bir yardımcının işçisine gönderdiği ve `you`'ya gönderilen `blocked` eskisi gibi sıradan mesajlardır. Liderin hâlâ elinde olan bir takılma çalıştırmalar arasında saklanmaz (takılan kart için [sağlık bildirimi](team.md#sağlık-bildirimleri) o işçiyi yeniden bulur); size gelen saklanır.
 
 ## Sizi bekleyen ajanın postası da bekler
 

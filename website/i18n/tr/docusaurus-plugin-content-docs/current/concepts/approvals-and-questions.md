@@ -48,7 +48,7 @@ Bir istekte `e` (sizi bekleyenlerde ya da ajanının log sekmesinde) ya da `:yes
 
 ## Sorular (`?`)
 
-Bir ajan size `send(to: "you", type: "ask", body)` ile sorar ve seçilecek yanıtları sunabilir (`options`: en çok dört, her biri kısa bir satır, kendi seçeceği önce). **Sorular** altında bir `?` öğesi olur, günlükte "claude-2 sana soruyor: eski CLI bayrağı kalsın mı?", ve soru açık kaldıkça ajan o satırın kendisidir. Aynı ajandan daha yeni bir soru eskisinin yerini alır.
+Bir ajan size `send(to: "you", type: "ask", body)` ile sorar ve seçilecek yanıtları sunabilir (`options`: en çok dört, her biri kısa bir satır, kendi seçeceği önce). **Sorular** altında bir `?` öğesi olur, günlükte "claude-2 sana soruyor: eski CLI bayrağı kalsın mı?", ve soru açık kaldıkça ajan o satırın kendisidir. Aynı ajandan daha yeni bir soru eskisinin yerini alır. Liderin bir işçinin takılması hakkındaki sorusu bunu söyler ve parça parça okunur: işçinin sözleri, liderin denedikleri, neden sorduğu ([takılan işçi](messages-and-board.md#takılan-işçi)).
 
 [Ana ekranda](../screen/home.md) satır soruyu, altında da sunulan her yanıtı onu seçen tuşla söyler:
 

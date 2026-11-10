@@ -324,6 +324,9 @@ impl World {
             || self.waits_on_person(id)
             || a.starting
             || a.retry.is_some()
+            // A blocked worker's leader has heard, from the worker
+            // (record 143).
+            || a.block.is_some()
         {
             return None;
         }

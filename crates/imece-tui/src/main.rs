@@ -6,6 +6,7 @@ mod app;
 mod archives;
 mod awake;
 mod away;
+mod blocked;
 mod checks;
 mod clip;
 mod closes;

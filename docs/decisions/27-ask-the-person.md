@@ -48,3 +48,8 @@ the digits are the views'. The tool's description tells agents to offer
 answers; the demo offers them on two of its four questions
 (`Content.ask_options`). The gap "no answer from the screen but a
 message" is closed for a question that offers answers.
+
+**Later (record 143).** A leader's ask about a worker's blocked carries
+`re` (the blocked's number), `tried` and `risk`; its row is the blocked
+work's and its preview reads the worker's words and what the leader tried
+before the question.

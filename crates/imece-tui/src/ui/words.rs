@@ -102,6 +102,24 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
             )
         }
         Event::Assumption { agent, text } => fill(t.ev_assumption, &[name(w, *agent), text]),
+        Event::Unblocked {
+            agent,
+            by,
+            text,
+            minutes,
+        } => fill(
+            t.ev_unblocked,
+            &[name(w, *by), name(w, *agent), &minutes.to_string(), text],
+        ),
+        Event::StillBlocked {
+            agent,
+            leader,
+            why,
+            text,
+        } => fill(
+            t.ev_still_blocked,
+            &[name(w, *agent), &unsolved(t, w, *leader, *why), text],
+        ),
         Event::Blocked {
             agent,
             topic,
@@ -1109,6 +1127,7 @@ pub fn notice(lang: Lang, w: &World, note: crate::notify::Note) -> String {
                 InboxKind::Reply => t.notice_reply,
                 InboxKind::Approval => t.notice_approval,
                 InboxKind::Fault => t.notice_fault,
+                InboxKind::Blocked => t.notice_blocked,
                 InboxKind::Script => t.notice_script,
                 InboxKind::Check => t.notice_check,
                 InboxKind::Plan => t.notice_plan,
@@ -1196,6 +1215,18 @@ pub(crate) fn item_named(w: &World, item: &InboxItem) -> (String, String) {
     (n.to_string(), title)
 }
 
+/// Why a block came to the person with nobody asking them (record 143):
+/// what `leader` did not do.
+pub fn unsolved(t: &Text, w: &World, leader: AgentId, why: crate::blocked::Unsolved) -> String {
+    use crate::blocked::Unsolved;
+    let words = match why {
+        Unsolved::TurnEnded => t.unsolved_turn,
+        Unsolved::TooLong => t.unsolved_long,
+        Unsolved::LeaderStopped => t.unsolved_stopped,
+    };
+    fill(words, &[name(w, leader)])
+}
+
 pub fn inbox(lang: Lang, w: &World, item: &InboxItem) -> String {
     let t = lang.text();
     match (item.kind, item.researcher) {
@@ -1227,6 +1258,7 @@ pub fn inbox(lang: Lang, w: &World, item: &InboxItem) -> String {
             &[name(w, item.agent), &one_line(&item.detail)],
         ),
         (InboxKind::Fault, _) => fill(t.in_fault, &[name(w, item.agent), &item.detail]),
+        (InboxKind::Blocked, _) => fill(t.in_blocked, &[name(w, item.agent), &item.detail]),
         (InboxKind::Script, _) => fill(t.in_script, &[name(w, item.agent), &item.detail]),
         (InboxKind::Check, _) => fill(t.in_check, &[name(w, item.agent), &item.detail]),
         (InboxKind::Plan, _) => {
@@ -3255,5 +3287,71 @@ mod tests {
     fn a_repository_that_lets_changes_in_unseen_says_so() {
         let t = Lang::En.text();
         assert_eq!(store_down(t, StoreDown::Unguarded), t.store_unguarded);
+    }
+
+    #[test]
+    fn a_block_solved_or_let_lie_is_worded_in_the_journal_and_in_another_window() {
+        use crate::blocked::Unsolved;
+        let mut w = crate::live::testing::team(1);
+        let solved = Event::Unblocked {
+            agent: 1,
+            by: 0,
+            text: "Use the fake.".into(),
+            minutes: 3,
+        };
+        assert_eq!(
+            event(Lang::En, &w, &solved),
+            "lead unblocked claude-1 after 3 min: Use the fake."
+        );
+        assert_eq!(
+            event(Lang::Tr, &w, &solved),
+            "lead, claude-1 için takılmayı 3 dk sonra çözdü: Use the fake."
+        );
+        let lies = |why| Event::StillBlocked {
+            agent: 1,
+            leader: 0,
+            why,
+            text: "Stuck.".into(),
+        };
+        for (why, en, tr) in [
+            (Unsolved::TurnEnded, "lead did not solve it", "lead çözmedi"),
+            (
+                Unsolved::TooLong,
+                "lead has not solved it in time",
+                "lead zamanında çözmedi",
+            ),
+            (Unsolved::LeaderStopped, "lead stopped", "lead durdu"),
+        ] {
+            assert_eq!(
+                event(Lang::En, &w, &lies(why)),
+                format!("claude-1 is still blocked · {en}: Stuck.")
+            );
+            assert_eq!(
+                event(Lang::Tr, &w, &lies(why)),
+                format!("claude-1 hâlâ takılı · {tr}: Stuck.")
+            );
+        }
+        assert_eq!(solved.kind(), EntryKind::Assumption);
+        assert_eq!(lies(Unsolved::TooLong).kind(), EntryKind::Blocked);
+        assert_eq!((solved.agent(), lies(Unsolved::TooLong).agent()), (0, 1));
+        w.blocked(1, 0, 4, "Stuck.\nMore.");
+        w.blocks_unsolved(0, true);
+        let i = w.open_inbox()[0];
+        assert_eq!(
+            notice(Lang::En, &w, crate::notify::Note::Item(i)),
+            "imece · claude-1 is blocked and its leader did not solve it"
+        );
+        assert_eq!(
+            notice(Lang::Tr, &w, crate::notify::Note::Item(i)),
+            "imece · claude-1 takıldı, lideri çözmedi"
+        );
+        assert_eq!(
+            inbox(Lang::En, &w, &w.inbox[i]),
+            "claude-1 is blocked and its leader did not solve it: Stuck."
+        );
+        assert_eq!(
+            inbox(Lang::Tr, &w, &w.inbox[i]),
+            "claude-1 takıldı, lideri çözmedi: Stuck."
+        );
     }
 }

@@ -451,7 +451,15 @@ pub(crate) fn said_spans(lang: Lang, w: &World, s: &words::Said) -> Vec<Span<'st
 /// anyone's: its role is a word on its row, not a shape. The colour
 /// tells blocked from stopped; the status words do without colour.
 pub(crate) fn glyph(a: &Agent) -> (&'static str, Color) {
+    use crate::blocked::Stage;
     match a.status {
+        // Blocked between turns (record 143): its leader has it, in the
+        // colour of what waits; the person has it, in the colour of
+        // what is stuck.
+        Status::Idle | Status::Asleep if let Some(b) = &a.block => match b.stage {
+            Stage::Yours(_) => ("■", pal().bad),
+            Stage::Leader | Stage::Asked { .. } => ("■", pal().warn),
+        },
         Status::Idle => ("○", pal().dim),
         Status::Working => ("●", pal().ok),
         Status::Asking { .. } => ("●", pal().warn),
@@ -613,7 +621,7 @@ pub(crate) fn inbox_line(app: &App, i: usize) -> Line<'static> {
         InboxKind::Change => ("Δ", bold(pal().strong)),
         InboxKind::Question => ("?", bold(pal().warn)),
         InboxKind::Approval => ("⚑", bold(pal().warn)),
-        InboxKind::Fault => ("■", bold(pal().bad)),
+        InboxKind::Fault | InboxKind::Blocked => ("■", bold(pal().bad)),
         InboxKind::Script | InboxKind::Check => ("▶", bold(pal().warn)),
         InboxKind::Plan => ("▤", bold(pal().warn)),
         InboxKind::Tries | InboxKind::Rounds => ("⊘", bold(pal().warn)),
@@ -1452,10 +1460,44 @@ pub(crate) fn status_spans(lang: Lang, w: &World, a: &Agent) -> Vec<Span<'static
     spans
 }
 
+/// A blocked worker's status (record 143): the word, what it said, and
+/// who has it: its leader, the person its leader asked, or the person.
+fn block_spans(
+    t: &crate::i18n::Text,
+    w: &World,
+    a: &Agent,
+    held: crate::blocked::Held,
+) -> Vec<Span<'static>> {
+    use crate::blocked::{Held, Stage};
+    let Some(b) = &a.block else {
+        return Vec::new();
+    };
+    let colour = match held {
+        Held::Yours => pal().bad,
+        Held::Leader | Held::Asked => pal().warn,
+    };
+    let mut spans = vec![Span::styled(t.blocked_word, bold(colour))];
+    let first = b.said.lines().find(|l| !l.trim().is_empty());
+    add_quote(&mut spans, first.unwrap_or_default(), fg(colour));
+    let who = match (held, &b.stage) {
+        (Held::Leader, _) => fill(t.blocked_leader, &[&clean(&w.agents[b.leader].name)]),
+        (Held::Asked, _) => fill(t.blocked_asked, &[&clean(&w.agents[b.leader].name)]),
+        (Held::Yours, Stage::Yours(why)) => words::unsolved(t, w, b.leader, *why),
+        (Held::Yours, _) => String::new(),
+    };
+    if !who.is_empty() {
+        spans.push(Span::styled(format!(" · {who}"), dim()));
+    }
+    spans
+}
+
 /// [`status_spans`] without the mark of a yes for the turn.
 fn doing_status(lang: Lang, w: &World, a: &Agent) -> Vec<Span<'static>> {
     let t = lang.text();
     match a.status {
+        Status::Idle | Status::Asleep if let Some(b) = &a.block => {
+            block_spans(t, w, a, w.held_of(b))
+        }
         Status::Idle if let Some(it) = w.open_item(a.id, InboxKind::Reply) => {
             let mut spans = vec![Span::styled(t.answered, fg(pal().warn))];
             add_quote(&mut spans, &it.detail, fg(pal().warn));

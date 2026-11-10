@@ -50,6 +50,7 @@ impl HomeGroup {
             InboxKind::Question
             | InboxKind::Research
             | InboxKind::Fault
+            | InboxKind::Blocked
             | InboxKind::Plan
             | InboxKind::Tries
             | InboxKind::Rounds
@@ -143,7 +144,9 @@ impl App {
                 Some(HomeGroup::Stuck)
             } else if waits_on_item(a.id) {
                 None
-            } else if at_work {
+            } else if at_work || w.blocked_with_leader(a.id) {
+                // Blocked, and its leader has it (record 143): the team
+                // is at work on it.
                 Some(HomeGroup::Work)
             } else if a.role == Role::Leader || items.iter().any(|&i| w.inbox[i].agent == a.id) {
                 None

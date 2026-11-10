@@ -341,6 +341,18 @@ struct Content {
     asks_you: &'static [&'static str],
     /// The answers each of those offers, one key each; none for some.
     ask_options: &'static [&'static [&'static str]],
+    /// What a worker that is blocked tells its leader (record 143), and,
+    /// one for each of those: the way on the leader sends it, the
+    /// question the leader asks the person when that way is risky, the
+    /// answers it offers, what it says it tried and the risk in a line.
+    blocks: &'static [&'static str],
+    ways: &'static [&'static str],
+    block_asks: &'static [&'static str],
+    block_options: &'static [&'static [&'static str]],
+    block_tried: &'static [&'static str],
+    block_risks: &'static [&'static str],
+    /// How the leader passes the person's answer on to the worker.
+    person_said: &'static str,
     /// What an agent answers the person who told it something.
     acks: &'static [&'static str],
     /// A leader's answer to a request: how many cards, and which.
@@ -457,6 +469,38 @@ const EN: Content = Content {
         &["half-up", "banker's"],
         &[],
     ],
+    blocks: &[
+        "The refund test needs a payment gateway I cannot reach from the files I own.",
+        "Orders has no column for the new status, and the migrations are not mine.",
+        "Two call sites disagree on what an empty cart's total means.",
+    ],
+    ways: &[
+        "There is a fake gateway in the test helpers: use it instead of the real one.",
+        "Add the column in a migration of your own; no other card has one open.",
+        "Empty means zero: the newer call site is right, change the older one.",
+    ],
+    block_asks: &[
+        "Let it change the shared gateway client another card owns?",
+        "May it add a migration that rewrites Orders in place?",
+        "Drop the older meaning, which the public endpoint still returns?",
+    ],
+    block_options: &[
+        &["let it in", "wait for the other card"],
+        &["yes, migrate", "add a side table instead"],
+        &["drop it", "keep both for now"],
+    ],
+    block_tried: &[
+        "Looked in the test helpers: the fake gateway knows only the old client. The \
+         client is in a file another card owns.",
+        "Read the schema and the open cards: no migration is planned.",
+        "Read both call sites and the endpoint's tests: the tests pin the older meaning.",
+    ],
+    block_risks: &[
+        "it widens what the card owns",
+        "it rewrites data in place",
+        "it changes what a public endpoint returns",
+    ],
+    person_said: "The person says: {}",
     acks: &[
         "Understood; I go on that way.",
         "Done, changed as you said.",
@@ -564,6 +608,38 @@ const TR: Content = Content {
         &["yarıya yukarı", "banker"],
         &[],
     ],
+    blocks: &[
+        "İade testi, sahibi olduğum dosyalardan ulaşamadığım bir ödeme geçidi istiyor.",
+        "Orders tablosunda yeni durum için sütun yok, migration'lar da bende değil.",
+        "İki çağrı yeri boş sepetin toplamının ne demek olduğunda anlaşamıyor.",
+    ],
+    ways: &[
+        "Test yardımcılarında sahte bir geçit var: gerçeği yerine onu kullan.",
+        "Sütunu kendi migration'ınla ekle; başka hiçbir kartta açık olan yok.",
+        "Boş, sıfır demek: yeni çağrı yeri doğru, eskisini değiştir.",
+    ],
+    block_asks: &[
+        "Başka bir kartın sahibi olduğu ortak geçit istemcisini değiştirsin mi?",
+        "Orders tablosunu yerinde yeniden yazan bir migration eklesin mi?",
+        "Açık uç noktanın hâlâ döndürdüğü eski anlam kaldırılsın mı?",
+    ],
+    block_options: &[
+        &["girsin", "öteki kartı beklesin"],
+        &["evet, migration", "yan tablo eklesin"],
+        &["kaldır", "şimdilik ikisi de kalsın"],
+    ],
+    block_tried: &[
+        "Test yardımcılarına baktım: sahte geçit yalnızca eski istemciyi tanıyor. İstemci \
+         başka bir kartın dosyasında.",
+        "Şemayı ve açık kartları okudum: planlanmış bir migration yok.",
+        "İki çağrı yerini ve uç noktanın testlerini okudum: testler eski anlamı sabitliyor.",
+    ],
+    block_risks: &[
+        "kartın sahip olduğu yolları genişletir",
+        "veriyi yerinde yeniden yazar",
+        "açık bir uç noktanın döndürdüğünü değiştirir",
+    ],
+    person_said: "Kişi diyor ki: {}",
     acks: &[
         "Anlaşıldı, o şekilde devam ediyorum.",
         "Tamam, dediğin gibi değiştirdim.",
@@ -795,9 +871,52 @@ fn fault_of(n: u32) -> Option<Fault> {
     }
 }
 
+/// What the demo's leader does about a worker's block (record 143), due
+/// at a tick: `which` of the content's blocks it is.
+struct Stuck {
+    worker: AgentId,
+    at: u64,
+    which: usize,
+    how: Way,
+}
+
+/// How the demo's leader takes a block.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Way {
+    /// It sends the worker the way on.
+    Solve,
+    /// The way on is risky: it asks the person.
+    Ask,
+    /// It ends its turn without a word: the person gets the block.
+    Silent,
+    /// The person answered its question: it passes their words on.
+    Said(String),
+}
+
+/// Of the blocks the demo's workers tell their leaders, every third is
+/// asked of the person and every fifth is let lie, so that each end of a
+/// block is seen in a run; the rest the leader solves.
+const BLOCK_ASKS: u64 = 3;
+const BLOCK_SILENT: u64 = 5;
+
+/// How the demo's leader takes the `n`th block told (from one).
+fn way_of(n: u64) -> Way {
+    if n.is_multiple_of(BLOCK_SILENT) {
+        Way::Silent
+    } else if n.is_multiple_of(BLOCK_ASKS) {
+        Way::Ask
+    } else {
+        Way::Solve
+    }
+}
+
 /// What the demo keeps for `:commit` and `:copy`.
 #[derive(Default)]
 struct Extras {
+    /// The blocks the demo's leaders have before them, and how many
+    /// were told so far.
+    stuck: Vec<Stuck>,
+    blocked: u64,
     /// Each usage window (five hours, then the week) as last seen: its
     /// number on the world's clock and what the agents had spent when it
     /// began. A window holds only what was spent since.
@@ -1359,6 +1478,9 @@ impl Sim {
         if stopped && had && !refused {
             w.agents[id].trace(t, "session resumed");
             w.note(Event::Resumed { agent: id });
+        }
+        if w.agents[id].role == Role::Leader && self.block_answered(w, id, text) {
+            return Ok(());
         }
         if w.agents[id].role == Role::Leader {
             w.plans.push(Plan {
@@ -2437,6 +2559,10 @@ impl Sim {
                 Role::Leader | Role::Solo => {}
             }
         }
+        // What the leaders do about their workers' blocks, and the blocks
+        // that waited too long (record 143).
+        self.blocks_due(w);
+        w.look_blocks();
         // Its leader hears of a stall, an idle worker or a loop, as
         // live's does (record 128).
         for (id, _) in w.look_health() {
@@ -3938,7 +4064,8 @@ impl Sim {
 
         match self.rng.below(1000) {
             0..4 => self.ask(w, id),
-            4..6 if w.max_researchers > 0 => self.block(w, id),
+            4..5 => self.tell_leader(w, id),
+            5..6 if w.max_researchers > 0 => self.block(w, id),
             6..9 => {
                 let s = *self.rng.pick(self.content.assumptions);
                 let said = crate::i18n::fill(self.content.assume, &[s]);
@@ -4568,6 +4695,106 @@ impl Sim {
         w.agents[id].set_status(Status::Asking { to, until }, t);
     }
 
+    /// Worker `id` is blocked and tells its leader (record 143), which
+    /// takes it one of the three ways live's may: it sends the way on,
+    /// asks the person, or lets it lie.
+    fn tell_leader(&mut self, w: &mut World, id: AgentId) {
+        let t = w.tick;
+        let leader = w.projects[w.agents[id].project].leader;
+        if w.agents[id].block.is_some() || w.agents[id].role != Role::Worker {
+            return;
+        }
+        let which = self.rng.below(self.content.blocks.len() as u64) as usize;
+        let text = self.content.blocks[which];
+        let msg = self.send(w, id, leader, MsgKind::Blocked, text, None);
+        w.blocked(id, leader, msg, text);
+        // The demo's leader reads its mail as it comes.
+        w.block_read(id, msg);
+        let a = &mut w.agents[id];
+        a.activity = None;
+        a.set_status(Status::Idle, t);
+        w.agents[leader].trace(t, "tool_use Grep the code for what blocks it");
+        self.extras.blocked += 1;
+        self.extras.stuck.push(Stuck {
+            worker: id,
+            at: t + self.rng.range(3, 8),
+            which,
+            how: way_of(self.extras.blocked),
+        });
+    }
+
+    /// The blocks the leaders took up that are due now: solved, asked of
+    /// the person, or let lie. One whose worker went on meanwhile (the
+    /// person wrote to it, its card went elsewhere) is dropped.
+    fn blocks_due(&mut self, w: &mut World) {
+        let t = w.tick;
+        let (due, later): (Vec<Stuck>, Vec<Stuck>) = std::mem::take(&mut self.extras.stuck)
+            .into_iter()
+            .partition(|s| s.at <= t);
+        self.extras.stuck = later;
+        for s in due {
+            let Some(b) = w.agents[s.worker].block.clone() else {
+                continue;
+            };
+            match s.how {
+                Way::Solve => self.way_on(w, s.worker, &b, self.content.ways[s.which]),
+                Way::Said(text) => self.way_on(w, s.worker, &b, &text),
+                // One question of an agent's waits at a time.
+                Way::Ask if w.has_question(b.leader) => {
+                    self.extras.stuck.push(Stuck { at: t + 5, ..s })
+                }
+                Way::Ask => {
+                    let c = self.content;
+                    let options = c.block_options[s.which];
+                    self.tell_you(w, b.leader, MsgKind::Ask, c.block_asks[s.which], options);
+                    let tried = c.block_tried[s.which];
+                    w.block_asked(b.leader, Some(b.msg), tried, Some(c.block_risks[s.which]));
+                }
+                Way::Silent => {
+                    w.blocks_unsolved(b.leader, false);
+                }
+            }
+        }
+    }
+
+    /// The leader sends blocked worker `id` the way on: its block is
+    /// over and it goes on with its card.
+    fn way_on(&mut self, w: &mut World, id: AgentId, b: &crate::blocked::Block, text: &str) {
+        let t = w.tick;
+        // Before the answer: what waited for the person on it closes, so
+        // the answer is not held.
+        w.unblocked(id, b.leader, text);
+        self.send(w, b.leader, id, MsgKind::Answer, text, Some(b.msg));
+        if Self::unfinished(w, id) && !w.waits_on_person(id) {
+            let a = &mut w.agents[id];
+            a.set_status(Status::Working, t);
+            a.activity = Some(String::new());
+        }
+    }
+
+    /// The person answered leader `id`: whether that was the answer to
+    /// its question about a worker's block, which it passes on to the
+    /// worker in a moment (no plan comes of such a word).
+    fn block_answered(&mut self, w: &World, id: AgentId, text: &str) -> bool {
+        use crate::blocked::Stage;
+        let asked = (w.agents.iter()).find(|a| {
+            !a.gone
+                && (a.block.as_ref())
+                    .is_some_and(|b| b.leader == id && matches!(b.stage, Stage::Asked { .. }))
+        });
+        let Some(worker) = asked.map(|a| a.id) else {
+            return false;
+        };
+        let first = text.lines().next().unwrap_or_default();
+        self.extras.stuck.push(Stuck {
+            worker,
+            at: w.tick + 2,
+            which: 0,
+            how: Way::Said(crate::i18n::fill(self.content.person_said, &[first])),
+        });
+        true
+    }
+
     fn block(&mut self, w: &mut World, id: AgentId) {
         let t = w.tick;
         let topic = *self.rng.pick(self.content.topics);
@@ -4774,7 +5001,7 @@ mod tests {
                 InboxKind::Close => {
                     w.decide_item(i, true);
                 }
-                InboxKind::Question | InboxKind::Fault => {
+                InboxKind::Question | InboxKind::Fault | InboxKind::Blocked => {
                     // Closed here, once: a run's length never hangs on
                     // `said` closing it.
                     w.inbox[i].open = false;
@@ -10418,5 +10645,176 @@ diff --git a/b.rs b/b.rs
             .unwrap();
         s.leader(&mut w, 0);
         assert_eq!(w.cards[newest].column, Column::Withdrawn);
+    }
+
+    #[test]
+    fn the_demo_s_leader_solves_most_blocks_asks_every_third_and_lets_every_fifth_lie() {
+        let ways: Vec<Way> = (1..=15).map(way_of).collect();
+        let (s, a, l) = (Way::Solve, Way::Ask, Way::Silent);
+        assert_eq!(
+            ways,
+            [
+                s.clone(),
+                s.clone(),
+                a.clone(),
+                s.clone(),
+                l.clone(),
+                a.clone(),
+                s.clone(),
+                s.clone(),
+                a.clone(),
+                l.clone(),
+                s.clone(),
+                a,
+                s.clone(),
+                s,
+                l
+            ]
+        );
+    }
+
+    /// A demo world, its first worker and that worker's leader.
+    fn blocked_world() -> (World, Sim, AgentId, AgentId) {
+        let (w, s) = world(1, 2, 0, 7, Lang::En);
+        let id = (w.agents.iter())
+            .find(|a| a.role == Role::Worker)
+            .map(|a| a.id)
+            .unwrap();
+        let leader = w.projects[w.agents[id].project].leader;
+        (w, s, id, leader)
+    }
+
+    #[test]
+    fn a_demo_worker_s_block_is_solved_by_its_leader_s_answer() {
+        let (mut w, mut s, id, leader) = blocked_world();
+        w.agents[id].status = Status::Working;
+        s.tell_leader(&mut w, id);
+        let b = w.agents[id].block.clone().unwrap();
+        assert!(b.read && b.leader == leader);
+        assert!(s.content.blocks.contains(&b.said.as_str()));
+        assert_eq!(w.agents[id].status, Status::Idle);
+        assert_eq!(s.extras.blocked, 1);
+        let due = s.extras.stuck[0].at;
+        assert!((w.tick + 3..=w.tick + 8).contains(&due), "{due}");
+        // Blocked already: it does not say so twice.
+        s.tell_leader(&mut w, id);
+        assert_eq!((s.extras.blocked, s.extras.stuck.len()), (1, 1));
+        // A leader is never blocked on itself.
+        s.tell_leader(&mut w, leader);
+        assert_eq!(w.agents[leader].block, None);
+        w.tick = due - 1;
+        s.blocks_due(&mut w);
+        assert!(w.agents[id].block.is_some(), "not yet");
+        w.tick = due;
+        s.blocks_due(&mut w);
+        assert_eq!(w.agents[id].block, None);
+        assert!(s.extras.stuck.is_empty());
+        let way = s.content.ways[s.content.blocks.iter().position(|t| *t == b.said).unwrap()];
+        let answered = w.journal.iter().any(|e| {
+            matches!(&e.event, Event::Sent { from, to, kind: MsgKind::Answer, text, re, .. }
+                if (*from, *to, *re) == (leader, id, Some(b.msg)) && text == way)
+        });
+        assert!(answered, "{:?}", w.journal);
+        let solved = |e: &crate::model::Entry| matches!(e.event, Event::Unblocked { .. });
+        assert!(w.journal.iter().any(solved));
+    }
+
+    #[test]
+    fn a_demo_leader_asks_the_person_about_a_risky_block_and_passes_their_answer_on() {
+        let (mut w, mut s, id, leader) = blocked_world();
+        s.extras.blocked = 2;
+        s.tell_leader(&mut w, id);
+        assert_eq!(s.extras.stuck[0].how, Way::Ask);
+        let which = s.extras.stuck[0].which;
+        // A question of the leader's waits already: this one waits its turn.
+        w.asked_you(leader, "Something else?");
+        w.tick = s.extras.stuck[0].at;
+        s.blocks_due(&mut w);
+        assert_eq!(s.extras.stuck[0].at, w.tick + 5);
+        assert_eq!(w.asked_block(leader), None);
+        w.close_questions(leader);
+        w.tick += 5;
+        s.blocks_due(&mut w);
+        let (worker, b) = w.asked_block(leader).unwrap();
+        assert_eq!(worker, id);
+        assert_eq!(
+            b.stage,
+            crate::blocked::Stage::Asked {
+                tried: s.content.block_tried[which].into(),
+                risk: Some(s.content.block_risks[which].into()),
+            }
+        );
+        let q = w.question_of(leader).unwrap();
+        assert_eq!(q.text, s.content.block_asks[which]);
+        assert_eq!(q.options.len(), s.content.block_options[which].len());
+        // The person answers the leader: no plan comes of it, the worker
+        // hears their words.
+        let plans = w.plans.len();
+        s.told(&mut w, leader, "wait for the other card").unwrap();
+        w.said(leader, "wait for the other card");
+        assert_eq!(w.plans.len(), plans);
+        w.tick += 2;
+        s.blocks_due(&mut w);
+        assert_eq!(w.agents[id].block, None);
+        let passed = w.journal.iter().any(|e| {
+            matches!(&e.event, Event::Sent { kind: MsgKind::Answer, text, .. }
+                if text == "The person says: wait for the other card")
+        });
+        assert!(passed, "{:?}", w.journal);
+        // A word to a leader that asked about no block plans as ever.
+        s.told(&mut w, leader, "Add paging").unwrap();
+        assert_eq!(w.plans.len(), plans + 1);
+    }
+
+    #[test]
+    fn a_demo_leader_that_lets_a_block_lie_leaves_it_to_the_person() {
+        let (mut w, mut s, id, _) = blocked_world();
+        s.extras.blocked = 4;
+        s.tell_leader(&mut w, id);
+        assert_eq!(s.extras.stuck[0].how, Way::Silent);
+        w.tick = s.extras.stuck[0].at;
+        s.blocks_due(&mut w);
+        assert!(w.open_item(id, InboxKind::Blocked).is_some());
+        // The person writes to the worker: it goes on.
+        s.told(&mut w, id, "use the fake gateway").unwrap();
+        w.said(id, "use the fake gateway");
+        assert_eq!(w.agents[id].block, None);
+        assert!(w.open_item(id, InboxKind::Blocked).is_none());
+        // A block that ended before its leader got to it is dropped.
+        s.extras.blocked = 0;
+        s.tell_leader(&mut w, id);
+        w.block_over(id);
+        let sent = w.messages;
+        w.tick = s.extras.stuck[0].at;
+        s.blocks_due(&mut w);
+        assert!(s.extras.stuck.is_empty());
+        assert_eq!(w.messages, sent, "nothing is sent for it");
+    }
+
+    #[test]
+    fn the_demo_s_block_content_is_whole_in_both_languages() {
+        for lang in [Lang::En, Lang::Tr] {
+            let (_, s) = world(1, 2, 0, 7, lang);
+            let c = s.content;
+            let n = c.blocks.len();
+            assert!(n > 0);
+            assert_eq!(
+                [
+                    c.ways.len(),
+                    c.block_asks.len(),
+                    c.block_options.len(),
+                    c.block_tried.len(),
+                    c.block_risks.len()
+                ],
+                [n; 5]
+            );
+            assert!(c.block_options.iter().all(|o| !o.is_empty()));
+            assert!(
+                c.block_risks
+                    .iter()
+                    .all(|r| { r.chars().count() <= crate::blocked::RISK_MAX })
+            );
+            assert!(c.person_said.contains("{}"));
+        }
     }
 }

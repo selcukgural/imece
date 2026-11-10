@@ -71,3 +71,7 @@ way over and over is not), and on the bus not at all (`MAX_WOKEN` caps
 turns on messages); an idle leader that does nothing with a stall is told
 nothing more until something moves; the minutes are one setting for every
 project.
+
+**Later (record 143).** A worker with an open block is no stalled one:
+its leader heard from the worker itself. `stall` is also how long a block
+may stay with the leader before it comes to the person.

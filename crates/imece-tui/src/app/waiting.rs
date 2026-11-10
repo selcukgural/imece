@@ -98,6 +98,10 @@ impl App {
                     Rung::Stuck
                 } else if waits[a.id] || a.status == Status::WaitingHuman {
                     Rung::Waiting
+                } else if a.block.is_some() && !a.status.busy() {
+                    // Blocked, its leader has it (record 143): neither
+                    // done nor the person's turn.
+                    Rung::Idle
                 } else if a.status == Status::Idle && self.unseen.contains(&a.id) {
                     // `done_unseen`, its inbox already looked at.
                     Rung::Done
@@ -405,7 +409,7 @@ impl App {
         }
         if matches!(
             self.world.inbox[item].kind,
-            InboxKind::Question | InboxKind::Fault
+            InboxKind::Question | InboxKind::Fault | InboxKind::Blocked
         ) {
             // A question is answered by writing back, and an API error
             // the person mended is told the same way: the composer opens

@@ -220,7 +220,10 @@ impl App {
         // Louder for what is stuck or failed.
         let loud = due.iter().any(|&n| match n {
             Note::Stuck(_) => true,
-            Note::Item(i) => self.world.inbox[i].kind == InboxKind::Fault,
+            Note::Item(i) => matches!(
+                self.world.inbox[i].kind,
+                InboxKind::Fault | InboxKind::Blocked
+            ),
         });
         self.notice_count += 1;
         let id = self.notice_count;
