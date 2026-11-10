@@ -37,6 +37,7 @@ fn a_card(id: CardId, project: ProjectId, owner: Option<AgentId>, column: Column
         symbols: Vec::new(),
         paths: Vec::new(),
         checks: Vec::new(),
+        closes: None,
         started: 0,
         finished: 0,
         attempt: 1,

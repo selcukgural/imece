@@ -15,6 +15,8 @@ pub(super) struct Opening<'a> {
     pub title: &'a str,
     pub paths: &'a [Owned],
     pub checks: &'a [String],
+    /// The outside item the card closes (record 142).
+    pub closes: Option<Item>,
     /// The card an assign hands again (record 126): taken instead of a
     /// new one.
     pub card: Option<CardId>,
@@ -535,6 +537,7 @@ impl Live {
             title: &title,
             paths: &[],
             checks: &[],
+            closes: None,
             card: None,
             person: true,
             lazy: true,
@@ -706,6 +709,7 @@ impl Live {
                 symbols: Vec::new(),
                 paths: o.paths.to_vec(),
                 checks: o.checks.to_vec(),
+                closes: o.closes,
                 started: t,
                 finished: 0,
                 attempt: 1,
@@ -3196,6 +3200,7 @@ mod tests {
             title: "next",
             paths: &[],
             checks: &[],
+            closes: None,
             card: None,
             person: false,
             lazy: false,
@@ -3216,6 +3221,7 @@ mod tests {
             title: "next",
             paths: &[],
             checks: &[],
+            closes: None,
             card,
             person: false,
             lazy: false,

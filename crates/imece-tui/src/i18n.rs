@@ -1236,6 +1236,9 @@ pub struct Text {
     pub plan_on: &'static str,
     pub plan_off: &'static str,
     pub plan_bad: &'static str,
+    /// `:closes` (record 142): where the project's setting stands.
+    pub closes_on: &'static str,
+    pub closes_off: &'static str,
     pub ev_planned: &'static str,
     pub ev_plan_yes: &'static str,
     pub ev_plan_no: &'static str,
@@ -1734,7 +1737,7 @@ pub struct Text {
     pub help_keys: [(&'static str, &'static str); 57],
     /// What each `:` command does, in a line, in `complete::COMMANDS`'
     /// order: shown after the menu's keys once `tab` put one on the line.
-    pub command_hints: [(&'static str, &'static str); 73],
+    pub command_hints: [(&'static str, &'static str); 74],
     /// The completion menu's mark for the items after the window, and
     /// where the highlighted one is among them all.
     pub menu_more: &'static str,
@@ -1964,6 +1967,10 @@ pub const EN: Text = Text {
         ),
         ("clear", "take to decide and the journal off the screen"),
         ("close", "close a project: its agents leave, worktrees stay"),
+        (
+            "closes",
+            "a card whose change is in closes the issue its leader named: on | off",
+        ),
         ("code", "the code map, in a window"),
         (
             "commit",
@@ -2522,6 +2529,8 @@ pub const EN: Text = Text {
     plan_on: "plan gate on for {}: a plan with your yes before the second worker",
     plan_off: "plan gate off for {}: the leader hires as it sees fit",
     plan_bad: "{} is not on or off",
+    closes_on: "closing issues is on for {}: a card whose change is in closes the issue its leader named",
+    closes_off: "closing issues is off for {}: you are asked before one closes, and :commit adds no Closes line",
     ev_planned: "{} planned {} for {}; waits for your yes",
     ev_plan_yes: "you said yes to {}'s plan",
     ev_plan_no: "you said no to {}'s plan",
@@ -3502,6 +3511,10 @@ pub const TR: Text = Text {
             "close",
             "bir projeyi kapat: ajanları ayrılır, worktree'ler kalır",
         ),
+        (
+            "closes",
+            "değişikliği giren kart, liderinin adlandırdığı issue'yu kapatır: on | off",
+        ),
         ("code", "kod haritası, bir pencerede"),
         (
             "commit",
@@ -4075,6 +4088,8 @@ pub const TR: Text = Text {
     plan_on: "{} için plan kapısı açık: ikinci işçiden önce onayınızı alan bir plan",
     plan_off: "{} için plan kapısı kapalı: lider uygun gördüğü gibi işe alır",
     plan_bad: "{} on ya da off değil",
+    closes_on: "{} için issue kapatma açık: değişikliği giren kart, liderinin adlandırdığı issue'yu kapatır",
+    closes_off: "{} için issue kapatma kapalı: biri kapanmadan önce size sorulur, :commit Closes satırı eklemez",
     ev_planned: "{} {} planladı, {}; onayınızı bekliyor",
     ev_plan_yes: "{} planına evet dediniz",
     ev_plan_no: "{} planına hayır dediniz",
@@ -5456,6 +5471,8 @@ mod tests {
             (e.plan_on, t.plan_on),
             (e.plan_off, t.plan_off),
             (e.plan_bad, t.plan_bad),
+            (e.closes_on, t.closes_on),
+            (e.closes_off, t.closes_off),
             (e.ev_planned, t.ev_planned),
             (e.ev_plan_yes, t.ev_plan_yes),
             (e.ev_plan_no, t.ev_plan_no),

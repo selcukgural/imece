@@ -80,6 +80,7 @@ fn a_working_owner_breathes_on_the_board_s_window_and_nothing_is_patched() {
         symbols: Vec::new(),
         paths: Vec::new(),
         checks: Vec::new(),
+        closes: None,
         started: 0,
         finished: 0,
         attempt: 1,

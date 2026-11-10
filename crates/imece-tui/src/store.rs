@@ -102,7 +102,10 @@ use crate::recall::{Hit, Line};
 /// 35 (2026-11-09): what each model spent, on a ledger row
 /// (`ledger.models`) and in a session to resume (`agents.session_models`),
 /// record 134.
-pub const SCHEMA_VERSION: i64 = 35;
+/// 36 (2026-11-10): the outside item a card closes (`cards.closes`, record
+/// 142), an assign's until it is delivered (`mail.closes`), whether a
+/// project closes them itself (`projects.closes`, on).
+pub const SCHEMA_VERSION: i64 = 36;
 /// Trace lines kept per agent, as the world keeps them.
 const TRACE_KEEP: usize = 200;
 /// The file's name under the state directory.
@@ -140,7 +143,7 @@ CREATE TABLE IF NOT EXISTS cards (
     owner INTEGER, col TEXT NOT NULL, started INTEGER NOT NULL, finished INTEGER NOT NULL,
     paths TEXT NOT NULL DEFAULT '[]', attempt INTEGER NOT NULL DEFAULT 1,
     breaker TEXT NOT NULL DEFAULT '{}', waits_on TEXT NOT NULL DEFAULT '[]',
-    checks TEXT NOT NULL DEFAULT '[]');
+    checks TEXT NOT NULL DEFAULT '[]', closes INTEGER);
 -- Read whole, in key order (`load`): no index beyond the key.
 CREATE TABLE IF NOT EXISTS story (
     card INTEGER NOT NULL, seq INTEGER NOT NULL, tick INTEGER NOT NULL,
@@ -163,7 +166,7 @@ CREATE TABLE IF NOT EXISTS mail (
     agent INTEGER NOT NULL, seq INTEGER NOT NULL, sender INTEGER NOT NULL,
     kind TEXT NOT NULL, body TEXT NOT NULL, number INTEGER NOT NULL DEFAULT 0, re INTEGER,
     paths TEXT NOT NULL DEFAULT '[]', card INTEGER, outcome TEXT NOT NULL DEFAULT '\"Ok\"',
-    checks TEXT NOT NULL DEFAULT '[]', PRIMARY KEY (agent, seq)) WITHOUT ROWID;
+    checks TEXT NOT NULL DEFAULT '[]', closes INTEGER, PRIMARY KEY (agent, seq)) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS notes (
     agent INTEGER NOT NULL, seq INTEGER NOT NULL, text TEXT NOT NULL,
     PRIMARY KEY (agent, seq)) WITHOUT ROWID;
@@ -719,6 +722,19 @@ impl Store {
                  ALTER TABLE mail ADD COLUMN checks TEXT NOT NULL DEFAULT '[]';",
             )?;
         }
+        if !self.has_column("cards", "closes")? {
+            // No card closed an outside item before.
+            self.conn.execute_batch(
+                "ALTER TABLE cards ADD COLUMN closes INTEGER;
+                 ALTER TABLE mail ADD COLUMN closes INTEGER;",
+            )?;
+        }
+        if !self.has_column("projects", "closes")? {
+            // Every project closes them itself until the person says not.
+            self.conn.execute_batch(
+                "ALTER TABLE projects ADD COLUMN closes INTEGER NOT NULL DEFAULT 1;",
+            )?;
+        }
         if !self.has_column("journal", "marked")? {
             self.conn.execute_batch(
                 "ALTER TABLE journal ADD COLUMN marked INTEGER NOT NULL DEFAULT 0;",
@@ -1039,8 +1055,8 @@ impl Store {
             let q = &w.projects[p];
             tx.execute(
                 "INSERT OR REPLACE INTO projects (id, name, leader, closed, repo, pinned, \
-                 copies, archived_at, archived_title, allowed, plan, lonca) VALUES (?1, ?2, ?3, \
-                 ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                 copies, archived_at, archived_title, allowed, plan, lonca, closes) VALUES (?1, \
+                 ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
                 params![
                     n(q.id),
                     q.name,
@@ -1056,6 +1072,7 @@ impl Store {
                     serde_json::to_string(&q.allowed).unwrap_or_else(|_| "[]".into()),
                     serde_json::to_string(&q.plan).unwrap_or_default(),
                     q.lonca.as_ref().map(|l| l.repo.as_str()),
+                    q.closing,
                 ],
             )?;
         }
@@ -1108,8 +1125,8 @@ impl Store {
             let card = &w.cards[c];
             tx.execute(
                 "INSERT OR REPLACE INTO cards (id, project, title, owner, col, started, finished, \
-                 paths, attempt, breaker, waits_on, checks) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, \
-                 ?9, ?10, ?11, ?12)",
+                 paths, attempt, breaker, waits_on, checks, closes) VALUES (?1, ?2, ?3, ?4, ?5, \
+                 ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
                 params![
                     n(card.id),
                     n(card.project),
@@ -1122,7 +1139,8 @@ impl Store {
                     card.attempt,
                     serde_json::to_string(&card.breaker).unwrap_or_default(),
                     serde_json::to_string(&card.after).unwrap_or_default(),
-                    serde_json::to_string(&card.checks).unwrap_or_default()
+                    serde_json::to_string(&card.checks).unwrap_or_default(),
+                    card.closes
                 ],
             )?;
         }
@@ -1232,7 +1250,8 @@ impl Store {
             for (seq, m) in k.mail[id].iter().enumerate() {
                 tx.execute(
                     "INSERT INTO mail (agent, seq, sender, kind, body, number, re, paths, card, \
-                     outcome, checks) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                     outcome, checks, closes) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, \
+                     ?11, ?12)",
                     params![
                         n(id),
                         n(seq),
@@ -1244,7 +1263,8 @@ impl Store {
                         serde_json::to_string(&m.paths).unwrap_or_default(),
                         opt(m.card),
                         serde_json::to_string(&m.outcome).unwrap_or_default(),
-                        serde_json::to_string(&m.checks).unwrap_or_default()
+                        serde_json::to_string(&m.checks).unwrap_or_default(),
+                        m.closes
                     ],
                 )?;
             }
@@ -1441,7 +1461,7 @@ impl Store {
                 &q.archived,
                 &q.allowed,
                 &q.plan,
-                q.lonca.as_ref().map(|l| &l.repo),
+                (q.lonca.as_ref().map(|l| &l.repo), q.closing),
             ));
             if s.projects.get(p) != Some(&h) {
                 plan.projects.push(p);
@@ -1519,7 +1539,7 @@ impl Store {
                 card.attempt,
                 card.breaker,
                 &card.after,
-                &card.checks,
+                (&card.checks, card.closes),
             ));
             if s.cards.get(c) != Some(&h) {
                 plan.cards.push(c);
@@ -1703,7 +1723,7 @@ impl Store {
         let conn = &self.conn;
         let mut st = conn.prepare(
             "SELECT id, name, leader, closed, repo, pinned, copies, archived_at, archived_title, \
-             allowed, plan, lonca FROM projects ORDER BY id",
+             allowed, plan, lonca, closes FROM projects ORDER BY id",
         )?;
         for row in st.query_map([], |r| {
             Ok((
@@ -1718,11 +1738,12 @@ impl Store {
                 r.get::<_, Option<String>>(8)?,
                 r.get::<_, String>(9)?,
                 r.get::<_, String>(10)?,
-                r.get::<_, Option<String>>(11)?,
+                (r.get::<_, Option<String>>(11)?, r.get::<_, bool>(12)?),
             ))
         })? {
-            let (id, name, leader, closed, repo, pinned, copies, at, title, allowed, plan, lonca) =
+            let (id, name, leader, closed, repo, pinned, copies, at, title, allowed, plan, last) =
                 row?;
+            let (lonca, closing) = last;
             let archived = at.map(|at| Archived {
                 at: ubig(at),
                 title: title.unwrap_or_default(),
@@ -1752,6 +1773,7 @@ impl Store {
                 copies,
                 allowed,
                 plan,
+                closing,
                 no_git: false,
                 runners: crate::runners::Runners::default(),
                 // Asked again: a store's state is never kept.
@@ -1827,7 +1849,7 @@ impl Store {
         let mut traces =
             conn.prepare("SELECT line FROM trace WHERE agent = ?1 ORDER BY seq DESC LIMIT ?2")?;
         let mut mails = conn.prepare(
-            "SELECT sender, kind, body, number, re, paths, card, outcome, checks FROM mail \
+            "SELECT sender, kind, body, number, re, paths, card, outcome, checks, closes FROM mail \
              WHERE agent = ?1 ORDER BY seq",
         )?;
         let mut texts = [
@@ -1850,6 +1872,7 @@ impl Store {
                     re: r.get(4)?,
                     paths: paths_of(&r.get::<_, String>(5)?)?,
                     checks: checks_of(&r.get::<_, String>(8)?)?,
+                    closes: r.get(9)?,
                     card: uopt(r.get(6)?),
                     outcome: serde_json::from_str(&r.get::<_, String>(7)?)
                         .map_err(|e| bad(format!("outcome: {e}")))?,
@@ -1870,7 +1893,7 @@ impl Store {
         }
         let mut st = conn.prepare(
             "SELECT id, project, title, owner, col, started, finished, paths, attempt, breaker, \
-             waits_on, checks FROM cards ORDER BY id",
+             waits_on, checks, closes FROM cards ORDER BY id",
         )?;
         for row in st.query_map([], |r| {
             Ok(Card {
@@ -1883,6 +1906,7 @@ impl Store {
                 symbols: Vec::new(),
                 paths: paths_of(&r.get::<_, String>(7)?)?,
                 checks: checks_of(&r.get::<_, String>(11)?)?,
+                closes: r.get(12)?,
                 started: ubig(r.get(5)?),
                 finished: ubig(r.get(6)?),
                 attempt: r.get(8)?,
@@ -2464,6 +2488,7 @@ mod tests {
                     copies: Vec::new(),
                     allowed: Vec::new(),
                     plan: PlanGate::default(),
+                    closing: true,
                     no_git: false,
                     runners: crate::runners::Runners::default(),
                     lonca: None,
@@ -2481,6 +2506,7 @@ mod tests {
                     copies: Vec::new(),
                     allowed: Vec::new(),
                     plan: PlanGate::default(),
+                    closing: true,
                     no_git: false,
                     runners: crate::runners::Runners::default(),
                     lonca: None,
@@ -2524,6 +2550,7 @@ mod tests {
                     symbols: Vec::new(),
                     paths: Vec::new(),
                     checks: Vec::new(),
+                    closes: None,
                     started: 10,
                     finished: 0,
                     attempt: 3,
@@ -2546,6 +2573,7 @@ mod tests {
                     symbols: Vec::new(),
                     paths: Vec::new(),
                     checks: Vec::new(),
+                    closes: None,
                     started: 20,
                     finished: 0,
                     attempt: 0,
@@ -2562,6 +2590,7 @@ mod tests {
                     symbols: Vec::new(),
                     paths: Vec::new(),
                     checks: Vec::new(),
+                    closes: None,
                     started: 5,
                     finished: 9,
                     attempt: 1,
@@ -2846,6 +2875,7 @@ mod tests {
                         re: None,
                         paths: Vec::new(),
                         checks: Vec::new(),
+                        closes: None,
                         card: Some(1),
                         outcome: Outcome::Ok,
                     },
@@ -2857,6 +2887,7 @@ mod tests {
                         re: Some(11),
                         paths: Vec::new(),
                         checks: Vec::new(),
+                        closes: None,
                         card: None,
                         outcome: Outcome::Late(2),
                     },
@@ -3465,6 +3496,7 @@ mod tests {
                         symbols: Vec::new(),
                         paths: Vec::new(),
                         checks: Vec::new(),
+                        closes: None,
                         started: 40,
                         finished: 0,
                         attempt: 1,
@@ -3531,6 +3563,7 @@ mod tests {
                         re: None,
                         paths: Vec::new(),
                         checks: Vec::new(),
+                        closes: None,
                         card: None,
                         outcome: Outcome::Ok,
                     })
@@ -4634,15 +4667,15 @@ mod tests {
                 )
                 .unwrap();
             assert_eq!(
-                version, "35",
+                version, "36",
                 "the sent table, the Fault kind, archives, restores, start points, standing yes, the \
                  recall index, forks, paid kinds, reviews, no vendor, the check on a change, what \
                  it cost, the paths a card owns, the plan gate, a project's Lonca repository, \
                  a card's attempts, its breaker, what it waits on, a card withdrawn and the \
-                 checks it asks for, what was never priced, the ledger, what each model spent: an \
-                 older imece knows none"
+                 checks it asks for, what was never priced, the ledger, what each model spent, the \
+                 outside item a card closes: an older imece knows none"
             );
-            assert_eq!(SCHEMA_VERSION, 35);
+            assert_eq!(SCHEMA_VERSION, 36);
         }
         let back = Store::open(&path)
             .unwrap()
@@ -5619,6 +5652,7 @@ mod tests {
             re: None,
             paths: Vec::new(),
             checks: Vec::new(),
+            closes: None,
             card: Some(0),
             outcome: Outcome::Failed(Some(0)),
         });
@@ -5885,6 +5919,7 @@ mod tests {
             re: None,
             paths: Vec::new(),
             checks: vec!["api".into()],
+            closes: None,
             card: None,
             outcome: Outcome::Ok,
         });
@@ -5914,6 +5949,88 @@ mod tests {
                 Ok(_) => panic!("a file imece did not write loaded: {table} {bad}"),
             };
             assert!(why.contains("checks"), "{why}");
+        }
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn a_file_of_schema_35_gets_the_closes_columns_and_keeps_them_from_then_on() {
+        let d = dir("schema35");
+        std::fs::create_dir_all(&d).unwrap();
+        let path = d.join(FILE);
+        {
+            // A whole file as schema 35 wrote it: no card closes an item.
+            let mut store = Store::open(&path).unwrap();
+            assert!(store.save(&world(), &kept().kept()).unwrap());
+            store
+                .raw()
+                .execute_batch(
+                    "ALTER TABLE cards DROP COLUMN closes;
+                     ALTER TABLE mail DROP COLUMN closes;
+                     ALTER TABLE projects DROP COLUMN closes;
+                     UPDATE meta SET value = '35' WHERE key = 'schema_version';",
+                )
+                .unwrap();
+        }
+        let mut store = Store::open(&path).unwrap();
+        let back = store.load(100).unwrap().expect("a world");
+        assert!(back.world.cards.iter().all(|c| c.closes.is_none()));
+        assert!(
+            back.world.projects.iter().all(|p| p.closing),
+            "on, as a new one"
+        );
+        assert!(back.found.mail.iter().flatten().all(|m| m.closes.is_none()));
+        // The next save writes what the world has: the item a card closes,
+        // and an assign's that waits in the mail; each tells a save moved.
+        let mut k = back.found();
+        let mut w = back.world;
+        let last = w.cards.len() - 1;
+        w.cards[last].closes = Some(58);
+        assert!(
+            store.save(&w, &k.kept()).unwrap(),
+            "what a card closes moved"
+        );
+        k.mail[1].push(Mail {
+            from: 1,
+            kind: MsgKind::Assign,
+            body: "Close it".into(),
+            id: 9,
+            re: None,
+            paths: Vec::new(),
+            checks: Vec::new(),
+            closes: Some(61),
+            card: None,
+            outcome: Outcome::Ok,
+        });
+        assert!(store.save(&w, &k.kept()).unwrap(), "the mail moved");
+        let back = store.load(100).unwrap().expect("a world");
+        assert_eq!(back.world.cards[last].closes, Some(58));
+        assert_eq!(back.world.cards[0].closes, None, "only the card's own");
+        assert_eq!(back.found.mail[1].last().unwrap().closes, Some(61));
+        assert!(!store.save(&w, &k.kept()).unwrap(), "nothing moved");
+        w.projects[0].closing = false;
+        assert!(store.save(&w, &k.kept()).unwrap(), "the setting moved");
+        let back = store.load(100).unwrap().expect("a world");
+        let closing: Vec<bool> = back.world.projects.iter().map(|p| p.closing).collect();
+        assert!(
+            !closing[0] && closing[1..].iter().all(|&c| c),
+            "{closing:?}"
+        );
+        // A number no card could have been given is a file imece did not
+        // write: it would reach the command that closes an issue.
+        for (table, bad) in [
+            ("cards", "-1"),
+            ("mail", "4294967296"),
+            ("cards", "'o/r#5'"),
+        ] {
+            store
+                .raw()
+                .execute_batch(&format!(
+                    "UPDATE cards SET closes = NULL; UPDATE mail SET closes = NULL;
+                     UPDATE {table} SET closes = {bad};"
+                ))
+                .unwrap();
+            assert!(store.load(100).is_err(), "{table} {bad}");
         }
         let _ = std::fs::remove_dir_all(&d);
     }
@@ -5986,6 +6103,7 @@ mod tests {
             re: None,
             paths: vec![crate::paths::Owned::new("src/b.rs")],
             checks: Vec::new(),
+            closes: None,
             card: None,
             outcome: Outcome::Ok,
         });
@@ -6051,6 +6169,7 @@ mod tests {
                     tier: "cheap".into(),
                     paths: vec![crate::paths::Owned::new("src/p.rs")],
                     checks: Vec::new(),
+                    closes: None,
                     body: "Fix it.".into(),
                     after: Vec::new(),
                 }],

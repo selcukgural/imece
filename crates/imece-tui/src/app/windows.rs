@@ -216,6 +216,31 @@ impl App {
         self.flash(fill(text, &[&name]));
     }
 
+    /// `:closes [on|off]` (record 142): whether the project at hand closes
+    /// the outside item a card names once its change is in; bare, it says
+    /// where it stands.
+    pub(super) fn closes_command(&mut self, arg: &str) {
+        let t = self.lang.text();
+        let p = self.current_project();
+        let name = self.world.projects[p].name.clone();
+        match arg.trim() {
+            "" => {}
+            "on" | "off" => {
+                if self.viewing_archive() {
+                    return self.read_only();
+                }
+                self.world.projects[p].closing = arg.trim() == "on";
+            }
+            other => return self.flash(fill(t.plan_bad, &[other])),
+        }
+        let text = if self.world.projects[p].closing {
+            t.closes_on
+        } else {
+            t.closes_off
+        };
+        self.flash(fill(text, &[&name]));
+    }
+
     /// At a start: the engine looks for worktrees no agent owns, and a
     /// flash says how many when it found any ([`App::watch_tidy`]).
     pub fn start_tidy(&mut self) {
@@ -1197,6 +1222,39 @@ mod tests {
             flashed(&app).as_deref(),
             Some("no to the plan: the leader hears it and asks you, or plans again")
         );
+    }
+
+    #[test]
+    fn colon_closes_turns_closing_issues_on_and_off_for_the_project_at_hand() {
+        let mut app = waiting(&[]);
+        assert!(app.world.projects[0].closing, "on from the first start");
+        assert_eq!(app.command_note("closes"), "(on)");
+        app.command("closes");
+        assert_eq!(
+            flashed(&app).as_deref(),
+            Some(
+                "closing issues is on for shop-api: a card whose change is in closes the \
+                 issue its leader named"
+            )
+        );
+        app.command("closes off");
+        assert!(!app.world.projects[0].closing);
+        assert_eq!(app.command_note("closes"), "(off)");
+        assert_eq!(
+            flashed(&app).as_deref(),
+            Some(
+                "closing issues is off for shop-api: you are asked before one closes, and \
+                 :commit adds no Closes line"
+            )
+        );
+        app.command("closes");
+        assert!(flashed(&app).unwrap().starts_with("closing issues is off"));
+        app.command("closes maybe");
+        assert_eq!(flashed(&app).as_deref(), Some("maybe is not on or off"));
+        assert!(!app.world.projects[0].closing);
+        app.command("closes on");
+        assert!(app.world.projects[0].closing);
+        assert!(flashed(&app).unwrap().starts_with("closing issues is on"));
     }
 
     #[test]

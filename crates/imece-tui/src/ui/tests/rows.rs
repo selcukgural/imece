@@ -627,6 +627,7 @@ fn a_project_header_shows_how_far_its_own_cards_are() {
         symbols: Vec::new(),
         paths: Vec::new(),
         checks: Vec::new(),
+        closes: None,
         started: 0,
         finished: 0,
         attempt: 1,

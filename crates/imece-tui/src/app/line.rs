@@ -306,6 +306,7 @@ impl App {
                 .and_then(|c| self.world.cards.get(c))
                 .map(|c| ui::words::checks_list(t, &c.checks)),
             "plan" => Some(on_off(self.world.projects[self.current_project()].plan.on)),
+            "closes" => Some(on_off(self.world.projects[self.current_project()].closing)),
             "lonca" => (self.world.projects[self.current_project()].lonca.as_ref())
                 .map(|on| on.repo.clone()),
             "sync" => match self.world.projects[self.current_project()].lonca.as_ref() {
@@ -697,6 +698,7 @@ impl App {
             "review" => self.review_command(arg),
             "checks" => self.checks_command(arg),
             "plan" => self.plan_command(arg),
+            "closes" => self.closes_command(arg),
             "lonca" => self.lonca_command(arg.trim()),
             "sync" => self.sync_command(),
             "copy" => self.copy_path(arg),

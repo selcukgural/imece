@@ -1090,6 +1090,7 @@ pub fn world(
             copies: Vec::new(),
             allowed: Vec::new(),
             plan: PlanGate::default(),
+            closing: true,
             no_git: false,
             runners: kit.runners,
             lonca: None,
@@ -3270,6 +3271,7 @@ impl Sim {
             symbols: Vec::new(),
             paths: Vec::new(),
             checks: demo_checks(asks, (id + DROPPED_FROM).is_multiple_of(DROPPED_EVERY)),
+            closes: None,
             started: 0,
             finished: 0,
             attempt: 0,
@@ -3339,6 +3341,7 @@ impl Sim {
                     .map(|(file, _)| vec![Owned::new(file)])
                     .unwrap_or_default(),
                 checks: w.cards[c].checks.clone(),
+                closes: w.cards[c].closes,
                 after: w.cards[c].after.iter().filter_map(place).collect(),
             })
             .collect();

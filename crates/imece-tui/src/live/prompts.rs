@@ -163,6 +163,10 @@ pub(super) fn system_prompt(
                      worktree's diff); they apply it to their checkout or reject it, and \
                      only an applied change is in the checkout you read. A card is \
                      done once its change is in; one sent back is at work again. A \
+                     card that answers an issue of this repository names it (closes: \
+                     its number, on an assign, a post or a plan card): the person sees \
+                     it on the change before their yes, and imece sees to closing the \
+                     issue once the change is in, so never have a worker close one. A \
                      done headed failed made no change: hand that card again (assign \
                      with card: its number), to the same worker or another, with what \
                      to do differently; so for a card whose worker stopped. A done \
@@ -545,6 +549,7 @@ mod tests {
             re,
             paths: Vec::new(),
             checks: Vec::new(),
+            closes: None,
             card: None,
             outcome: Outcome::Ok,
         };
@@ -577,6 +582,7 @@ mod tests {
             re: None,
             paths: Vec::new(),
             checks: Vec::new(),
+            closes: None,
             card,
             outcome,
         };
@@ -1049,6 +1055,7 @@ mod tests {
             re: None,
             paths: vec![Owned::new("src/a.rs"), Owned::shared("docs")],
             checks: Vec::new(),
+            closes: None,
             card: None,
             outcome: Outcome::Ok,
         };
@@ -1067,6 +1074,16 @@ mod tests {
             "{leader}"
         );
         assert!(leader.contains("(CHANGELOG.md shared)"), "{leader}");
+        assert!(
+            leader.contains(
+                "one sent back is at work again. A card that answers an issue of this \
+                 repository names it (closes: its number, on an assign, a post or a plan \
+                 card): the person sees it on the change before their yes, and imece sees to \
+                 closing the issue once the change is in, so never have a worker close one. \
+                 A done headed failed"
+            ),
+            "{leader}"
+        );
         let worker = system_prompt(&w, 1, 4, 2, Confine::Standard);
         assert!(
             worker.contains("A card that owns paths is done inside them"),

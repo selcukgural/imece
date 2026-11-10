@@ -2914,6 +2914,7 @@ mod tests {
                         tier: "cheap".into(),
                         paths: Vec::new(),
                         checks: Vec::new(),
+                        closes: None,
                         body: "b".into(),
                         after: Vec::new(),
                     };

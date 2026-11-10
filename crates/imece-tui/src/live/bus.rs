@@ -67,6 +67,10 @@ impl Live {
         if !checks.is_empty() && kind != MsgKind::Assign {
             return Err("checks go with an assign: the card it opens asks for them".into());
         }
+        let closes = closes::parse(&args["closes"])?;
+        if closes.is_some() && kind != MsgKind::Assign {
+            return Err("closes goes with an assign: the card it opens closes that item".into());
+        }
         let options = options_of(&args["options"])?;
         if !options.is_empty() && (arg("to") != YOU || kind != MsgKind::Ask) {
             return Err("options go with an ask to the person (to: you)".into());
@@ -81,6 +85,9 @@ impl Live {
         }
         if handed.is_some() && !paths.is_empty() {
             return Err("a card handed again keeps its own paths; leave paths out".into());
+        }
+        if handed.is_some() && closes.is_some() {
+            return Err("a card handed again closes what it did; leave closes out".into());
         }
         let after = after_of(&args["after"])?;
         if !after.is_empty() && kind != MsgKind::Assign {
@@ -170,7 +177,7 @@ impl Live {
         // 126, F10): the card holds it until they are done.
         let card = match after.is_empty() {
             true => handed,
-            false => Some(self.opens(w, to, body, (&paths, &checks), after)),
+            false => Some(self.opens(w, to, body, (&paths, &checks, closes), after)),
         };
         let waits = card.filter(|&c| !w.ready(c));
         self.mail[to].push(Mail {
@@ -181,6 +188,7 @@ impl Live {
             re,
             paths,
             checks,
+            closes,
             card,
             outcome,
         });
@@ -426,7 +434,7 @@ impl Live {
         w: &mut World,
         to: AgentId,
         body: &str,
-        (paths, checks): (&[Owned], &[String]),
+        (paths, checks, closes): (&[Owned], &[String], Option<Item>),
         after: Vec<CardId>,
     ) -> CardId {
         let (t, c) = (w.tick, w.cards.len());
@@ -440,6 +448,7 @@ impl Live {
             symbols: Vec::new(),
             paths: paths.to_vec(),
             checks: checks.to_vec(),
+            closes,
             started: t,
             finished: 0,
             attempt: 0,
@@ -496,6 +505,7 @@ impl Live {
         }
         let paths = paths::parse(&args["paths"])?;
         let checks = checks::parse(&args["checks"])?;
+        let closes = closes::parse(&args["closes"])?;
         let after = after_of(&args["after"])?;
         let project = w.agents[from].project;
         depends(w, project, &after)?;
@@ -524,6 +534,7 @@ impl Live {
             symbols: Vec::new(),
             paths,
             checks,
+            closes,
             started: t,
             finished: 0,
             attempt: 0,
@@ -960,6 +971,7 @@ impl Live {
             title: &title,
             paths: &first.paths,
             checks: &first.checks,
+            closes: first.closes,
             card: first.card,
             person: false,
             // Mail that is no assign opens no card by itself (record 126):
@@ -1728,6 +1740,7 @@ mod tests {
             re: None,
             paths: Vec::new(),
             checks: Vec::new(),
+            closes: None,
             card: None,
             outcome: Outcome::Ok,
         };
@@ -1796,6 +1809,7 @@ mod tests {
             symbols: Vec::new(),
             paths: Vec::new(),
             checks: Vec::new(),
+            closes: None,
             started: 0,
             finished: 0,
             attempt: 1,
@@ -1837,6 +1851,7 @@ mod tests {
                 re: Some(7),
                 paths: Vec::new(),
                 checks: Vec::new(),
+                closes: None,
                 card: None,
                 outcome: Outcome::Ok,
             }]
@@ -2874,6 +2889,7 @@ Taken:
             re: None,
             paths: Vec::new(),
             checks: Vec::new(),
+            closes: None,
             card: None,
             outcome: Outcome::Ok,
         });
@@ -3221,6 +3237,106 @@ in p.rs",
         args
     }
 
+    fn with_closes(mut args: Value, closes: Value) -> Value {
+        args["closes"] = closes;
+        args
+    }
+
+    #[test]
+    fn an_assign_that_names_an_issue_opens_a_card_that_closes_it() {
+        let mut w = team(2);
+        w.agents[1].status = Status::Idle;
+        let mut live = idle_live(3);
+        let assign = with_closes(msg("claude-1", "assign", "Fix the parser"), json!(58));
+        sent(&mut live, &mut w, 0, &assign).unwrap();
+        assert_eq!(live.mail[1][0].closes, Some(58), "until it is delivered");
+        live.step(&mut w);
+        let card = w.agents[1].card.expect("a card");
+        assert_eq!(w.cards[card].closes, Some(58));
+        // The worker's task says nothing of it: closing is not its work.
+        assert!(queued(&live, 1)[0].ends_with("from lead:\nFix the parser"));
+        // One that names none closes nothing.
+        w.agents[2].status = Status::Idle;
+        sent(&mut live, &mut w, 0, &msg("claude-2", "assign", "Docs")).unwrap();
+        assert_eq!(live.mail[2][0].closes, None);
+        live.step(&mut w);
+        assert_eq!(w.cards[w.agents[2].card.unwrap()].closes, None);
+    }
+
+    #[test]
+    fn closes_goes_with_an_assign_that_opens_a_card_and_is_digits_only() {
+        let mut w = team(1);
+        w.agents[1].status = Status::Idle;
+        let mut live = idle_live(2);
+        let refused =
+            |live: &mut Live, w: &mut World, args: Value| sent(live, w, 0, &args).unwrap_err();
+        let err = refused(
+            &mut live,
+            &mut w,
+            with_closes(msg("claude-1", "inform", "Hi"), json!(58)),
+        );
+        assert_eq!(
+            err,
+            "closes goes with an assign: the card it opens closes that item"
+        );
+        for bad in [json!("#58"), json!("o/r#58"), json!(0), json!([58])] {
+            let err = refused(
+                &mut live,
+                &mut w,
+                with_closes(msg("claude-1", "assign", "Fix"), bad.clone()),
+            );
+            assert!(err.starts_with("closes must be the number"), "{bad}: {err}");
+        }
+        assert!(
+            live.mail[1].is_empty() && w.cards.is_empty(),
+            "nothing sent"
+        );
+        // A card handed again keeps what it closes: the assign names none.
+        live.post(
+            &mut w,
+            0,
+            &with_closes(card("Add a test", "Cover sub()."), json!(7)),
+        )
+        .unwrap();
+        let mut again = with_closes(msg("claude-1", "assign", "Take it"), json!(9));
+        again["card"] = json!(1);
+        let err = refused(&mut live, &mut w, again.clone());
+        assert_eq!(
+            err,
+            "a card handed again closes what it did; leave closes out"
+        );
+        again["closes"] = Value::Null;
+        sent(&mut live, &mut w, 0, &again).unwrap();
+        assert_eq!(live.mail[1][0].closes, None, "the card's, not the mail's");
+        live.step(&mut w);
+        assert_eq!(w.agents[1].card, Some(0));
+        assert_eq!(w.cards[0].closes, Some(7), "its own");
+    }
+
+    #[test]
+    fn a_posted_card_and_one_that_waits_close_the_issue_they_name() {
+        let mut w = team(1);
+        let mut live = idle_live(2);
+        live.post(
+            &mut w,
+            0,
+            &with_closes(card("Add a test", "Cover sub()."), json!("61")),
+        )
+        .unwrap();
+        assert_eq!(w.cards[0].closes, Some(61));
+        let mut args = with_closes(msg("claude-1", "assign", "After it"), json!(62));
+        args["after"] = json!([1]);
+        sent(&mut live, &mut w, 0, &args).unwrap();
+        assert_eq!(w.cards[1].closes, Some(62), "opened when sent");
+        live.post(&mut w, 0, &card("More", "x")).unwrap();
+        assert_eq!(w.cards[2].closes, None);
+        let err = live
+            .post(&mut w, 0, &with_closes(card("Bad", "x"), json!("#61")))
+            .unwrap_err();
+        assert!(err.starts_with("closes must be the number"), "{err}");
+        assert_eq!(w.cards.len(), 3, "nothing posted");
+    }
+
     #[test]
     fn an_assign_with_checks_opens_a_card_that_asks_for_them_and_the_prompt_says_so() {
         let mut w = team(2);
@@ -3401,6 +3517,7 @@ in p.rs",
             re: None,
             paths: Vec::new(),
             checks: Vec::new(),
+            closes: None,
             card: Some(c),
             outcome: Outcome::Ok,
         };

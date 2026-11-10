@@ -753,6 +753,7 @@ mod tests {
             symbols: Vec::new(),
             paths: Vec::new(),
             checks: Vec::new(),
+            closes: None,
             started: 0,
             finished: 0,
             attempt: 1,

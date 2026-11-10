@@ -245,6 +245,7 @@ mod tests {
             symbols: Vec::new(),
             paths: Vec::new(),
             checks: Vec::new(),
+            closes: None,
             started: 12,
             finished: 24,
             attempt: 1,

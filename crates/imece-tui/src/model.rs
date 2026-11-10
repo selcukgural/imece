@@ -272,6 +272,10 @@ pub struct Talk {
 /// replies to (`re`). 0 is a message saved before numbers were given.
 pub type MsgId = u32;
 
+/// An item of the outside board by its number (record 142): an issue of
+/// the checkout's own repository, never another's.
+pub type Item = u32;
+
 /// A message waiting for an agent's next turn: its number, and the one
 /// it replies to.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -287,6 +291,9 @@ pub struct Mail {
     /// The checks an `assign` gives its card (record 127); nothing on the
     /// other types.
     pub checks: Vec<String>,
+    /// The outside item an `assign` says its card closes (record 142);
+    /// nothing on the other types.
+    pub closes: Option<Item>,
     /// The card an `assign` hands again (record 126): its receiver takes
     /// it with the turn the mail starts, instead of a new one.
     pub card: Option<CardId>,
@@ -516,6 +523,11 @@ pub struct Project {
     /// person's yes to a plan before it hires a second worker, and where
     /// that stands. Saved.
     pub plan: PlanGate,
+    /// Whether a card whose change is in closes the outside item its
+    /// leader named (record 142): on from the first start, `:closes
+    /// on|off`. Off, the person is asked first on Lonca, and `:commit`
+    /// adds no `Closes` line. Saved.
+    pub closing: bool,
     /// The folder is not a git checkout with a first commit, so its solo
     /// works straight in it: no worktree, no change to review. Found at
     /// each open and start, not saved.
@@ -1588,6 +1600,10 @@ pub struct Card {
     /// given with the `assign` or `post` that made it, never changed; the
     /// person's yes to its change asks Lonca to run them too.
     pub checks: Vec<String>,
+    /// The item of the outside board (an issue of the checkout's own
+    /// repository) its landing closes (record 142): named by the leader
+    /// with the `assign` or `post` that made it, never changed.
+    pub closes: Option<Item>,
     pub started: u64,
     pub finished: u64,
     /// How many times the card was taken (record 126): by the turn an
@@ -3134,6 +3150,9 @@ pub struct Planned {
     /// The checks it will ask for (record 127).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub checks: Vec<String>,
+    /// The outside item it will close (record 142).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub closes: Option<Item>,
     pub body: String,
     /// The cards of the same plan it waits on (record 126, F10), by their
     /// place in it from 1, each an earlier one.
@@ -3626,6 +3645,7 @@ impl World {
                 copies: Vec::new(),
                 allowed: Vec::new(),
                 plan: PlanGate::default(),
+                closing: true,
                 no_git: false,
                 runners: crate::runners::Runners::default(),
                 lonca: None,
@@ -4819,6 +4839,7 @@ impl World {
             symbols: Vec::new(),
             paths: Vec::new(),
             checks: Vec::new(),
+            closes: None,
             started: own.tick,
             finished: 0,
             attempt: 1,
@@ -6107,6 +6128,7 @@ mod tests {
                 copies: Vec::new(),
                 allowed: Vec::new(),
                 plan: PlanGate::default(),
+                closing: true,
                 no_git: false,
                 runners: crate::runners::Runners::default(),
                 lonca: None,
@@ -6435,6 +6457,7 @@ mod tests {
             symbols: Vec::new(),
             paths: Vec::new(),
             checks: Vec::new(),
+            closes: None,
             started: 0,
             finished: 0,
             attempt: 1,
@@ -6784,6 +6807,7 @@ mod tests {
             symbols: Vec::new(),
             paths: Vec::new(),
             checks: Vec::new(),
+            closes: None,
             started: 0,
             finished: 0,
             attempt: 1,
@@ -6940,6 +6964,7 @@ mod tests {
             copies: Vec::new(),
             allowed: Vec::new(),
             plan: PlanGate::default(),
+            closing: true,
             no_git: false,
             runners: crate::runners::Runners::default(),
             lonca: None,
@@ -7203,6 +7228,7 @@ mod tests {
                 symbols: Vec::new(),
                 paths: Vec::new(),
                 checks: Vec::new(),
+                closes: None,
                 started: 0,
                 finished: 0,
                 attempt: 1,
@@ -8146,6 +8172,7 @@ mod tests {
             symbols: Vec::new(),
             paths: Vec::new(),
             checks: Vec::new(),
+            closes: None,
             started: 0,
             finished: 0,
             attempt: 1,
@@ -8688,6 +8715,7 @@ mod tests {
             symbols: Vec::new(),
             paths: Vec::new(),
             checks: Vec::new(),
+            closes: None,
             started: 0,
             finished: 0,
             attempt: 1,
@@ -8872,6 +8900,7 @@ mod tests {
             copies: Vec::new(),
             allowed: Vec::new(),
             plan: PlanGate::default(),
+            closing: true,
             no_git: false,
             runners: crate::runners::Runners::default(),
             lonca: None,
@@ -9081,6 +9110,7 @@ mod tests {
                 copies: Vec::new(),
                 allowed: Vec::new(),
                 plan: PlanGate::default(),
+                closing: true,
                 no_git: false,
                 runners: crate::runners::Runners::default(),
                 lonca: None,
@@ -9125,6 +9155,7 @@ mod tests {
             copies: Vec::new(),
             allowed: Vec::new(),
             plan: PlanGate::default(),
+            closing: true,
             no_git: false,
             runners: crate::runners::Runners::default(),
             lonca: None,
@@ -9254,6 +9285,7 @@ mod tests {
                     tier: "standard".into(),
                     paths: Vec::new(),
                     checks: Vec::new(),
+                    closes: None,
                     body: "b".into(),
                     after: Vec::new(),
                 })
@@ -10041,6 +10073,7 @@ mod tests {
             symbols: Vec::new(),
             paths: crate::paths::parse(&serde_json::json!(paths)).unwrap(),
             checks: Vec::new(),
+            closes: None,
             started: 0,
             finished: 0,
             attempt: 1,
@@ -10333,6 +10366,7 @@ mod change_proof_tests {
             story: Vec::new(),
             paths: crate::paths::parse(&v).unwrap(),
             checks: Vec::new(),
+            closes: None,
             started: 0,
             finished: 0,
             attempt: 1,
@@ -10403,6 +10437,7 @@ mod change_proof_tests {
             symbols: Vec::new(),
             paths: Vec::new(),
             checks: Vec::new(),
+            closes: None,
             started: 0,
             finished: 0,
             attempt: 0,
@@ -10455,6 +10490,7 @@ mod change_proof_tests {
             symbols: Vec::new(),
             paths: Vec::new(),
             checks: Vec::new(),
+            closes: None,
             started: 0,
             finished: 0,
             attempt: 1,

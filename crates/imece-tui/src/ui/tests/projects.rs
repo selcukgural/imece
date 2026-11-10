@@ -432,6 +432,7 @@ fn an_archive_s_cards_leave_the_board_the_queue_and_the_header() {
         symbols: Vec::new(),
         paths: Vec::new(),
         checks: Vec::new(),
+        closes: None,
         started: 0,
         finished: 0,
         attempt: 1,
