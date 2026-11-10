@@ -1,0 +1,1 @@
+Notes kept in a folder that is not a git checkout (record 73).

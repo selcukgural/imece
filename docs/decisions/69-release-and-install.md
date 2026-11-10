@@ -144,3 +144,8 @@ do not wait for them); `cargo publish` again from the tag finishes it,
 and a version on crates.io can only be yanked, never replaced, which is
 why the upload is last. Migration: someone with `~/.cargo/bin/imece` from
 `cargo install --path` keeps it; `cargo install imece` replaces it.
+
+Since record 147 (2026-11-10) a tag's first job is the acceptance gate
+(`tools/acceptance.py gate`): nothing is built or published without
+`docs/acceptance/runs/vX.Y.Z.md` passed on the commit that is tagged, so
+the version pull request's last commit is the run's report.

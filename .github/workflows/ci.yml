@@ -42,8 +42,23 @@ jobs:
           persist-credentials: false
       - name: shellcheck
         if: runner.os == 'Linux'
-        run: shellcheck website/static/install.sh website/test-install.sh
+        run: shellcheck website/static/install.sh website/test-install.sh tools/acceptance/setup.sh
       - name: Rust toolchain (rust-toolchain.toml)
         run: rustup toolchain install
       - run: cargo build --locked -p imece
       - run: website/test-install.sh target/debug/imece
+
+  # The acceptance catalogue (docs/acceptance, record 147) names every
+  # decision record and `:` command, and its tools refuse what they must;
+  # release.yml's gate reads the same catalogue.
+  acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Every record and command has its case
+        run: python3 -I tools/acceptance.py check
+      - name: The acceptance tools' tests
+        run: python3 -I -m unittest discover -s tools -p 'test_*.py'
