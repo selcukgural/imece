@@ -112,9 +112,17 @@ def start(name: str, size: str, command: list[str], env: dict[str, str], cwd: st
     args = ["new-session", "-d", "-s", name, "-x", cols, "-y", rows]
     if cwd:
         args += ["-c", cwd]
-    tmux(*args, line)
-    tmux("set-option", "-t", name, "remain-on-exit", "on")
-    tmux("set-option", "-t", name, "allow-passthrough", "on")
+    # One command to tmux: the options are set before the server sees the
+    # program end, so a program that ends at once (`--repo /`) still
+    # leaves its pane to be read.
+    tmux(
+        *args,
+        line,
+        ";",
+        "set-option", "-t", name, "remain-on-exit", "on",
+        ";",
+        "set-option", "-t", name, "allow-passthrough", "on",
+    )
     log(f"start {name} {size}: {shlex.join(command)}")
 
 
