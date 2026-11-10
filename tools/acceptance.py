@@ -242,9 +242,15 @@ def check(root: Path) -> Catalogue:
 def scenario_steps(path: Path) -> str:
     """Why scripted case `path` does not parse as drive.py plays it; empty
     when it does."""
-    spec = importlib.util.spec_from_file_location("drive", Path(__file__).parent / "acceptance" / "drive.py")
-    drive = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(drive)
+    drive = sys.modules.get("acceptance_drive")
+    if drive is None:
+        source = Path(__file__).parent / "acceptance" / "drive.py"
+        spec = importlib.util.spec_from_file_location("acceptance_drive", source)
+        drive = importlib.util.module_from_spec(spec)
+        # In sys.modules before it runs: its dataclasses look themselves up
+        # there (Python 3.12 fails without it).
+        sys.modules["acceptance_drive"] = drive
+        spec.loader.exec_module(drive)
     try:
         drive.parse(path.read_text(encoding="utf-8"))
     except drive.Failed as why:
