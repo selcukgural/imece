@@ -542,12 +542,17 @@ fn main() -> std::io::Result<()> {
 }
 
 /// Whether the terminal has an event within `timeout`; `None` when it
-/// went away (crossterm alone would spin on it: `input`).
-fn poll_terminal(guard: &mut input::Guard, timeout: Duration) -> std::io::Result<Option<bool>> {
+/// went away (crossterm alone would spin on it: `input`). `wake` ends
+/// the wait early with no event: the terminal's size changed.
+fn poll_terminal(
+    guard: &mut input::Guard,
+    wake: Option<&input::Wake>,
+    timeout: Duration,
+) -> std::io::Result<Option<bool>> {
     match input::terminal() {
         Some(fd) => guard.ready(
             timeout,
-            |t| input::wait(fd, t),
+            |t| input::wait(fd, wake, t),
             || event::poll(Duration::ZERO),
         ),
         None => event::poll(timeout).map(Some),
@@ -607,16 +612,32 @@ fn run(
     // the breath changes may be drawn from it.
     let mut shown: Option<ratatui::buffer::Buffer> = None;
     let mut guard = input::Guard::default();
+    // A resize wakes the wait (none: seen at the next wake all the same).
+    let wake = input::Wake::on_resize().ok();
+    let mut sizes = screen::Sizes::default();
     while !app.quit && !SIGNALLED.load(Ordering::SeqCst) {
         app.looked();
         app.doctored();
-        // Drawn when something changed; in another window, less often.
         let now = Instant::now();
+        // The terminal's size, looked at on every wake: a resize is no
+        // input, and nothing else on a quiet screen would draw it (#457).
+        // Once it settles, the screen is erased and drawn whole again.
+        if let Ok(size) = terminal.size()
+            && sizes.seen(size, now)
+        {
+            app.stirred = true;
+        }
+        let repaint = sizes.repaint_due(now);
+        app.stirred |= repaint;
+        // Drawn when something changed; in another window, less often.
         if app.draw_due(now) {
             app.frame = now;
             let patch = app.patch_due(now);
             // One frame, the cursor's look with it.
             screen::synced(&mut std::io::stdout(), || {
+                if repaint {
+                    terminal.clear()?;
+                }
                 let mut patched = false;
                 let done = terminal.draw(|f| {
                     patched = patch && shown.as_ref().is_some_and(|b| ui::patch(f, app, b));
@@ -642,11 +663,11 @@ fn run(
         // Woken for the next tick, or sooner for the next frame of what
         // moves on the screen when it is not near the tick.
         let tick = app.tick_interval().saturating_sub(last.elapsed());
-        let timeout = app.wait(Instant::now(), tick);
+        let timeout = sizes.wait(Instant::now(), app.wait(Instant::now(), tick));
         let event = match queued.pop_front() {
             Some(e) => Some(e),
             None => {
-                let ready = match poll_terminal(&mut guard, timeout) {
+                let ready = match poll_terminal(&mut guard, wake.as_ref(), timeout) {
                     Ok(Some(ready)) => ready,
                     // The terminal went away (its tab closed): a quit,
                     // as SIGHUP would be, the sessions stopped on the
@@ -664,7 +685,9 @@ fn run(
                         let mut came = vec![e];
                         while came.len() < notify::REPORT_MAX
                             && notify::report(&came).is_none()
-                            && poll_terminal(&mut guard, REPORT_WAIT)? == Some(true)
+                            // No wake: a resize must not cut a report
+                            // short into keys.
+                            && poll_terminal(&mut guard, None, REPORT_WAIT)? == Some(true)
                         {
                             came.push(event::read()?);
                         }

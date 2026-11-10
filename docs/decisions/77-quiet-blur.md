@@ -12,7 +12,8 @@ has the focus or never says (`App::blurred` is none: no focus reports,
 tmux without `focus-events on`); without the focus, drawn when something
 came from the terminal since the last drawing (`App::stirred`, set by the
 main loop for any event: a key, a paste, a resize, the focus report
-itself) or `BLURRED_DRAW` (1 s) after it. `App::drawn(now)` records the
+itself; a resize comes through record 86's wake, since it writes nothing
+to the terminal's input, #457) or `BLURRED_DRAW` (1 s) after it. `App::drawn(now)` records the
 drawing. Everything else in the loop runs as before: the vendors' answers,
 the title (which counts what waits), the notices of record 60, the key
 file's watch, the ticks and the agents' turns. Only the drawing waits, so

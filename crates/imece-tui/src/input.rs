@@ -9,9 +9,17 @@
 //! waiting (`FIONREAD`), and calls crossterm only when bytes are there.
 //! In raw mode (no canonical end-of-file key), a terminal that says it
 //! can be read with nothing in it has been hung up.
+//!
+//! A change of the terminal's size writes nothing to its input: crossterm
+//! hears it as SIGWINCH, and only when it is asked. So the wait also
+//! watches a pipe the signal writes a byte to (`Wake`), and a resize
+//! ends it at once, the main loop drawing for the new size (record 86;
+//! without it, a resize on a quiet screen showed the old frame, moved
+//! about by the terminal, until something else changed: #457).
 
-use std::io;
-use std::os::fd::RawFd;
+use std::io::{self, Read};
+use std::os::fd::{AsRawFd, RawFd};
+use std::os::unix::net::UnixStream;
 use std::time::Duration;
 
 /// What the terminal's input has after a wait.
@@ -33,22 +41,66 @@ pub fn terminal() -> Option<RawFd> {
     (unsafe { libc::isatty(libc::STDIN_FILENO) } == 1).then_some(libc::STDIN_FILENO)
 }
 
-/// Waits up to `wait` for `fd` to have something. A signal ends the wait
+/// What ends a wait besides the terminal's input: a byte on a pipe, one
+/// for each SIGWINCH (the terminal's size changed). The signal is
+/// registered through signal-hook, as crossterm registers it, so both
+/// hear it.
+pub struct Wake {
+    read: UnixStream,
+}
+
+impl Wake {
+    /// A wake for every change of the terminal's size.
+    pub fn on_resize() -> io::Result<Wake> {
+        let (wake, write) = Wake::pair()?;
+        signal_hook::low_level::pipe::register(libc::SIGWINCH, write)?;
+        Ok(wake)
+    }
+
+    /// A wake and the end that wakes it, neither blocking: the signal's
+    /// write never waits on a full pipe, the drain never on an empty one.
+    fn pair() -> io::Result<(Wake, UnixStream)> {
+        let (read, write) = UnixStream::pair()?;
+        read.set_nonblocking(true)?;
+        write.set_nonblocking(true)?;
+        Ok((Wake { read }, write))
+    }
+
+    /// Reads what woke it, so the next wait waits again.
+    fn drain(&self) {
+        let mut buf = [0u8; 64];
+        while matches!((&self.read).read(&mut buf), Ok(n) if n > 0) {}
+    }
+}
+
+/// Waits up to `wait` for `fd` to have something, or for `wake` (none:
+/// the terminal alone). A wake ends the wait as `Quiet`: nothing to
+/// read, the caller looks again at what changed. A signal ends the wait
 /// as `Interrupted`, so that the caller looks at what it set.
-pub fn wait(fd: RawFd, wait: Duration) -> io::Result<Wait> {
-    let mut poll = libc::pollfd {
+pub fn wait(fd: RawFd, wake: Option<&Wake>, wait: Duration) -> io::Result<Wait> {
+    let poll = |fd| libc::pollfd {
         fd,
         events: libc::POLLIN,
         revents: 0,
     };
+    let mut fds = [poll(fd), poll(wake.map_or(-1, |w| w.read.as_raw_fd()))];
+    // Without a wake only the first is asked: not every system leaves a
+    // negative fd out.
+    let count: libc::nfds_t = if wake.is_some() { 2 } else { 1 };
     // Rounded up: a wait of 0.4 ms is not a busy return.
     let ms = i32::try_from(wait.as_micros().div_ceil(1000)).unwrap_or(i32::MAX);
-    // SAFETY: one pollfd, as declared.
-    let n = unsafe { libc::poll(&mut poll, 1, ms) };
+    // SAFETY: `count` pollfds of the two declared.
+    let n = unsafe { libc::poll(fds.as_mut_ptr(), count, ms) };
     if n < 0 {
         return Err(io::Error::last_os_error());
     }
-    Ok(seen(n, poll.revents, || waiting(fd)))
+    if let Some(w) = wake
+        && fds[1].revents != 0
+    {
+        w.drain();
+    }
+    let input = i32::from(fds[0].revents != 0);
+    Ok(seen(input, fds[0].revents, || waiting(fd)))
 }
 
 /// What `poll`'s answer means: `n` descriptors with `revents`, and the
@@ -155,7 +207,7 @@ mod tests {
     fn a_quiet_terminal_waits_its_time() {
         let (_master, slave) = pty();
         let start = Instant::now();
-        let got = wait(slave.as_raw_fd(), Duration::from_millis(60)).unwrap();
+        let got = wait(slave.as_raw_fd(), None, Duration::from_millis(60)).unwrap();
         assert_eq!(got, Wait::Quiet);
         assert!(start.elapsed() >= Duration::from_millis(50), "it waited");
     }
@@ -164,7 +216,7 @@ mod tests {
     fn a_key_is_ready() {
         let (mut master, slave) = pty();
         master.write_all(b"jk").unwrap();
-        let got = wait(slave.as_raw_fd(), Duration::from_secs(2)).unwrap();
+        let got = wait(slave.as_raw_fd(), None, Duration::from_secs(2)).unwrap();
         assert_eq!(got, Wait::Ready);
         // Both keys, not just "something".
         let start = Instant::now();
@@ -178,7 +230,7 @@ mod tests {
         let (master, slave) = pty();
         drop(master);
         let start = Instant::now();
-        let got = wait(slave.as_raw_fd(), Duration::from_secs(5)).unwrap();
+        let got = wait(slave.as_raw_fd(), None, Duration::from_secs(5)).unwrap();
         assert_eq!(got, Wait::Gone);
         assert!(
             start.elapsed() < Duration::from_secs(1),
@@ -193,7 +245,7 @@ mod tests {
         let (mut master, slave) = pty();
         master.write_all(b"q").unwrap();
         drop(master);
-        let got = wait(slave.as_raw_fd(), Duration::from_secs(5)).unwrap();
+        let got = wait(slave.as_raw_fd(), None, Duration::from_secs(5)).unwrap();
         assert_ne!(got, Wait::Quiet);
     }
 
@@ -201,11 +253,68 @@ mod tests {
     fn a_short_wait_is_rounded_up_not_down() {
         let (_master, slave) = pty();
         let start = Instant::now();
-        let got = wait(slave.as_raw_fd(), Duration::from_micros(1_500)).unwrap();
+        let got = wait(slave.as_raw_fd(), None, Duration::from_micros(1_500)).unwrap();
         assert_eq!(got, Wait::Quiet);
         assert!(
             start.elapsed() >= Duration::from_micros(1_900),
             "2 ms, not 1"
+        );
+    }
+
+    #[test]
+    fn a_wake_ends_the_wait_with_nothing_to_read_and_is_read_away() {
+        let (_master, slave) = pty();
+        let (wake, mut write) = Wake::pair().unwrap();
+        write.write_all(b"\x01\x01\x01").unwrap();
+        let start = Instant::now();
+        let got = wait(slave.as_raw_fd(), Some(&wake), Duration::from_secs(5)).unwrap();
+        assert_eq!(got, Wait::Quiet, "nothing for crossterm");
+        assert!(start.elapsed() < Duration::from_secs(1), "at once");
+        // Every byte read: the next wait waits its time.
+        let start = Instant::now();
+        let got = wait(slave.as_raw_fd(), Some(&wake), Duration::from_millis(60)).unwrap();
+        assert_eq!(got, Wait::Quiet);
+        assert!(start.elapsed() >= Duration::from_millis(50), "it waited");
+    }
+
+    #[test]
+    fn a_key_with_a_wake_is_still_a_key_and_a_wake_never_hides_a_hang_up() {
+        let (mut master, slave) = pty();
+        master.write_all(b"j").unwrap();
+        // The key through the pty first: the wake is there at once.
+        let start = Instant::now();
+        while waiting(slave.as_raw_fd()) < 1 && start.elapsed() < Duration::from_secs(2) {}
+        let (wake, mut write) = Wake::pair().unwrap();
+        write.write_all(b"\x01").unwrap();
+        let got = wait(slave.as_raw_fd(), Some(&wake), Duration::from_secs(2)).unwrap();
+        assert_eq!(got, Wait::Ready);
+        // Another terminal, nothing unread in it, closed.
+        let (master, slave) = pty();
+        drop(master);
+        assert_eq!(
+            wait(slave.as_raw_fd(), None, Duration::from_secs(5)).unwrap(),
+            Wait::Gone,
+            "hung up"
+        );
+        let (wake, mut write) = Wake::pair().unwrap();
+        write.write_all(b"\x01").unwrap();
+        let got = wait(slave.as_raw_fd(), Some(&wake), Duration::from_secs(5)).unwrap();
+        assert_eq!(got, Wait::Gone, "with a wake too");
+    }
+
+    #[test]
+    fn a_change_of_the_terminal_s_size_wakes_the_wait() {
+        let (_master, slave) = pty();
+        let wake = Wake::on_resize().unwrap();
+        // SAFETY: SIGWINCH's handler was just registered; by default it
+        // is ignored, so no other test minds it.
+        unsafe { libc::raise(libc::SIGWINCH) };
+        let start = Instant::now();
+        let got = wait(slave.as_raw_fd(), Some(&wake), Duration::from_secs(5)).unwrap();
+        assert_eq!(got, Wait::Quiet);
+        assert!(
+            start.elapsed() < Duration::from_secs(1),
+            "not the whole wait"
         );
     }
 

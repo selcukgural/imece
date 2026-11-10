@@ -39,6 +39,7 @@
 
 use std::io::{self, Stdout, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, Instant};
 
 use ratatui::Terminal;
 use ratatui::backend::{Backend, ClearType, CrosstermBackend, WindowSize};
@@ -471,6 +472,52 @@ impl Title {
     /// pushed): the next `show` writes whatever it is given.
     pub fn forget(&mut self) {
         self.0 = None;
+    }
+}
+
+/// How long after the terminal's last change of size the whole screen is
+/// erased and drawn once more: a terminal that moves its cells about as
+/// it resizes (iTerm2 while a window is dragged) may do it after the
+/// frame for the new size came, and a frame drawn as a difference from
+/// the last never touches cells it believes blank.
+pub const SETTLE: Duration = Duration::from_millis(250);
+
+/// The terminal's size as the main loop last saw it, and when the screen
+/// is to be drawn whole again once it has settled (#457).
+#[derive(Debug, Default)]
+pub struct Sizes {
+    last: Option<Size>,
+    repaint: Option<Instant>,
+}
+
+impl Sizes {
+    /// Whether `size`, seen at `now`, is another than the one seen last
+    /// (the first is none: the first frame is drawn whole anyway). A
+    /// change puts the repaint [`SETTLE`] after it, past any before.
+    pub fn seen(&mut self, size: Size, now: Instant) -> bool {
+        let changed = self.last.is_some_and(|last| last != size);
+        self.last = Some(size);
+        if changed {
+            self.repaint = Some(now + SETTLE);
+        }
+        changed
+    }
+
+    /// Whether the repaint is due at `now`; it is taken, once.
+    pub fn repaint_due(&mut self, now: Instant) -> bool {
+        let due = self.repaint.is_some_and(|at| at <= now);
+        if due {
+            self.repaint = None;
+        }
+        due
+    }
+
+    /// `wait`, or less when the repaint comes sooner.
+    pub fn wait(&self, now: Instant, wait: Duration) -> Duration {
+        match self.repaint {
+            Some(at) => wait.min(at.saturating_duration_since(now)),
+            None => wait,
+        }
     }
 }
 
@@ -992,6 +1039,31 @@ mod tests {
         out.clear();
         title.show(&mut out, "ab]2;cd").unwrap();
         assert!(out.is_empty(), "the cleaned title is what is remembered");
+    }
+
+    #[test]
+    fn a_change_of_size_is_drawn_whole_once_more_when_it_has_settled() {
+        let t0 = Instant::now();
+        let ms = Duration::from_millis;
+        let (small, big) = (Size::new(100, 30), Size::new(80, 45));
+        let mut s = Sizes::default();
+        assert!(!s.seen(small, t0), "the first size is no change");
+        assert!(!s.repaint_due(t0 + ms(10_000)), "nor a repaint");
+        assert_eq!(s.wait(t0, ms(5_000)), ms(5_000), "the wait as it was");
+        assert!(!s.seen(small, t0), "the same again");
+        assert!(s.seen(big, t0), "another");
+        assert_eq!(s.wait(t0, ms(5_000)), SETTLE, "woken for the repaint");
+        assert_eq!(s.wait(t0, ms(100)), ms(100), "a sooner wait stands");
+        assert_eq!(s.wait(t0 + ms(400), ms(5_000)), Duration::ZERO, "late");
+        // Still moving: the repaint goes after the last change.
+        assert!(s.seen(small, t0 + ms(200)));
+        assert!(!s.repaint_due(t0 + ms(249)));
+        assert!(!s.repaint_due(t0 + ms(449)), "not yet");
+        assert!(s.repaint_due(t0 + ms(450)), "on its moment");
+        assert!(!s.repaint_due(t0 + ms(451)), "once");
+        assert_eq!(s.wait(t0 + ms(451), ms(5_000)), ms(5_000));
+        assert!(!s.seen(small, t0 + ms(500)));
+        assert!(!s.repaint_due(t0 + ms(10_000)), "settled");
     }
 
     #[test]
