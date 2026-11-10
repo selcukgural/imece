@@ -54,6 +54,7 @@ pub(crate) fn team(workers: usize) -> World {
         changes: Vec::new(),
         clashes: Default::default(),
         proposals: Default::default(),
+        items: Default::default(),
         paid: 0,
         suggested: None,
         reviews: Default::default(),
@@ -199,6 +200,7 @@ pub(crate) fn with_card(w: &mut World, id: AgentId) -> CardId {
         finished: 0,
         attempt: 1,
         breaker: Default::default(),
+        item: Default::default(),
         after: Vec::new(),
     });
     w.agents[id].card = Some(c);

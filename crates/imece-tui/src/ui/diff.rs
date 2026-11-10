@@ -418,6 +418,7 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, id: AgentId) {
         Some(v) => verdict_lines(app.lang, &v, width),
         None => Vec::new(),
     };
+    ran.extend(closes_line(app.lang, w, id));
     if let Some(why) = w.change_why(id) {
         ran.extend(why_lines(why, width));
     }
@@ -876,6 +877,38 @@ pub(crate) fn verdict_spans(
         spans.push(part);
     }
     spans
+}
+
+/// The line under the verdict that names the issue the change's card
+/// closes (record 142): its number, the title a look read (the number is
+/// a model's word; the title lets the person check it before the yes),
+/// and how it closes here; loud when nothing will close.
+pub(crate) fn closes_line(lang: Lang, w: &World, id: AgentId) -> Option<Line<'static>> {
+    let t = lang.text();
+    let (n, seen, lonca, closing) = w.change_closes(id)?;
+    let head = fill(t.verdict_closes, &[&n.to_string()]);
+    let warned = |why: &str, title: &str| {
+        let said = format!("{head}{}: {why}", words::item_titled(&clean(title)));
+        Line::from(Span::styled(said, fg(pal().warn)))
+    };
+    let title = match seen {
+        Some(Outside::Closed(title)) => return Some(warned(t.closes_already, title)),
+        Some(Outside::Pull) => return Some(warned(t.closes_pull, "")),
+        Some(Outside::NoSuch) => return Some(warned(t.closes_no_such, "")),
+        Some(Outside::Open(title)) => words::item_titled(&clean(title)),
+        Some(Outside::Asking | Outside::Unread) | None => String::new(),
+    };
+    let how = match (lonca, closing) {
+        (true, true) => t.closes_lands,
+        (true, false) => t.closes_asked,
+        (false, true) => t.closes_commit,
+        (false, false) => t.closes_off_git,
+    };
+    Some(Line::from(vec![
+        Span::styled(head, fg(pal().accent)),
+        Span::raw(title),
+        Span::styled(format!(" · {how}"), dim()),
+    ]))
 }
 
 /// The verdict line above a change's patch, wrapped to `width`.

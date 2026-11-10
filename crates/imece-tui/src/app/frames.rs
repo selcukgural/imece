@@ -758,6 +758,7 @@ mod tests {
             finished: 0,
             attempt: 1,
             breaker: Default::default(),
+            item: Default::default(),
             after: Vec::new(),
         });
         assert_eq!(app.next_motion(now), Some(e + ms(600)), "its card's owner");

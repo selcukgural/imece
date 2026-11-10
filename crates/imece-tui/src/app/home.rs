@@ -52,7 +52,8 @@ impl HomeGroup {
             | InboxKind::Fault
             | InboxKind::Plan
             | InboxKind::Tries
-            | InboxKind::Rounds => HomeGroup::Question,
+            | InboxKind::Rounds
+            | InboxKind::Close => HomeGroup::Question,
             InboxKind::Change | InboxKind::Sensitive => HomeGroup::Change,
             // An agent's closing words: read, nothing to decide.
             InboxKind::Reply => HomeGroup::Reply,

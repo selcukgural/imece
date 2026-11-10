@@ -50,6 +50,25 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, c: CardId) {
             Span::raw(clean(&crate::checks::listed(&card.checks))),
         ]));
     }
+    if let Some((n, seen)) = w.closes_of(card.id) {
+        // The issue it closes (record 142), with what a look read of it.
+        let mut spans = vec![
+            Span::styled(t.card_closes, dim()),
+            Span::raw(format!("#{n}")),
+        ];
+        let said = match seen {
+            Some(Outside::Open(title)) => Some((title.as_str(), t.card_closes_open)),
+            Some(Outside::Closed(title)) => Some((title.as_str(), t.card_closes_closed)),
+            Some(Outside::Pull) => Some(("", t.item_pull)),
+            Some(Outside::NoSuch) => Some(("", t.item_no_such)),
+            Some(Outside::Asking | Outside::Unread) | None => None,
+        };
+        if let Some((title, state)) = said {
+            let titled = crate::ui::words::item_titled(&clean(title));
+            spans.push(Span::styled(format!("{titled} · {state}"), dim()));
+        }
+        head.push(Line::from(spans));
+    }
     if !card.after.is_empty() {
         head.push(Line::from(after_spans(t, w, card)));
     }
@@ -250,6 +269,7 @@ mod tests {
             finished: 24,
             attempt: 1,
             breaker: Default::default(),
+            item: Default::default(),
             after: Vec::new(),
         };
         // 24 ticks of 5 s.

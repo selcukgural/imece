@@ -542,10 +542,24 @@ fn item_tail(app: &App, i: usize) -> Tail {
             };
             fill(words, &[&words::cap_count(w, item).to_string()])
         }
+        InboxKind::Close => {
+            let (n, titled) = words::item_named(w, item);
+            let card = item.card.map_or(String::new(), words::card_ref);
+            fill(t.row_close, &[&n, &titled, &card])
+        }
         InboxKind::Sensitive => fill(t.row_sensitive, &[&item.detail]),
         InboxKind::Change => {
             return match (w.change_of(item.agent), w.verdict(item.agent)) {
-                (Some(c), Some(v)) => Tail::Spans(change_spans(app.lang, c, &v)),
+                (Some(c), Some(v)) => {
+                    let mut spans = change_spans(app.lang, c, &v);
+                    // The issue its card closes (record 142), last.
+                    if let Some((n, ..)) = w.change_closes(item.agent) {
+                        spans.push(Span::styled(" · ", dim()));
+                        let said = fill(t.verdict_closes, &[&n.to_string()]);
+                        spans.push(Span::styled(said, dim()));
+                    }
+                    Tail::Spans(spans)
+                }
                 _ => Tail::Words(clean(&item.detail)),
             };
         }
@@ -633,6 +647,7 @@ fn row_keys(app: &App) -> Vec<Span<'static>> {
             InboxKind::Tries | InboxKind::Rounds => {
                 vec![("a", t.home_once_more), ("r", t.home_fail)]
             }
+            InboxKind::Close => vec![("a", t.home_close), ("r", t.home_leave)],
             _ => vec![("a", t.home_yes), ("r", t.home_no)],
         },
         Some(HomeRow::Agent(_)) => vec![("enter", t.home_open)],

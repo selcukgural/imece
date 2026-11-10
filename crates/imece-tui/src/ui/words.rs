@@ -271,6 +271,22 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
             let title = &w.cards[*card].title;
             fill(text, &[&card_ref(*card), title, &count.to_string()])
         }
+        Event::Item {
+            card,
+            item,
+            title,
+            news,
+            ..
+        } => {
+            let (n, titled, card) = (item.to_string(), item_titled(title), card_ref(*card));
+            match news {
+                ItemNews::Closed => fill(t.ev_item_closed, &[&n, &titled, &card]),
+                ItemNews::Already => fill(t.ev_item_already, &[&n, &titled, &card]),
+                ItemNews::Asked => fill(t.ev_item_asked, &[&n, &titled, &card]),
+                ItemNews::Left => fill(t.ev_item_left, &[&n, &titled, &card]),
+                ItemNews::Failed(why) => fill(t.ev_item_failed, &[&n, &titled, &item_why(t, why)]),
+            }
+        }
         Event::CapAnswered { card, cap, yes, .. } => {
             let text = match (cap, yes) {
                 (Cap::Tries, true) => t.ev_cap_more_try,
@@ -787,6 +803,16 @@ pub fn story(lang: Lang, w: &World, card: &Card, e: &StoryEvent) -> String {
             (_, false) => t.st_cap_failed,
         }
         .to_string(),
+        StoryEvent::Item { item, news } => {
+            let n = item.to_string();
+            match news {
+                ItemNews::Closed => fill(t.st_item_closed, &[&n]),
+                ItemNews::Already => fill(t.st_item_already, &[&n]),
+                ItemNews::Asked => fill(t.st_item_asked, &[&n]),
+                ItemNews::Left => fill(t.st_item_left, &[&n]),
+                ItemNews::Failed(why) => fill(t.st_item_failed, &[&n, &item_why(t, why)]),
+            }
+        }
         StoryEvent::Stopped(why) => fill(t.st_stopped, &[why]),
         StoryEvent::Interrupted => t.st_interrupted.to_string(),
         StoryEvent::Posted { by, text } => fill(t.st_posted, &[name(w, *by), text]),
@@ -1087,6 +1113,7 @@ pub fn notice(lang: Lang, w: &World, note: crate::notify::Note) -> String {
                 InboxKind::Check => t.notice_check,
                 InboxKind::Plan => t.notice_plan,
                 InboxKind::Tries | InboxKind::Rounds => t.notice_cap,
+                InboxKind::Close => t.notice_close,
                 InboxKind::Sensitive | InboxKind::Research => t.notice_sensitive,
             };
             (text, item.agent)
@@ -1134,9 +1161,49 @@ pub(crate) fn cap_count(w: &World, item: &InboxItem) -> u32 {
     }
 }
 
+/// An outside item's title as it follows its number: ` “title”`, nothing
+/// when no look read one.
+pub(crate) fn item_titled(title: &str) -> String {
+    match title.is_empty() {
+        true => String::new(),
+        false => format!(" “{title}”"),
+    }
+}
+
+/// Why an outside item was not closed, as a person says it; what `gh`
+/// said, as it said it.
+pub(crate) fn item_why(t: &Text, why: &ItemWhy) -> String {
+    match why {
+        ItemWhy::NoProgram => t.item_no_program.to_string(),
+        ItemWhy::SignedOut => t.item_signed_out.to_string(),
+        ItemWhy::NoAnswer => t.item_no_answer.to_string(),
+        ItemWhy::Pull => t.item_pull.to_string(),
+        ItemWhy::NoSuch => t.item_no_such.to_string(),
+        ItemWhy::Said(said) => said.clone(),
+    }
+}
+
+/// The number and title of the outside item `item`'s card closes, for a
+/// row that asks about it: the number as digits, ` “title”` when read.
+pub(crate) fn item_named(w: &World, item: &InboxItem) -> (String, String) {
+    let Some((n, seen)) = item.card.and_then(|c| w.closes_of(c)) else {
+        return (String::new(), String::new());
+    };
+    let title = match seen {
+        Some(Outside::Open(t) | Outside::Closed(t)) => item_titled(t),
+        _ => String::new(),
+    };
+    (n.to_string(), title)
+}
+
 pub fn inbox(lang: Lang, w: &World, item: &InboxItem) -> String {
     let t = lang.text();
     match (item.kind, item.researcher) {
+        (InboxKind::Close, _) => {
+            let (n, titled) = item_named(w, item);
+            let card = item.card.map_or(String::new(), card_ref);
+            fill(t.in_close, &[&n, &titled, &card])
+        }
         (InboxKind::Tries | InboxKind::Rounds, _) => {
             let text = match item.kind {
                 InboxKind::Tries => t.in_tries,

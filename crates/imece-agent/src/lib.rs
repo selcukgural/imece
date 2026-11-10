@@ -2,6 +2,7 @@
 //! as events. The screen never sees Claude Code's wire format; it sees
 //! [`Event`]s.
 
+pub mod board;
 pub mod child;
 pub mod claude;
 pub mod copy;

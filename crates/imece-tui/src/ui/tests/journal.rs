@@ -42,6 +42,7 @@ fn a_card(id: CardId, project: ProjectId, owner: Option<AgentId>, column: Column
         finished: 0,
         attempt: 1,
         breaker: Default::default(),
+        item: Default::default(),
         after: Vec::new(),
     }
 }

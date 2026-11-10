@@ -395,6 +395,12 @@ pub fn plan_lines(app: &App, p: &Proposal, width: usize) -> Vec<Line<'static>> {
                 dim(),
             )));
         }
+        if let Some(n) = c.closes {
+            lines.push(Line::from(Span::styled(
+                fill(t.plan_closes, &[&n.to_string()]),
+                dim(),
+            )));
+        }
         if !c.after.is_empty() {
             let places: Vec<String> = c.after.iter().map(usize::to_string).collect();
             lines.push(Line::from(Span::styled(

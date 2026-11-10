@@ -1051,6 +1051,7 @@ pub fn world(
         changes: Vec::new(),
         clashes: Default::default(),
         proposals: Default::default(),
+        items: Default::default(),
         paid: 0,
         suggested: None,
         reviews: Default::default(),
@@ -3276,6 +3277,7 @@ impl Sim {
             finished: 0,
             attempt: 0,
             breaker: Default::default(),
+            item: Default::default(),
             after: Vec::new(),
         });
         id
@@ -4727,6 +4729,9 @@ mod tests {
                 }
                 InboxKind::Tries | InboxKind::Rounds => {
                     s.decide_cap(w, i, true);
+                }
+                InboxKind::Close => {
+                    w.decide_item(i, true);
                 }
                 InboxKind::Question | InboxKind::Fault => {
                     // Closed here, once: a run's length never hangs on

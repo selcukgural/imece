@@ -143,7 +143,7 @@ CREATE TABLE IF NOT EXISTS cards (
     owner INTEGER, col TEXT NOT NULL, started INTEGER NOT NULL, finished INTEGER NOT NULL,
     paths TEXT NOT NULL DEFAULT '[]', attempt INTEGER NOT NULL DEFAULT 1,
     breaker TEXT NOT NULL DEFAULT '{}', waits_on TEXT NOT NULL DEFAULT '[]',
-    checks TEXT NOT NULL DEFAULT '[]', closes INTEGER);
+    checks TEXT NOT NULL DEFAULT '[]', closes INTEGER, item TEXT NOT NULL DEFAULT 'Waits');
 -- Read whole, in key order (`load`): no index beyond the key.
 CREATE TABLE IF NOT EXISTS story (
     card INTEGER NOT NULL, seq INTEGER NOT NULL, tick INTEGER NOT NULL,
@@ -726,6 +726,7 @@ impl Store {
             // No card closed an outside item before.
             self.conn.execute_batch(
                 "ALTER TABLE cards ADD COLUMN closes INTEGER;
+                 ALTER TABLE cards ADD COLUMN item TEXT NOT NULL DEFAULT 'Waits';
                  ALTER TABLE mail ADD COLUMN closes INTEGER;",
             )?;
         }
@@ -1125,8 +1126,8 @@ impl Store {
             let card = &w.cards[c];
             tx.execute(
                 "INSERT OR REPLACE INTO cards (id, project, title, owner, col, started, finished, \
-                 paths, attempt, breaker, waits_on, checks, closes) VALUES (?1, ?2, ?3, ?4, ?5, \
-                 ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+                 paths, attempt, breaker, waits_on, checks, closes, item) VALUES (?1, ?2, ?3, ?4, \
+                 ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
                 params![
                     n(card.id),
                     n(card.project),
@@ -1140,7 +1141,8 @@ impl Store {
                     serde_json::to_string(&card.breaker).unwrap_or_default(),
                     serde_json::to_string(&card.after).unwrap_or_default(),
                     serde_json::to_string(&card.checks).unwrap_or_default(),
-                    card.closes
+                    card.closes,
+                    tag(&card.item)
                 ],
             )?;
         }
@@ -1539,7 +1541,7 @@ impl Store {
                 card.attempt,
                 card.breaker,
                 &card.after,
-                (&card.checks, card.closes),
+                (&card.checks, card.closes, card.item),
             ));
             if s.cards.get(c) != Some(&h) {
                 plan.cards.push(c);
@@ -1710,6 +1712,7 @@ impl Store {
             reviews: Default::default(),
             clashes: Default::default(),
             proposals: Default::default(),
+            items: Default::default(),
             orphans: crate::model::Orphans::default(),
             health: Default::default(),
             procs: Default::default(),
@@ -1893,7 +1896,7 @@ impl Store {
         }
         let mut st = conn.prepare(
             "SELECT id, project, title, owner, col, started, finished, paths, attempt, breaker, \
-             waits_on, checks, closes FROM cards ORDER BY id",
+             waits_on, checks, closes, item FROM cards ORDER BY id",
         )?;
         for row in st.query_map([], |r| {
             Ok(Card {
@@ -1912,6 +1915,7 @@ impl Store {
                 attempt: r.get(8)?,
                 breaker: serde_json::from_str(&r.get::<_, String>(9)?)
                     .map_err(|e| bad(format!("breaker: {e}")))?,
+                item: untag(&r.get::<_, String>(13)?)?,
                 after: serde_json::from_str(&r.get::<_, String>(10)?)
                     .map_err(|e| bad(format!("after: {e}")))?,
             })
@@ -2555,6 +2559,7 @@ mod tests {
                     finished: 0,
                     attempt: 3,
                     breaker: Default::default(),
+                    item: Default::default(),
                     after: Vec::new(),
                 },
                 Card {
@@ -2578,6 +2583,7 @@ mod tests {
                     finished: 0,
                     attempt: 0,
                     breaker: Default::default(),
+                    item: Default::default(),
                     after: Vec::new(),
                 },
                 Card {
@@ -2595,6 +2601,7 @@ mod tests {
                     finished: 9,
                     attempt: 1,
                     breaker: Default::default(),
+                    item: Default::default(),
                     after: Vec::new(),
                 },
             ],
@@ -2698,6 +2705,7 @@ mod tests {
             reviews: Default::default(),
             clashes: Default::default(),
             proposals: Default::default(),
+            items: Default::default(),
             orphans: crate::model::Orphans::default(),
             ledger: Vec::new(),
             version: None,
@@ -3501,6 +3509,7 @@ mod tests {
                         finished: 0,
                         attempt: 1,
                         breaker: Default::default(),
+                        item: Default::default(),
                         after: Vec::new(),
                     })
                 }),
@@ -5967,6 +5976,7 @@ mod tests {
                 .execute_batch(
                     "ALTER TABLE cards DROP COLUMN closes;
                      ALTER TABLE mail DROP COLUMN closes;
+                     ALTER TABLE cards DROP COLUMN item;
                      ALTER TABLE projects DROP COLUMN closes;
                      UPDATE meta SET value = '35' WHERE key = 'schema_version';",
                 )
@@ -5990,6 +6000,8 @@ mod tests {
             store.save(&w, &k.kept()).unwrap(),
             "what a card closes moved"
         );
+        w.cards[last].item = ItemState::Due;
+        assert!(store.save(&w, &k.kept()).unwrap(), "where its item stands");
         k.mail[1].push(Mail {
             from: 1,
             kind: MsgKind::Assign,
@@ -6005,6 +6017,12 @@ mod tests {
         assert!(store.save(&w, &k.kept()).unwrap(), "the mail moved");
         let back = store.load(100).unwrap().expect("a world");
         assert_eq!(back.world.cards[last].closes, Some(58));
+        assert_eq!(
+            back.world.cards[last].item,
+            ItemState::Due,
+            "closed after a restart"
+        );
+        assert_eq!(back.world.cards[0].item, ItemState::Waits);
         assert_eq!(back.world.cards[0].closes, None, "only the card's own");
         assert_eq!(back.found.mail[1].last().unwrap().closes, Some(61));
         assert!(!store.save(&w, &k.kept()).unwrap(), "nothing moved");

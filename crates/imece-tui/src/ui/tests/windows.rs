@@ -1134,6 +1134,7 @@ fn a_opens_the_archives_as_a_tree_and_r_brings_the_one_at_hand_back() {
             finished: 0,
             attempt: 1,
             breaker: Default::default(),
+            item: Default::default(),
             after: Vec::new(),
         };
         app.world.cards.clear();
@@ -2385,6 +2386,7 @@ fn the_board_says_what_a_card_waits_on_and_r_leaves_out_what_is_not_ready() {
         finished: 0,
         attempt: 1,
         breaker: Default::default(),
+        item: Default::default(),
         after,
     };
     app.world.cards = vec![

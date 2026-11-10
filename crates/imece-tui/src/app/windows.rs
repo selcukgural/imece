@@ -180,6 +180,27 @@ impl App {
         self.inbox_sel = self.inbox_sel.min(open.saturating_sub(1));
     }
 
+    /// The person's answer to the item that asks whether a landed card's
+    /// issue closes (record 142): yes and the engine closes it, no and it
+    /// stays open for good; the flash says which.
+    pub(super) fn answer_close(&mut self, item: usize, yes: bool) {
+        let t = self.lang.text();
+        if matches!(self.engine, Engine::View(_)) {
+            return self.read_only();
+        }
+        let n = (self.world.inbox[item].card)
+            .and_then(|c| self.world.cards[c].closes)
+            .map_or(String::new(), |n| n.to_string());
+        let words = match (self.world.decide_item(item, yes), yes) {
+            (None, _) => t.cap_gone,
+            (Some(_), true) => t.close_yes,
+            (Some(_), false) => t.close_no,
+        };
+        self.flash(fill(words, &[&n]));
+        let open = self.inbox_rows().len();
+        self.inbox_sel = self.inbox_sel.min(open.saturating_sub(1));
+    }
+
     /// `n` on a plan: the composer opens to the leader; what the person
     /// writes closes the plan unanswered and starts the leader's turn,
     /// which plans again from it.

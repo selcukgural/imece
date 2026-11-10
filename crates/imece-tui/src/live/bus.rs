@@ -453,6 +453,7 @@ impl Live {
             finished: 0,
             attempt: 0,
             breaker: Default::default(),
+            item: Default::default(),
             after,
         });
         if !w.ready(c) {
@@ -539,6 +540,7 @@ impl Live {
             finished: 0,
             attempt: 0,
             breaker: Default::default(),
+            item: Default::default(),
             after,
         });
         self.posts.insert(
@@ -1814,6 +1816,7 @@ mod tests {
             finished: 0,
             attempt: 1,
             breaker: Default::default(),
+            item: Default::default(),
             after: Vec::new(),
         });
         w.agents[1].card = Some(0);

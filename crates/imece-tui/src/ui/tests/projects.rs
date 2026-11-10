@@ -437,6 +437,7 @@ fn an_archive_s_cards_leave_the_board_the_queue_and_the_header() {
         finished: 0,
         attempt: 1,
         breaker: Default::default(),
+        item: Default::default(),
         after: Vec::new(),
     });
     let board = render(&app, 200, 40);

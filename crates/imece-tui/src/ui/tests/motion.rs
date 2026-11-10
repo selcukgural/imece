@@ -85,6 +85,7 @@ fn a_working_owner_breathes_on_the_board_s_window_and_nothing_is_patched() {
         finished: 0,
         attempt: 1,
         breaker: Default::default(),
+        item: Default::default(),
         after: Vec::new(),
     };
     app.world.cards = vec![

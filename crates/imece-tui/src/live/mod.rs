@@ -59,6 +59,7 @@ pub mod demo;
 mod end_to_end;
 mod health;
 mod hiring;
+mod items;
 mod lonca;
 mod paid;
 mod procs;
@@ -809,6 +810,8 @@ pub struct Live {
     tidy: tidy::Tidy,
     /// Looks at the sessions' processes (`:ps`).
     looks: procs::Looks,
+    /// The calls to the outside board (record 142).
+    items: items::Items,
 }
 
 /// Whether `program` runs from the checkout `repo` is in; if not, how to
@@ -893,6 +896,7 @@ pub fn world(o: Options) -> Result<(World, Live), String> {
                 changes: Vec::new(),
                 clashes: Default::default(),
                 proposals: Default::default(),
+                items: Default::default(),
                 paid: 0,
                 suggested: None,
                 reviews: Default::default(),
@@ -916,6 +920,10 @@ pub fn world(o: Options) -> Result<(World, Live), String> {
         .map_err(|e| store::unreadable(&file, e))?;
     w.run_spent = w.spent();
     let mut live = Live::bare(claude);
+    if o.claude.is_none() {
+        // The stand-in's demo has no outside board: nothing is closed.
+        live.items.program = Some(imece_agent::board::PROGRAM.into());
+    }
     let relay = match o.claude {
         Some(c) => {
             live.claude_home = c.home;
@@ -1159,6 +1167,7 @@ impl Live {
             reviewed_rx,
             tidy: tidy::Tidy::default(),
             looks: procs::Looks::default(),
+            items: items::Items::default(),
         }
     }
 
@@ -1260,7 +1269,8 @@ impl Live {
         let said = self.take_said(w);
         let reviewed = self.take_reviews(w);
         self.review_next(w);
-        let tidied = self.take_tidy(w) | self.take_procs(w);
+        let tidied = self.take_tidy(w) | self.take_procs(w) | self.take_items(w);
+        self.items_due(w);
         let set_up = self.take_setups(w) | self.take_checks(w);
         self.stand_busy(w, Instant::now());
         self.files_due(w, Instant::now());
