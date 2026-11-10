@@ -2412,6 +2412,83 @@ diff --git a/c.rs b/c.rs
     }
 
     #[test]
+    fn a_change_names_the_issue_its_card_closes_and_how_under_the_verdict() {
+        use crate::live::testing::{team, with_card};
+        let mut w = team(1);
+        let c = with_card(&mut w, 1);
+        w.change_ready(crate::ui::tests::a_change(1));
+        assert!(
+            closes_line(Lang::En, &w, 1).is_none(),
+            "its card closes none"
+        );
+        w.cards[c].closes = Some(58);
+        let said = |w: &World, lang| closes_line(lang, w, 1).unwrap().to_string();
+        // The git path: the commit says it, or nothing does with closing off.
+        assert_eq!(
+            said(&w, Lang::En),
+            "closes #58 · :commit's message will say so"
+        );
+        w.projects[0].closing = false;
+        assert_eq!(
+            said(&w, Lang::En),
+            "closes #58 · nothing closes it: :closes is off"
+        );
+        assert_eq!(
+            said(&w, Lang::Tr),
+            "#58 kapanır · hiçbir şey kapatmaz: :closes kapalı"
+        );
+        // On Lonca imece closes it at the landing, or asks.
+        w.on_lonca(0, Some("demo".into()));
+        assert_eq!(
+            said(&w, Lang::En),
+            "closes #58 · you are asked once it lands"
+        );
+        w.projects[0].closing = true;
+        for unread in [Outside::Asking, Outside::Unread] {
+            w.items.insert((0, 58), unread);
+            assert_eq!(said(&w, Lang::En), "closes #58 · when it lands");
+        }
+        // The title a look read, cleaned: a model wrote the number.
+        w.items
+            .insert((0, 58), Outside::Open("A 529\u{1b}[2J stops it".into()));
+        assert_eq!(
+            said(&w, Lang::En),
+            "closes #58 “A 529 [2J stops it” · when it lands"
+        );
+        assert_eq!(
+            said(&w, Lang::Tr),
+            "#58 kapanır “A 529 [2J stops it” · girdiğinde"
+        );
+        let line = closes_line(Lang::En, &w, 1).unwrap();
+        assert_eq!(line.spans[0].style, fg(pal().accent));
+        assert_eq!(line.spans[2].style, dim());
+        // Nothing will close: loud, and why.
+        for (seen, en, tr) in [
+            (
+                Outside::Closed("A 529".into()),
+                "closes #58 “A 529”: closed already · nothing will close",
+                "#58 kapanır “A 529”: zaten kapalı · hiçbir şey kapanmayacak",
+            ),
+            (
+                Outside::Pull,
+                "closes #58: that number is a pull request · nothing will close",
+                "#58 kapanır: bu sayı bir pull request · hiçbir şey kapanmayacak",
+            ),
+            (
+                Outside::NoSuch,
+                "closes #58: this repository has no such issue · nothing will close",
+                "#58 kapanır: bu depoda böyle bir issue yok · hiçbir şey kapanmayacak",
+            ),
+        ] {
+            w.items.insert((0, 58), seen);
+            assert_eq!(said(&w, Lang::En), en);
+            assert_eq!(said(&w, Lang::Tr), tr);
+            let line = closes_line(Lang::En, &w, 1).unwrap();
+            assert_eq!(line.spans[0].style, fg(pal().warn));
+        }
+    }
+
+    #[test]
     fn the_verdict_line_wraps_at_the_width_and_keeps_every_part() {
         let v = Verdict {
             others: 1,

@@ -1726,6 +1726,51 @@ mod tests {
     }
 
     #[test]
+    fn an_issue_to_close_and_a_change_that_closes_one_say_its_number() {
+        let mut app = home(Lang::En);
+        assert!(!app.world.cards.is_empty(), "the demo has cards");
+        let lead = app.world.projects[app.world.cards[0].project].leader;
+        let project = app.world.cards[0].project;
+        app.world.cards[0].closes = Some(58);
+        let mut ask = item(InboxKind::Close, lead, "the card");
+        ask.card = Some(0);
+        app.world.inbox.push(ask);
+        let all = |app: &App| lines(app, 160).join("\n");
+        assert!(
+            all(&app).contains("close #58? · card #1 landed"),
+            "{}",
+            all(&app)
+        );
+        app.world
+            .items
+            .insert((project, 58), Outside::Open("A 529 stops it".into()));
+        assert!(
+            all(&app).contains("close #58? “A 529 stops it” · card #1 landed"),
+            "{}",
+            all(&app)
+        );
+        assert_eq!(HomeGroup::of(InboxKind::Close), HomeGroup::Question);
+        app.lang = Lang::Tr;
+        assert!(
+            all(&app).contains("#58 kapatılsın mı? “A 529 stops it” · #1 kartı girdi"),
+            "{}",
+            all(&app)
+        );
+        // A change whose card closes an issue ends with it; another's not.
+        app.lang = Lang::En;
+        app.world.inbox.clear();
+        let w = worker(&app);
+        app.world.agents[w].card = Some(0);
+        let change = |agent| item(InboxKind::Change, agent, "Fix it");
+        app.world.inbox.push(change(w));
+        app.world.changes.push(crate::ui::tests::a_change(w));
+        let row = all(&app);
+        assert!(row.contains(" · closes #58"), "{row}");
+        app.world.cards[0].closes = None;
+        assert!(!all(&app).contains("closes #"), "{}", all(&app));
+    }
+
+    #[test]
     fn every_other_kind_of_item_says_what_it_is() {
         let mut app = home(Lang::En);
         let w = workers(&app);
@@ -1992,6 +2037,7 @@ mod tests {
             (InboxKind::Script, " a  yes   r  no  "),
             (InboxKind::Tries, " a  one more   r  fail it  "),
             (InboxKind::Rounds, " a  one more   r  fail it  "),
+            (InboxKind::Close, " a  close   r  leave open  "),
         ] {
             app.world.inbox[0].kind = kind;
             assert!(at(&app, 120).ends_with(want), "{kind:?}: {}", at(&app, 120));

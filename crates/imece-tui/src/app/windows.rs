@@ -1246,6 +1246,38 @@ mod tests {
     }
 
     #[test]
+    fn a_and_r_on_an_issue_to_close_close_it_or_leave_it_open() {
+        let asked = || {
+            let mut app = waiting(&[]);
+            assert!(!app.world.cards.is_empty(), "the demo has cards");
+            let lead = app.world.projects[app.world.cards[0].project].leader;
+            app.world.cards[0].closes = Some(58);
+            app.world.cards[0].item = ItemState::Asked;
+            app.world.inbox.push(InboxItem {
+                kind: InboxKind::Close,
+                agent: lead,
+                detail: "the card".into(),
+                researcher: None,
+                open: true,
+                tick: 0,
+                card: Some(0),
+            });
+            app
+        };
+        let mut app = asked();
+        app.answer_item(0, true);
+        assert_eq!(flashed(&app).as_deref(), Some("#58 closes now"));
+        assert_eq!(app.world.cards[0].item, ItemState::Due);
+        assert!(app.world.open_inbox().is_empty());
+        app.answer_close(0, true);
+        assert_eq!(flashed(&app).as_deref(), Some("that is no longer waiting"));
+        let mut app = asked();
+        app.answer_item(0, false);
+        assert_eq!(flashed(&app).as_deref(), Some("#58 stays open"));
+        assert_eq!(app.world.cards[0].item, ItemState::Left);
+    }
+
+    #[test]
     fn colon_closes_turns_closing_issues_on_and_off_for_the_project_at_hand() {
         let mut app = waiting(&[]);
         assert!(app.world.projects[0].closing, "on from the first start");

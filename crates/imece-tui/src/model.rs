@@ -4914,31 +4914,51 @@ impl World {
         Some((item, self.items.get(&(card.project, item))))
     }
 
-    /// The `Closes #N` words a `:commit` message of project `p` ends with
-    /// (record 142): the items of its cards whose change was applied to
-    /// the checkout and that no message named yet, in card order; none on
-    /// Lonca (imece closes those itself) or with closing off. With `name`
-    /// the cards are marked named, so the next message leaves them out.
-    pub fn commit_closes(&mut self, p: ProjectId, name: bool) -> Vec<Item> {
-        let project = &self.projects[p];
-        if !project.closing || project.lonca.is_some() {
+    /// The items a `:commit` message of project `p` says it closes
+    /// (record 142): those of its cards whose change was applied to the
+    /// checkout and that no commit named yet, in card order, each once;
+    /// none on Lonca (imece closes those itself) or with closing off.
+    pub fn commit_closes(&self, p: ProjectId) -> Vec<Item> {
+        let closes = |q: &Project| q.closing && q.lonca.is_none();
+        if !self.projects.get(p).is_some_and(closes) {
             return Vec::new();
         }
         let mut items: Vec<Item> = Vec::new();
-        for card in &mut self.cards {
+        for card in &self.cards {
             let waits =
                 card.project == p && card.column == Column::Done && card.item == ItemState::Waits;
-            let Some(item) = card.closes.filter(|_| waits) else {
-                continue;
-            };
-            if !items.contains(&item) {
+            if let Some(item) = card.closes.filter(|n| waits && !items.contains(n)) {
                 items.push(item);
-            }
-            if name {
-                card.item = ItemState::Named;
             }
         }
         items
+    }
+
+    /// The person's `command` ran well in project `p`'s checkout: when it
+    /// is a commit whose message names items [`commit_closes`] gave it
+    /// (`Closes #N`), their cards are named from now on, so the next
+    /// message leaves them out. A dry run commits nothing. The items.
+    ///
+    /// [`commit_closes`]: World::commit_closes
+    pub fn commit_ran(&mut self, p: ProjectId, command: &str) -> Vec<Item> {
+        let words: Vec<&str> = command.split_whitespace().collect();
+        let commits = words.first() == Some(&"git")
+            && words.contains(&"commit")
+            && !words.contains(&"--dry-run");
+        if !commits {
+            return Vec::new();
+        }
+        let named: Vec<Item> = (self.commit_closes(p).into_iter())
+            .filter(|n| crate::closes::names(command, *n))
+            .collect();
+        for card in &mut self.cards {
+            let waits =
+                card.project == p && card.column == Column::Done && card.item == ItemState::Waits;
+            if card.closes.is_some_and(|n| waits && named.contains(&n)) {
+                card.item = ItemState::Named;
+            }
+        }
+        named
     }
 
     /// Cards `cards` came back to work: a round more each.
@@ -7623,6 +7643,268 @@ mod tests {
             assert_eq!(w.cards[c].breaker.sent_back, u32::from(back), "{how:?}");
             assert_eq!(w.cards[review].column, Review, "{how:?}: a newer one waits");
         }
+    }
+
+    /// A team of one worker whose card in the queue closes item 58.
+    fn closing_58() -> (World, CardId) {
+        use crate::live::testing::{team, with_card};
+        let mut w = team(1);
+        let c = with_card(&mut w, 1);
+        w.cards[c].closes = Some(58);
+        w.cards[c].column = Column::Verifying;
+        (w, c)
+    }
+
+    #[test]
+    fn a_card_on_trunk_makes_its_item_due_and_only_trunk_does() {
+        for how in [
+            Landed::Queued,
+            Landed::Conflicted(Vec::new()),
+            Landed::Rejected(Vec::new()),
+            Landed::Withdrawn,
+            Landed::Replaced,
+        ] {
+            let (mut w, c) = closing_58();
+            w.proposal_landed(1, how.clone());
+            assert_eq!(w.cards[c].item, ItemState::Waits, "{how:?}");
+            assert!(w.items_due().is_empty(), "{how:?}");
+        }
+        let (mut w, c) = closing_58();
+        let plain = crate::live::testing::with_card(&mut w, 1);
+        w.cards[plain].column = Column::Verifying;
+        w.proposal_landed(1, Landed::Integrated("c1".into()));
+        assert_eq!(w.cards[c].item, ItemState::Due);
+        assert_eq!(w.cards[plain].item, ItemState::Waits, "it closes none");
+        assert_eq!(w.items_due(), [(c, 0, 58)]);
+        assert!(
+            w.open_inbox().is_empty(),
+            "the yes to the change was the yes"
+        );
+        // A project put away closes nothing while it is.
+        w.projects[0].closed = true;
+        assert!(w.items_due().is_empty());
+        w.projects[0].closed = false;
+        // Closed: said once, with the title a look read, as the leader's.
+        w.items.insert((0, 58), Outside::Open("A 529".into()));
+        w.item_settled(c, ItemNews::Closed);
+        assert_eq!(w.cards[c].item, ItemState::Closed);
+        assert_eq!(w.items[&(0, 58)], Outside::Closed("A 529".into()));
+        let closed = Event::Item {
+            agent: 0,
+            card: c,
+            item: 58,
+            title: "A 529".into(),
+            news: ItemNews::Closed,
+        };
+        assert_eq!(w.journal.last().map(|e| &e.event), Some(&closed));
+        assert_eq!((closed.agent(), closed.card()), (0, Some(c)));
+        assert_eq!(
+            w.cards[c].story.last().map(|s| &s.event),
+            Some(&StoryEvent::Item {
+                item: 58,
+                news: ItemNews::Closed
+            })
+        );
+        let lines = w.journal.len();
+        w.item_settled(c, ItemNews::Closed);
+        w.item_settled(c, ItemNews::Failed(ItemWhy::NoAnswer));
+        assert_eq!(w.journal.len(), lines, "settled once");
+        assert_eq!(w.cards[c].item, ItemState::Closed);
+        assert!(w.items_due().is_empty());
+    }
+
+    #[test]
+    fn an_item_found_closed_or_not_closed_is_settled_as_that() {
+        for (news, state) in [
+            (ItemNews::Already, ItemState::Closed),
+            (ItemNews::Failed(ItemWhy::SignedOut), ItemState::Failed),
+        ] {
+            let (mut w, c) = closing_58();
+            w.proposal_landed(1, Landed::Integrated("c1".into()));
+            w.item_settled(c, news.clone());
+            assert_eq!(w.cards[c].item, state, "{news:?}");
+            assert!(
+                matches!(w.journal.last().map(|e| &e.event),
+                    Some(Event::Item { news: n, title, .. }) if *n == news && title.is_empty()),
+                "{news:?}"
+            );
+        }
+        // What only the person's answer says settles nothing here.
+        let (mut w, c) = closing_58();
+        w.proposal_landed(1, Landed::Integrated("c1".into()));
+        let lines = w.journal.len();
+        w.item_settled(c, ItemNews::Asked);
+        w.item_settled(c, ItemNews::Left);
+        assert_eq!((w.cards[c].item, w.journal.len()), (ItemState::Due, lines));
+        // A card not due is not settled.
+        let (mut w, c) = closing_58();
+        w.item_settled(c, ItemNews::Closed);
+        assert_eq!(w.cards[c].item, ItemState::Waits);
+    }
+
+    #[test]
+    fn with_closing_off_the_person_is_asked_and_their_answer_decides() {
+        let asked = || {
+            let (mut w, c) = closing_58();
+            w.projects[0].closing = false;
+            w.tick = 7;
+            w.proposal_landed(1, Landed::Integrated("c1".into()));
+            let open = w.open_inbox();
+            assert_eq!(open.len(), 1);
+            (w, c, open[0])
+        };
+        let (mut w, c, item) = asked();
+        assert_eq!(w.cards[c].item, ItemState::Asked);
+        assert!(w.items_due().is_empty(), "not before the answer");
+        let it = &w.inbox[item];
+        assert_eq!(
+            (it.kind, it.agent, it.card, it.tick),
+            (InboxKind::Close, 0, Some(c), 7)
+        );
+        assert!(!InboxKind::Close.holds_mail(), "nobody waits on it");
+        // Asked before the landing itself is said.
+        let asks = |e: &Entry| {
+            matches!(
+                e.event,
+                Event::Item {
+                    news: ItemNews::Asked,
+                    item: 58,
+                    ..
+                }
+            )
+        };
+        assert_eq!(w.journal.iter().filter(|e| asks(e)).count(), 1);
+        // A no leaves it open for good.
+        assert_eq!(w.decide_item(item, false), Some(c));
+        assert_eq!(w.cards[c].item, ItemState::Left);
+        assert!(w.open_inbox().is_empty() && w.items_due().is_empty());
+        assert!(matches!(
+            w.journal.last().map(|e| &e.event),
+            Some(Event::Item {
+                news: ItemNews::Left,
+                ..
+            })
+        ));
+        assert_eq!(w.decide_item(item, true), None, "answered once");
+        // A yes makes it due, and says nothing until it is closed.
+        let (mut w, c, item) = asked();
+        let lines = w.journal.len();
+        assert_eq!(w.decide_item(item, true), Some(c));
+        assert_eq!(w.cards[c].item, ItemState::Due);
+        assert_eq!(w.items_due(), [(c, 0, 58)]);
+        assert_eq!(w.journal.len(), lines);
+        assert!(w.open_inbox().is_empty());
+        assert_eq!(w.decide_item(99, true), None);
+        // Another kind's item is not this question.
+        let (mut w, c, item) = asked();
+        w.inbox[item].kind = InboxKind::Tries;
+        assert_eq!(w.decide_item(item, true), None);
+        assert_eq!(w.cards[c].item, ItemState::Asked);
+    }
+
+    #[test]
+    fn an_item_is_read_once_while_its_card_may_still_close_it() {
+        use crate::live::testing::with_card;
+        let (mut w, c) = closing_58();
+        let twin = with_card(&mut w, 1);
+        w.cards[twin].closes = Some(58);
+        let other = with_card(&mut w, 1);
+        w.cards[other].closes = Some(61);
+        with_card(&mut w, 1);
+        assert_eq!(w.items_unread(), [(0, 58), (0, 61)], "each once");
+        w.items.insert((0, 58), Outside::Asking);
+        assert_eq!(w.items_unread(), [(0, 61)]);
+        for column in [Column::Withdrawn, Column::Failed] {
+            w.cards[other].column = column;
+            assert!(w.items_unread().is_empty(), "{column:?}");
+        }
+        w.cards[other].column = Column::Working;
+        for state in [
+            ItemState::Closed,
+            ItemState::Left,
+            ItemState::Failed,
+            ItemState::Named,
+        ] {
+            w.cards[other].item = state;
+            assert!(w.items_unread().is_empty(), "{state:?}");
+        }
+        for state in [ItemState::Waits, ItemState::Due, ItemState::Asked] {
+            w.cards[other].item = state;
+            assert_eq!(w.items_unread(), [(0, 61)], "{state:?}");
+        }
+        w.projects[0].closed = true;
+        assert!(w.items_unread().is_empty(), "put away");
+        w.projects[0].closed = false;
+        assert_eq!(w.closes_of(c), Some((58, Some(&Outside::Asking))));
+        assert_eq!(w.closes_of(other), Some((61, None)));
+        assert_eq!(w.closes_of(other + 1), None, "it closes none");
+        assert_eq!(w.closes_of(99), None);
+    }
+
+    #[test]
+    fn a_commit_names_the_items_of_applied_cards_off_lonca_until_one_ran() {
+        use crate::live::testing::with_card;
+        let (mut w, c) = closing_58();
+        w.cards[c].column = Column::Done;
+        let twin = with_card(&mut w, 1);
+        (w.cards[twin].closes, w.cards[twin].column) = (Some(58), Column::Done);
+        let later = with_card(&mut w, 1);
+        (w.cards[later].closes, w.cards[later].column) = (Some(61), Column::Done);
+        let open = with_card(&mut w, 1);
+        w.cards[open].closes = Some(70);
+        let plain = with_card(&mut w, 1);
+        w.cards[plain].column = Column::Done;
+        assert_eq!(
+            w.commit_closes(0),
+            [58, 61],
+            "applied, each once, in card order"
+        );
+        w.projects[0].closing = false;
+        assert!(w.commit_closes(0).is_empty(), "off: no line at all");
+        w.projects[0].closing = true;
+        w.on_lonca(0, Some("demo".into()));
+        assert!(w.commit_closes(0).is_empty(), "on Lonca imece closes them");
+        w.projects[0].lonca = None;
+        // Only a commit that ran and names them marks them.
+        let line = "git commit -m 'Fix\n\nCloses #58'";
+        for not in [
+            "git status",
+            "echo commit Closes #58",
+            "git commit --dry-run -m 'Closes #58'",
+            "git commit -m 'Fix'",
+        ] {
+            assert!(w.commit_ran(0, not).is_empty(), "{not}");
+            assert_eq!(w.commit_closes(0), [58, 61], "{not}");
+        }
+        assert_eq!(w.commit_ran(0, line), [58]);
+        assert_eq!(w.cards[c].item, ItemState::Named);
+        assert_eq!(w.cards[twin].item, ItemState::Named, "both of that item");
+        assert_eq!(w.cards[later].item, ItemState::Waits);
+        assert_eq!(w.cards[open].item, ItemState::Waits, "not applied yet");
+        assert_eq!(w.commit_closes(0), [61], "the next message leaves 58 out");
+        assert!(
+            w.commit_ran(1, "git commit -m 'Closes #61'").is_empty(),
+            "another project"
+        );
+    }
+
+    #[test]
+    fn a_change_says_how_the_item_its_card_closes_will_close() {
+        use crate::live::testing::with_card;
+        let mut w = crate::live::testing::team(1);
+        let c = with_card(&mut w, 1);
+        w.change_ready(change(1, "Fix", &[("a.rs", 1, 0)]));
+        assert_eq!(w.change_closes(1), None, "its card closes none");
+        w.cards[c].closes = Some(58);
+        assert_eq!(w.change_closes(1), Some((58, None, false, true)));
+        w.items.insert((0, 58), Outside::NoSuch);
+        w.projects[0].closing = false;
+        w.on_lonca(0, Some("demo".into()));
+        assert_eq!(
+            w.change_closes(1),
+            Some((58, Some(&Outside::NoSuch), true, false))
+        );
+        assert_eq!(w.change_closes(0), None, "no change of the leader's");
     }
 
     #[test]

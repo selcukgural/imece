@@ -318,6 +318,13 @@ fn home_s_footer_leads_with_what_the_row_at_hand_takes() {
             "{kind:?}"
         );
     }
+    // An issue to close has nothing to open: its two answers (record 142).
+    let close = row(&mut app, InboxKind::Close);
+    assert!(
+        close.contains("   a  close   r  leave open   ?  help"),
+        "{close}"
+    );
+    assert!(!close.contains("enter  open"), "{close}");
     app.world.inbox.clear();
     let agent_row = foot(&app, 200);
     assert!(

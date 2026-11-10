@@ -2335,6 +2335,150 @@ mod tests {
     }
 
     #[test]
+    fn what_became_of_a_card_s_issue_is_said_in_both_languages() {
+        let mut w = crate::live::testing::team(1);
+        let c = crate::live::testing::with_card(&mut w, 1);
+        w.cards[c].closes = Some(58);
+        let say = |lang, news: ItemNews, title: &str| {
+            let e = Event::Item {
+                agent: 0,
+                card: c,
+                item: 58,
+                title: title.into(),
+                news,
+            };
+            event(lang, &w, &e)
+        };
+        let failed = |why| ItemNews::Failed(why);
+        for (news, title, en, tr) in [
+            (
+                ItemNews::Closed,
+                "A 529",
+                "closed #58 “A 529” · card #1 landed",
+                "#58 “A 529” kapatıldı · #1 kartı girdi",
+            ),
+            (
+                ItemNews::Closed,
+                "",
+                "closed #58 · card #1 landed",
+                "#58 kapatıldı · #1 kartı girdi",
+            ),
+            (
+                ItemNews::Already,
+                "A 529",
+                "#58 “A 529” was closed already · card #1 landed",
+                "#58 “A 529” zaten kapalıydı · #1 kartı girdi",
+            ),
+            (
+                ItemNews::Asked,
+                "A 529",
+                "close #58 “A 529”? card #1 landed and closing issues is off",
+                "#58 “A 529” kapatılsın mı? #1 kartı girdi, issue kapatma kapalı",
+            ),
+            (
+                ItemNews::Left,
+                "",
+                "#58 left open · card #1",
+                "#58 açık bırakıldı · #1 kartı",
+            ),
+            (
+                failed(ItemWhy::SignedOut),
+                "A 529",
+                "#58 “A 529” was not closed: gh is not signed in · it stays open",
+                "#58 “A 529” kapatılamadı: gh oturumu açık değil · açık kalıyor",
+            ),
+            (
+                failed(ItemWhy::NoProgram),
+                "",
+                "#58 was not closed: gh is not installed · it stays open",
+                "#58 kapatılamadı: gh kurulu değil · açık kalıyor",
+            ),
+            (
+                failed(ItemWhy::NoAnswer),
+                "",
+                "#58 was not closed: gh did not answer · it stays open",
+                "#58 kapatılamadı: gh yanıt vermedi · açık kalıyor",
+            ),
+            (
+                failed(ItemWhy::Pull),
+                "",
+                "#58 was not closed: that number is a pull request · it stays open",
+                "#58 kapatılamadı: bu sayı bir pull request · açık kalıyor",
+            ),
+            (
+                failed(ItemWhy::NoSuch),
+                "",
+                "#58 was not closed: this repository has no such issue · it stays open",
+                "#58 kapatılamadı: bu depoda böyle bir issue yok · açık kalıyor",
+            ),
+            (
+                failed(ItemWhy::Said("HTTP\u{7} 403".into())),
+                "",
+                "#58 was not closed: HTTP  403 · it stays open",
+                "#58 kapatılamadı: HTTP  403 · açık kalıyor",
+            ),
+        ] {
+            assert_eq!(say(Lang::En, news.clone(), title), en);
+            assert_eq!(say(Lang::Tr, news, title), tr);
+        }
+        let tell = |lang, news| story(lang, &w, &w.cards[c], &StoryEvent::Item { item: 58, news });
+        for (news, en, tr) in [
+            (
+                ItemNews::Closed,
+                "closed issue #58",
+                "#58 numaralı issue kapatıldı",
+            ),
+            (
+                ItemNews::Already,
+                "issue #58 was closed already",
+                "#58 numaralı issue zaten kapalıydı",
+            ),
+            (
+                ItemNews::Asked,
+                "the person is asked whether issue #58 closes",
+                "#58 numaralı issue kapansın mı, kişiye soruldu",
+            ),
+            (
+                ItemNews::Left,
+                "the person left issue #58 open",
+                "kişi #58 numaralı issue'yu açık bıraktı",
+            ),
+            (
+                failed(ItemWhy::Pull),
+                "issue #58 was not closed: that number is a pull request",
+                "#58 numaralı issue kapatılamadı: bu sayı bir pull request",
+            ),
+        ] {
+            assert_eq!(tell(Lang::En, news.clone()), en);
+            assert_eq!(tell(Lang::Tr, news), tr);
+        }
+        // The item that asks, in the list and as a notice.
+        let ask = InboxItem {
+            kind: InboxKind::Close,
+            agent: 0,
+            detail: "t".into(),
+            researcher: None,
+            open: true,
+            tick: 0,
+            card: Some(c),
+        };
+        assert_eq!(inbox(Lang::En, &w, &ask), "close #58? card #1 landed");
+        w.items.insert((0, 58), Outside::Closed("A 529".into()));
+        assert_eq!(
+            inbox(Lang::En, &w, &ask),
+            "close #58 “A 529”? card #1 landed"
+        );
+        assert_eq!(
+            inbox(Lang::Tr, &w, &ask),
+            "#58 “A 529” kapatılsın mı? #1 kartı girdi"
+        );
+        w.items.insert((0, 58), Outside::Pull);
+        assert_eq!(item_named(&w, &ask), ("58".to_string(), String::new()));
+        let none = InboxItem { card: None, ..ask };
+        assert_eq!(item_named(&w, &none), (String::new(), String::new()));
+    }
+
+    #[test]
     fn a_card_at_its_breaker_and_the_persons_answer_are_said_in_both_languages() {
         let mut w = crate::live::testing::team(2);
         let c = crate::live::testing::with_card(&mut w, 1);

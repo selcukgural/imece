@@ -32,10 +32,62 @@ pub fn parse(v: &Value) -> Result<Option<Item>, String> {
     }
 }
 
+/// The line a commit message says it closes `item` with, as GitHub
+/// reads it.
+pub fn trailer(item: Item) -> String {
+    format!("Closes #{item}")
+}
+
+/// Whether `text` says it closes `item`: its trailer, not as the start of
+/// a longer number.
+pub fn names(text: &str, item: Item) -> bool {
+    let trailer = trailer(item);
+    text.match_indices(&trailer).any(|(at, _)| {
+        let next = text[at + trailer.len()..].chars().next();
+        !next.is_some_and(|c| c.is_ascii_digit())
+    })
+}
+
+/// `message` with a trailer for each of `items` it does not name yet,
+/// after a blank line, one a line.
+pub fn with_trailers(message: &str, items: &[Item]) -> String {
+    let new: Vec<String> = (items.iter())
+        .filter(|&&n| !names(message, n))
+        .map(|&n| trailer(n))
+        .collect();
+    if new.is_empty() {
+        return message.to_string();
+    }
+    format!("{}\n\n{}", message.trim_end(), new.join("\n"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn a_commit_message_gets_a_trailer_for_each_item_it_does_not_name() {
+        assert_eq!(trailer(58), "Closes #58");
+        assert_eq!(with_trailers("Fix it\n", &[]), "Fix it\n");
+        assert_eq!(with_trailers("Fix it\n", &[58]), "Fix it\n\nCloses #58");
+        assert_eq!(
+            with_trailers("Fix it\n\nWhy", &[58, 61]),
+            "Fix it\n\nWhy\n\nCloses #58\nCloses #61"
+        );
+        // One the message names already is not said twice; #580 is not #58.
+        assert_eq!(
+            with_trailers("Fix\n\nCloses #58", &[58, 61]),
+            "Fix\n\nCloses #58\n\nCloses #61"
+        );
+        assert_eq!(
+            with_trailers("Fix\n\nCloses #580", &[58]),
+            "Fix\n\nCloses #580\n\nCloses #58"
+        );
+        assert!(names("x Closes #58", 58) && names("Closes #58.", 58));
+        assert!(names("Closes #580 Closes #58", 58), "a later one");
+        assert!(!names("Closes #580", 58) && !names("closes 58", 58) && !names("", 58));
+    }
 
     #[test]
     fn an_item_is_a_whole_number_from_one_in_digits_only() {

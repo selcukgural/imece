@@ -1724,6 +1724,11 @@ impl App {
                 let Ran { ended, took } = caught.ran;
                 let project = self.current_project();
                 self.outputs.insert(project, Output::of(command, &caught));
+                if ended == Ended::Exit(0) {
+                    // A commit that names the issues its cards close: they
+                    // are named from now on (record 142).
+                    self.world.commit_ran(project, command);
+                }
                 let leader = self.world.projects[project].leader;
                 let took = Some(millis(took));
                 self.world.note(Event::Shell {

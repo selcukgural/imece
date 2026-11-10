@@ -363,6 +363,46 @@ fn a_card_s_screen_says_the_checks_it_asks_for() {
 }
 
 #[test]
+fn a_card_s_screen_says_the_issue_it_closes_and_what_a_look_read() {
+    let mut app = on_card_one(Lang::En);
+    assert!(!render(&app, 140, 38).contains("closes "));
+    app.world.cards[0].closes = Some(58);
+    let project = app.world.cards[0].project;
+    let s = render(&app, 140, 38);
+    assert!(s.contains("closes #58") && !s.contains("#58 “"), "{s}");
+    let seen = |app: &mut App, o: Outside| {
+        app.world.items.insert((project, 58), o);
+        render(app, 140, 38)
+    };
+    for unsaid in [Outside::Asking, Outside::Unread] {
+        let s = seen(&mut app, unsaid.clone());
+        assert!(
+            s.contains("closes #58") && !s.contains("#58 ·"),
+            "{unsaid:?}: {s}"
+        );
+    }
+    let s = seen(&mut app, Outside::Open("A 529\u{1b}[31m stops it".into()));
+    assert!(s.contains("closes #58 “A 529 [31m stops it” · open"), "{s}");
+    let s = seen(&mut app, Outside::Closed("A 529".into()));
+    assert!(s.contains("closes #58 “A 529” · closed"), "{s}");
+    let s = seen(&mut app, Outside::Pull);
+    assert!(
+        s.contains("closes #58 · that number is a pull request"),
+        "{s}"
+    );
+    let s = seen(&mut app, Outside::NoSuch);
+    assert!(
+        s.contains("closes #58 · this repository has no such issue"),
+        "{s}"
+    );
+    app.lang = Lang::Tr;
+    let s = seen(&mut app, Outside::Open("A 529".into()));
+    assert!(s.contains("kapatır #58 “A 529” · açık"), "{s}");
+    let s = seen(&mut app, Outside::Closed("A 529".into()));
+    assert!(s.contains("kapatır #58 “A 529” · kapalı"), "{s}");
+}
+
+#[test]
 fn a_card_s_screen_says_what_it_waits_on_done_failed_or_not_yet() {
     let mut app = on_card_one(Lang::En);
     let n = app.world.cards.len();
