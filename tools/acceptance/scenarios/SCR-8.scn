@@ -1,0 +1,25 @@
+# SCR-8 · A narrow screen, and one too small.
+start
+see any key: close
+key Escape
+key /
+type mend shelf.py [question]
+key Enter
+key Escape Escape
+see run .imece/worktree-setup.sh
+key g d
+key a
+see Does the change to shelf.py
+size 100 40
+see Does the change to shelf.py
+see ?  help
+size 60 20
+see 2  no, it is internal
+see ?
+size 48 18
+see no, it is internal
+size 39 11
+see 39×11
+key a
+size 120 40
+see Does the change to shelf.py

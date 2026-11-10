@@ -1,0 +1,62 @@
+# TEAM-5 · Part applied, then the rest; a commit from imece's own shell.
+start
+see any key: close
+key Escape
+key /
+type find() should ignore case in shelf.py
+key Enter
+see claude-1 said done.
+key Escape Escape
+see run .imece/worktree-setup.sh
+key g d
+key a
+see run .imece/check on its
+key g d
+key a
+see ✓ check · 2 files +2 −0
+key Enter
+see diff · talk · log
+key x
+see 1 of 2 hunks chosen; a applies only them, the rest waits
+key a
+see ✓ check · 1 file +1 −0
+sh git -C repos/shelf status --short
+says M  shelf.py
+# The rest comes as a new item in its place: imece holds a key on an item
+# the person has not had at hand (record 125), so it is chosen first.
+key j k
+key a
+see ALL DONE
+sh git -C repos/shelf status --short
+says M  test_shelf.py
+type :commit
+key Enter
+see !git commit -m '
+key Enter
+see [imece] exit 0 · 
+key Escape
+see ALL DONE
+sh git -C repos/shelf log --oneline
+says The sample as the acceptance run starts it
+# The terminal cleared first, so the `[imece] exit` waited for is this one.
+key /
+type !clear && git log --oneline -3
+key Enter
+see The sample as the acceptance run starts it
+see [imece] exit 0 · 
+# Back from the shell into the chat with the leader that `/` opened.
+key Escape
+see CONVERSATION · lead ⇄ you
+key Escape
+see ALL DONE
+key O
+see I ran `clear && git log --oneline -3`
+key C-u Escape Escape
+# The lines sent come back: ↑ on the line, ^r to search them.
+key /
+key Up
+see !clear && git log --oneline -3
+key C-u C-r
+type log
+see git log --oneline -3
+key Escape Escape Escape

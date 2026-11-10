@@ -1,0 +1,29 @@
+# TEAM-3 · The change waits, with its verdict, its check and its cost.
+start
+see any key: close
+key Escape
+key /
+type find() should ignore case in shelf.py
+key Enter
+see claude-1 said done.
+key Escape Escape
+see run .imece/worktree-setup.sh
+key g d
+key a
+see run .imece/check on its
+key g d
+key a
+see ✓ check · 2 files +2 −0
+see 1 ready to approve
+see verdict  ✓ ready to approve · ✓ check · 2 files
+see cost     $0.12
+type :changes
+key Enter
+key Enter
+see diff · talk · log
+see source +1 −0 (1) · tests +1 −0 (1)
+see python3 -m unittest: All 12 tests passed.
+see +# find() should ignore case in shelf.py
+key w
+key Escape
+see TO DECIDE 1 change

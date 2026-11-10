@@ -308,6 +308,28 @@ mod tests {
     const FULL: &str = "the team is full: 2 workers";
 
     #[test]
+    fn the_person_s_cue_cuts_the_task_into_its_cards_whatever_the_habit() {
+        let mut f = fake(LEADER);
+        files(&mut f, REPO);
+        f.first = vec![
+            ("hire".into(), joined("claude-1")),
+            ("hire".into(), joined("claude-2")),
+        ];
+        let said = Mind::default().turn(&mut f, "From imece: x\n\nRound up [cards 2]");
+        assert_eq!(
+            said,
+            "claude-1 has src/alpha.rs: Round up [cards 2]; claude-2 has src/beta.rs: Round up \
+             [cards 2]."
+        );
+        // Without it and without the habit the task goes whole.
+        let mut f = fake(LEADER);
+        files(&mut f, REPO);
+        f.first = vec![("hire".into(), joined("claude-1"))];
+        let said = Mind::default().turn(&mut f, "From imece: x\n\nRound up");
+        assert_eq!(said, "claude-1 has it: Round up");
+    }
+
+    #[test]
     fn a_leader_hires_one_plans_the_rest_and_hands_them_out_at_the_yes() {
         let mut f = fake(LEADER);
         files(&mut f, REPO);

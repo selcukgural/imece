@@ -1,0 +1,24 @@
+# ASK-3 · A question with answers, answered with a digit (stand-in: [question]).
+start
+see any key: close
+key Escape
+key /
+type mend shelf.py [question]
+key Enter
+key Escape Escape
+see run .imece/worktree-setup.sh
+key g d
+key a
+see Does the change to shelf.py
+# Questions come first in TO DECIDE; the row at hand stays where it was.
+key g d
+see claude-1 asks you: Does the change to shelf.py
+see 1  yes, a line
+see 2  no, it is internal
+see so far:
+key 2
+gone claude-1 asks you
+see run .imece/check on its
+key g d
+key a
+see The person said: no, it is internal

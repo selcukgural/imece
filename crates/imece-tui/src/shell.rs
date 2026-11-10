@@ -539,19 +539,58 @@ pub(crate) fn step_aside() -> io::Result<()> {
     screen::give_back(&mut io::stdout())
 }
 
+/// How long one look for the key waits before it looks again.
+const KEY_WAIT: Duration = Duration::from_millis(250);
+
 /// Raw mode for one key press (so no newline is echoed and ctrl-c is a
-/// key, not a signal), then back to cooked mode.
+/// key, not a signal), then back to cooked mode. A terminal that went
+/// away, or a signal (SIGTERM, SIGHUP), ends the wait as well: the main
+/// loop then sees it and quits as it does on its own screen (record 86).
+/// crossterm's own read spins forever on a terminal gone and never comes
+/// back to see a signal; an acceptance run found imece so, at full CPU,
+/// after its tmux pane closed on a `!cmd`'s "any key".
 pub(crate) fn wait_for_key() -> io::Result<()> {
     enable_raw_mode()?;
-    let pressed = loop {
-        match event::read() {
-            Ok(Event::Key(k)) if k.kind == KeyEventKind::Press => break Ok(()),
-            Ok(_) => {}
-            Err(e) => break Err(e),
-        }
-    };
+    let mut guard = crate::input::Guard::default();
+    let fd = crate::input::terminal();
+    let pressed = key_pressed(
+        |t| match fd {
+            Some(fd) => guard.ready(
+                t,
+                |w| crate::input::wait(fd, None, w),
+                || event::poll(Duration::ZERO),
+            ),
+            None => event::poll(t).map(Some),
+        },
+        event::read,
+    );
     disable_raw_mode()?;
     pressed
+}
+
+/// Waits for a key's press: `ready` says within a wait whether an event
+/// can be read (`None`: the terminal went away), `read` reads it. Done
+/// on a press, on the terminal gone and on a signal; another event (a
+/// resize, a release) waits on.
+fn key_pressed(
+    mut ready: impl FnMut(Duration) -> io::Result<Option<bool>>,
+    mut read: impl FnMut() -> io::Result<Event>,
+) -> io::Result<()> {
+    loop {
+        match ready(KEY_WAIT) {
+            Ok(None) => return Ok(()),
+            Ok(Some(false)) => {}
+            Ok(Some(true)) => {
+                if let Event::Key(k) = read()?
+                    && k.kind == KeyEventKind::Press
+                {
+                    return Ok(());
+                }
+            }
+            Err(e) if e.kind() == io::ErrorKind::Interrupted => return Ok(()),
+            Err(e) => return Err(e),
+        }
+    }
 }
 
 /// Back to the alternate screen and raw mode, with a fresh terminal so
@@ -589,6 +628,69 @@ pub(crate) mod tests {
     pub(crate) fn one_at_a_time() -> MutexGuard<'static, ()> {
         static LOCK: Mutex<()> = Mutex::new(());
         LOCK.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    #[test]
+    fn the_key_wait_ends_on_a_press_a_terminal_gone_or_a_signal_and_never_reads_blind() {
+        use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventState, KeyModifiers};
+        let key = |kind| {
+            Event::Key(KeyEvent {
+                code: KeyCode::Char('x'),
+                modifiers: KeyModifiers::NONE,
+                kind,
+                state: KeyEventState::NONE,
+            })
+        };
+        // What each look says, and what each read gives, in order; the
+        // reads made are counted.
+        let wait = |looks: Vec<io::Result<Option<bool>>>, events: Vec<Event>| {
+            let (mut looks, mut events) = (looks.into_iter(), events.into_iter());
+            let mut waits = Vec::new();
+            let mut reads = 0;
+            let got = key_pressed(
+                |t| {
+                    waits.push(t);
+                    looks.next().expect("a look too many")
+                },
+                || {
+                    reads += 1;
+                    Ok(events.next().expect("a read too many"))
+                },
+            );
+            assert!(
+                looks.next().is_none() && events.next().is_none(),
+                "all used"
+            );
+            (got.map_err(|e| e.kind()), waits.len(), reads)
+        };
+        // Quiet twice, then a press.
+        let pressed = wait(
+            vec![Ok(Some(false)), Ok(Some(false)), Ok(Some(true))],
+            vec![key(KeyEventKind::Press)],
+        );
+        assert_eq!(pressed, (Ok(()), 3, 1));
+        // A resize and a release are not the key.
+        let others = wait(
+            vec![Ok(Some(true)), Ok(Some(true)), Ok(Some(true))],
+            vec![
+                Event::Resize(80, 24),
+                key(KeyEventKind::Release),
+                key(KeyEventKind::Press),
+            ],
+        );
+        assert_eq!(others, (Ok(()), 3, 3));
+        // The terminal gone: done, and crossterm never asked to read.
+        assert_eq!(wait(vec![Ok(None)], vec![]), (Ok(()), 1, 0));
+        // A signal: done, so the main loop sees what it set.
+        let signal = io::Error::from(io::ErrorKind::Interrupted);
+        assert_eq!(wait(vec![Err(signal)], vec![]), (Ok(()), 1, 0));
+        // Any other failure is said.
+        let broken = io::Error::from(io::ErrorKind::BrokenPipe);
+        assert_eq!(
+            wait(vec![Err(broken)], vec![]),
+            (Err(io::ErrorKind::BrokenPipe), 1, 0)
+        );
+        assert_eq!(KEY_WAIT, Duration::from_millis(250));
     }
 
     #[test]

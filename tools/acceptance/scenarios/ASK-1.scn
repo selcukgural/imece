@@ -1,0 +1,41 @@
+# ASK-1 · A permission ask, a no, and a yes from now on (stand-in: [ask]).
+start
+see any key: close
+key Escape
+key /
+type mend shelf.py [ask]
+key Enter
+key Escape Escape
+see run .imece/worktree-setup.sh
+key g d
+key a
+see run Bash: python3 -m pip
+key g d
+see a  allow once   r  refuse   e  yes this turn
+key r
+see run .imece/check on its
+key g d
+key a
+see python3 -m pip --version did not run: The person
+# The same command again: a yes from now on for the project.
+key /
+type mend cli.py [ask]
+key Enter
+key Escape Escape
+see run Bash: python3 -m pip
+key g d
+key A
+# The journal keeps it (a flash may be gone before it is looked at).
+key J
+see shelf: you say yes from now on to python3 -m pip
+key Escape
+type :allow
+key Enter
+see python3 -m pip
+# A third time asks nothing: its change comes with no ask before it.
+key /
+type mend test_shelf.py [ask]
+key Enter
+key Escape Escape
+wait 60 #3   mend test_shelf
+gone permissions

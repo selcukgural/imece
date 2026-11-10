@@ -1,0 +1,18 @@
+# SESS-8 · The terminal goes away: imece quits, nothing of it left running.
+# The runner fails the case when anything still works in its directory
+# five seconds after its terminal went.
+start
+see any key: close
+key Escape
+key /
+type find() should ignore case in shelf.py
+key Enter
+see claude-1 said done.
+key Escape Escape
+# The terminal goes while imece waits for a key after a `!cmd` (it spun
+# there at full CPU, deaf to SIGTERM, until 2026-11-10).
+key /
+type !true
+key Enter
+see [imece] exit 0 · 
+stop
