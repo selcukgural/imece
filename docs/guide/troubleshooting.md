@@ -153,6 +153,10 @@ Before going through the list: `imece doctor` checks what a start needs in one g
 
 **Why.** iTerm2's *Save lines to scrollback in alternate screen mode* copies an erased alternate screen into the scrollback. imece erases row by row and turns auto-wrap off while it has the screen, so this should not happen on current builds; if it does, that option is where to look.
 
+### After a resize the screen looks drawn for another size
+
+**Why.** A change of the terminal's size writes nothing to imece's input, and an earlier build noticed it only when something else changed: until then the terminal showed the old frame as it had moved it (the status line half way down, empty rows under it, lines running off the right edge). imece now wakes on the resize, draws for the new size at once, and draws the whole screen once more a quarter of a second after the size stops changing, so this is fixed; a report of it on a current build is a bug.
+
 ### The code map and the composer opened by themselves at start
 
 **Why.** A terminal's late answer to the colour probe was once read as keys (Terminal.app answered after the probe's first deadline). The probe now waits for a cursor-position report, so this is fixed; a report of it on a current build is a bug.

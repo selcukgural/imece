@@ -153,6 +153,10 @@ Listeye girmeden önce: `imece doctor` bir açılışın ihtiyaç duyduğu her �
 
 **Neden.** iTerm2'nin *Save lines to scrollback in alternate screen mode* seçeneği silinen bir alternatif ekranı geçmişe kopyalar. imece satır satır siler ve ekranı tutarken otomatik sarmayı kapatır, bu yüzden güncel derlemelerde bu olmamalıdır; olursa bakılacak yer o seçenektir.
 
+### Boyut değişiminden sonra ekran başka bir boyuta çizilmiş görünüyor
+
+**Neden.** Terminalin boyut değişimi imece'nin girdisine bir şey yazmaz ve önceki bir derleme bunu ancak başka bir şey değişince fark ediyordu: o zamana kadar terminal eski kareyi kendi kaydırdığı haliyle gösteriyordu (durum satırı pencerenin ortasında, altında boş satırlar, sağ kenardan taşan satırlar). imece artık boyut değişiminde uyanıyor, yeni boyuta hemen çiziyor ve boyut değişmeyi bıraktıktan çeyrek saniye sonra bütün ekranı bir kez daha çiziyor; yani bu düzeldi, güncel bir derlemede görülürse hatadır.
+
 ### Başlangıçta kod haritası ve yazma satırı kendiliğinden açıldı
 
 **Neden.** Bir terminalin renk sondasına geç yanıtı bir zamanlar tuş olarak okunuyordu (Terminal.app sondanın ilk süresinden sonra yanıtladı). Sonda şimdi bir imleç konumu raporunu bekler, bu düzeltildi; güncel bir derlemede görülmesi bir hatadır.

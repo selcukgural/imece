@@ -17,7 +17,7 @@ for each whole wait on a terminal that says it can be read, and its
 feature would reach crossterm past ratatui, which keeps the two in step.
 
 **What imece does.** It asks first (`input.rs`). `input::wait(fd,
-timeout)` polls the terminal's descriptor itself: nothing within the
+wake, timeout)` polls the terminal's descriptor itself: nothing within the
 wait is `Quiet`; `POLLHUP`, `POLLERR` or `POLLNVAL` is `Gone`; readable
 with nothing to read (`FIONREAD` 0, or EIO asking it) is `Gone` too,
 since in raw mode there is no end-of-file key that makes an empty read;
@@ -43,6 +43,33 @@ is `Ready` with its byte waiting; nothing is `Quiet` after the wait.
 `Guard` is tested with a fake terminal and a fake crossterm, for which
 waits and reads it asks. The demo runs the same main loop, so it ends
 the same way (record 31).
+
+**A resize (#457, 2026-11-10).** Asking first had a cost found eight
+days later: a change of the terminal's size writes nothing to its
+input. crossterm hears it as SIGWINCH and gives `Event::Resize` only
+when it is asked, and it was asked only with bytes there, so a resize
+on a quiet screen woke nothing. imece drew again only when something
+else changed (a key, an agent's event, the clock's step), and until
+then the terminal showed the old frame as it had moved it about: in
+iTerm2 the status line half way down a taller window, every row below
+it empty, the preview's lines running off the right edge (the person's
+screenshot on the issue). Measured on a pty with the demo paused and
+motion off: 0 bytes in the 1.5 s after the size changed. Now the wait
+also watches a pipe (`input::Wake::on_resize`: a `UnixStream` pair, both
+ends non-blocking, registered for SIGWINCH through signal-hook, the
+crate crossterm registers the signal with, so both hear it); a byte
+there ends the wait as `Quiet` and is read away. The main loop looks at
+the terminal's size on every wake (`screen::Sizes::seen`), so a change
+stirs a drawing at once, and once the size has not changed for
+`screen::SETTLE` (250 ms) the screen is erased row by row and drawn
+whole once more (`Terminal::clear` in the same synchronized frame): a
+terminal may move its cells after the frame for the new size came, and
+a frame drawn as a difference from the last never touches a cell it
+believes blank. The same run measured after: the frame at the new size
+and the settle frame, each erasing all 45 rows. The kitty click report's
+short waits watch no wake, so a resize never cuts one into keys. When
+the pipe cannot be made, the size is still looked at on every wake, a
+tick late at most.
 
 **Failure.** One window is left: bytes read by crossterm, then the
 terminal gone before crossterm's own loop reads again and finds half an

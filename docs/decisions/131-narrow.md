@@ -32,7 +32,7 @@ both languages) and no key acts but `ctrl-c`, a paste neither: what
 the person cannot see they do not decide. The size is the last one
 drawn (`App.drawn_size`, set by `ui::draw`), so a key acts on what was
 on the screen when it was pressed; a terminal made larger draws again
-at once (a resize is a terminal event, record 77) and the keys come
+at once (a resize wakes the main loop, records 77 and 86) and the keys come
 back.
 
 **The status line.** The screen's keys first, the place in what they
