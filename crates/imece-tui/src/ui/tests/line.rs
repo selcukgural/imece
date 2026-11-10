@@ -338,8 +338,12 @@ fn backspace_takes_a_letter_back_and_the_offers_widen_again() {
 fn writing_without_offers_takes_no_row_from_the_body() {
     // A short screen, so the body is full and a row less would show.
     let mut app = app_after(1, 3, 30, Lang::En);
+    // In a `:` line: a message's line opens the chat, another screen.
+    key(&mut app, KeyCode::Char(':'));
+    key(&mut app, KeyCode::Esc);
+    key(&mut app, KeyCode::Esc);
     let before = render(&app, 140, 12);
-    key(&mut app, KeyCode::Char('/'));
+    key(&mut app, KeyCode::Char('!'));
     for c in "hello".chars() {
         key(&mut app, KeyCode::Char(c));
     }
@@ -478,11 +482,14 @@ fn shift_enter_alt_enter_and_a_backslash_enter_write_a_new_line_and_enter_sends_
     write(&mut app, "now");
     assert_eq!(app.input, "fix\nthe\nparser\nnow");
     key(&mut app, KeyCode::Enter);
-    assert!(!app.typing);
+    assert!(app.typing && app.input.is_empty(), "the chat's line");
     assert_eq!(
         last_said(&app),
         Some((lead, "fix\nthe\nparser\nnow".to_string()))
     );
+    key(&mut app, KeyCode::Esc);
+    key(&mut app, KeyCode::Esc);
+    assert!(app.thread.is_none() && !app.typing);
     // To one agent: the name ends at the new line too.
     let name = app.world.agents[1].name.clone();
     key(&mut app, KeyCode::Char('@'));
@@ -927,7 +934,10 @@ fn a_colon_command_sets_the_budget_and_the_journal_says_so() {
 }
 
 fn type_line(app: &mut App, line: &str) {
-    key(app, KeyCode::Char('/'));
+    // A chat's line stays open after a message that went.
+    if !app.typing {
+        key(app, KeyCode::Char('/'));
+    }
     for c in line.chars() {
         key(app, KeyCode::Char(c));
     }
@@ -959,10 +969,12 @@ fn words_reach_the_agent_and_a_command_its_own_command_line_or_a_refusal() {
     );
     type_line(&mut app, "hello");
     assert_eq!(you_said(&app), ["hello"]);
-    assert!(render(&app, 140, 40).contains("sent to lead"));
+    // It stands in the chat above the line, which stays open.
+    let s = render(&app, 140, 40);
+    assert!(s.contains("› hello") && app.typing, "{s}");
     type_line(&mut app, "/cost");
     assert_eq!(you_said(&app), ["hello", "/cost"], "taken, as live's");
-    assert!(render(&app, 140, 40).contains("sent to lead"));
+    assert!(render(&app, 140, 40).contains("› /cost"));
     type_line(&mut app, "/nope");
     let s = render(&app, 140, 40);
     assert!(
@@ -984,7 +996,9 @@ fn words_reach_the_agent_and_a_command_its_own_command_line_or_a_refusal() {
     );
     type_line(&mut app, "hello");
     assert_eq!(you_said(&app), ["hello"]);
-    assert!(render(&app, 140, 40).contains("sent to lead"));
+    // It stands in the chat above the line, which stays open.
+    let s = render(&app, 140, 40);
+    assert!(s.contains("› hello") && app.typing, "{s}");
 }
 
 #[test]

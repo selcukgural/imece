@@ -358,6 +358,7 @@ impl App {
         }
         if self.typing {
             self.type_key(k);
+            self.chat_follows();
             return;
         }
         if let Some(id) = self.peek {
@@ -470,7 +471,13 @@ impl App {
                 let i = self.question_at_hand().unwrap_or_default();
                 self.answer_item(i, true);
             }
-            KeyCode::Char('/') | KeyCode::Char('i') => self.typing = true,
+            // Else to the leader of the project at hand, the conversation
+            // with it above the line (record 144); in a chat open
+            // already, to the agent it is with.
+            KeyCode::Char('/') | KeyCode::Char('i') => {
+                let leader = self.world.projects[self.current_project()].leader;
+                self.write_to(self.chat_agent().unwrap_or(leader));
+            }
             KeyCode::Char(':') => {
                 self.typing = true;
                 self.input = ":".into();
@@ -517,16 +524,22 @@ impl App {
                     self.open_talk_with(id);
                 }
             }
+            // A name first, filled in where an agent's work is open; in a
+            // chat the line goes to its agent already. Once the line
+            // names an agent its conversation opens above it
+            // (`chat_follows`).
             KeyCode::Char('@') => {
                 self.typing = true;
-                self.input = match self.zoom {
-                    Zoom::Focus(id) | Zoom::Trace(id) | Zoom::Diff(id) => {
+                self.input = match (self.chat_agent(), self.zoom) {
+                    (Some(_), _) => String::new(),
+                    (None, Zoom::Focus(id) | Zoom::Trace(id) | Zoom::Diff(id)) => {
                         format!("@{} ", self.world.agents[id].name)
                     }
-                    Zoom::None => "@".into(),
+                    (None, Zoom::None) => "@".into(),
                 };
                 self.after = 0;
                 self.menu = self.suggest();
+                self.chat_follows();
             }
             // A digit picks one of the answers a question offers (on Home
             // or its detail); the digits do nothing else (record 125: the

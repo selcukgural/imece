@@ -433,7 +433,8 @@ mod tests {
         // Into the message above: it is the one selected, kept in view.
         keys(&mut app, "vjs");
         app.thread.as_ref().unwrap().follow.set(false);
-        keys(&mut app, "bbbbbb");
+        // A chat's head is the time and the kind: two words.
+        keys(&mut app, "bbb");
         let th = app.thread.as_ref().unwrap();
         assert_eq!((choice(&app), th.sel), ((1, 3, Some((0, 0))), 0));
         assert!(th.follow.get());

@@ -25,6 +25,8 @@ Home is the screen imece opens on, the one for deciding; `:home` comes back to i
  ● #17  Price list cache          Read the code around it · 27 min
  ● #16  Search result ranking     Make the change · 3 min
  ● #7   Payments docs             Write it up for the leader · 5 min
+
+ ○ lead  Three cards are out; claude-2 has the parser. · 2 min        /  write to the lead
  home · shop-api · #1 Shipping cost    enter  open   a  yes   r  no   ?  help
 ```
 
@@ -45,6 +47,10 @@ The [header](salon.md#the-header) names the open projects; the one the list is n
 A row is the piece of work: `!` (or the agent's glyph), its project when several are open and the list is not narrowed, the card and its title (a change's own title; an agent with no card, its name), then the ask or the status. An ask wraps under its own column, whole; a change's parts go under each other when the row is short; an agent's status is cut. A title longer than its column takes what a one-line row leaves free after its status (and, at hand, its keys). The agent's name stands in the preview. `W`'s order is this list's: permissions, questions, changes, replies, what was put off.
 
 The list scrolls only when the row at hand would leave the screen: while it shows with a line under it, TO DECIDE and the group lines stay in view, even when new rows come above it. With nothing listed the list says so once, across the whole width, and the status line offers `/ write to the lead`; while no project has a worker, not even an idle one with a change waiting, imece's mark stands in the free rows.
+
+## The leader's line
+
+A leader has no row among those at work, so the leader of the project at hand has a line of its own under the list, always in the same place: its glyph and name, what it does right now while it is mid-turn, else the first line of its newest words to you and how long ago (`nothing said yet` before its first), and at the right the key that writes to it. `/` opens [your conversation with it](conversations.md#your-conversation-with-an-agent) with the line to write on under it. The row at hand decides whose leader it is; a solo has no such line (it has a row), nor has a project put away. Its words are looked for in the journal's newest 2,000 lines.
 
 ## The preview
 
@@ -68,7 +74,8 @@ Under 40 columns or 12 rows imece shows only the terminal's size and its own lea
 | `e` `A` | on an ask: yes for this turn · yes from now on |
 | `s`  `:settle` | later: the item goes to the `later` group at the end of TO DECIDE and you stay on the list; on an agent's row or a project's heading: hidden until it needs you ([the team](salon.md#settling-what-is-finished); `:unsettle` brings everything back) |
 | `h` `l`  `za` `zM` `zR`  `:fold` `:unfold` | fold the row at hand's project to its heading · open it · toggle · every project · none; only while the projects head their rows |
-| `@` | write to the agent at hand |
+| `/` `i` | write to the leader of the project at hand, your conversation with it above the line |
+| `@` | write to one agent: its name first (`tab` completes it); once the name is whole your conversation with it shows above the line |
 | `W` | open the next item, in the list's order |
 
 Every other key works as everywhere; the status line's keys are the row at hand's.

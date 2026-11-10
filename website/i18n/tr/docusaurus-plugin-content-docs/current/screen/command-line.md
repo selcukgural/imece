@@ -5,7 +5,7 @@ description: "Yazdığınız alt satır - lidere ya da tek bir agent'a, Claude C
 
 # Komut satırı
 
-Alt satır yazdığınız yerdir. `/` (ya da vim'deki gibi `i`) onu seçili projenin liderine açar, `@` tek bir agent'a, `:` imece'ye, `!` kendi kabuğunuza, `#` bir karta. Siz yazana dek bir ipucu `enter`'ın ne yaptığını, satır nasıl ekleneceğini ve `esc`'in vazgeçtiğini söyler; ilk karakterle kaybolur, satır yeniden boşalınca geri gelir.
+Alt satır yazdığınız yerdir. `/` (ya da vim'deki gibi `i`) onu seçili projenin liderine, onunla konuşmanız satırın üstünde olarak açar ([bir agent'la kendi konuşmanız](conversations.md#bir-agentla-kendi-konuşmanız)), `@` tek bir agent'a, `:` imece'ye, `!` kendi kabuğunuza, `#` bir karta. Siz yazana dek bir ipucu `enter`'ın ne yaptığını, satır nasıl ekleneceğini ve `esc`'in vazgeçtiğini söyler; ilk karakterle kaybolur, satır yeniden boşalınca geri gelir.
 
 ```text
  › lead için:    enter gönder · ⇧enter yeni satır · esc vazgeç
@@ -25,8 +25,8 @@ Alt satır yazdığınız yerdir. `/` (ya da vim'deki gibi `i`) onu seçili proj
 
 | Satır | Nereye |
 | --- | --- |
-| düz metin | seçili projenin liderine; isteği kartlara böler |
-| `@name text` | tek bir agent'a (Türkçe yardımda `@ad mesaj`). Boşta bir işçiye mesaj, işi bir değişikliğe varana dek kart açmaz; o zaman kart mesajın başlığıyla açılır. Bir odakta, izde ya da değişiklikte `@` agent'ın adını doldurur |
+| düz metin | seçili projenin liderine; isteği kartlara böler. Bir agent'la kendi konuşmanızdayken o agent'a; satır `enter`'dan sonra açık kalır |
+| `@name text` | tek bir agent'a (Türkçe yardımda `@ad mesaj`). Boşta bir işçiye mesaj, işi bir değişikliğe varana dek kart açmaz; o zaman kart mesajın başlığıyla açılır. Bir odakta, izde ya da değişiklikte `@` agent'ın adını doldurur. Satır bir agent'ı adlandırınca onunla konuşmanız, satır gönderilene ya da bırakılana dek satırın üstünde görünür (bir değişikliğin üstünde değil) |
 | `/cmd`, `@name /cmd` | agent'ın kendi komut satırı, mesaj değil (Türkçe yardımda `/kmt`): `/clear`, `/compact`, `/cost`, `/context`, Claude Code ne biliyorsa. Bir tur olarak çalışır ve yanıtı bir cevap gibi döner |
 | `:komut` | imece'nin kendisine; aşağıda |
 | `!cmd` | kendi kabuğunuza (Türkçe yardımda `!kmt`) |

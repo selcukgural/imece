@@ -23,7 +23,7 @@ The keys and commands you need once imece is installed and you have seen [the to
 
 | Key | What it does |
 | --- | --- |
-| `/`  `i` | write to the leader of the project at hand; `enter` sends, `esc` cancels |
+| `/`  `i` | write to the leader of the project at hand, your conversation with it above the line; `enter` sends and the line stays open, `esc` leaves the line, `esc` again the conversation |
 | `@name text` | write to one agent; `tab` completes the name |
 | `⇧enter`  `\` `enter` | a new line (the footer says which works in your terminal) |
 | `↑` `↓`  `^r` | the lines sent before · search them |

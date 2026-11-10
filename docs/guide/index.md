@@ -38,7 +38,7 @@ imece is a terminal program, written in Rust, that drives Claude Code sessions a
 
 ## The loop
 
-1. You write to the leader (`/`, then your request, `enter`). Plain text goes to the leader; `@name text` goes to one agent.
+1. You write to the leader (`/`, then your request, `enter`): your conversation with it stands above the line, as in Claude Code's own screen. Plain text goes to the leader; `@name text` goes to one agent.
 2. The leader reads the checkout (it cannot write), posts cards and hires workers by **tier** (`cheap`, `standard`, `strong`), never by model name.
 3. Each worker works in its own worktree with Claude Code's full coding toolset (read, write, shell, web) under the default `--confine standard`. What Claude Code would ask permission for comes to you as `⚑`.
 4. A worker's `done` becomes a change `Δ` in TO DECIDE. Its verdict line says what proved it and where it reaches: `✓ ready to approve · ✓ cargo test · 2 files, both inside #1`, or `! look first` and why (a failed run, nothing ran, a file outside its card, an overlap with another change).

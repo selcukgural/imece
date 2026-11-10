@@ -100,14 +100,14 @@ Takım yalnız liderdir, siz yazana dek boşta; boştaki lider listelenmez. Gün
 
 ## Lidere yazmak
 
-`/` (ya da `i`) tuşuna basın. Alt satır yazma satırına dönüşür: ` › lead için: `. İstediğinizi yazın ve `enter` basın:
+`/` (ya da `i`) tuşuna basın. Liderle konuşmanız açılır (ilk seferde boştur) ve alt satır yazma satırına dönüşür: ` › lead için: `. İstediğinizi yazın ve `enter` basın:
 
 ```text
  › lead için: CSV ayrıştırıcı son sütundaki sondaki virgülü reddediyor; kabul
               etsin, testiyle
 ```
 
-Ekrandan uzun bir satır sonraki sırada sürer. Siz yazmadan önce alt satır `enter gönder · ⇧enter yeni satır · esc vazgeç` der.
+Ekrandan uzun bir satır sonraki sırada sürer. Siz yazmadan önce alt satır `enter gönder · ⇧enter yeni satır · esc vazgeç` der. Gönderdiğiniz, satırın üstünde durur; satır sıradaki mesaj için açık kalır, liderin yanıtı ve yaptıkları (işe aldığı işçiler, dağıttığı kartlar) altına gelir. `esc` satırı bırakır, bir `esc` daha ana ekrana döner; orada liderin en altta kendi satırı vardır.
 
 Düz metin eldeki projenin liderine gider. `@claude-1 metin` tek bir ajana giderdi. İstemden sonra `/` ile başlayan bir satır bir mesaj değil, ajanın kendi komutudur (`/cost`, `/compact`, `/clear`). `⇧enter` (ya da `\` `enter`) uzun bir istekte yeni satır başlatır; alt satır terminalinizde hangisinin çalıştığını söyler. `tab`, `@` sonrasında adları, `:` sonrasında komutları tamamlar.
 

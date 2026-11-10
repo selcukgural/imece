@@ -1103,6 +1103,12 @@ pub struct Text {
     pub journal_keys: &'static str,
     pub thread_title: &'static str,
     pub event_title: &'static str,
+    /// A chat nothing was said in yet.
+    pub chat_empty: &'static str,
+    /// `{}` things the agent did before the ones shown under a message.
+    pub did_earlier: &'static str,
+    /// The leader's line on Home when it has said nothing yet.
+    pub lead_quiet: &'static str,
     /// Keys of the open conversation: `(key, what it does)`.
     pub thread_hints: [(&'static str, &'static str); 8],
     /// Choosing in a conversation (`v`): its keys, words and notes too.
@@ -2452,6 +2458,9 @@ pub const EN: Text = Text {
     re_line: "↩ re {}: {}",
     re_gone: "↩ re {}, which the journal no longer has",
     event_title: " EVENT ",
+    chat_empty: "nothing said yet: write below",
+    did_earlier: "… {} earlier · tab log",
+    lead_quiet: "nothing said yet",
     thread_hints: [
         ("↑↓ j k", "message"),
         ("[ ]", "turn"),
@@ -3094,8 +3103,14 @@ pub const EN: Text = Text {
     help_here: " HELP · this screen · ? every key ",
     help_every: " HELP · every key · ? this screen ",
     help_keys: [
-        ("/  i", "write to the lead of the selected project"),
-        ("@name text", "write to one agent"),
+        (
+            "/  i",
+            "write to the lead, its conversation above; in a chat, to its agent",
+        ),
+        (
+            "@name text",
+            "write to one agent; its conversation shows meanwhile",
+        ),
         (
             "/cmd  @name /cmd",
             "the agent's own command line (/clear, /compact, /cost ...)",
@@ -4063,6 +4078,9 @@ pub const TR: Text = Text {
     re_line: "↩ {} yanıtı: {}",
     re_gone: "↩ {} yanıtı; günlükte artık yok",
     event_title: " OLAY ",
+    chat_empty: "henüz bir şey söylenmedi: aşağıya yaz",
+    did_earlier: "… {} tane daha önce · tab log",
+    lead_quiet: "henüz bir şey söylenmedi",
     thread_hints: [
         ("↑↓ j k", "mesaj"),
         ("[ ]", "sıra"),
@@ -4720,8 +4738,14 @@ pub const TR: Text = Text {
     help_here: " YARDIM · bu ekran · ? tüm tuşlar ",
     help_every: " YARDIM · tüm tuşlar · ? bu ekran ",
     help_keys: [
-        ("/  i", "seçili projenin liderine yaz"),
-        ("@ad mesaj", "tek bir agent'a yaz"),
+        (
+            "/  i",
+            "lidere yaz, konuşması üstte; bir konuşmadayken onun agent'ına",
+        ),
+        (
+            "@ad mesaj",
+            "tek bir agent'a yaz; yazarken konuşması görünür",
+        ),
         (
             "/kmt  @ad /kmt",
             "agent'ın kendi komut satırı (/clear, /compact, /cost ...)",
@@ -5357,6 +5381,7 @@ mod tests {
             (e.in_research, t.in_research),
             (e.in_reply, t.in_reply),
             (e.thread_title, t.thread_title),
+            (e.did_earlier, t.did_earlier),
             (e.copied, t.copied),
             (e.copy_failed, t.copy_failed),
             (e.copy_title, t.copy_title),

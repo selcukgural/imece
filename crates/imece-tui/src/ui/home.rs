@@ -40,10 +40,20 @@ fn list_width(width: u16) -> u16 {
 pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     let lonca = lonca_line(app);
     let tall = u16::from(lonca.is_some());
-    let [store, body] =
-        Layout::vertical([Constraint::Length(tall), Constraint::Min(0)]).areas(area);
+    // The leader's line stands at the foot, where the line to write on
+    // opens.
+    let lead = lead_line(app, usize::from(area.width));
+    let [store, body, foot] = Layout::vertical([
+        Constraint::Length(tall),
+        Constraint::Min(0),
+        Constraint::Length(u16::from(lead.is_some())),
+    ])
+    .areas(area);
     if let Some(line) = lonca {
         f.render_widget(Paragraph::new(line), store);
+    }
+    if let Some(line) = lead {
+        f.render_widget(Paragraph::new(line), foot);
     }
     let at = app.home_at();
     // Nothing listed: no row to read beside, the list takes the width so
@@ -76,6 +86,69 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
         let text = preview_lines(app, row, room, usize::from(preview.height));
         f.render_widget(Paragraph::new(text), preview);
     }
+}
+
+/// How far back in the journal the leader's line looks for its words.
+pub(crate) const LEAD_BACK: usize = 2_000;
+
+/// The leader's line (record 144): while its workers are at work the
+/// leader of the project at hand has no row in the list, so its line
+/// stands under it, always in the same place: its glyph and name, what it
+/// does right now, else its newest words to the person and how long ago,
+/// and at the right the key that writes to it. None for a solo (it has a
+/// row), a leader gone or a project put away.
+pub(crate) fn lead_line(app: &App, width: usize) -> Option<Line<'static>> {
+    let w = &app.world;
+    let t = app.lang.text();
+    let p = w.projects.get(app.current_project())?;
+    let a = w.agents.get(p.leader)?;
+    if a.role != Role::Leader || a.gone || p.closed || w.put_away(a.id) {
+        return None;
+    }
+    let (mark, colour) = glyph(a);
+    let mut spans = vec![
+        Span::raw(" "),
+        Span::styled(format!("{mark} "), fg(colour)),
+        Span::styled(clean(&a.name), bold(pal().strong)),
+        Span::raw("  "),
+    ];
+    let key = [
+        Span::styled(" / ", key_style()),
+        Span::styled(format!(" {}", t.write_lead), dim()),
+    ];
+    let key_width: usize = key.iter().map(Span::width).sum();
+    let room = width.saturating_sub(chars(&spans) + key_width + 3);
+    let me = Party::Agent(a.id);
+    // Every frame reads it: the journal's newest lines only. Past them
+    // the line says nothing rather than that nothing was said.
+    let last = (w.journal.iter().rev().take(LEAD_BACK))
+        .find(|e| words::said(&e.event).is_some_and(|s| s.from == me && s.to == Party::Person));
+    let all_read = w.journal.len() <= LEAD_BACK;
+    let mut tail = Vec::new();
+    if mark == "●" {
+        spans.extend(status_spans(app.lang, w, a));
+        tail = super::salon::since_spans(app, a);
+    } else if let Some((e, s)) = last.and_then(|e| Some((e, words::said(&e.event)?))) {
+        let seconds = w.tick.saturating_sub(e.tick) * SECONDS_PER_TICK;
+        if seconds >= 60 {
+            let ago = format!(" · {}", words::ago(app.lang, seconds));
+            tail.push(Span::styled(ago, dim()));
+        }
+        let first = s.text.lines().find(|l| !l.trim().is_empty());
+        let text = plain(&clean(first.unwrap_or_default()));
+        spans.push(Span::raw(brief(&text, room.saturating_sub(chars(&tail)))));
+    } else if all_read {
+        spans.push(Span::styled(t.lead_quiet, dim()));
+    }
+    spans.extend(tail);
+    let (line, _) = super::overlay::cut(Line::from(spans), width.saturating_sub(key_width + 3));
+    let mut spans = line.spans;
+    let gap = width.saturating_sub(chars(&spans) + key_width + 1);
+    if gap >= 2 {
+        spans.push(Span::raw(" ".repeat(gap)));
+        spans.extend(key);
+    }
+    Some(Line::from(spans))
 }
 
 /// Whether a project in view has a worker (a solo, a helper, a

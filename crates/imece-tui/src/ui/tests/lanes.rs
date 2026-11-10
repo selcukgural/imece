@@ -379,8 +379,16 @@ fn the_timeline_keeps_the_selected_agent_in_view() {
     let last = timeline::agents(&app)[n - 1].0;
     assert!(s.contains(&app.world.agents[last].name), "{s}");
     let first = timeline::agents(&app)[0].0;
+    // In the window: under it Home's last row is the leader's line.
+    let lanes: Vec<&str> = (s.lines())
+        .skip_while(|l| !l.contains('┌'))
+        .take_while(|l| !l.contains('└'))
+        .collect();
+    assert!(lanes.len() > 3, "{s}");
     assert!(
-        !s.contains(&format!(" {} ", app.world.agents[first].name)),
+        !lanes
+            .iter()
+            .any(|l| l.contains(&format!(" {} ", app.world.agents[first].name))),
         "{s}"
     );
     app.world.projects[0].closed = true;

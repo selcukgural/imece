@@ -43,7 +43,9 @@ pub(crate) use diff::{
 pub(crate) use footer::caret_in;
 use footer::{completions, footer, input_rows};
 use header::header;
-pub(crate) use overlay::{chosen_text, fold, in_view, talk_notes_message, thread_lines, word_step};
+pub(crate) use overlay::{
+    chat_of, chat_with, chosen_text, fold, in_view, talk_notes_message, thread_lines, word_step,
+};
 pub(crate) use salon::{card_rows, journal_rows, reply_jump, thread_of, turn_starts};
 
 /// The narrowest screen imece draws on (record 131): a phone in
@@ -1256,7 +1258,7 @@ fn fit_hints<'a>(mut hints: Vec<(&'a str, &'a str)>, room: usize) -> Vec<(&'a st
 /// code rule, a quote bar.
 pub(crate) fn is_lead(s: &Span) -> bool {
     let t = s.content.trim_start_matches(' ');
-    matches!(t, "" | "• " | "│ " | "▎ ")
+    matches!(t, "" | "• " | "│ " | "▎ " | "› " | "● ")
         || t.strip_suffix(". ")
             .is_some_and(|n| !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()))
 }

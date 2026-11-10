@@ -100,14 +100,14 @@ The team is the leader alone, idle until you write; an idle leader is not listed
 
 ## Write to the leader
 
-Press `/` (or `i`). The footer becomes the composer, ` › to lead: `. Type what you want and press `enter`:
+Press `/` (or `i`). Your conversation with the leader opens, empty the first time, and the footer becomes the composer, ` › to lead: `. Type what you want and press `enter`:
 
 ```text
  › to lead: the CSV parser rejects a trailing comma on the last column; make it
             accept one, with a test
 ```
 
-A line longer than the screen goes on in the next row. Before you type, the footer says `enter send · ⇧enter new line · esc cancel`.
+A line longer than the screen goes on in the next row. Before you type, the footer says `enter send · ⇧enter new line · esc cancel`. What you sent stands above the line, which stays open for the next message; the leader's answer and what it does (the workers it hires, the cards it hands out) come under it. `esc` leaves the line, `esc` again goes back to Home, where the leader keeps a line of its own at the foot.
 
 Plain text goes to the leader of the project at hand. `@claude-1 text` would go to one agent. A line that starts with `/` after the prompt is the agent's own command (`/cost`, `/compact`, `/clear`), not a message. `⇧enter` (or `\` `enter`) starts a new line in a longer request; the footer says which works in your terminal. `tab` completes names after `@` and commands after `:`.
 

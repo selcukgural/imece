@@ -38,7 +38,7 @@ imece, Rust ile yazılmış bir terminal programıdır: Claude Code oturumların
 
 ## Döngü
 
-1. Lidere yazarsınız (`/`, sonra isteğiniz, `enter`). Düz metin lidere gider; `@ad metin` tek bir ajana.
+1. Lidere yazarsınız (`/`, sonra isteğiniz, `enter`): onunla konuşmanız, Claude Code'un kendi ekranındaki gibi satırın üstünde durur. Düz metin lidere gider; `@ad metin` tek bir ajana.
 2. Lider checkout'u okur (yazamaz), kartlar asar ve işçileri model adıyla değil **katmanla** (`cheap`, `standard`, `strong`) tutar.
 3. Her işçi kendi worktree'sinde, varsayılan `--confine standard` altında Claude Code'un tam kodlama araç setiyle (okuma, yazma, kabuk, web) çalışır. Claude Code'un izin soracağı şey size `⚑` olarak gelir.
 4. Bir işçinin `done` demesi KARAR BEKLEYEN'de bir değişiklik `Δ` olur. Hüküm satırı onu neyin kanıtladığını ve nereye uzandığını söyler: `✓ onaya hazır · ✓ cargo test · 2 dosya, ikisi de #1 içinde`, ya da `! önce bak` ve nedeni (başarısız bir çalıştırma, hiçbir şey koşmamış, kartının dışında bir dosya, başka bir değişiklikle çakışma).

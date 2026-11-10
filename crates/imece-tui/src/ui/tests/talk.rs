@@ -113,14 +113,12 @@ fn the_conversation_dates_the_messages_of_other_days() {
         "the first message is not of today"
     );
     assert_eq!(ranges[0].0, 1, "the date is no part of the message");
-    assert!(lines[1].starts_with("  14:00 you → lead"), "{}", lines[1]);
+    // A chat's head is the time; who speaks leads the text.
+    assert_eq!(lines[1].trim_end(), "  14:00");
+    assert_eq!(lines[2], "  › check the readme");
     let (second_day, _) = ranges[2];
     assert_eq!(lines[second_day - 1], "  ─ 1970-01-02");
-    assert!(
-        lines[second_day].starts_with("  00:00 you → lead"),
-        "{}",
-        lines[second_day]
-    );
+    assert_eq!(lines[second_day].trim_end(), "  00:00");
     assert_eq!(
         lines.iter().filter(|l| l.starts_with("  ─ ")).count(),
         2,
@@ -402,19 +400,15 @@ fn the_conversation_marks_every_row_of_the_selected_message() {
     );
     // The head: when, who to whom; the text under it, indented.
     let lines = text(&rows);
+    assert_eq!(lines[start].trim_end(), "▌ 14:00");
     assert!(
-        lines[start].starts_with("▌ 14:00 lead → you"),
-        "{}",
-        lines[start]
-    );
-    assert!(
-        lines[start + 1].starts_with("▌   long long"),
+        lines[start + 1].starts_with("▌ ● long long"),
         "{}",
         lines[start + 1]
     );
     // The person's message, not selected: a plain gutter.
-    assert!(lines[0].starts_with("  14:00 you → lead"), "{}", lines[0]);
-    assert_eq!(lines[1], "    check the readme");
+    assert_eq!(lines[0].trim_end(), "  14:00");
+    assert_eq!(lines[1], "  › check the readme");
     // Title and hints on the screen, in both languages.
     let screen = render(&app, 120, 30);
     assert!(
@@ -765,7 +759,8 @@ fn the_conversation_scrolls_only_as_far_as_the_selection_needs() {
     app.open_thread(4);
     render(&app, 100, 20);
     let th = app.thread.as_ref().unwrap();
-    let (rows, ranges) = overlay::thread_rows(app.lang, &app.world, th, 96);
+    // A chat is as wide as the screen.
+    let (rows, ranges) = overlay::thread_rows(app.lang, &app.world, th, 100);
     let (start, end) = ranges[3];
     assert_eq!(
         usize::from(th.scroll.get()),
@@ -796,7 +791,7 @@ fn the_conversation_scrolls_only_as_far_as_the_selection_needs() {
         "going back down: still in view, no scroll"
     );
     // Paging stops at the last row; a page is the body less one row of
-    // overlap (20 rows: 2 bars, 3 of the detail's frame, 2 border, 1
+    // overlap (20 rows: 2 bars, 3 of the detail's frame, 2 rules, 1
     // hints: 12 of text).
     let th = app.thread.as_ref().unwrap();
     assert_eq!(th.page.get(), 11);
@@ -830,4 +825,321 @@ fn a_conversation_takes_the_whole_body_of_a_narrow_screen() {
     };
     assert_eq!(left(79), (Some(0), Some(78)), "edge to edge");
     assert_eq!(left(80), (Some(2), Some(77)), "two columns either side");
+}
+
+/// A team of three with nothing in its journal, everyone idle: the
+/// leader, a worker with a card, and another worker.
+fn chatting() -> (App, AgentId, AgentId, AgentId) {
+    let mut app = app_after(1, 2, 30, Lang::En);
+    app.world.journal.clear();
+    app.world.inbox.clear();
+    app.world.tick = 0;
+    for c in &mut app.world.cards {
+        c.story.clear();
+    }
+    for a in &mut app.world.agents {
+        a.status = Status::Idle;
+        a.talk = None;
+        a.starting = false;
+        a.activity = None;
+        a.plan.clear();
+    }
+    let lead = app.world.projects[0].leader;
+    let workers: Vec<AgentId> = (app.world.agents.iter())
+        .filter(|a| a.role == Role::Worker)
+        .map(|a| a.id)
+        .collect();
+    (app, lead, workers[0], workers[1])
+}
+
+fn chat_rows(app: &App, width: u16) -> Vec<String> {
+    let th = app.thread.as_ref().unwrap();
+    text(&overlay::thread_rows(app.lang, &app.world, th, width).0)
+}
+
+#[test]
+fn a_chat_leads_each_message_with_who_says_it_and_says_what_its_agent_did_between() {
+    let (mut app, lead, one, two) = chatting();
+    let (a, b) = (
+        app.world.agents[one].name.clone(),
+        app.world.agents[two].name.clone(),
+    );
+    app.world
+        .said(lead, "Split the parser work.\nKeep the API.");
+    // What the leader did: told a worker, hired one. Not: what a worker
+    // told it, the pot's news kept under its name, a worker's own news.
+    app.world.note(Event::Sent {
+        from: lead,
+        to: one,
+        kind: MsgKind::Assign,
+        text: "take the parser".into(),
+        id: 7,
+        re: None,
+    });
+    app.world.note(Event::Hired {
+        by: lead,
+        agent: two,
+        model: None,
+        from: None,
+    });
+    app.world.note(Event::Sent {
+        from: one,
+        to: lead,
+        kind: MsgKind::Inform,
+        text: "on it".into(),
+        id: 8,
+        re: None,
+    });
+    app.world.note(Event::Budget {
+        leader: lead,
+        from: 100,
+        to: 200,
+    });
+    app.world.note(Event::Stopped {
+        agent: one,
+        why: "its own".into(),
+    });
+    app.world.note(Event::Replied {
+        agent: lead,
+        text: "Two cards are out.".into(),
+    });
+    app.open_chat(lead);
+    let rows = chat_rows(&app, 80);
+    let rows: Vec<&str> = rows.iter().map(|r| r.trim_end()).collect();
+    assert_eq!(rows[0], "  14:00", "the head is the time: {rows:#?}");
+    assert_eq!(rows[1], "  › Split the parser work.");
+    assert_eq!(
+        rows[2], "    Keep the API.",
+        "its next lines under the text"
+    );
+    assert_eq!(
+        rows[3],
+        format!("    ⎿ → {a} [assign]: take the parser"),
+        "its own name goes without saying"
+    );
+    assert!(
+        rows[4].starts_with(&format!("    ⎿ hired {b}")),
+        "{rows:#?}"
+    );
+    assert_eq!(rows[5], "", "nothing else was its doing");
+    assert_eq!(rows[6], "▌ 14:00");
+    assert_eq!(rows[7], "▌ ● Two cards are out.");
+    assert_eq!(rows.len(), 9, "{rows:#?}");
+    // The person's words are bold, the agent's lead in its colour.
+    let th = app.thread.as_ref().unwrap();
+    let (drawn, _) = overlay::thread_rows(app.lang, &app.world, th, 80);
+    assert_eq!(drawn[1].spans[2].content, "› ");
+    assert!(
+        (drawn[1].spans.iter().skip(3)).all(|s| s.style.add_modifier.contains(Modifier::BOLD)),
+        "{:?}",
+        drawn[1]
+    );
+    assert_eq!(drawn[7].spans[2].content, "● ");
+    assert_eq!(drawn[7].spans[2].style, fg(speaker_color(lead)));
+    assert!(
+        !(drawn[7].spans.iter().skip(3)).any(|s| s.style.add_modifier.contains(Modifier::BOLD))
+    );
+    // A row of what it did is dim and cut to the width.
+    assert_eq!(drawn[3].spans.last().unwrap().style, dim());
+    let narrow = chat_rows(&app, 24);
+    assert!(
+        narrow.iter().all(|r| r.chars().count() <= 24),
+        "{narrow:#?}"
+    );
+    assert!(narrow.iter().any(|r| r.contains("⎿") && r.ends_with('…')));
+    // Folded to one row, a message keeps who to whom and hides what is
+    // under it, what was done after it too.
+    app.thread.as_mut().unwrap().folds.set(0, true);
+    let rows = chat_rows(&app, 80);
+    assert!(
+        rows[0].contains("you → lead: Split the parser work."),
+        "{rows:#?}"
+    );
+    assert!(!rows.iter().any(|r| r.contains('⎿')), "{rows:#?}");
+    // Between two agents nothing changes: who to whom heads each message.
+    app.open_thread(1);
+    assert_eq!(app.chat_agent(), None);
+    let rows = chat_rows(&app, 80);
+    assert!(
+        rows[0].contains(&format!("lead → {a} [assign]")),
+        "{rows:#?}"
+    );
+    assert_eq!(rows[1].trim_end(), "▌   take the parser");
+    assert!(!rows.iter().any(|r| r.contains('⎿')), "{rows:#?}");
+}
+
+#[test]
+fn a_chat_counts_what_was_done_earlier_and_lists_the_files_changed_in_their_place() {
+    let (mut app, _, one, _) = chatting();
+    let card = app.world.agents[one].card;
+    assert!(card.is_some());
+    app.world.said(one, "go on");
+    for n in 0..overlay::DID_ROWS + 2 {
+        app.world.tick += 1;
+        app.world
+            .story(card, StoryEvent::Touched(format!("src/f{n}.rs")));
+    }
+    // One of the same tick as the next message is of the next.
+    app.world.tick += 1;
+    app.world
+        .story(card, StoryEvent::Touched("src/late.rs".into()));
+    app.world.note(Event::Replied {
+        agent: one,
+        text: "done".into(),
+    });
+    app.open_chat(one);
+    let rows = chat_rows(&app, 80);
+    let did: Vec<&str> = (rows.iter())
+        .filter(|r| r.contains('⎿'))
+        .map(|r| r.trim())
+        .collect();
+    assert_eq!(did.len(), overlay::DID_ROWS + 2, "{rows:#?}");
+    assert_eq!(did[0], "⎿ … 2 earlier · tab log");
+    assert!(
+        did[1].ends_with("src/f2.rs"),
+        "the newest are kept: {did:?}"
+    );
+    assert!(did[overlay::DID_ROWS].ends_with("src/f6.rs"), "{did:?}");
+    assert!(did[overlay::DID_ROWS + 1].ends_with("src/late.rs"));
+    // In order: under the person's words what came before the answer,
+    // under the answer what came with it.
+    let answer = rows.iter().position(|r| r.contains("● done")).unwrap();
+    let late = rows.iter().position(|r| r.contains("late.rs")).unwrap();
+    let f6 = rows.iter().position(|r| r.contains("f6.rs")).unwrap();
+    assert!(f6 < answer && answer < late, "{rows:#?}");
+    // Exactly as many as fit are all shown (the story's first line is
+    // the person's words).
+    app.world.cards[card.unwrap()].story.drain(..3);
+    let rows = chat_rows(&app, 80);
+    assert!(!rows.iter().any(|r| r.contains("earlier")), "{rows:#?}");
+    assert_eq!(
+        rows.iter().filter(|r| r.contains('⎿')).count(),
+        overlay::DID_ROWS + 1
+    );
+    // Only the journal's newest lines are read for it.
+    let lines = app.world.journal.len();
+    app.world
+        .note(sent(one, 1 - one.min(1), MsgKind::Inform, 5, None));
+    assert!(
+        chat_rows(&app, 80)
+            .iter()
+            .any(|r| r.contains("[inform]: m5"))
+    );
+    for _ in 0..overlay::DID_BACK {
+        app.world.note(Event::Budget {
+            leader: 0,
+            from: 1,
+            to: 2,
+        });
+    }
+    assert!(!chat_rows(&app, 80).iter().any(|r| r.contains("[inform]")));
+    app.world.journal.truncate(lines);
+    // Turkish.
+    app.lang = Lang::Tr;
+    app.world.cards[card.unwrap()].story.clear();
+    app.world.tick -= 1;
+    for n in 0..overlay::DID_ROWS + 1 {
+        app.world
+            .story(card, StoryEvent::Touched(format!("src/g{n}.rs")));
+    }
+    let rows = chat_rows(&app, 80);
+    assert!(
+        rows.iter()
+            .any(|r| r.contains("⎿ … 1 tane daha önce · tab log")),
+        "{rows:#?}"
+    );
+}
+
+#[test]
+fn a_chat_ends_with_what_its_agent_does_right_now_while_it_works() {
+    let (mut app, _, one, _) = chatting();
+    app.world.said(one, "go on");
+    app.open_chat(one);
+    assert!(!chat_rows(&app, 80).iter().any(|r| r.contains('●')), "idle");
+    app.world.agents[one].status = Status::Working;
+    app.world.agents[one].activity = Some(String::new());
+    let rows = chat_rows(&app, 80);
+    assert_eq!(rows[rows.len() - 2], "  ● thinking…", "{rows:#?}");
+    app.world.agents[one].activity = Some("Edit src/main.rs".into());
+    app.world.agents[one].plan = vec![
+        Step {
+            text: "Read it".into(),
+            state: StepState::Done,
+        },
+        Step {
+            text: "Change it".into(),
+            state: StepState::Doing,
+        },
+    ];
+    let rows = chat_rows(&app, 80);
+    assert_eq!(rows[rows.len() - 2], "  ● ▸ Change it · Edit src/main.rs");
+    let th = app.thread.as_ref().unwrap();
+    let (drawn, ranges) = overlay::thread_rows(app.lang, &app.world, th, 80);
+    assert_eq!(drawn[drawn.len() - 2].spans.last().unwrap().style, dim());
+    assert_eq!(ranges.len(), 1, "it is no message");
+    assert!(chat_rows(&app, 12).iter().all(|r| r.chars().count() <= 12));
+    // With nothing said yet it stands under the words that say so.
+    app.world.journal.clear();
+    app.open_chat(one);
+    let s = render(&app, 100, 20);
+    let at = s
+        .lines()
+        .position(|l| l.contains("nothing said yet: write below"));
+    let rows: Vec<&str> = s.lines().collect();
+    assert!(rows[at.unwrap() + 2].contains("● ▸ Change it"), "{s}");
+    // A gone agent's chat has no such line.
+    app.world.agents[one].gone = true;
+    assert!(!render(&app, 100, 20).contains("▸ Change it"));
+}
+
+#[test]
+fn a_chat_is_the_screen_under_a_rule_and_its_line_takes_the_hints_row() {
+    let (mut app, lead, _, _) = chatting();
+    key(&mut app, KeyCode::Char('/'));
+    let s = render(&app, 100, 20);
+    let rows: Vec<&str> = s.lines().collect();
+    let title = rows
+        .iter()
+        .position(|r| r.contains("CONVERSATION"))
+        .unwrap();
+    assert!(
+        rows[title].starts_with(" CONVERSATION · lead ⇄ you · 0/0 ──")
+            && rows[title].ends_with('─'),
+        "a rule edge to edge, no box: {s}"
+    );
+    assert!(!s.contains('┌') && !s.contains('└'), "{s}");
+    assert!(
+        rows[title + 1].contains("nothing said yet: write below"),
+        "{s}"
+    );
+    assert_eq!(rows[18], "─".repeat(100), "a rule over the line");
+    assert!(rows[19].starts_with(" › to lead: "), "{s}");
+    assert!(
+        !s.contains("send notes"),
+        "the line's keys, not the reading's: {s}"
+    );
+    // Reading: its keys on its last row, and the key that writes.
+    write(&mut app, "hello");
+    key(&mut app, KeyCode::Enter);
+    key(&mut app, KeyCode::Esc);
+    app.flash = None;
+    let s = render(&app, 100, 20);
+    let rows: Vec<&str> = s.lines().collect();
+    assert!(rows[title].contains("lead ⇄ you · 1/1"), "{s}");
+    assert!(rows[17].contains("send notes"), "{s}");
+    assert_eq!(rows[18], "─".repeat(100));
+    assert!(rows[19].contains(" /  write to this agent"), "{s}");
+    assert!(s.contains("› hello"), "{s}");
+    // Turkish says the same.
+    app.lang = Lang::Tr;
+    app.world.journal.clear();
+    app.open_chat(lead);
+    let s = render(&app, 100, 20);
+    assert!(s.contains("henüz bir şey söylenmedi: aşağıya yaz"), "{s}");
+    // A conversation between two agents keeps its box and its margins.
+    let (mut app, lead, one, _) = chatting();
+    app.world.note(sent(lead, one, MsgKind::Inform, 3, None));
+    app.open_thread(0);
+    let s = render(&app, 100, 20);
+    assert!(s.contains("┌ CONVERSATION · lead ⇄ claude-1"), "{s}");
 }

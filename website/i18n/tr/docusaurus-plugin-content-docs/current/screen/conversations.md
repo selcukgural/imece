@@ -36,6 +36,41 @@ Başlık iki tarafı ve seçimin yerini söyler, `4/5`; kelimelerine yazılmış
 
 Konuşma açıkken `a` ve `r` hiçbir şeye karar vermez: altında seçili olan, gördüğün şey değildir. Önce `esc`, sonra değişikliği aç.
 
+## Bir agent'la kendi konuşmanız
+
+Sizinle tek bir agent arasındaki konuşma Claude Code'un kendi ekranı gibi okunur ve onun gibi yazılır: söylenenler yukarıda, yazı satırı altta. Ekranın gövdesinin tamamıdır; bir çizginin altında durur, çevresinde pencere yoktur.
+
+```text
+ KONUŞMA · lead ⇄ sen · 3/3 ──────────────────────────────────────────────────
+  14:02
+  › Fiyat listesi deploy sonrası ilk istekte yavaş. Nedenini bul ve düzelt;
+    genel API olduğu gibi kalsın.
+    ⎿ → claude-1 [görev]: #17 Fiyat listesi önbelleği
+    ⎿ işe aldı: claude-2 (sonnet)
+    ⎿ → claude-2 [görev]: #16 Arama sonuç sıralaması
+
+  14:04
+  ● İki nedeni var: önbellek tembel doluyor, sıralama da her sonuç için
+    listenin tamamını okuyor. İki kart çıktı.
+
+▌ 14:31
+▌ › Önbelleği yalnızca deploy sonrası değil, açılışta da ısıt.
+
+  ● ▸ Çevresindeki kodu oku · Read src/Pricing/PriceListCache.cs
+
+──────────────────────────────────────────────────────────────────────────────
+ › lead için:    enter gönder · ⇧enter yeni satır · esc vazgeç
+```
+
+- `/` (ya da `i`) onu eldeki projenin lideriyle, altında yazı satırıyla açar; ana ekrandan ya da başka herhangi bir yerden. Henüz bir şey söylenmediyse boş açılır. Zaten açık olan kendi konuşmanızda (bir işçinin `v` ya da `tab` ile açılan konuşma sekmesi) `/` ve `@` o agent'a yazar: ad gerekmez, satır `claude-1 için:` der.
+- `enter` gönderir ve satır açık kalır: yanıt üstüne gelir. `esc` satırı bırakır, konuşma aşağıdaki tuşlarla okunur (`/` yeniden yazar); bir `esc` daha kapatır. Gidemeyen bir mesaj (kasa tükendiyse) satırı kapatır ki nedeni görünsün.
+- Sizin sözünüz `›` ile başlar ve kalındır, agent'ınki kendi renginde `●` ile. Her birinin üstündeki satır saatidir, varsa türü de (`[soru]`, `[bitti]`); kopyalandığında o satır yine kimden kime olduğunu söyler.
+- Mesajların arasında, `⎿` ile başlayan soluk satırlar agent'ın üstlerindeki mesajdan sonra ne yaptığını söyler: bir ekip arkadaşına ne dediği, kimi işe aldığı, planı, değiştirdiği dosyalar, değişikliğine ne olduğu. Bir mesajın altında en çok beş tane, en yenileri; `… 3 tane daha önce · tab log` kalanını sayar, log sekmesinde hepsi vardır. Katlanmış bir mesaj bunları gizler. Bunun için defterin yalnızca en yeni 2.000 satırı okunur.
+- Agent tur ortasındayken son satır o an ne yaptığını söyler: kendi listesinde üzerinde olduğu adım, yaptığı çağrı.
+- Başka herhangi bir yerden, bir agent'ı adlandıran satır (`@claude-1 `, ad tam) siz yazarken onunla konuşmanızı satırın üstünde gösterir; satır gönderilince ya da bırakılınca gider, olduğunuz yere dönersiniz. Bir değişikliğin üstünde değil: orada yazdığınız, görünen satırlar hakkındadır.
+
+İki agent arasındaki konuşma eskisi gibidir: bir pencere, her mesajın başında kimden kime olduğu.
+
 Boşta bir işçiye mesaj kendiliğinden kart açmaz: satır işçinin kendi görevi olarak bekler ve iş bir değişikliğe varınca onun için bir kart açılır, başlığı satırın ilk satırıdır ve değişiklikle birlikte sizi bekler. Hiçbir şeye varmayan bir satır (bir soru, tek sözcüklük bir yanıt) asla kart olmaz; yanıt her zamanki gibi size gelir. Turu worktree'yi olduğu gibi bırakarak bitince satır biter, böylece sonra istediğiniz şey kartın adını verir; o tur sürerken yazılan bir satır onun parçasıdır.
 
 ## Okumak
@@ -148,7 +183,7 @@ Canlıda dosyalar git'in çalışma kopyasında listeledikleridir: izlenenler ve
 
 ## Konuşma izler
 
-Açık bir pencere konuşmaya ayak uydurur: çiftinin gelen günlük satırları eklenir. Pencereden `@` ile yazdığınız kendi satırınız seçilir; son satır seçiliyken gelen bir satır da. Daha yukarıdaki bir seçim okuduğunuz yerde kalır. Bundan önce bir yanıtı görmek için kapatıp yeniden açmak gerekiyordu.
+Açık bir pencere konuşmaya ayak uydurur: çiftinin gelen günlük satırları eklenir. Oradan yazdığınız kendi satırınız seçilir; son satır seçiliyken gelen bir satır da. Daha yukarıdaki bir seçim okuduğunuz yerde kalır. Bundan önce bir yanıtı görmek için kapatıp yeniden açmak gerekiyordu.
 
 ## İz
 

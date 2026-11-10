@@ -23,7 +23,7 @@ imece kurulup [tur](videos.mdx) izlendikten sonra gereken tuşlar ve komutlar, y
 
 | Tuş | Ne yapar |
 | --- | --- |
-| `/`  `i` | eldeki projenin liderine yaz; `enter` gönderir, `esc` vazgeçer |
+| `/`  `i` | eldeki projenin liderine yaz, onunla konuşmanız satırın üstünde; `enter` gönderir ve satır açık kalır, `esc` satırı, bir `esc` daha konuşmayı bırakır |
 | `@name text` | tek bir ajana yaz; `tab` adı tamamlar |
 | `⇧enter`  `\` `enter` | yeni bir satır (hangisinin terminalinizde çalıştığını alt satır söyler) |
 | `↑` `↓`  `^r` | daha önce gönderilen satırlar · onlarda ara |

@@ -499,11 +499,15 @@ impl App {
                 .next()
                 .unwrap_or_default()
                 .to_string(),
-            None => {
-                let leader = self.world.projects[self.current_project()].leader;
-                self.world.agents[leader].name.clone()
-            }
+            None => self.world.agents[self.unnamed_target()].name.clone(),
         }
+    }
+
+    /// Who a message that names nobody goes to: the agent the open chat
+    /// is with, else the leader of the current project.
+    fn unnamed_target(&self) -> AgentId {
+        let leader = self.world.projects[self.current_project()].leader;
+        self.chat_agent().unwrap_or(leader)
     }
 
     pub(super) fn submit(&mut self) {
@@ -582,9 +586,14 @@ impl App {
             self.shell = Some(command.to_string());
             return;
         }
+        // In a chat the person opened the line stays open after a message
+        // that went, as a chat's does: the answer comes above it. One
+        // refused closes it, so the line that says why is seen.
+        let chat =
+            self.chat_agent().is_some() && !self.thread.as_ref().is_some_and(|th| th.passing);
         let Some(rest) = text.strip_prefix('@') else {
-            let leader = self.world.projects[self.current_project()].leader;
-            self.tell(leader, &text);
+            let to = self.unnamed_target();
+            self.typing = self.tell(to, &text) && chat;
             return;
         };
         let msg = rest
@@ -594,7 +603,7 @@ impl App {
         match self.world.agent_by_name(&target) {
             Some(_) if msg.is_empty() => self.flash(t.empty_message),
             Some(id) => {
-                self.tell(id, msg);
+                self.typing = self.tell(id, msg) && chat;
             }
             None => self.flash(fill(t.no_agent, &[&target])),
         }
@@ -1188,15 +1197,17 @@ mod tests {
         assert_eq!(app.input, "see src/Auth/Session.cs ");
         assert!(app.typing);
         app.on_key(KeyEvent::from(KeyCode::Enter));
-        assert!(!app.typing);
+        assert!(app.typing && app.input.is_empty(), "the chat's line");
         // Without a `/`, nothing until tab, which takes the first match.
-        app.on_key(KeyEvent::from(KeyCode::Char('/')));
         type_in(&mut app, "fix Rates");
         assert!(app.menu.is_none());
         tab(&mut app);
         assert_eq!(app.input, "fix src/Shipping/Rates.cs ");
         app.on_key(KeyEvent::from(KeyCode::Esc));
         app.on_key(KeyEvent::from(KeyCode::Esc));
+        // Out of the chat.
+        app.on_key(KeyEvent::from(KeyCode::Esc));
+        assert!(app.thread.is_none());
         // In a message to one agent, and on a `!` line (its `!` is not
         // part of the first word).
         type_in(&mut app, &format!("@{name} src/Orders/Mo"));

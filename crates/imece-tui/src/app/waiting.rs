@@ -1020,6 +1020,7 @@ mod tests {
             folds: Folds::default(),
             room: Cell::new(usize::MAX),
             about: None,
+            passing: false,
         });
         assert_eq!(press(&mut app, 'W'), Some(0));
         assert!(app.card.is_none() && app.thread.is_none());

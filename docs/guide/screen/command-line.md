@@ -5,7 +5,7 @@ description: "The footer line where you write - to the leader or one agent, Clau
 
 # The command line
 
-The footer is where you write. `/` (or `i`, as in vim) opens it to the leader of the selected project, `@` to one agent, `:` to imece, `!` to your own shell, `#` to a card. Until you type, a hint says what `enter` does and how to add a line, and that `esc` cancels; it goes away with the first character and comes back when the line is empty again.
+The footer is where you write. `/` (or `i`, as in vim) opens it to the leader of the selected project with your conversation with it above the line ([your conversation with an agent](conversations.md#your-conversation-with-an-agent)), `@` to one agent, `:` to imece, `!` to your own shell, `#` to a card. Until you type, a hint says what `enter` does and how to add a line, and that `esc` cancels; it goes away with the first character and comes back when the line is empty again.
 
 ```text
  › to lead:    enter send · ⇧enter new line · esc cancel
@@ -25,8 +25,8 @@ The footer is where you write. `/` (or `i`, as in vim) opens it to the leader of
 
 | Line | Goes to |
 | --- | --- |
-| plain text | the leader of the selected project, which splits the request into cards |
-| `@name text` | one agent. A message to an idle worker opens no card until its work comes to a change; then the card opens, titled by the message. `@` in a focus, a trace or a change fills the agent's name in |
+| plain text | the leader of the selected project, which splits the request into cards; in a conversation of yours with an agent, that agent, and the line stays open after `enter` |
+| `@name text` | one agent. A message to an idle worker opens no card until its work comes to a change; then the card opens, titled by the message. `@` in a focus, a trace or a change fills the agent's name in. Once the line names an agent, your conversation with it shows above the line until the line is sent or dropped (not over a change) |
 | `/cmd`, `@name /cmd` | the agent's own command line, not a message: `/clear`, `/compact`, `/cost`, `/context`, whatever Claude Code knows. It runs as a turn and its answer comes back like a reply |
 | `:command` | imece itself; see below |
 | `!cmd` | your own shell |

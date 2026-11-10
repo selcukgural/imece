@@ -470,11 +470,11 @@ mod tests {
         // Sent, it is the newest; the line is empty again.
         app.on_key(KeyEvent::from(KeyCode::Enter));
         assert_eq!(app.world.sent.last().unwrap().text, "second!");
-        assert!(!app.typing && app.recall.is_none());
+        // The chat's line stays open for the next message, empty.
+        assert!(app.typing && app.recall.is_none() && app.input.is_empty());
         // Over several lines, up and down move between them first; at the
         // first line up brings a line back, at the last line down does.
         app.world.recall_line("a\nb");
-        app.on_key(KeyEvent::from(KeyCode::Char('/')));
         type_in(&mut app, "x\\");
         app.on_key(KeyEvent::from(KeyCode::Enter));
         type_in(&mut app, "y");

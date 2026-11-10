@@ -329,7 +329,11 @@ pub(super) fn footer(f: &mut Frame, area: Rect, app: &App) -> Option<Position> {
                 keys
             }
             _ if app.window.is_some() => vec![("esc", t.back), ("?", t.help)],
-            // The conversation has its keys on its own last row.
+            // The conversation has its keys on its own last row; a chat
+            // is written in.
+            _ if app.chat_agent().is_some() => {
+                vec![("/", t.write_this), ("esc", t.back), ("?", t.help)]
+            }
             _ if app.thread.is_some() => vec![("esc", t.back), ("?", t.help)],
             _ if app.peek.is_some() => {
                 let mut keys = vec![("enter", t.focus), ("@", t.write_this)];

@@ -279,6 +279,9 @@ pub struct Thread {
     /// The agent whose talk tab opened it: the detail stays that agent's
     /// though another wrote its first line; none: opened from a line.
     pub about: Option<AgentId>,
+    /// Opened only for the line being written, because it names the
+    /// agent (`App::chat_follows`): gone when the line is sent or dropped.
+    pub passing: bool,
 }
 
 impl Thread {
