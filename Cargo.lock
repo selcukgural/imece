@@ -627,6 +627,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "imece-fuzz"
+version = "0.1.202611100124"
+dependencies = [
+ "imece-agent",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "indoc"
 version = "2.0.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"

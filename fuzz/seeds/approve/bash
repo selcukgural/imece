@@ -1,0 +1,1 @@
+{"input":{"command":"cargo test --workspace","description":"tests"},"tool_name":"Bash"}

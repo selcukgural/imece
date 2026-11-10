@@ -17,6 +17,16 @@ the recorded sha, so a fix upstream is not missed.
 | `website/video/card.html`, `card.js`, `card.css` | kule `website/video/card.*` | `c09ec13` | 2026-11-01 | imece's mark and colours |
 | `website/package.json`, `package-lock.json` | kule `website/package.json`, `package-lock.json` | `c09ec13` | 2026-11-01 | name and description |
 
+`.github/workflows/fuzz.yml` is lonca's (`d1d761b`, 2026-11-09): every
+evening at 18:37 UTC instead of 03:37, imece's targets in its `plan` job.
+The layout of `fuzz/` (its `Cargo.toml`, the two-line files in
+`fuzz_targets/`, `seeds/` and `regressions/`) and of `crates/imece-fuzz`
+(`TARGETS`, `choice`, `tests/inputs.rs`) follows lonca's `fuzz/` and
+`crates/lonca-fuzz` at the same commit; the targets and their checks are
+imece's own.
+`fuzz/crash-recipient.txt` is the same age key as Lonca's: one key opens
+what either fuzzer found.
+
 The `crates-check` and `crates` jobs of `.github/workflows/release.yml`
 are lonca's `.github/workflows/registries.yml` (`9fbbeb7`, 2026-11-10),
 moved into the release workflow (a release made with the workflow's own

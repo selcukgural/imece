@@ -1,0 +1,8 @@
+{"mcp_servers":[{"name":"imece","status":"connected"}],"model":"m1","permissionMode":"acceptEdits","session_id":"s1","slash_commands":[],"subtype":"init","tools":["Bash","Edit","Glob","Grep","Read","TaskCreate","TaskGet","TaskList","TaskUpdate","WebFetch","WebSearch","Write","mcp__imece__send","mcp__imece__whoami"],"type":"system"}
+{"message":{"content":[{"text":"Reading the code.","type":"text"}],"usage":{"cache_read_input_tokens":2000,"input_tokens":10}},"type":"assistant"}
+{"message":{"content":[{"id":"t1","input":{"file_path":"/work/w1/src/a.rs","new_string":"2","old_string":"1"},"name":"Edit","type":"tool_use"}]},"type":"assistant"}
+{"message":{"content":[{"content":"ok","tool_use_id":"t1","type":"tool_result"}]},"type":"user"}
+{"message":{"content":[{"id":"t2","input":{"subject":"tests"},"name":"TaskCreate","type":"tool_use"}]},"type":"assistant"}
+{"message":{"content":[{"content":"Task #1 created successfully: tests","tool_use_id":"t2","type":"tool_result"}]},"type":"user"}
+{"rate_limit_info":{"rateLimitType":"five_hour","resetsAt":1800000000,"status":"allowed","utilization":0.4},"type":"rate_limit_event"}
+{"is_error":false,"modelUsage":{"claude-x":{"contextWindow":200000,"costUSD":0.0123}},"result":"done","subtype":"success","total_cost_usd":0.0123,"type":"result"}

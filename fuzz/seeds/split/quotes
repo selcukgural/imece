@@ -1,0 +1,1 @@
+git log --format='%h %s' "a \"b\" \$x" a\ b HEAD~1

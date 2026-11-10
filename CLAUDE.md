@@ -253,9 +253,35 @@ record in the same PR.
 - 136 `test-runners`: a Python, JavaScript or Go checkout's tests run as cargo's (user, 2026-11-09): `runners.rs` (`Runners { python, node: Option<Node>, go }`, `runners::of` from the files the git thread lists: `pyproject.toml` `setup.py` `setup.cfg` `tox.ini` `pytest.ini` `requirements*.txt` at the top or a `test_*.py`/`*_test.py`; `package.json` + lockfile (pnpm > yarn > npm); `go.mod`), `GitDone::Files.runners` → `Live::filed` → `Project.runners` (memory, `Event::TestsFound` on a change); shapes only (`Runners::check`): `python3|python -m pytest|unittest …`, `pytest …`, `MANAGER test`/`run test` [`--` words], `go test …`, each with an allow-list of options (`Options`; `-p -c -o -W @file --basetemp -exec -o -toolexec -coverprofile -args` and a manager's own options refused), no word outside (`inside`: `/ ~ \ @`, `..`, also after `= : ,`), go packages `./…`; `tools::allowed(.., tests)` for every role (after `--run`'s), so routine, the run tool (its runs on the Δ verdict) and a standing yes's routine part; `whoami`, the run tool's description and `prompts::tests_note` name them; read from the person's checkout only; a standing yes takes `python3 -m MODULE`; demo: kits' runners, `allowed on its own` asks via `crate::live::routine`; not for a folder without git. A routine line may end in `| tail`/`| head` (bare, `-N`, `-n N`, `2>&1` before; `tools::uncut`).
 - 137 `secret-values`: `clean` hid `key=lambda` in a Δ (acceptance run, 2026-11-09); a `NAME=value`/`NAME:value` hides by name and value: the name's last word (`name_words`) ends with a `SECRET_WORDS` word or is `KEY` after a `KEY_KINDS` word (`API_KEY`, `apiKey`; `KEY` alone and `TOKENS` are code's), any word for a name in capitals; a capitals name hides any value, any other a quoted literal or bare word but not code (`code_value`: `( [ {`, a dotted path, `$CAPS`, `CODE_WORDS`, the name itself, `""`); every assignment in a word (`assignments`), `== != <= >= => :=` none; URL parts by name alone; JWT/opaque also on the value; gaps: `"api_key": "x"` across words.
 - 138 `doctor`: `imece doctor [--repo DIR] [--verbose] [--json] [--lang en|tr]` (#431; `doctor::main`, before the screen): `gather` → `Facts` (asks `claude --version`/`auth status`/`--help`, git, `lonca` and its daemon; `store::peek` read-only and `store::held`, nothing made, nothing spent), `report(lang, &Facts)` pure → categories imece, Claude Code, git, the checkout's tests, Lonca (only when on PATH or the project is on it), terminal, your files; `Mark` Ok < Note < Warn < Fail, a category `[✓] [!] [✗]` by its worst (a note `•` is no issue), what to do under each finding that is not right; exit 1 only on `✗`; `claude::FLAGS` + `flags_missing` (what imece passes, in `claude --help`); words in `i18n::Doctor` (`words!`). `:doctor` (`app/doctor.rs`, `App.doctor: DoctorWin { top, verbose }`, `overlay::doctor`): the same report in a window for the project at hand, facts kept (`App.doctor_facts`) and worded when drawn; live looks on a thread (`doctor::look` via `App.doctor_look`, `Ask`, `App::doctored` in the main loop, the terminal from the start's probe: `App.terminal`, `doctor::terminal_of`), one at a time; `j k ^d ^u g G` within `doctor_room`, `v` every finding, `r` again, `esc q`; the demo's own machine (`doctor::demo`, one `!`); the welcome window and the `claude` not on PATH refusal name it.
+- 139 `fuzzing`: nine cargo-fuzz targets (`stream` `bus` `approve` `prompt` `split` `tidy` `patch` `paths` `clean`) in `crates/imece-fuzz`, `fuzz/` its own workspace and lock (`-s none`, stable), `i18n.rs`/`paths.rs` of the screen taken in by `#[path]`; seeds and regressions run by `cargo test` (`tests/inputs.rs`); `fuzz.yml` (Lonca's) every evening 18:37 UTC, on demand, on a `v*` tag, findings encrypted to `fuzz/crash-recipient.txt` (Lonca's key); first finds `float_roundtrip` and `subset` keeping CRLF.
 
 `docs/neighbours.md`: voff, what was taken from it and the rules that come
 from what it lacks. Read it before building a part it names.
+
+## Fuzzing
+
+Nine cargo-fuzz targets; what each holds and how to run one: record 139.
+
+```sh
+cargo install --locked cargo-fuzz@0.13.2
+cd fuzz && cargo fuzz run -s none <target> corpus/<target> seeds/<target> -- -max_total_time=300
+```
+
+- The checks live in `crates/imece-fuzz`; `fuzz/` (own workspace and lock)
+  only wraps them for libFuzzer.
+- A fixed crash's input goes to `fuzz/regressions/<target>/`; `cargo test`
+  runs every seed and regression. Keep a crash out of commits, PR text
+  and issues until it is fixed. CI (`fuzz.yml`: every evening 18:37 UTC,
+  on demand and on a `v*` tag; not on PRs) uploads what it finds encrypted
+  to `fuzz/crash-recipient.txt`; the key is
+  `~/.config/lonca/fuzz-crashes.age-key`. Before the day's first piece of
+  work look at last night's run (`gh run list --workflow=fuzz.yml --event
+  schedule --limit 1`): what it found is fixed first.
+- A new target: a module with `pub fn check(data: &[u8])`, a line in
+  `TARGETS`, a `[[bin]]` in `fuzz/Cargo.toml` with its two-line file in
+  `fuzz_targets/`, `fuzz/regressions/<target>/.gitkeep`, seeds in
+  `write_seeds`, the target in `fuzz.yml`'s `plan` job.
+  One target on demand: `gh workflow run fuzz.yml --ref main -f targets=stream`.
 
 ## Security
 

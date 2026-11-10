@@ -1,0 +1,23 @@
+[package]
+name = "imece-fuzz"
+description = "What each fuzz target checks (record 139): run by cargo-fuzz from fuzz/, and by cargo test on every saved input"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+publish = false
+
+[lib]
+# The screen's files this crate takes in whole (`i18n.rs`, `paths.rs`)
+# carry their own unit tests, which `imece`'s run already; `tests/inputs.rs`
+# is this crate's.
+test = false
+doctest = false
+
+[dependencies]
+imece-agent = { workspace = true }
+# `paths.rs` of the screen, taken in whole, derives them.
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.154"

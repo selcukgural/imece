@@ -1,0 +1,87 @@
+# The cargo-fuzz project (record 139, docs/decisions/139-fuzzing.md). Its own
+# workspace, so that libFuzzer and its build are no part of the main one;
+# what each target checks is in crates/imece-fuzz, which `cargo test` runs
+# on every saved input.
+[package]
+name = "imece-fuzz-targets"
+version = "0.0.0"
+edition = "2024"
+license = "Apache-2.0"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "=0.4.13"
+imece-fuzz = { path = "../crates/imece-fuzz" }
+
+[workspace]
+
+# Overflow and debug assertions on, as cargo-fuzz builds by default; the
+# release profile of the main workspace has overflow checks too.
+[profile.release]
+debug = 1
+
+[[bin]]
+name = "approve"
+path = "fuzz_targets/approve.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "bus"
+path = "fuzz_targets/bus.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "clean"
+path = "fuzz_targets/clean.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "patch"
+path = "fuzz_targets/patch.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "paths"
+path = "fuzz_targets/paths.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "prompt"
+path = "fuzz_targets/prompt.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "split"
+path = "fuzz_targets/split.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "stream"
+path = "fuzz_targets/stream.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "tidy"
+path = "fuzz_targets/tidy.rs"
+test = false
+doc = false
+bench = false

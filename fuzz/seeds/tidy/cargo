@@ -1,0 +1,9 @@
+[1m[32m   Compiling[0m imece v0.1
+running 3 tests
+test a ... ok
+test b ... FAILED
+test c ... ok
+
+failures:
+
+test result: FAILED. 2 passed; 1 failed

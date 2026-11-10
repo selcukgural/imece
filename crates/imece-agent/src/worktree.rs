@@ -979,15 +979,23 @@ fn git_apply(repo: &Path, env: &[(&str, &str)], args: &[&str], patch: &str) -> i
     Ok(())
 }
 
-/// The hunks of `patch` whose `@@` lines are at `hunks` (line indexes),
-/// each file's header before its first chosen one: a patch `git apply`
-/// takes, of only those. A file with no chosen hunk is left out, and so
-/// is a binary one, which has none.
+/// The hunks of `patch` whose `@@` lines are at `hunks` (line indexes, as
+/// `str::lines` counts them), each file's header before its first chosen
+/// one: a patch `git apply` takes, of only those. A file with no chosen
+/// hunk is left out, and so is a binary one, which has none. Every line
+/// keeps its own end, a CRLF file's carriage returns too; the last line
+/// gets a line end when the patch has none.
 pub fn subset(patch: &str, hunks: &[usize]) -> String {
     let mut out = String::new();
     let mut header: Vec<&str> = Vec::new();
     let (mut in_hunks, mut said, mut keep) = (false, false, false);
-    for (i, l) in patch.lines().enumerate() {
+    let ended = |out: &mut String, l: &str| {
+        out.push_str(l);
+        if !l.ends_with('\n') {
+            out.push('\n');
+        }
+    };
+    for (i, l) in patch.split_inclusive('\n').enumerate() {
         if l.starts_with("diff --git ") {
             header = vec![l];
             (in_hunks, said, keep) = (false, false, false);
@@ -998,18 +1006,14 @@ pub fn subset(patch: &str, hunks: &[usize]) -> String {
             keep = hunks.contains(&i);
             if keep && !said {
                 said = true;
-                header.iter().for_each(|h| {
-                    out.push_str(h);
-                    out.push('\n');
-                });
+                header.iter().for_each(|h| ended(&mut out, h));
             }
         } else if !in_hunks {
             header.push(l);
             continue;
         }
         if keep {
-            out.push_str(l);
-            out.push('\n');
+            ended(&mut out, l);
         }
     }
     out
@@ -2415,6 +2419,22 @@ rename to new
         );
         // A line index that is no hunk's chooses nothing.
         assert_eq!(subset(patch, &[5, 12, 0]), "");
+    }
+
+    #[test]
+    fn a_subset_keeps_each_line_s_own_end() {
+        // A file of CRLF lines, and a line that ends with a carriage
+        // return of its own: `git diff` prints them as they are.
+        let patch = "diff --git a/a b/a\r\n--- a/a\n+++ b/a\n@@ -1 +1 @@\n-x\r\n+y\r\r\n@@ -9 +9 @@\n-p\n+q";
+        assert_eq!(
+            subset(patch, &[3]),
+            "diff --git a/a b/a\r\n--- a/a\n+++ b/a\n@@ -1 +1 @@\n-x\r\n+y\r\r\n"
+        );
+        // The last line ends the patch with no line end: it gets one.
+        assert_eq!(
+            subset(patch, &[6]),
+            "diff --git a/a b/a\r\n--- a/a\n+++ b/a\n@@ -9 +9 @@\n-p\n+q\n"
+        );
     }
 
     #[test]
