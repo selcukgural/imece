@@ -272,6 +272,83 @@ pub struct Talk {
 /// replies to (`re`). 0 is a message saved before numbers were given.
 pub type MsgId = u32;
 
+/// An item of the outside board by its number (record 142): an issue of
+/// the checkout's own repository, never another's.
+pub type Item = u32;
+
+/// Where the outside item a card closes stands (record 142).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum ItemState {
+    /// The card's change is not in, or nothing here closes the item (the
+    /// git path, where `:commit`'s message names it).
+    #[default]
+    Waits,
+    /// Its change is in and the item is to be closed: by the project's
+    /// setting, or on the person's yes.
+    Due,
+    /// Its change is in and closing is off: the person is asked.
+    Asked,
+    /// Closed, now or found so.
+    Closed,
+    /// The person left it open.
+    Left,
+    /// It could not be closed: said once, never tried again.
+    Failed,
+    /// A `:commit` message names it (`Closes #N`): GitHub closes it when
+    /// that commit reaches the default branch.
+    Named,
+}
+
+/// Why an outside item was not closed.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum ItemWhy {
+    /// No `gh` to ask.
+    NoProgram,
+    /// `gh` is not signed in.
+    SignedOut,
+    /// `gh` did not answer in time.
+    NoAnswer,
+    /// The number is a pull request's.
+    Pull,
+    /// The repository has no issue of that number.
+    NoSuch,
+    /// What `gh` said.
+    Said(String),
+}
+
+/// What happened to the outside item a card closes, for the journal.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum ItemNews {
+    /// imece closed it.
+    Closed,
+    /// It was closed already.
+    Already,
+    /// The person is asked whether to close it.
+    Asked,
+    /// The person left it open.
+    Left,
+    /// It was not closed.
+    Failed(ItemWhy),
+}
+
+/// What a look at an outside item found (record 142), so that the person
+/// reads its title beside the number a model wrote. Memory only.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum Outside {
+    /// Being read.
+    Asking,
+    /// An open issue's title.
+    Open(String),
+    /// A closed issue's title.
+    Closed(String),
+    /// The number is a pull request's: nothing will close.
+    Pull,
+    /// No issue has that number: nothing will close.
+    NoSuch,
+    /// It could not be read: the number stands alone.
+    Unread,
+}
+
 /// A message waiting for an agent's next turn: its number, and the one
 /// it replies to.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -287,6 +364,9 @@ pub struct Mail {
     /// The checks an `assign` gives its card (record 127); nothing on the
     /// other types.
     pub checks: Vec<String>,
+    /// The outside item an `assign` says its card closes (record 142);
+    /// nothing on the other types.
+    pub closes: Option<Item>,
     /// The card an `assign` hands again (record 126): its receiver takes
     /// it with the turn the mail starts, instead of a new one.
     pub card: Option<CardId>,
@@ -516,6 +596,11 @@ pub struct Project {
     /// person's yes to a plan before it hires a second worker, and where
     /// that stands. Saved.
     pub plan: PlanGate,
+    /// Whether a card whose change is in closes the outside item its
+    /// leader named (record 142): on from the first start, `:closes
+    /// on|off`. Off, the person is asked first on Lonca, and `:commit`
+    /// adds no `Closes` line. Saved.
+    pub closing: bool,
     /// The folder is not a git checkout with a first commit, so its solo
     /// works straight in it: no worktree, no change to review. Found at
     /// each open and start, not saved.
@@ -1512,6 +1597,11 @@ pub enum StoryEvent {
         cap: Cap,
         yes: bool,
     },
+    /// What happened to the outside item it closes (record 142).
+    Item {
+        item: Item,
+        news: ItemNews,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1552,6 +1642,7 @@ impl StoryEvent {
             | StoryEvent::Failed(_)
             | StoryEvent::LateDone { .. }
             | StoryEvent::Capped { .. }
+            | StoryEvent::Item { .. }
             | StoryEvent::Interrupted => StoryKind::Evidence,
             StoryEvent::Change { .. }
             | StoryEvent::Sensitive(_)
@@ -1588,6 +1679,10 @@ pub struct Card {
     /// given with the `assign` or `post` that made it, never changed; the
     /// person's yes to its change asks Lonca to run them too.
     pub checks: Vec<String>,
+    /// The item of the outside board (an issue of the checkout's own
+    /// repository) its landing closes (record 142): named by the leader
+    /// with the `assign` or `post` that made it, never changed.
+    pub closes: Option<Item>,
     pub started: u64,
     pub finished: u64,
     /// How many times the card was taken (record 126): by the turn an
@@ -1601,6 +1696,9 @@ pub struct Card {
     /// `post` that made it, never changed; only older cards of its
     /// project, so no card waits on itself through others.
     pub after: Vec<CardId>,
+    /// Where the item it closes stands (record 142); `Waits` on a card
+    /// that closes none.
+    pub item: ItemState,
 }
 
 /// The part an agent had in a card, for the card's screen.
@@ -2001,6 +2099,16 @@ pub enum Event {
         card: CardId,
         cap: Cap,
         yes: bool,
+    },
+    /// What happened to the outside item `item` card `card` closes
+    /// (record 142), with the title a look found; `agent` is the
+    /// project's leader.
+    Item {
+        agent: AgentId,
+        card: CardId,
+        item: Item,
+        title: String,
+        news: ItemNews,
     },
     /// A live leader hired a worker; `model` is the one it was given, or
     /// none for Claude Code's own default; `from` the start point its
@@ -2518,6 +2626,7 @@ impl Event {
             | Event::CheckAnswered { .. }
             | Event::PlanAnswered { .. }
             | Event::CapAnswered { .. }
+            | Event::Item { .. }
             | Event::Standing { .. }
             | Event::Budget { .. }
             | Event::Shell { .. }
@@ -2547,6 +2656,7 @@ impl Event {
             | Event::LateDone { card, .. }
             | Event::Capped { card, .. }
             | Event::CapAnswered { card, .. }
+            | Event::Item { card, .. }
             | Event::Claimed { card, .. } => Some(card),
             Event::Health { ref sign, .. } => sign.card(),
             _ => None,
@@ -2625,6 +2735,7 @@ impl Event {
             | Event::LateDone { agent, .. }
             | Event::Capped { agent, .. }
             | Event::CapAnswered { agent, .. }
+            | Event::Item { agent, .. }
             | Event::Planned { leader: agent, .. }
             | Event::PlanAnswered { leader: agent, .. }
             | Event::CommandsMissing { agent }
@@ -2720,6 +2831,11 @@ pub enum InboxKind {
     /// or they fail the card. The agent is the worker, the card the
     /// item's, the detail its title. Its mail waits.
     Rounds,
+    /// A card's change is in and it names an outside item, in a project
+    /// where closing is off (record 142): the person closes it or leaves
+    /// it open. The agent is the leader, the card the item's, the detail
+    /// its title. Nobody waits: the leader's mail goes on.
+    Close,
 }
 
 impl InboxKind {
@@ -2734,7 +2850,11 @@ impl InboxKind {
     pub fn holds_mail(self) -> bool {
         !matches!(
             self,
-            InboxKind::Reply | InboxKind::Change | InboxKind::Check | InboxKind::Tries
+            InboxKind::Reply
+                | InboxKind::Change
+                | InboxKind::Check
+                | InboxKind::Tries
+                | InboxKind::Close
         )
     }
 
@@ -3134,6 +3254,9 @@ pub struct Planned {
     /// The checks it will ask for (record 127).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub checks: Vec<String>,
+    /// The outside item it will close (record 142).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub closes: Option<Item>,
     pub body: String,
     /// The cards of the same plan it waits on (record 126, F10), by their
     /// place in it from 1, each an earlier one.
@@ -3252,6 +3375,9 @@ pub struct World {
     /// Which proposal in Lonca a worker's waiting change is (record 120).
     /// Memory only: the next look finds it again.
     pub proposals: HashMap<AgentId, StoreProposal>,
+    /// What a look found of the outside items open cards close (record
+    /// 142), by project and number. Memory only: a start reads them again.
+    pub items: HashMap<(ProjectId, Item), Outside>,
     /// The worktrees no agent owns, as the engine last looked (`:tidy`).
     pub orphans: Orphans,
     /// When imece tells a leader of a stall, an idle worker or a loop
@@ -3626,6 +3752,7 @@ impl World {
                 copies: Vec::new(),
                 allowed: Vec::new(),
                 plan: PlanGate::default(),
+                closing: true,
                 no_git: false,
                 runners: crate::runners::Runners::default(),
                 lonca: None,
@@ -3959,6 +4086,7 @@ impl World {
             reviews: Default::default(),
             clashes: Default::default(),
             proposals: Default::default(),
+            items: Default::default(),
             orphans: crate::model::Orphans::default(),
             health: Default::default(),
             procs: Default::default(),
@@ -4646,7 +4774,191 @@ impl World {
         }
         if matches!(how, Landed::Integrated(_)) {
             self.close_rows(id, &moved, crate::ledger::Outcome::Applied);
+            self.items_landed(&moved);
         }
+    }
+
+    /// The changes of `cards` are on trunk (record 142): the outside item
+    /// each names is to be closed, or the person is asked where the
+    /// project's closing is off. One whose item was settled stays so.
+    fn items_landed(&mut self, cards: &[CardId]) {
+        for &c in cards {
+            let (Some(item), ItemState::Waits) = (self.cards[c].closes, self.cards[c].item) else {
+                continue;
+            };
+            let project = self.cards[c].project;
+            if self.projects[project].closing {
+                self.cards[c].item = ItemState::Due;
+                continue;
+            }
+            let leader = self.projects[project].leader;
+            self.cards[c].item = ItemState::Asked;
+            self.inbox.push(InboxItem {
+                kind: InboxKind::Close,
+                agent: leader,
+                detail: self.cards[c].title.clone(),
+                researcher: None,
+                open: true,
+                tick: self.tick,
+                card: Some(c),
+            });
+            self.item_said(c, item, ItemNews::Asked);
+        }
+    }
+
+    /// The journal and card `c`'s story say `news` of outside item `item`,
+    /// as its project's leader's, with the title a look found.
+    fn item_said(&mut self, c: CardId, item: Item, news: ItemNews) {
+        let project = self.cards[c].project;
+        let title = match self.items.get(&(project, item)) {
+            Some(Outside::Open(t) | Outside::Closed(t)) => t.clone(),
+            _ => String::new(),
+        };
+        self.story(
+            Some(c),
+            StoryEvent::Item {
+                item,
+                news: news.clone(),
+            },
+        );
+        self.note(Event::Item {
+            agent: self.projects[project].leader,
+            card: c,
+            item,
+            title,
+            news,
+        });
+    }
+
+    /// The cards whose outside item is to be closed now, oldest first,
+    /// with the item and the project; none of a project put away.
+    pub fn items_due(&self) -> Vec<(CardId, ProjectId, Item)> {
+        (self.cards.iter())
+            .filter(|c| c.item == ItemState::Due && !self.put_away(c.project))
+            .filter_map(|c| Some((c.id, c.project, c.closes?)))
+            .collect()
+    }
+
+    /// What became of closing card `c`'s outside item: closed (now, or
+    /// found so) or not, said once. Nothing for a card that was not due.
+    pub fn item_settled(&mut self, c: CardId, news: ItemNews) {
+        let (Some(item), ItemState::Due) = (self.cards[c].closes, self.cards[c].item) else {
+            return;
+        };
+        self.cards[c].item = match news {
+            ItemNews::Closed | ItemNews::Already => ItemState::Closed,
+            ItemNews::Failed(_) => ItemState::Failed,
+            ItemNews::Asked | ItemNews::Left => return,
+        };
+        let project = self.cards[c].project;
+        if let Some(Outside::Open(t)) = self.items.get(&(project, item)).cloned()
+            && self.cards[c].item == ItemState::Closed
+        {
+            self.items.insert((project, item), Outside::Closed(t));
+        }
+        self.item_said(c, item, news);
+    }
+
+    /// The person's answer to the item `inbox` that asks whether card's
+    /// outside item closes: yes makes it due, no leaves it open for good.
+    /// The card; nothing when no such item is open.
+    pub fn decide_item(&mut self, inbox: usize, yes: bool) -> Option<CardId> {
+        let it = (self.inbox.get(inbox)).filter(|i| i.open && i.kind == InboxKind::Close)?;
+        let c = it.card?;
+        self.inbox[inbox].open = false;
+        let item = self.cards[c].closes?;
+        if self.cards[c].item != ItemState::Asked {
+            return None;
+        }
+        if yes {
+            self.cards[c].item = ItemState::Due;
+        } else {
+            self.cards[c].item = ItemState::Left;
+            self.item_said(c, item, ItemNews::Left);
+        }
+        Some(c)
+    }
+
+    /// The outside items no look has read yet, of cards that may still
+    /// close one, with their projects: each once.
+    pub fn items_unread(&self) -> Vec<(ProjectId, Item)> {
+        let mut out: Vec<(ProjectId, Item)> = Vec::new();
+        for c in &self.cards {
+            let open = matches!(c.item, ItemState::Waits | ItemState::Due | ItemState::Asked)
+                && !matches!(c.column, Column::Withdrawn | Column::Failed);
+            let Some(item) = c.closes.filter(|_| open && !self.put_away(c.project)) else {
+                continue;
+            };
+            let key = (c.project, item);
+            if !self.items.contains_key(&key) && !out.contains(&key) {
+                out.push(key);
+            }
+        }
+        out
+    }
+
+    /// How the item the card of worker `id`'s waiting change closes will
+    /// close: the item, what a look found of it, whether Lonca keeps the
+    /// project (imece closes it at the landing) and the project's setting.
+    pub fn change_closes(&self, id: AgentId) -> Option<(Item, Option<&Outside>, bool, bool)> {
+        let c = self.change_card(id)?;
+        let (item, seen) = self.closes_of(c)?;
+        let project = &self.projects[self.cards[c].project];
+        Some((item, seen, project.lonca.is_some(), project.closing))
+    }
+
+    /// What a look found of the item card `c` closes, with its number.
+    pub fn closes_of(&self, c: CardId) -> Option<(Item, Option<&Outside>)> {
+        let card = self.cards.get(c)?;
+        let item = card.closes?;
+        Some((item, self.items.get(&(card.project, item))))
+    }
+
+    /// The items a `:commit` message of project `p` says it closes
+    /// (record 142): those of its cards whose change was applied to the
+    /// checkout and that no commit named yet, in card order, each once;
+    /// none on Lonca (imece closes those itself) or with closing off.
+    pub fn commit_closes(&self, p: ProjectId) -> Vec<Item> {
+        let closes = |q: &Project| q.closing && q.lonca.is_none();
+        if !self.projects.get(p).is_some_and(closes) {
+            return Vec::new();
+        }
+        let mut items: Vec<Item> = Vec::new();
+        for card in &self.cards {
+            let waits =
+                card.project == p && card.column == Column::Done && card.item == ItemState::Waits;
+            if let Some(item) = card.closes.filter(|n| waits && !items.contains(n)) {
+                items.push(item);
+            }
+        }
+        items
+    }
+
+    /// The person's `command` ran well in project `p`'s checkout: when it
+    /// is a commit whose message names items [`commit_closes`] gave it
+    /// (`Closes #N`), their cards are named from now on, so the next
+    /// message leaves them out. A dry run commits nothing. The items.
+    ///
+    /// [`commit_closes`]: World::commit_closes
+    pub fn commit_ran(&mut self, p: ProjectId, command: &str) -> Vec<Item> {
+        let words: Vec<&str> = command.split_whitespace().collect();
+        let commits = words.first() == Some(&"git")
+            && words.contains(&"commit")
+            && !words.contains(&"--dry-run");
+        if !commits {
+            return Vec::new();
+        }
+        let named: Vec<Item> = (self.commit_closes(p).into_iter())
+            .filter(|n| crate::closes::names(command, *n))
+            .collect();
+        for card in &mut self.cards {
+            let waits =
+                card.project == p && card.column == Column::Done && card.item == ItemState::Waits;
+            if card.closes.is_some_and(|n| waits && named.contains(&n)) {
+                card.item = ItemState::Named;
+            }
+        }
+        named
     }
 
     /// Cards `cards` came back to work: a round more each.
@@ -4819,10 +5131,12 @@ impl World {
             symbols: Vec::new(),
             paths: Vec::new(),
             checks: Vec::new(),
+            closes: None,
             started: own.tick,
             finished: 0,
             attempt: 1,
             breaker: Default::default(),
+            item: Default::default(),
             after: Vec::new(),
         });
         self.row_to_card(id, card);
@@ -6107,6 +6421,7 @@ mod tests {
                 copies: Vec::new(),
                 allowed: Vec::new(),
                 plan: PlanGate::default(),
+                closing: true,
                 no_git: false,
                 runners: crate::runners::Runners::default(),
                 lonca: None,
@@ -6126,6 +6441,7 @@ mod tests {
             reviews: Default::default(),
             clashes: Default::default(),
             proposals: Default::default(),
+            items: Default::default(),
             orphans: crate::model::Orphans::default(),
             health: Default::default(),
             procs: Default::default(),
@@ -6435,10 +6751,12 @@ mod tests {
             symbols: Vec::new(),
             paths: Vec::new(),
             checks: Vec::new(),
+            closes: None,
             started: 0,
             finished: 0,
             attempt: 1,
             breaker: Default::default(),
+            item: Default::default(),
             after: Vec::new(),
         };
         for (column, held, over) in [
@@ -6784,10 +7102,12 @@ mod tests {
             symbols: Vec::new(),
             paths: Vec::new(),
             checks: Vec::new(),
+            closes: None,
             started: 0,
             finished: 0,
             attempt: 1,
             breaker: Default::default(),
+            item: Default::default(),
             after: Vec::new(),
         };
         w.cards = vec![
@@ -6940,6 +7260,7 @@ mod tests {
             copies: Vec::new(),
             allowed: Vec::new(),
             plan: PlanGate::default(),
+            closing: true,
             no_git: false,
             runners: crate::runners::Runners::default(),
             lonca: None,
@@ -7203,10 +7524,12 @@ mod tests {
                 symbols: Vec::new(),
                 paths: Vec::new(),
                 checks: Vec::new(),
+                closes: None,
                 started: 0,
                 finished: 0,
                 attempt: 1,
                 breaker: Default::default(),
+                item: Default::default(),
                 after: Vec::new(),
             });
             id
@@ -7320,6 +7643,268 @@ mod tests {
             assert_eq!(w.cards[c].breaker.sent_back, u32::from(back), "{how:?}");
             assert_eq!(w.cards[review].column, Review, "{how:?}: a newer one waits");
         }
+    }
+
+    /// A team of one worker whose card in the queue closes item 58.
+    fn closing_58() -> (World, CardId) {
+        use crate::live::testing::{team, with_card};
+        let mut w = team(1);
+        let c = with_card(&mut w, 1);
+        w.cards[c].closes = Some(58);
+        w.cards[c].column = Column::Verifying;
+        (w, c)
+    }
+
+    #[test]
+    fn a_card_on_trunk_makes_its_item_due_and_only_trunk_does() {
+        for how in [
+            Landed::Queued,
+            Landed::Conflicted(Vec::new()),
+            Landed::Rejected(Vec::new()),
+            Landed::Withdrawn,
+            Landed::Replaced,
+        ] {
+            let (mut w, c) = closing_58();
+            w.proposal_landed(1, how.clone());
+            assert_eq!(w.cards[c].item, ItemState::Waits, "{how:?}");
+            assert!(w.items_due().is_empty(), "{how:?}");
+        }
+        let (mut w, c) = closing_58();
+        let plain = crate::live::testing::with_card(&mut w, 1);
+        w.cards[plain].column = Column::Verifying;
+        w.proposal_landed(1, Landed::Integrated("c1".into()));
+        assert_eq!(w.cards[c].item, ItemState::Due);
+        assert_eq!(w.cards[plain].item, ItemState::Waits, "it closes none");
+        assert_eq!(w.items_due(), [(c, 0, 58)]);
+        assert!(
+            w.open_inbox().is_empty(),
+            "the yes to the change was the yes"
+        );
+        // A project put away closes nothing while it is.
+        w.projects[0].closed = true;
+        assert!(w.items_due().is_empty());
+        w.projects[0].closed = false;
+        // Closed: said once, with the title a look read, as the leader's.
+        w.items.insert((0, 58), Outside::Open("A 529".into()));
+        w.item_settled(c, ItemNews::Closed);
+        assert_eq!(w.cards[c].item, ItemState::Closed);
+        assert_eq!(w.items[&(0, 58)], Outside::Closed("A 529".into()));
+        let closed = Event::Item {
+            agent: 0,
+            card: c,
+            item: 58,
+            title: "A 529".into(),
+            news: ItemNews::Closed,
+        };
+        assert_eq!(w.journal.last().map(|e| &e.event), Some(&closed));
+        assert_eq!((closed.agent(), closed.card()), (0, Some(c)));
+        assert_eq!(
+            w.cards[c].story.last().map(|s| &s.event),
+            Some(&StoryEvent::Item {
+                item: 58,
+                news: ItemNews::Closed
+            })
+        );
+        let lines = w.journal.len();
+        w.item_settled(c, ItemNews::Closed);
+        w.item_settled(c, ItemNews::Failed(ItemWhy::NoAnswer));
+        assert_eq!(w.journal.len(), lines, "settled once");
+        assert_eq!(w.cards[c].item, ItemState::Closed);
+        assert!(w.items_due().is_empty());
+    }
+
+    #[test]
+    fn an_item_found_closed_or_not_closed_is_settled_as_that() {
+        for (news, state) in [
+            (ItemNews::Already, ItemState::Closed),
+            (ItemNews::Failed(ItemWhy::SignedOut), ItemState::Failed),
+        ] {
+            let (mut w, c) = closing_58();
+            w.proposal_landed(1, Landed::Integrated("c1".into()));
+            w.item_settled(c, news.clone());
+            assert_eq!(w.cards[c].item, state, "{news:?}");
+            assert!(
+                matches!(w.journal.last().map(|e| &e.event),
+                    Some(Event::Item { news: n, title, .. }) if *n == news && title.is_empty()),
+                "{news:?}"
+            );
+        }
+        // What only the person's answer says settles nothing here.
+        let (mut w, c) = closing_58();
+        w.proposal_landed(1, Landed::Integrated("c1".into()));
+        let lines = w.journal.len();
+        w.item_settled(c, ItemNews::Asked);
+        w.item_settled(c, ItemNews::Left);
+        assert_eq!((w.cards[c].item, w.journal.len()), (ItemState::Due, lines));
+        // A card not due is not settled.
+        let (mut w, c) = closing_58();
+        w.item_settled(c, ItemNews::Closed);
+        assert_eq!(w.cards[c].item, ItemState::Waits);
+    }
+
+    #[test]
+    fn with_closing_off_the_person_is_asked_and_their_answer_decides() {
+        let asked = || {
+            let (mut w, c) = closing_58();
+            w.projects[0].closing = false;
+            w.tick = 7;
+            w.proposal_landed(1, Landed::Integrated("c1".into()));
+            let open = w.open_inbox();
+            assert_eq!(open.len(), 1);
+            (w, c, open[0])
+        };
+        let (mut w, c, item) = asked();
+        assert_eq!(w.cards[c].item, ItemState::Asked);
+        assert!(w.items_due().is_empty(), "not before the answer");
+        let it = &w.inbox[item];
+        assert_eq!(
+            (it.kind, it.agent, it.card, it.tick),
+            (InboxKind::Close, 0, Some(c), 7)
+        );
+        assert!(!InboxKind::Close.holds_mail(), "nobody waits on it");
+        // Asked before the landing itself is said.
+        let asks = |e: &Entry| {
+            matches!(
+                e.event,
+                Event::Item {
+                    news: ItemNews::Asked,
+                    item: 58,
+                    ..
+                }
+            )
+        };
+        assert_eq!(w.journal.iter().filter(|e| asks(e)).count(), 1);
+        // A no leaves it open for good.
+        assert_eq!(w.decide_item(item, false), Some(c));
+        assert_eq!(w.cards[c].item, ItemState::Left);
+        assert!(w.open_inbox().is_empty() && w.items_due().is_empty());
+        assert!(matches!(
+            w.journal.last().map(|e| &e.event),
+            Some(Event::Item {
+                news: ItemNews::Left,
+                ..
+            })
+        ));
+        assert_eq!(w.decide_item(item, true), None, "answered once");
+        // A yes makes it due, and says nothing until it is closed.
+        let (mut w, c, item) = asked();
+        let lines = w.journal.len();
+        assert_eq!(w.decide_item(item, true), Some(c));
+        assert_eq!(w.cards[c].item, ItemState::Due);
+        assert_eq!(w.items_due(), [(c, 0, 58)]);
+        assert_eq!(w.journal.len(), lines);
+        assert!(w.open_inbox().is_empty());
+        assert_eq!(w.decide_item(99, true), None);
+        // Another kind's item is not this question.
+        let (mut w, c, item) = asked();
+        w.inbox[item].kind = InboxKind::Tries;
+        assert_eq!(w.decide_item(item, true), None);
+        assert_eq!(w.cards[c].item, ItemState::Asked);
+    }
+
+    #[test]
+    fn an_item_is_read_once_while_its_card_may_still_close_it() {
+        use crate::live::testing::with_card;
+        let (mut w, c) = closing_58();
+        let twin = with_card(&mut w, 1);
+        w.cards[twin].closes = Some(58);
+        let other = with_card(&mut w, 1);
+        w.cards[other].closes = Some(61);
+        with_card(&mut w, 1);
+        assert_eq!(w.items_unread(), [(0, 58), (0, 61)], "each once");
+        w.items.insert((0, 58), Outside::Asking);
+        assert_eq!(w.items_unread(), [(0, 61)]);
+        for column in [Column::Withdrawn, Column::Failed] {
+            w.cards[other].column = column;
+            assert!(w.items_unread().is_empty(), "{column:?}");
+        }
+        w.cards[other].column = Column::Working;
+        for state in [
+            ItemState::Closed,
+            ItemState::Left,
+            ItemState::Failed,
+            ItemState::Named,
+        ] {
+            w.cards[other].item = state;
+            assert!(w.items_unread().is_empty(), "{state:?}");
+        }
+        for state in [ItemState::Waits, ItemState::Due, ItemState::Asked] {
+            w.cards[other].item = state;
+            assert_eq!(w.items_unread(), [(0, 61)], "{state:?}");
+        }
+        w.projects[0].closed = true;
+        assert!(w.items_unread().is_empty(), "put away");
+        w.projects[0].closed = false;
+        assert_eq!(w.closes_of(c), Some((58, Some(&Outside::Asking))));
+        assert_eq!(w.closes_of(other), Some((61, None)));
+        assert_eq!(w.closes_of(other + 1), None, "it closes none");
+        assert_eq!(w.closes_of(99), None);
+    }
+
+    #[test]
+    fn a_commit_names_the_items_of_applied_cards_off_lonca_until_one_ran() {
+        use crate::live::testing::with_card;
+        let (mut w, c) = closing_58();
+        w.cards[c].column = Column::Done;
+        let twin = with_card(&mut w, 1);
+        (w.cards[twin].closes, w.cards[twin].column) = (Some(58), Column::Done);
+        let later = with_card(&mut w, 1);
+        (w.cards[later].closes, w.cards[later].column) = (Some(61), Column::Done);
+        let open = with_card(&mut w, 1);
+        w.cards[open].closes = Some(70);
+        let plain = with_card(&mut w, 1);
+        w.cards[plain].column = Column::Done;
+        assert_eq!(
+            w.commit_closes(0),
+            [58, 61],
+            "applied, each once, in card order"
+        );
+        w.projects[0].closing = false;
+        assert!(w.commit_closes(0).is_empty(), "off: no line at all");
+        w.projects[0].closing = true;
+        w.on_lonca(0, Some("demo".into()));
+        assert!(w.commit_closes(0).is_empty(), "on Lonca imece closes them");
+        w.projects[0].lonca = None;
+        // Only a commit that ran and names them marks them.
+        let line = "git commit -m 'Fix\n\nCloses #58'";
+        for not in [
+            "git status",
+            "echo commit Closes #58",
+            "git commit --dry-run -m 'Closes #58'",
+            "git commit -m 'Fix'",
+        ] {
+            assert!(w.commit_ran(0, not).is_empty(), "{not}");
+            assert_eq!(w.commit_closes(0), [58, 61], "{not}");
+        }
+        assert_eq!(w.commit_ran(0, line), [58]);
+        assert_eq!(w.cards[c].item, ItemState::Named);
+        assert_eq!(w.cards[twin].item, ItemState::Named, "both of that item");
+        assert_eq!(w.cards[later].item, ItemState::Waits);
+        assert_eq!(w.cards[open].item, ItemState::Waits, "not applied yet");
+        assert_eq!(w.commit_closes(0), [61], "the next message leaves 58 out");
+        assert!(
+            w.commit_ran(1, "git commit -m 'Closes #61'").is_empty(),
+            "another project"
+        );
+    }
+
+    #[test]
+    fn a_change_says_how_the_item_its_card_closes_will_close() {
+        use crate::live::testing::with_card;
+        let mut w = crate::live::testing::team(1);
+        let c = with_card(&mut w, 1);
+        w.change_ready(change(1, "Fix", &[("a.rs", 1, 0)]));
+        assert_eq!(w.change_closes(1), None, "its card closes none");
+        w.cards[c].closes = Some(58);
+        assert_eq!(w.change_closes(1), Some((58, None, false, true)));
+        w.items.insert((0, 58), Outside::NoSuch);
+        w.projects[0].closing = false;
+        w.on_lonca(0, Some("demo".into()));
+        assert_eq!(
+            w.change_closes(1),
+            Some((58, Some(&Outside::NoSuch), true, false))
+        );
+        assert_eq!(w.change_closes(0), None, "no change of the leader's");
     }
 
     #[test]
@@ -8146,10 +8731,12 @@ mod tests {
             symbols: Vec::new(),
             paths: Vec::new(),
             checks: Vec::new(),
+            closes: None,
             started: 0,
             finished: 0,
             attempt: 1,
             breaker: Default::default(),
+            item: Default::default(),
             after: Vec::new(),
         });
         w.agents[1].card = Some(0);
@@ -8688,10 +9275,12 @@ mod tests {
             symbols: Vec::new(),
             paths: Vec::new(),
             checks: Vec::new(),
+            closes: None,
             started: 0,
             finished: 0,
             attempt: 1,
             breaker: Default::default(),
+            item: Default::default(),
             after: Vec::new(),
         }
     }
@@ -8872,6 +9461,7 @@ mod tests {
             copies: Vec::new(),
             allowed: Vec::new(),
             plan: PlanGate::default(),
+            closing: true,
             no_git: false,
             runners: crate::runners::Runners::default(),
             lonca: None,
@@ -9081,6 +9671,7 @@ mod tests {
                 copies: Vec::new(),
                 allowed: Vec::new(),
                 plan: PlanGate::default(),
+                closing: true,
                 no_git: false,
                 runners: crate::runners::Runners::default(),
                 lonca: None,
@@ -9125,6 +9716,7 @@ mod tests {
             copies: Vec::new(),
             allowed: Vec::new(),
             plan: PlanGate::default(),
+            closing: true,
             no_git: false,
             runners: crate::runners::Runners::default(),
             lonca: None,
@@ -9254,6 +9846,7 @@ mod tests {
                     tier: "standard".into(),
                     paths: Vec::new(),
                     checks: Vec::new(),
+                    closes: None,
                     body: "b".into(),
                     after: Vec::new(),
                 })
@@ -10041,10 +10634,12 @@ mod tests {
             symbols: Vec::new(),
             paths: crate::paths::parse(&serde_json::json!(paths)).unwrap(),
             checks: Vec::new(),
+            closes: None,
             started: 0,
             finished: 0,
             attempt: 1,
             breaker: Default::default(),
+            item: Default::default(),
             after: Vec::new(),
         };
         w.cards.push(card(0, &[]));
@@ -10333,10 +10928,12 @@ mod change_proof_tests {
             story: Vec::new(),
             paths: crate::paths::parse(&v).unwrap(),
             checks: Vec::new(),
+            closes: None,
             started: 0,
             finished: 0,
             attempt: 1,
             breaker: Default::default(),
+            item: Default::default(),
             after: Vec::new(),
         }
     }
@@ -10403,10 +11000,12 @@ mod change_proof_tests {
             symbols: Vec::new(),
             paths: Vec::new(),
             checks: Vec::new(),
+            closes: None,
             started: 0,
             finished: 0,
             attempt: 0,
             breaker: Default::default(),
+            item: Default::default(),
             after,
         };
         w.cards = vec![
@@ -10455,10 +11054,12 @@ mod change_proof_tests {
             symbols: Vec::new(),
             paths: Vec::new(),
             checks: Vec::new(),
+            closes: None,
             started: 0,
             finished: 0,
             attempt: 1,
             breaker: Default::default(),
+            item: Default::default(),
             after: Vec::new(),
         });
         w.takes(id, c);

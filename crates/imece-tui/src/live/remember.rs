@@ -640,10 +640,12 @@ mod tests {
             symbols: Vec::new(),
             paths: Vec::new(),
             checks: Vec::new(),
+            closes: None,
             started: 0,
             finished: 0,
             attempt: 1,
             breaker: Default::default(),
+            item: Default::default(),
             after: Vec::new(),
         });
         w.inbox.push(item(InboxKind::Reply, 1, "an old answer"));
@@ -693,6 +695,7 @@ mod tests {
                     re: None,
                     paths: Vec::new(),
                     checks: Vec::new(),
+                    closes: None,
                     card: None,
                     outcome: Outcome::Ok,
                 }],
@@ -889,6 +892,7 @@ mod tests {
                 re: None,
                 paths: Vec::new(),
                 checks: Vec::new(),
+                closes: None,
                 card: None,
                 outcome: Outcome::Ok,
             });
@@ -1019,6 +1023,7 @@ mod tests {
             re: None,
             paths: Vec::new(),
             checks: Vec::new(),
+            closes: None,
             card: None,
             outcome: Outcome::Ok,
         });
@@ -1349,6 +1354,7 @@ mod tests {
             re: None,
             paths: Vec::new(),
             checks: Vec::new(),
+            closes: None,
             card: None,
             outcome: Outcome::Ok,
         });
@@ -1671,6 +1677,7 @@ mod tests {
             re: None,
             paths: Vec::new(),
             checks: Vec::new(),
+            closes: None,
             card: None,
             outcome: Outcome::Ok,
         });
@@ -2237,6 +2244,7 @@ mod tests {
             re: None,
             paths: Vec::new(),
             checks: Vec::new(),
+            closes: None,
             card: None,
             outcome: Outcome::Ok,
         });
@@ -2407,6 +2415,7 @@ mod tests {
             copies: Vec::new(),
             allowed: Vec::new(),
             plan: PlanGate::default(),
+            closing: true,
             no_git: false,
             runners: Runners::default(),
             lonca: None,

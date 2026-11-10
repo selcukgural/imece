@@ -360,7 +360,11 @@ impl App {
             }
             _ => None,
         };
-        self.input = commit_line(&s.text, dir.as_deref(), !self.live());
+        // The issues its applied cards close (record 142): imece's own
+        // lines, not the model's.
+        let closes = self.world.commit_closes(s.project);
+        let text = crate::closes::with_trailers(&s.text, &closes);
+        self.input = commit_line(&text, dir.as_deref(), !self.live());
         self.after = 0;
         self.typing = true;
         self.menu = None;
@@ -1087,10 +1091,12 @@ mod tests {
             symbols: Vec::new(),
             paths: Vec::new(),
             checks: Vec::new(),
+            closes: None,
             started: 0,
             finished: 0,
             attempt: 1,
             breaker: Default::default(),
+            item: Default::default(),
             after: Vec::new(),
         });
         app.world.agents[worker].card = Some(c);

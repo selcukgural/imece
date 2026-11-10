@@ -1051,6 +1051,7 @@ pub fn world(
         changes: Vec::new(),
         clashes: Default::default(),
         proposals: Default::default(),
+        items: Default::default(),
         paid: 0,
         suggested: None,
         reviews: Default::default(),
@@ -1090,6 +1091,7 @@ pub fn world(
             copies: Vec::new(),
             allowed: Vec::new(),
             plan: PlanGate::default(),
+            closing: true,
             no_git: false,
             runners: kit.runners,
             lonca: None,
@@ -1161,6 +1163,25 @@ const DROPPED_CHECK: &str = "smoke";
 /// How far from a multiple of [`DROPPED_EVERY`] those cards are: the
 /// seventh card is the first, not the first.
 const DROPPED_FROM: usize = 3;
+
+/// Every this many cards, one names an issue it closes (record 142), as
+/// a live leader does for work that came from the outside board.
+const CLOSES_EVERY: usize = 3;
+/// How far from a multiple of [`CLOSES_EVERY`] those cards are: the
+/// second card is the first.
+const CLOSES_FROM: usize = 1;
+/// The made-up issue the first demo card would close; card `id`'s is that
+/// many further on.
+const FIRST_ISSUE: Item = 40;
+/// Every this many made-up issues, one does not close: the demo's `gh`
+/// did not answer, said once, as live says it.
+const CLOSE_FAILS_EVERY: Item = 7;
+
+/// The issue demo card `id` closes, when it names one.
+fn demo_closes(id: CardId) -> Option<Item> {
+    let names = id % CLOSES_EVERY == CLOSES_FROM;
+    names.then(|| FIRST_ISSUE + id as Item)
+}
 
 /// What a demo card asks for: [`ASKED_CHECK`] when it `asks`, and
 /// [`DROPPED_CHECK`] too when it is one of those whose policy `dropped`
@@ -2376,6 +2397,7 @@ impl Sim {
                 self.applied(w, id, fits, &hunks);
             }
         }
+        self.items(w);
         self.suggested(w);
         self.reviewed(w);
         self.tidy_answers(w);
@@ -3257,6 +3279,27 @@ impl Sim {
         Ok(())
     }
 
+    /// The outside board as live's `gh` answers it (record 142), made
+    /// up: an issue a card names is read at once, titled as the card of
+    /// its number is; one due is closed the step after, except every
+    /// [`CLOSE_FAILS_EVERY`]th, which the board did not answer for.
+    /// Nothing leaves the machine.
+    fn items(&mut self, w: &mut World) {
+        for (c, _, item) in w.items_due() {
+            let news = match item.is_multiple_of(CLOSE_FAILS_EVERY) {
+                true => ItemNews::Failed(ItemWhy::NoAnswer),
+                false => ItemNews::Closed,
+            };
+            w.item_settled(c, news);
+        }
+        for (p, item) in w.items_unread() {
+            let title = (w.cards.iter())
+                .find(|c| c.project == p && c.closes == Some(item))
+                .map_or(String::new(), |c| c.title.clone());
+            w.items.insert((p, item), Outside::Open(title));
+        }
+    }
+
     fn new_card(&mut self, w: &mut World, project: ProjectId, title: String) -> CardId {
         let id = w.cards.len();
         let asks = w.projects[project].lonca.is_some() && id.is_multiple_of(ASKS_EVERY);
@@ -3270,10 +3313,12 @@ impl Sim {
             symbols: Vec::new(),
             paths: Vec::new(),
             checks: demo_checks(asks, (id + DROPPED_FROM).is_multiple_of(DROPPED_EVERY)),
+            closes: demo_closes(id),
             started: 0,
             finished: 0,
             attempt: 0,
             breaker: Default::default(),
+            item: Default::default(),
             after: Vec::new(),
         });
         id
@@ -3339,6 +3384,7 @@ impl Sim {
                     .map(|(file, _)| vec![Owned::new(file)])
                     .unwrap_or_default(),
                 checks: w.cards[c].checks.clone(),
+                closes: w.cards[c].closes,
                 after: w.cards[c].after.iter().filter_map(place).collect(),
             })
             .collect();
@@ -4725,6 +4771,9 @@ mod tests {
                 InboxKind::Tries | InboxKind::Rounds => {
                     s.decide_cap(w, i, true);
                 }
+                InboxKind::Close => {
+                    w.decide_item(i, true);
+                }
                 InboxKind::Question | InboxKind::Fault => {
                     // Closed here, once: a run's length never hangs on
                     // `said` closing it.
@@ -4737,6 +4786,65 @@ mod tests {
                 InboxKind::Sensitive | InboxKind::Research => w.approve(i),
             }
         }
+    }
+
+    #[test]
+    fn every_third_demo_card_names_an_issue_and_the_demo_s_board_reads_and_closes_it() {
+        assert_eq!(
+            [0, 1, 2, 3, 4, 7].map(demo_closes),
+            [None, Some(41), None, None, Some(44), Some(47)]
+        );
+        let (mut w, mut s) = world(1, 2, 0, 7, Lang::En);
+        let made: Vec<CardId> = (0..CLOSES_EVERY)
+            .map(|_| s.new_card(&mut w, 0, "Retry a 529".into()))
+            .collect();
+        let naming: Vec<CardId> = (made.iter().copied())
+            .filter(|&c| w.cards[c].closes.is_some())
+            .collect();
+        assert_eq!(naming.len(), 1, "one in three");
+        let c = naming[0];
+        let item = w.cards[c].closes.unwrap();
+        assert_eq!(item, FIRST_ISSUE + c as Item);
+        s.items(&mut w);
+        assert_eq!(
+            w.items.get(&(0, item)),
+            Some(&Outside::Open("Retry a 529".into())),
+            "read at once, titled as its card"
+        );
+        // Due: closed at the next look, said once.
+        w.cards[c].item = ItemState::Due;
+        s.items(&mut w);
+        let closed = |w: &World| {
+            (w.journal.iter())
+                .filter(|l| matches!(l.event, Event::Item { card, .. } if card == c))
+                .count()
+        };
+        let fails = item.is_multiple_of(CLOSE_FAILS_EVERY);
+        let want = if fails {
+            ItemState::Failed
+        } else {
+            ItemState::Closed
+        };
+        assert_eq!((w.cards[c].item, closed(&w)), (want, 1));
+        s.items(&mut w);
+        assert_eq!(closed(&w), 1);
+        // The made-up board fails for every seventh issue.
+        let d = s.new_card(&mut w, 0, "Other".into());
+        w.cards[d].closes = Some(CLOSE_FAILS_EVERY * 3);
+        w.cards[d].item = ItemState::Due;
+        s.items(&mut w);
+        assert_eq!(w.cards[d].item, ItemState::Failed);
+        assert!(matches!(
+            w.journal.last().map(|l| &l.event),
+            Some(Event::Item {
+                news: ItemNews::Failed(ItemWhy::NoAnswer),
+                ..
+            })
+        ));
+        w.cards[d].closes = Some(CLOSE_FAILS_EVERY * 3 + 1);
+        w.cards[d].item = ItemState::Due;
+        s.items(&mut w);
+        assert_eq!(w.cards[d].item, ItemState::Closed);
     }
 
     fn run(w: &mut World, s: &mut Sim, ticks: usize, answer: bool) {

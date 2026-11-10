@@ -180,6 +180,27 @@ impl App {
         self.inbox_sel = self.inbox_sel.min(open.saturating_sub(1));
     }
 
+    /// The person's answer to the item that asks whether a landed card's
+    /// issue closes (record 142): yes and the engine closes it, no and it
+    /// stays open for good; the flash says which.
+    pub(super) fn answer_close(&mut self, item: usize, yes: bool) {
+        let t = self.lang.text();
+        if matches!(self.engine, Engine::View(_)) {
+            return self.read_only();
+        }
+        let n = (self.world.inbox[item].card)
+            .and_then(|c| self.world.cards[c].closes)
+            .map_or(String::new(), |n| n.to_string());
+        let words = match (self.world.decide_item(item, yes), yes) {
+            (None, _) => t.cap_gone,
+            (Some(_), true) => t.close_yes,
+            (Some(_), false) => t.close_no,
+        };
+        self.flash(fill(words, &[&n]));
+        let open = self.inbox_rows().len();
+        self.inbox_sel = self.inbox_sel.min(open.saturating_sub(1));
+    }
+
     /// `n` on a plan: the composer opens to the leader; what the person
     /// writes closes the plan unanswered and starts the leader's turn,
     /// which plans again from it.
@@ -212,6 +233,31 @@ impl App {
             t.plan_on
         } else {
             t.plan_off
+        };
+        self.flash(fill(text, &[&name]));
+    }
+
+    /// `:closes [on|off]` (record 142): whether the project at hand closes
+    /// the outside item a card names once its change is in; bare, it says
+    /// where it stands.
+    pub(super) fn closes_command(&mut self, arg: &str) {
+        let t = self.lang.text();
+        let p = self.current_project();
+        let name = self.world.projects[p].name.clone();
+        match arg.trim() {
+            "" => {}
+            "on" | "off" => {
+                if self.viewing_archive() {
+                    return self.read_only();
+                }
+                self.world.projects[p].closing = arg.trim() == "on";
+            }
+            other => return self.flash(fill(t.plan_bad, &[other])),
+        }
+        let text = if self.world.projects[p].closing {
+            t.closes_on
+        } else {
+            t.closes_off
         };
         self.flash(fill(text, &[&name]));
     }
@@ -1197,6 +1243,71 @@ mod tests {
             flashed(&app).as_deref(),
             Some("no to the plan: the leader hears it and asks you, or plans again")
         );
+    }
+
+    #[test]
+    fn a_and_r_on_an_issue_to_close_close_it_or_leave_it_open() {
+        let asked = || {
+            let mut app = waiting(&[]);
+            assert!(!app.world.cards.is_empty(), "the demo has cards");
+            let lead = app.world.projects[app.world.cards[0].project].leader;
+            app.world.cards[0].closes = Some(58);
+            app.world.cards[0].item = ItemState::Asked;
+            app.world.inbox.push(InboxItem {
+                kind: InboxKind::Close,
+                agent: lead,
+                detail: "the card".into(),
+                researcher: None,
+                open: true,
+                tick: 0,
+                card: Some(0),
+            });
+            app
+        };
+        let mut app = asked();
+        app.answer_item(0, true);
+        assert_eq!(flashed(&app).as_deref(), Some("#58 closes now"));
+        assert_eq!(app.world.cards[0].item, ItemState::Due);
+        assert!(app.world.open_inbox().is_empty());
+        app.answer_close(0, true);
+        assert_eq!(flashed(&app).as_deref(), Some("that is no longer waiting"));
+        let mut app = asked();
+        app.answer_item(0, false);
+        assert_eq!(flashed(&app).as_deref(), Some("#58 stays open"));
+        assert_eq!(app.world.cards[0].item, ItemState::Left);
+    }
+
+    #[test]
+    fn colon_closes_turns_closing_issues_on_and_off_for_the_project_at_hand() {
+        let mut app = waiting(&[]);
+        assert!(app.world.projects[0].closing, "on from the first start");
+        assert_eq!(app.command_note("closes"), "(on)");
+        app.command("closes");
+        assert_eq!(
+            flashed(&app).as_deref(),
+            Some(
+                "closing issues is on for shop-api: a card whose change is in closes the \
+                 issue its leader named"
+            )
+        );
+        app.command("closes off");
+        assert!(!app.world.projects[0].closing);
+        assert_eq!(app.command_note("closes"), "(off)");
+        assert_eq!(
+            flashed(&app).as_deref(),
+            Some(
+                "closing issues is off for shop-api: you are asked before one closes, and \
+                 :commit adds no Closes line"
+            )
+        );
+        app.command("closes");
+        assert!(flashed(&app).unwrap().starts_with("closing issues is off"));
+        app.command("closes maybe");
+        assert_eq!(flashed(&app).as_deref(), Some("maybe is not on or off"));
+        assert!(!app.world.projects[0].closing);
+        app.command("closes on");
+        assert!(app.world.projects[0].closing);
+        assert!(flashed(&app).unwrap().starts_with("closing issues is on"));
     }
 
     #[test]

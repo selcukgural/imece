@@ -226,6 +226,7 @@ pub(super) fn plan_tool() -> Tool {
                                       "description": "The worker's tier for it; standard when left out." },
                             "paths": paths_schema(),
                             "checks": checks_schema(),
+                            "closes": closes_schema(),
                             "body": { "type": "string", "maxLength": MAX_BODY,
                                       "description": "The task: what to do, when it is done." },
                             "after": {
@@ -510,6 +511,7 @@ pub(super) fn post_tool() -> Tool {
                 },
                 "paths": paths_schema(),
                 "checks": checks_schema(),
+                "closes": closes_schema(),
                 "after": after_schema(),
             },
             "required": ["title", "body"],
@@ -529,6 +531,21 @@ fn after_schema() -> Value {
                         (#N, without #): it is not offered or claimed, and an assign \
                         with it is held, until each of them is done. One that failed \
                         holds it until it is handed again and done.",
+    })
+}
+
+/// The `closes` of an assign, a post or a plan card (record 142): the
+/// outside item the card answers.
+fn closes_schema() -> Value {
+    json!({
+        "type": "integer",
+        "minimum": 1,
+        "description": "The number of the issue of this repository the card answers \
+                        (58, without #), when it answers one: the person sees it on the \
+                        card's change before their yes, and imece sees to closing it once \
+                        the change is in. Only this repository's issues, one a card; never \
+                        have a worker close it. Not with card (a card handed again keeps \
+                        its own).",
     })
 }
 
@@ -683,6 +700,7 @@ pub(super) fn send_tool() -> Tool {
                 },
                 "paths": paths_schema(),
                 "checks": checks_schema(),
+                "closes": closes_schema(),
                 "after": after_schema(),
                 "card": {
                     "type": "integer",
@@ -2172,6 +2190,35 @@ mod tests {
                 .unwrap()
                 .contains("keeps its title, paths and checks")
         );
+    }
+
+    #[test]
+    fn an_assign_a_post_and_a_plan_card_take_the_issue_the_card_closes() {
+        let plan = plan_tool();
+        let planned = &plan.input["properties"]["cards"]["items"]["properties"]["closes"];
+        assert_eq!(planned, &closes_schema());
+        for tool in [send_tool(), post_tool()] {
+            assert_eq!(
+                tool.input["properties"]["closes"],
+                closes_schema(),
+                "{}",
+                tool.name
+            );
+            let required = tool.input["required"].as_array().unwrap();
+            assert!(!required.contains(&json!("closes")), "{}", tool.name);
+        }
+        let closes = closes_schema();
+        assert_eq!(
+            (&closes["type"], &closes["minimum"]),
+            (&json!("integer"), &json!(1))
+        );
+        let said = closes["description"].as_str().unwrap();
+        assert!(
+            said.starts_with("The number of the issue of this repository"),
+            "{said}"
+        );
+        assert!(said.contains("never have a worker close it"), "{said}");
+        assert!(claim_tool().input["properties"]["closes"].is_null());
     }
 
     #[test]

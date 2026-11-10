@@ -8,6 +8,7 @@ mod awake;
 mod away;
 mod checks;
 mod clip;
+mod closes;
 mod complete;
 mod doctor;
 mod edit;

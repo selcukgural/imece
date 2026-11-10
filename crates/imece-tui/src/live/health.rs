@@ -291,6 +291,7 @@ mod tests {
             re: None,
             paths: Vec::new(),
             checks: Vec::new(),
+            closes: None,
             card: None,
             outcome: Outcome::Ok,
         };

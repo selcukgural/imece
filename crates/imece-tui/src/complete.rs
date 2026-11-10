@@ -14,14 +14,14 @@ use crate::ui::fold;
 
 /// The commands imece itself takes after `:`: its own, and a name for
 /// every key that acts (not the ones that move).
-pub const COMMANDS: [&str; 73] = [
+pub const COMMANDS: [&str; 74] = [
     "allow", "archive", "archives", "awake", "away", "board", "budget", "changes", "checks",
-    "clear", "close", "code", "commit", "copy", "defer", "digest", "doctor", "edit", "effort",
-    "export", "faster", "fold", "forget", "fork", "goto", "health", "help", "history", "home",
-    "journal", "keys", "lang", "ledger", "lonca", "mark", "model", "motion", "news", "next",
-    "notify", "now", "open", "output", "pause", "peek", "pending", "pin", "plan", "ps", "quit",
-    "recall", "rename", "restore", "review", "salon", "settle", "slower", "solo", "story", "sync",
-    "talk", "theme", "tidy", "timeline", "trace", "unclear", "undo", "unfold", "unsettle",
+    "clear", "close", "closes", "code", "commit", "copy", "defer", "digest", "doctor", "edit",
+    "effort", "export", "faster", "fold", "forget", "fork", "goto", "health", "help", "history",
+    "home", "journal", "keys", "lang", "ledger", "lonca", "mark", "model", "motion", "news",
+    "next", "notify", "now", "open", "output", "pause", "peek", "pending", "pin", "plan", "ps",
+    "quit", "recall", "rename", "restore", "review", "salon", "settle", "slower", "solo", "story",
+    "sync", "talk", "theme", "tidy", "timeline", "trace", "unclear", "undo", "unfold", "unsettle",
     "waiting", "welcome", "why", "yes",
 ];
 
@@ -498,7 +498,7 @@ pub fn suggest(input: &str, w: &World, project: ProjectId, home: Option<&Path>) 
                     "",
                 )
             }
-            Some(("review" | "plan", arg)) => {
+            Some(("review" | "plan" | "closes", arg)) => {
                 let start = input.len() - arg.len();
                 menu(start, arg, matching(arg, ["on", "off"].into_iter()), "")
             }
@@ -1353,10 +1353,12 @@ mod tests {
                 symbols: Vec::new(),
                 paths: Vec::new(),
                 checks: Vec::new(),
+                closes: None,
                 started: 0,
                 finished: 0,
                 attempt: 1,
                 breaker: Default::default(),
+                item: Default::default(),
                 after: Vec::new(),
             });
         }

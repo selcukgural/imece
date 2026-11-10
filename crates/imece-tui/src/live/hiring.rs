@@ -435,6 +435,8 @@ impl Live {
             let checks = checks::parse(&c["checks"])
                 .and_then(|checks| checks_run(w, project, &checks).map(|_| checks))
                 .map_err(|why| format!("card {}: {why}", n + 1))?;
+            let closes =
+                closes::parse(&c["closes"]).map_err(|why| format!("card {}: {why}", n + 1))?;
             let after = planned_after(&c["after"], n)?;
             for (m, other) in cards.iter().enumerate() {
                 if let Some((theirs, mine)) = paths::overlap(&other.paths, &paths) {
@@ -451,6 +453,7 @@ impl Live {
                 tier: tier.wire().to_string(),
                 paths,
                 checks,
+                closes,
                 body: body.to_string(),
                 after,
             });
@@ -1269,6 +1272,7 @@ mod tests {
             re: None,
             paths: Vec::new(),
             checks: Vec::new(),
+            closes: None,
             card: None,
             outcome: Outcome::Ok,
         });
@@ -1298,6 +1302,7 @@ mod tests {
             re: None,
             paths: Vec::new(),
             checks: Vec::new(),
+            closes: None,
             card: None,
             outcome: Outcome::Ok,
         });
@@ -1759,6 +1764,7 @@ mod tests {
                     tier: "cheap".into(),
                     paths: vec![Owned::new("src/p.rs")],
                     checks: Vec::new(),
+                    closes: None,
                     body: "Fix it.".into(),
                     after: Vec::new(),
                 },
@@ -1767,6 +1773,7 @@ mod tests {
                     tier: "standard".into(),
                     paths: Vec::new(),
                     checks: Vec::new(),
+                    closes: None,
                     body: "Write them.\nTwo lines.".into(),
                     after: Vec::new(),
                 },
@@ -1940,6 +1947,31 @@ mod tests {
                 .unwrap_err(),
             "card 1: after names earlier cards of this plan by their place (1 to 0)"
         );
+    }
+
+    #[test]
+    fn a_plan_s_cards_name_the_issues_they_close() {
+        let mut w = team(1);
+        w.projects[0].plan.on = true;
+        let mut live = idle_live(2);
+        let bad = json!([
+            { "title": "Parser", "body": "Fix it.", "closes": 58 },
+            { "title": "Api", "body": "Serve it.", "closes": "o/r#59" },
+        ]);
+        let err = live.plan(&mut w, 0, &plan_args(bad, json!(1))).unwrap_err();
+        assert!(
+            err.starts_with("card 2: closes must be the number"),
+            "{err}"
+        );
+        assert_eq!(w.projects[0].plan.proposal, None, "nothing kept");
+        let cards = json!([
+            { "title": "Parser", "body": "Fix it.", "closes": 58 },
+            { "title": "Api", "body": "Serve it." },
+        ]);
+        live.plan(&mut w, 0, &plan_args(cards, json!(1))).unwrap();
+        let p = w.projects[0].plan.proposal.as_ref().expect("a plan");
+        let closes: Vec<Option<Item>> = p.cards.iter().map(|c| c.closes).collect();
+        assert_eq!(closes, [Some(58), None]);
     }
 
     #[test]

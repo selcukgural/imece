@@ -125,6 +125,25 @@ A card's checks can change after it was made, by two hands, each in the journal 
 
 The verdict line follows at once. imece adds and drops no check by itself, not even one the policy no longer has: you or the leader do. The demo's leader, handing again a card of the project on Lonca that asked for nothing, has it ask for `api`. The demo's policy defines `api` and `e2e`; its seventh card, and every ninth after, also asks for `smoke`, which the policy dropped, and a yes to its change is refused until `:checks api` takes `smoke` away.
 
+## The issue a card closes
+
+Work often comes from an issue of the repository. The leader says so on the card: `closes: 58` on an `assign`, a `post` or a plan card, the issue's number and nothing else (digits; not `#58`, another repository or an address: `closes must be the number of an issue of this repository, digits only`). One issue a card; a card handed again keeps its own (`a card handed again closes what it did; leave closes out`). The leader never closes it and never has a worker close it: imece does, after your yes, so the leader stays an agent that writes nowhere and no model's turn is spent on it.
+
+The number is a model's word, so imece reads the issue once with your `gh` (`gh issue view`) and shows what it found wherever the number shows: the card's screen (`closes #58 “A 529 from the API stops the worker” · open`), the plan window (`closes #58`), the change's row on Home (`· closes #58`), and the change itself, in a line of its own under the verdict:
+
+```
+closes #58 “A 529 from the API stops the worker” · when it lands
+```
+
+A wrong number shows there before your yes: `closes #58 “…”: closed already · nothing will close`, `closes #58: that number is a pull request · nothing will close` (`gh issue` answers for a pull request's number too; imece closes only what a look found to be an open issue), `closes #580: this repository has no such issue · nothing will close`. Without `gh`, or signed out, the number stands alone. The title is the text of whoever wrote the issue: it is cleaned as an agent's text is, and no agent is told it.
+
+What happens after your yes depends on where the change goes:
+
+- **On Lonca** the issue closes when the change is integrated, not at the yes: a change that fails the merge queue closes nothing. With [`:closes on`](../reference/commands.md#closes-onoff) (the default) imece runs `gh issue close 58` in the checkout, and the journal says `closed #58 “…” · card #6 landed`; the leader gets a note with its next prompt, no turn of its own. With `:closes off` an item `!` waits in [TO DECIDE](../screen/waiting.md): `a` closes it, `r` leaves it open for good.
+- **On the git path** your yes leaves the change staged, not committed, so imece closes nothing itself: [`:commit`](../reference/commands.md#commit)'s message ends with `Closes #58`, and GitHub closes the issue when that commit reaches the default branch. With `:closes off` the line is left out.
+
+Nothing closes for a card that failed or was withdrawn, or one whose change is applied only in part. An issue that could not be closed is said once (`#58 was not closed: gh is not signed in · it stays open`) and not tried again; the leader hears that it stays open. `gh` gets the number as the only argument that comes from a model, and runs in the checkout, so it is always the checkout's own repository (`GH_REPO` is not passed on). Only GitHub issues for now. In the demo every third card names an issue; its board is made up (nothing leaves the machine), and every seventh issue does not close.
+
 ## A card's tries
 
 A card follows its change, not its worker's turns. It is at work until the worker's `done`; it waits for you to review while its change (`Δ`) is in TO DECIDE; it goes back to work when you send the change back (a reject, notes, a clash), and your words to the worker go on with that card, a round more; your words while its change still waits take that card back to work too (the change waits on until the worker's next one, which holds it, takes its place), rather than opening a card of their own; it is done once the change is applied whole, or when the `done` left nothing to take. On Lonca it is verifying in the merge queue after your yes, done on trunk, and back at work when the queue or a reviewer says no.

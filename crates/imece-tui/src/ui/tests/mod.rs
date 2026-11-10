@@ -165,7 +165,7 @@ fn key(app: &mut App, code: KeyCode) {
     app.on_key(KeyEvent::from(code));
 }
 
-fn a_change(agent: AgentId) -> Change {
+pub(crate) fn a_change(agent: AgentId) -> Change {
     Change {
         agent,
         title: "Fix the parser".into(),

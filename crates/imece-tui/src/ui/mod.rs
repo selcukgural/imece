@@ -617,6 +617,7 @@ pub(crate) fn inbox_line(app: &App, i: usize) -> Line<'static> {
         InboxKind::Script | InboxKind::Check => ("▶", bold(pal().warn)),
         InboxKind::Plan => ("▤", bold(pal().warn)),
         InboxKind::Tries | InboxKind::Rounds => ("⊘", bold(pal().warn)),
+        InboxKind::Close => ("!", bold(pal().warn)),
     };
     let mut spans = vec![
         Span::styled(format!("{icon} "), style),

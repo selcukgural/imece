@@ -36,6 +36,7 @@ pub(crate) fn team(workers: usize) -> World {
                 on: false,
                 ..PlanGate::default()
             },
+            closing: true,
             no_git: false,
             runners: Runners::default(),
             lonca: None,
@@ -53,6 +54,7 @@ pub(crate) fn team(workers: usize) -> World {
         changes: Vec::new(),
         clashes: Default::default(),
         proposals: Default::default(),
+        items: Default::default(),
         paid: 0,
         suggested: None,
         reviews: Default::default(),
@@ -193,10 +195,12 @@ pub(crate) fn with_card(w: &mut World, id: AgentId) -> CardId {
         symbols: Vec::new(),
         paths: Vec::new(),
         checks: Vec::new(),
+        closes: None,
         started: 0,
         finished: 0,
         attempt: 1,
         breaker: Default::default(),
+        item: Default::default(),
         after: Vec::new(),
     });
     w.agents[id].card = Some(c);

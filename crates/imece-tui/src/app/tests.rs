@@ -514,6 +514,51 @@ fn caught(kept: &[u8], ended: Ended) -> io::Result<Caught> {
 }
 
 #[test]
+fn a_suggested_commit_names_the_issues_its_applied_cards_close_until_it_ran() {
+    let mut app = App::new(1, 2, 0, 1, Lang::En);
+    assert!(app.world.cards.len() >= 2, "the demo has cards");
+    for (c, n) in [(0, 58), (1, 61)] {
+        app.world.cards[c].project = 0;
+        app.world.cards[c].closes = Some(n);
+        app.world.cards[c].column = Column::Done;
+    }
+    app.world.projects[0].lonca = None;
+    let suggest = |app: &mut App| {
+        app.typing = false;
+        app.world.suggested = Some(Suggestion {
+            project: 0,
+            text: "Fix it".into(),
+        });
+        app.show_suggestion();
+        app.input.clone()
+    };
+    let both = "!git commit --dry-run -m 'Fix it\n\nCloses #58\nCloses #61'";
+    assert_eq!(suggest(&mut app), both);
+    // Off: no line at all.
+    app.world.projects[0].closing = false;
+    assert_eq!(suggest(&mut app), "!git commit --dry-run -m 'Fix it'");
+    app.world.projects[0].closing = true;
+    // A commit that failed, or a dry run, names nothing yet.
+    app.ran(
+        "git commit -m 'Fix it\n\nCloses #58'",
+        caught(b"", Ended::Exit(1)),
+    );
+    app.ran(&both[1..], caught(b"", Ended::Exit(0)));
+    assert_eq!(suggest(&mut app), both);
+    // One that ran names what its message says: the next leaves it out.
+    app.ran(
+        "git commit -m 'Fix it\n\nCloses #58'",
+        caught(b"", Ended::Exit(0)),
+    );
+    assert_eq!(app.world.cards[0].item, ItemState::Named);
+    assert_eq!(app.world.cards[1].item, ItemState::Waits);
+    assert_eq!(
+        suggest(&mut app),
+        "!git commit --dry-run -m 'Fix it\n\nCloses #61'"
+    );
+}
+
+#[test]
 fn o_quotes_the_last_output_of_the_project_to_the_agent_at_hand() {
     let mut app = App::new(2, 2, 0, 1, Lang::En);
     let leader = app.world.projects[1].leader;
@@ -710,6 +755,7 @@ pub(crate) fn asking_plan() -> (App, usize, AgentId) {
             tier: "cheap".into(),
             paths: vec![Owned::new("src/p.rs"), Owned::shared("docs")],
             checks: Vec::new(),
+            closes: None,
             body: "Fix it.\nThen test.".into(),
             after: Vec::new(),
         },
@@ -718,6 +764,7 @@ pub(crate) fn asking_plan() -> (App, usize, AgentId) {
             tier: "standard".into(),
             paths: Vec::new(),
             checks: Vec::new(),
+            closes: None,
             body: "Write them.".into(),
             after: Vec::new(),
         },

@@ -2194,6 +2194,7 @@ mod tests {
             title: "Add b",
             paths: &[],
             checks: &[],
+            closes: None,
             card: None,
             person: false,
             lazy: false,

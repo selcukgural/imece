@@ -88,6 +88,7 @@ What waits for you is on top of Home, under TO DECIDE: permissions first, then q
 | `:yes` | `e`: yes to an agent's asks until its turn ends |
 | `:allow npm run` | a program and one word the project's agents run without asking; bare, the list |
 | `:plan on\|off` | the leader puts its plan before you before it hires a second worker (on by default) |
+| `:closes on\|off` | a card whose change is in closes the issue its leader named (on by default) |
 
 ## Your own shell
 

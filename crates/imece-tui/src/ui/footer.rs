@@ -421,6 +421,7 @@ pub(crate) fn home_hints(app: &App) -> Vec<(&'static str, &'static str)> {
             ("a", t.home_once_more),
             ("r", t.home_fail),
         ],
+        Some(InboxKind::Close) => vec![("a", t.home_close), ("r", t.home_leave)],
         Some(_) => vec![("enter", t.home_open), ("a", t.home_yes), ("r", t.home_no)],
         None => match app.home_at() {
             Some(crate::app::HomeRow::Project(_)) => {
