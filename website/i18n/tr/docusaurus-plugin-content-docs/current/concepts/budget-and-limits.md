@@ -32,7 +32,7 @@ Başlık açık projeleri, karar bekleyenleri, keseyi (bütçeden harcanan) ve s
 
 ## Kullanım pencereleri
 
-Claude aboneliğindeki bir ekip, planın beş saatlik ya da haftalık limitiyle bütçe bitmeden çok önce durabilir. Claude Code oturumları hesaplarının pencerelerini bildirir. imece pencere uzunluğu başına birini tutar ve en sıkışık olanını bütçeden sonra gösterir: `claude 7 g: %12 kaldı`, %90 kullanımdan itibaren dikkat renginde, yenilenme ilerideyken ona kalan süreyle. Bir pencere dolmadan önce hiçbir şey turu durdurmaz: Claude Code reddeder, imece reddi gösterir. Pencereler çalıştırmalar arasında saklanmaz.
+Claude aboneliğindeki bir ekip, planın beş saatlik ya da haftalık limitiyle bütçe bitmeden çok önce durabilir. Claude Code oturumları hesaplarının pencerelerini bildirir. imece pencere uzunluğu başına birini tutar ve en sıkışık olanını bütçeden sonra gösterir: `claude 7 g: %12 kaldı`, %90 kullanımdan itibaren dikkat renginde, yenilenme ilerideyken ona kalan süreyle. Bir pencere dolmadan önce hiçbir şey turu durdurmaz: Claude Code reddeder ve bu ret [ana ekranda](../screen/home.md#butun-ekip-durunca) ekibin tek bir duruşudur: `■ DURDU shop-api · Claude kullanım sınırına ulaşıldı · 17:00 açılıyor`. O saate dek hiçbir ileti teslim edilmez, uyandırma, yeniden deneme ya da kart önerisi alınmaz; o saatte imece kesilen turları kendisi yeniden dener, `1` bunu hemen yapar, sizin kendi sözünüz yine gider. Pencereler çalıştırmalar arasında saklanmaz.
 
 ## Ne sayılır, nasıl
 

@@ -1064,7 +1064,8 @@ fn is_zero(n: &u32) -> bool {
 /// A failed turn imece tries again (record 79).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Retry {
-    /// Which try this is, from 1 to [`RETRY_TICKS`]' length.
+    /// Which try this is, from 1 to [`RETRY_TICKS`]' length; 0 for a turn
+    /// the usage limit cut, tried when it opens (record 146).
     pub attempt: u8,
     /// The tick it goes at.
     pub at: u64,
@@ -5736,8 +5737,14 @@ impl World {
     /// its kind when Claude Code said: a passing one is tried again after
     /// the next of [`RETRY_TICKS`], until they are used up; that one and
     /// an account's wait for the person in the inbox; any failure else
-    /// is said in the journal alone. The caller has made the agent idle.
+    /// is said in the journal alone. The plan's usage limit is one stop
+    /// of the team, not an item per agent: the turn is tried again when
+    /// it opens (record 146). The caller has made the agent idle.
     pub fn turn_failed(&mut self, id: AgentId, why: &str, fault: Option<Fault>) {
+        if fault == Some(Fault::Account) && imece_agent::is_usage_limit(why) {
+            self.limit_hit(id, why);
+            return;
+        }
         let t = self.tick;
         let a = &mut self.agents[id];
         a.retry = None;
@@ -5781,9 +5788,11 @@ impl World {
         });
         if fault.is_none() {
             // Nothing tries it again and nothing waits for the person:
-            // its leader's to solve (record 146).
+            // its leader's to solve, or the person's when it is the head
+            // (record 146).
             let first = why.lines().find(|l| !l.trim().is_empty());
             self.stood(id, crate::blocked::What::Failed, first.unwrap_or_default());
+            self.head_failed(id, why);
         }
     }
 

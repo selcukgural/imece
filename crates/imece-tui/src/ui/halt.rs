@@ -26,8 +26,22 @@ fn detail(app: &App, s: &Stop) -> Option<String> {
             app.lang.text().budget,
             &[&w.spent_words(), &dollars(w.budget)],
         )),
-        Halt::Store | Halt::Lead if !s.why.is_empty() => Some(clean(&words::one_line(&s.why))),
-        Halt::Store | Halt::Lead | Halt::Woken => None,
+        // When it opens, or when imece tries again: the hour.
+        Halt::Limit => w.halts.limit.as_ref().map(|l| {
+            let at = clock(l.until);
+            match l.opens {
+                true => fill(app.lang.text().limit_opens, &[&at]),
+                false => fill(app.lang.text().limit_again, &[&at]),
+            }
+        }),
+        Halt::Hung if !s.why.is_empty() => Some(fill(
+            app.lang.text().hung_last,
+            &[&clean(&words::one_line(&s.why))],
+        )),
+        Halt::Store | Halt::Lead | Halt::Failed if !s.why.is_empty() => {
+            Some(clean(&words::one_line(&s.why)))
+        }
+        Halt::Store | Halt::Lead | Halt::Failed | Halt::Hung | Halt::Woken => None,
     }
 }
 
@@ -229,8 +243,10 @@ pub(crate) fn preview(app: &App, p: ProjectId, halt: Halt, room: usize) -> Vec<L
     }
     let more = match halt {
         Halt::Pot => Some((":", format!("budget USD · {}", t.halt_other_amount))),
-        Halt::Woken | Halt::Lead => Some(("/", t.write_lead.to_string())),
-        Halt::Store => None,
+        Halt::Woken | Halt::Lead | Halt::Hung | Halt::Failed => {
+            Some(("/", t.write_lead.to_string()))
+        }
+        Halt::Limit | Halt::Store => None,
     };
     if let Some((key, said)) = more {
         lines.push(Line::from(vec![
@@ -378,10 +394,112 @@ mod tests {
         assert_eq!(tr, format!("imece · {} durdu: bütçe bitti", name(&app)));
     }
 
+    /// A demo app of one project whose usage limit cut claude-1's turn,
+    /// opening (or tried again, `opens` false) at tick 50.
+    fn limited(opens: bool) -> App {
+        let mut app = App::new(1, 2, 0, 1, crate::i18n::Lang::En);
+        app.world.inbox.clear();
+        let w = &mut app.world;
+        w.tick = 30;
+        w.limit_hit(1, "Claude usage limit reached");
+        let l = w.halts.limit.as_mut().unwrap();
+        (l.until, l.opens) = (50, opens);
+        w.agents[1].retry = Some(crate::model::Retry { attempt: 0, at: 50 });
+        w.agents[1].status = Status::Idle;
+        w.look_halts(&[]);
+        app
+    }
+
+    #[test]
+    fn the_usage_limit_says_when_it_opens_or_when_imece_tries_again_and_one_choice() {
+        let app = limited(true);
+        let got = text(&banner(&app, 120));
+        let head = format!(
+            " ■ STOPPED  {} · your Claude usage limit is reached · 1 waits behind it",
+            name(&app)
+        );
+        assert_eq!(got[0], head);
+        let at = text(&row(&app, 0, Halt::Limit, 200, false, true, 24)).concat();
+        assert!(at.contains(&format!("· opens {} ·", clock(50))), "{at:?}");
+        assert!(at.ends_with(" 1  try again now  "), "{at:?}");
+        let pre = text(&preview(&app, 0, Halt::Limit, 100)).join("\n");
+        for said in [
+            "its turn, tried again when the limit opens",
+            " 1  try again now · the turns it cut go at once",
+        ] {
+            assert!(pre.contains(said), "{said:?} in\n{pre}");
+        }
+        assert!(!pre.contains(" /  "), "nothing to write to: {pre}");
+        let app = limited(false);
+        let at = text(&row(&app, 0, Halt::Limit, 200, false, true, 24)).concat();
+        assert!(
+            at.contains(&format!("imece tries again at {}", clock(50))),
+            "{at:?}"
+        );
+        // The cut agent's own row counts down to it.
+        let w = &app.world;
+        let spans = super::super::status_spans(app.lang, w, &w.agents[1]);
+        let said: String = spans.iter().map(|s| s.content.as_ref()).collect();
+        assert_eq!(said, "■ usage limit · again in 1 min 40 s");
+        let tr = super::super::status_spans(crate::i18n::Lang::Tr, w, &w.agents[1]);
+        let said: String = tr.iter().map(|s| s.content.as_ref()).collect();
+        assert!(said.starts_with("■ kullanım sınırı · "), "{said:?}");
+    }
+
+    #[test]
+    fn a_head_s_hung_or_failed_turn_names_the_head_and_what_it_did_last() {
+        let mut app = App::new(1, 2, 0, 1, crate::i18n::Lang::En);
+        app.world.inbox.clear();
+        let w = &mut app.world;
+        let lead = w.projects[0].leader;
+        w.tick = 1_000;
+        let a = &mut w.agents[lead];
+        (a.status, a.starting, a.retry, a.changed_at) = (Status::Working, false, None, 0);
+        a.watch.traced_at = 0;
+        a.activity = Some("Bash \"cargo test\"".into());
+        w.look_halts(&[]);
+        let lead_name = app.world.agents[lead].name.clone();
+        let at = text(&row(&app, 0, Halt::Hung, 200, false, true, 24)).concat();
+        let said = format!("{lead_name}'s turn gives no sign of life · last: Bash \"cargo test\"");
+        assert!(at.contains(&said), "{at:?}");
+        assert!(
+            at.ends_with(" 1  end the turn, go on where it left off  "),
+            "{at:?}"
+        );
+        let pre = text(&preview(&app, 0, Halt::Hung, 100)).join("\n");
+        assert!(pre.contains(" /  write to the lead"), "{pre}");
+        let w = &mut app.world;
+        let a = &mut w.agents[lead];
+        a.status = Status::Idle;
+        w.head_failed(lead, "error_max_turns");
+        w.look_halts(&[]);
+        let at = text(&row(&app, 0, Halt::Failed, 200, false, true, 24)).concat();
+        assert!(
+            at.contains(&format!("{lead_name}'s turn failed · error_max_turns")),
+            "{at:?}"
+        );
+        assert!(
+            at.ends_with(&format!(" 1  tell {lead_name} to go on  ")),
+            "{at:?}"
+        );
+        let note = crate::notify::Note::Halt(0, Halt::Failed);
+        let rung = words::notice(crate::i18n::Lang::Tr, &app.world, note);
+        assert_eq!(
+            rung,
+            format!(
+                "imece · {} durdu: {lead_name} turu başarısız oldu",
+                name(&app)
+            )
+        );
+    }
+
     #[test]
     fn the_status_line_names_the_digits_a_stop_takes() {
         assert_eq!(digits(Halt::Lead), "1");
         assert_eq!(digits(Halt::Store), "1-2");
         assert_eq!(digits(Halt::Pot), "1-3");
+        for halt in [Halt::Limit, Halt::Hung, Halt::Failed] {
+            assert_eq!(digits(halt), "1");
+        }
     }
 }

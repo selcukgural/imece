@@ -1,20 +1,28 @@
-//! What live holds back for the pot or for the team's turns on messages
-//! (record 146, part 2): said to the world each step, so a stop that
+//! What live holds back for the pot, the usage limit or the team's turns
+//! on messages (record 146, part 2): said to the world each step, so a stop that
 //! halts the whole team is the person's at once, with who waits behind
 //! it; and the wakes owed once such a stop is over.
 
 use super::*;
-use crate::halt::{Halt, Held, MAX_WOKEN, Waits};
+use crate::halt::{HUNG_AGAIN, Halt, Held, MAX_WOKEN, Waits};
 
 impl Live {
-    /// What this step leaves undone for the pot or the turns: mail not
-    /// delivered, wakes and retries not taken while the pot is spent, a
+    /// What this step leaves undone for the pot, the usage limit or the
+    /// turns: mail not delivered, wakes and retries not taken while the
+    /// pot is spent or the limit holds (the pot first), a
     /// wake not taken by an agent at [`MAX_WOKEN`], and every agent whose
     /// waking message the bus refused for either since the person last
     /// spoke. Nobody gone, put away, in a turn, stopped, asleep or
     /// waiting on the person is held back by these.
     pub(super) fn held_back(&self, w: &World) -> Vec<Held> {
         let pot = self.over_budget(w);
+        let by = if pot {
+            Some(Halt::Pot)
+        } else if w.limit_holds() {
+            Some(Halt::Limit)
+        } else {
+            None
+        };
         let mut held = Vec::new();
         for (id, a) in w.agents.iter().enumerate() {
             if a.gone || w.put_away(id) {
@@ -40,18 +48,18 @@ impl Live {
             if !free {
                 continue;
             }
-            if pot {
+            if let Some(by) = by {
                 let mail = (self.mail[id].iter())
                     .filter(|m| m.kind.wakes() && !Self::waits(w, m))
                     .count();
                 if mail > 0 {
-                    hold(Halt::Pot, Waits::Mail(mail));
+                    hold(by, Waits::Mail(mail));
                 }
                 if self.lost[id] {
-                    hold(Halt::Pot, Waits::Wake);
+                    hold(by, Waits::Wake);
                 }
                 if a.retry.is_some() {
-                    hold(Halt::Pot, Waits::Retry);
+                    hold(by, Waits::Retry);
                 }
             } else if self.lost[id] && self.woken[id] >= MAX_WOKEN {
                 hold(Halt::Woken, Waits::Wake);
@@ -73,6 +81,20 @@ impl Live {
         }
     }
 
+    /// The person's choice on a head's hung turn: its session ends, cutting
+    /// the turn, and resumes on [`HUNG_AGAIN`] where it left off. Refused
+    /// as the person's word is (the pot).
+    pub fn end_turn(&mut self, w: &mut World, id: AgentId) -> Result<(), Refusal> {
+        if self.over_budget(w) {
+            return Err(Refusal::Budget);
+        }
+        if self.turns[id] > 0 && matches!(self.slots[id], Slot::Running(_)) {
+            self.end(w, id);
+            w.agents[id].trace(w.tick, "the person ended a turn that gave no sign of life");
+        }
+        self.told(w, id, HUNG_AGAIN)
+    }
+
     /// The team may take its turns on messages again (the person spoke,
     /// or chose so on the stop): every count starts anew, and whoever's
     /// message the count refused is woken to go on.
@@ -90,7 +112,7 @@ impl Live {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::live::testing::{idle_live, msg, sent, team};
+    use crate::live::testing::{hear, idle_live, msg, sent, team};
 
     fn mail(kind: MsgKind) -> Mail {
         Mail {
@@ -224,6 +246,100 @@ mod tests {
                 ..
             }
         )));
+    }
+
+    #[test]
+    fn the_usage_limit_holds_the_mail_wakes_and_retries_of_whoever_is_free_after_the_pot() {
+        let (mut live, mut w) = ready(3);
+        live.lost[1] = true;
+        w.agents[2].retry = Some(Retry { attempt: 1, at: 9 });
+        live.mail[3].push(mail(MsgKind::Assign));
+        w.limit_hit(3, "Claude usage limit reached");
+        // Its own retry waits as the world says (attempt 0): live holds it
+        // too, by the limit.
+        let held = live.held_back(&w);
+        assert_eq!(of(&held, 1), vec![(Halt::Limit, Waits::Wake)]);
+        assert_eq!(of(&held, 2), vec![(Halt::Limit, Waits::Retry)]);
+        assert_eq!(
+            of(&held, 3),
+            vec![(Halt::Limit, Waits::Mail(1)), (Halt::Limit, Waits::Retry)]
+        );
+        // The pot spent says it first.
+        w.budget = w.spent();
+        assert_eq!(of(&live.held_back(&w), 1), vec![(Halt::Pot, Waits::Wake)]);
+        // Open again: nothing is the limit's.
+        w.budget = w.spent() + 1;
+        w.try_now();
+        assert_eq!(live.held_back(&w), vec![]);
+    }
+
+    #[test]
+    fn while_the_limit_holds_a_step_delivers_no_mail_wakes_nobody_and_offers_no_card() {
+        let (mut live, mut w) = ready(2);
+        w.limit_hit(2, "Claude usage limit reached");
+        live.mail[1].push(mail(MsgKind::Assign));
+        live.lost[0] = true;
+        live.step(&mut w);
+        assert_eq!(live.mail[1].len(), 1, "the mail waits");
+        assert_eq!(live.turns, vec![0, 0, 0]);
+        assert!(live.lost[0], "the wake waits");
+        let stop = w.halt_of(0, Halt::Limit).expect("the team stops");
+        let behind: Vec<AgentId> = stop.behind.iter().map(|b| b.agent).collect();
+        assert_eq!(behind, vec![0, 1, 2]);
+        // Tried now, the mail goes (its session fails to start here, but
+        // the delivery was made).
+        w.try_now();
+        live.step(&mut w);
+        assert!(live.mail[1].is_empty(), "delivered");
+    }
+
+    #[test]
+    fn a_turn_that_went_through_opens_the_limit_and_lets_the_cut_turns_go() {
+        let (mut live, mut w) = ready(2);
+        w.limit_hit(2, "Claude usage limit reached");
+        live.turns[1] = 1;
+        w.agents[1].status = Status::Working;
+        hear(
+            &live,
+            1,
+            AgentEvent::TurnDone {
+                ok: true,
+                text: "done".into(),
+                cost: 0,
+                denied: 0,
+            },
+        );
+        live.step(&mut w);
+        assert_eq!(w.halts.limit, None);
+        assert!(w.halt_of(0, Halt::Limit).is_none());
+        // A failed turn opens nothing.
+        w.limit_hit(2, "Claude usage limit reached");
+        live.turns[1] = 1;
+        w.agents[1].status = Status::Working;
+        hear(
+            &live,
+            1,
+            AgentEvent::TurnDone {
+                ok: false,
+                text: "no".into(),
+                cost: 0,
+                denied: 0,
+            },
+        );
+        live.step(&mut w);
+        assert!(w.halts.limit.is_some());
+    }
+
+    #[test]
+    fn ending_a_hung_turn_is_refused_over_budget_and_else_tells_the_head_to_go_on() {
+        let (mut live, mut w) = ready(1);
+        w.budget = w.spent();
+        assert!(matches!(live.end_turn(&mut w, 0), Err(Refusal::Budget)));
+        w.budget = w.spent() + 100_000;
+        // No session runs here: the word starts one (and it fails to start
+        // in a test), nothing is ended.
+        let _ = live.end_turn(&mut w, 0);
+        assert!(!w.agents[0].trace.iter().any(|l| l.contains("ended a turn")));
     }
 
     #[test]

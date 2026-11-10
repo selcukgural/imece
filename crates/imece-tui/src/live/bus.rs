@@ -955,6 +955,7 @@ impl Live {
                 || self.turns[id] > 0
                 || self.woken[id] >= MAX_WOKEN
                 || self.over_budget(w)
+                || w.limit_holds()
                 || w.waits_on_person(id)
             {
                 continue;
@@ -1031,7 +1032,9 @@ impl Live {
 
     /// Starts agent `id`'s next turn with all its mail.
     pub(super) fn deliver(&mut self, w: &mut World, id: AgentId) {
-        if self.over_budget(w) {
+        // The usage limit would cut the turn: the mail waits for it to
+        // open (record 146).
+        if self.over_budget(w) || w.limit_holds() {
             return;
         }
         // An assign that waits on its card stays (record 126, F10).

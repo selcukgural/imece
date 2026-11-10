@@ -3,7 +3,7 @@
 //! rest after the rest, `enter` to what stopped.
 
 use super::*;
-use crate::halt::{Choice, Halt, LEAD_AGAIN};
+use crate::halt::{Choice, FAILED_AGAIN, Halt, LEAD_AGAIN, SOLO_AGAIN};
 
 impl App {
     /// The stops Home lists for `scope`, in the world's order, each with
@@ -72,8 +72,29 @@ impl App {
                 self.open_lonca(p);
             }
             Choice::StartLead => {
-                let leader = self.world.projects[p].leader;
-                self.tell(leader, LEAD_AGAIN);
+                let head = self.world.projects[p].leader;
+                let again = match self.world.agents[head].role {
+                    Role::Solo => SOLO_AGAIN,
+                    _ => LEAD_AGAIN,
+                };
+                self.tell(head, again);
+            }
+            Choice::TryNow => {
+                self.world.try_now();
+                self.flash(t.halt_trying);
+            }
+            Choice::EndTurn => {
+                let head = self.world.projects[p].leader;
+                let refused = match &mut self.engine {
+                    Engine::Live(l) => l.end_turn(&mut self.world, head).err(),
+                    Engine::Sim(s) => s.end_turn(&mut self.world, head).err(),
+                    Engine::View(_) => return self.read_only(),
+                };
+                self.report(head, crate::halt::HUNG_AGAIN, refused);
+            }
+            Choice::Again => {
+                let head = self.world.projects[p].leader;
+                self.tell(head, FAILED_AGAIN);
             }
         }
         self.home_decided();
@@ -98,7 +119,7 @@ impl App {
                 self.selected = Sel::Project(p);
                 self.open_lonca(p);
             }
-            Halt::Pot | Halt::Woken | Halt::Lead => {
+            Halt::Pot | Halt::Woken | Halt::Limit | Halt::Lead | Halt::Hung | Halt::Failed => {
                 self.zoom = Zoom::Focus(self.world.projects[p].leader);
             }
         }
@@ -164,6 +185,23 @@ mod tests {
                 Halt::Lead => {
                     let leader = w.projects[0].leader;
                     w.agents[leader].status = Status::Stopped;
+                }
+                Halt::Limit => w.limit_hit(1, "Claude usage limit reached"),
+                Halt::Hung => {
+                    let leader = w.projects[0].leader;
+                    let a = &mut w.agents[leader];
+                    a.status = Status::Working;
+                    a.starting = false;
+                    a.retry = None;
+                    a.changed_at = 0;
+                    a.watch.traced_at = 0;
+                    w.tick = w.tick.max(1_000);
+                }
+                Halt::Failed => {
+                    let leader = w.projects[0].leader;
+                    w.agents[leader].status = Status::Idle;
+                    w.agents[leader].changed_at = 0;
+                    w.head_failed(leader, "error_max_turns");
                 }
             }
         }
@@ -288,6 +326,84 @@ mod tests {
         let mut app = app;
         app.world.halts.stops.clear();
         assert!(rows(&app).contains(&(HomeGroup::Stuck, HomeRow::Agent(leader))));
+    }
+
+    #[test]
+    fn the_usage_limit_s_digit_tries_the_cut_turns_now_and_enter_opens_the_head() {
+        let mut app = stopped(&[Halt::Limit]);
+        assert_eq!(
+            rows(&app)[0],
+            (HomeGroup::Stopped, HomeRow::Stop(0, Halt::Limit))
+        );
+        assert!(app.world.limit_holds());
+        assert_eq!(app.choice_at_hand('1'), Some(Choice::TryNow));
+        assert_eq!(app.choice_at_hand('2'), None);
+        app.on_key(key(KeyCode::Char('1')));
+        assert!(!app.world.limit_holds());
+        assert_eq!(
+            app.world.agents[1].retry.map(|r| r.at),
+            Some(app.world.tick)
+        );
+        assert_eq!(
+            flashed(&app).as_deref(),
+            Some("trying the turns the usage limit cut again")
+        );
+        let mut app = stopped(&[Halt::Limit]);
+        app.on_key(key(KeyCode::Enter));
+        assert_eq!(app.zoom, Zoom::Focus(app.world.projects[0].leader));
+    }
+
+    #[test]
+    fn a_hung_head_s_digit_ends_its_turn_and_a_failed_one_s_tells_it_to_go_on() {
+        let mut app = stopped(&[Halt::Hung]);
+        let leader = app.world.projects[0].leader;
+        assert_eq!(
+            rows(&app)[0],
+            (HomeGroup::Stopped, HomeRow::Stop(0, Halt::Hung))
+        );
+        assert_eq!(app.choice_at_hand('1'), Some(Choice::EndTurn));
+        app.on_key(key(KeyCode::Char('1')));
+        let said = |app: &App| {
+            app.world.journal.iter().rev().find_map(|e| match &e.event {
+                Event::YouSaid { to, text } => Some((*to, text.clone())),
+                _ => None,
+            })
+        };
+        assert_eq!(
+            said(&app),
+            Some((leader, crate::halt::HUNG_AGAIN.to_string()))
+        );
+        let mut app = stopped(&[Halt::Failed]);
+        assert_eq!(
+            rows(&app)[0],
+            (HomeGroup::Stopped, HomeRow::Stop(0, Halt::Failed))
+        );
+        assert_eq!(app.choice_at_hand('1'), Some(Choice::Again));
+        app.on_key(key(KeyCode::Char('1')));
+        assert_eq!(said(&app), Some((leader, FAILED_AGAIN.to_string())));
+        // A spent pot refuses the hung turn's end as it refuses a word.
+        let mut app = stopped(&[Halt::Hung]);
+        app.world.budget = app.world.spent();
+        app.on_key(key(KeyCode::Char('1')));
+        assert_eq!(said(&app), None);
+        assert!(
+            flashed(&app).is_some_and(|f| f.contains("pot")),
+            "{:?}",
+            flashed(&app)
+        );
+    }
+
+    #[test]
+    fn a_solo_whose_session_ended_is_started_with_a_solo_s_words() {
+        let mut app = stopped(&[Halt::Lead]);
+        let head = app.world.projects[0].leader;
+        app.world.agents[head].role = Role::Solo;
+        app.on_key(key(KeyCode::Char('1')));
+        let said = app.world.journal.iter().rev().find_map(|e| match &e.event {
+            Event::YouSaid { to, text } => Some((*to, text.clone())),
+            _ => None,
+        });
+        assert_eq!(said, Some((head, SOLO_AGAIN.to_string())));
     }
 
     #[test]

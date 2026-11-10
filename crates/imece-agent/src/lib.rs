@@ -340,6 +340,16 @@ mod tests {
             assert_eq!(of(Some(500), w), Some(Fault::Passing), "{w}: a 5xx passes");
             assert_eq!(of(Some(404), w), None, "{w}");
         }
+        for (w, limit) in [
+            ("Claude usage limit reached", true),
+            ("You've HIT YOUR LIMIT · resets 3pm", true),
+            ("5-hour limit reached", true),
+            ("You exceeded your current quota", false),
+            ("Not logged in · Please run /login", false),
+            ("Credit balance is too low", false),
+        ] {
+            assert_eq!(is_usage_limit(w), limit, "{w}");
+        }
     }
 
     #[test]
@@ -536,6 +546,17 @@ const ACCOUNT_WORDS: [&str; 8] = [
     "hit your limit",
     "limit reached",
 ];
+
+/// Words in an error that say the plan's usage limit is reached: the
+/// account's fault that opens again by itself at a time (record 146).
+const LIMIT_WORDS: [&str; 3] = ["usage limit", "hit your limit", "limit reached"];
+
+/// Whether an account's fault in `text` is the plan's usage limit, not a
+/// sign-in, a quota or a bill: it opens again by itself.
+pub fn is_usage_limit(text: &str) -> bool {
+    let t = text.to_lowercase();
+    LIMIT_WORDS.iter().any(|w| t.contains(w))
+}
 
 /// Minutes in the windows Claude Code names.
 pub const FIVE_HOURS: u32 = 5 * 60;

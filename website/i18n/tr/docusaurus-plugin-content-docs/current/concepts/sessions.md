@@ -43,7 +43,8 @@ Claude Code başarısız bir API çağrısını önce kendisi yeniden dener, on 
 | Claude Code ne diyor | imece |
 | --- | --- |
 | aşırı yük, bir sunucu hatası (5xx), kopan bir bağlantı, bir hız sınırı | geçici bir hata: günlük `claude-1 API hatası aldı: … · imece 30 sn sonra yeniden deniyor (1/3)` der, satır geri sayar `↻ 1/3 · 25 sn sonra`, zamanı gelince oturuma kaldığı yerden devam etmesi söylenir. İkinci deneme bir sonraki hatadan 2 dk sonra, üçüncüsü ondan 8 dk sonradır. Üçüncüden sonra sizi bekler. |
-| oturum kapalı, reddedilen bir anahtar, biten bir kota, bir fatura, bir planın kullanım sınırı | hesabın işi: hemen sizi bekler, [ana ekranda](../screen/home.md) KARAR BEKLEYEN'de. |
+| oturum kapalı, reddedilen bir anahtar, biten bir kota, bir fatura | hesabın işi: hemen sizi bekler, [ana ekranda](../screen/home.md) KARAR BEKLEYEN'de. |
+| planın kullanım sınırı (`usage limit`, `hit your limit`, `limit reached`) | ajan başına bir öğe değil, ekibin tek bir duruşu: [ana ekranda](../screen/home.md#butun-ekip-durunca) `■ DURDU · Claude kullanım sınırına ulaşıldı · 17:00 açılıyor`; tur sınır açılınca yeniden denenir (Claude Code söylemediyse 15 dakika sonra), ya da `1` ile hemen. |
 | başka her şey (reddedilen bir istek, dolu bir bağlam) | günlük, önceden olduğu gibi turun durduğunu söyler. |
 
 Oturum başarısız bir turdan sonra da yaşar ve Claude Code başarısız istemi içinde tutar; bu yüzden bir deneme istemi yeniden göndermez, kısa bir "devam et" gönderir. İyi bir tur, sizin mesajınız ya da agent'a gelen posta sayımı sıfırlar; biten bir oturum bekleyen denemeyi de götürür. Demoda bir agent'a söylediğiniz her üçüncü şey aşırı yüklü bir API yüzünden başarısız olur ve yeniden denenir, her yedinci şey reddedilen bir anahtar yüzünden.

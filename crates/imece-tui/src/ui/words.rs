@@ -1593,8 +1593,11 @@ pub fn halt_words(lang: Lang, w: &World, p: ProjectId, halt: crate::halt::Halt) 
     match halt {
         Halt::Pot => t.halt_pot.to_string(),
         Halt::Woken => fill(t.halt_woken, &[&crate::halt::MAX_WOKEN.to_string()]),
+        Halt::Limit => t.halt_limit.to_string(),
         Halt::Store => t.halt_store.to_string(),
         Halt::Lead => fill(t.halt_lead, &[name(w, w.projects[p].leader)]),
+        Halt::Hung => fill(t.halt_hung, &[name(w, w.projects[p].leader)]),
+        Halt::Failed => fill(t.halt_failed, &[name(w, w.projects[p].leader)]),
     }
 }
 
@@ -1605,8 +1608,11 @@ pub fn lifted_words(lang: Lang, w: &World, p: ProjectId, halt: crate::halt::Halt
     match halt {
         Halt::Pot => t.halt_lifted_pot.to_string(),
         Halt::Woken => t.halt_lifted_woken.to_string(),
+        Halt::Limit => t.halt_lifted_limit.to_string(),
         Halt::Store => t.halt_lifted_store.to_string(),
-        Halt::Lead => fill(t.halt_lifted_lead, &[name(w, w.projects[p].leader)]),
+        Halt::Lead | Halt::Hung | Halt::Failed => {
+            fill(t.halt_lifted_lead, &[name(w, w.projects[p].leader)])
+        }
     }
 }
 
@@ -1632,6 +1638,7 @@ pub fn waits_words(
     match waits {
         Waits::Mail(n) => counted(n, t.waits_mail),
         Waits::Wake => t.waits_wake.to_string(),
+        Waits::Retry if halt == Halt::Limit => t.waits_limit.to_string(),
         Waits::Retry => t.waits_retry.to_string(),
         Waits::Refused(n) => counted(n, t.waits_refused),
         Waits::Report if halt == Halt::Store => t.waits_report_store.to_string(),
@@ -1650,6 +1657,9 @@ pub fn choice_words(lang: Lang, w: &World, p: ProjectId, c: crate::halt::Choice)
         Choice::LookAgain => t.choice_look.to_string(),
         Choice::Store => t.choice_store.to_string(),
         Choice::StartLead => fill(t.choice_lead, &[name(w, w.projects[p].leader)]),
+        Choice::TryNow => t.choice_try.to_string(),
+        Choice::EndTurn => t.choice_end_turn.to_string(),
+        Choice::Again => fill(t.choice_again, &[name(w, w.projects[p].leader)]),
     }
 }
 
@@ -1664,6 +1674,9 @@ pub fn does_words(lang: Lang, c: crate::halt::Choice) -> String {
         Choice::LookAgain => t.does_look.to_string(),
         Choice::Store => t.does_store.to_string(),
         Choice::StartLead => t.does_lead.to_string(),
+        Choice::TryNow => t.does_try.to_string(),
+        Choice::EndTurn => t.does_end_turn.to_string(),
+        Choice::Again => t.does_again.to_string(),
     }
 }
 

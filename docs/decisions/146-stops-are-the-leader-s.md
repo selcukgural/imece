@@ -185,16 +185,67 @@ session ends; a spent pot tries no retry and holds the leader that
 would hand out and the free workers that would take a card. Two seeded
 tests took a new seed for it.
 
+## Part 2b, as built
+
+**The usage limit is one stop of the team** (`Halt::Limit`). A turn
+that fails with an account's fault whose words are the plan's limit
+(`imece_agent::is_usage_limit`: `usage limit`, `hit your limit`, `limit
+reached`) no longer opens an item per agent: `World::limit_hit` keeps
+one `Limited` in `World.halts` (memory) with the tick it began, the
+agents whose turn it cut and the tick it is tried again: when Claude
+Code's windows say a window at 100% opens (`opens`), else
+`LIMIT_AGAIN` (15 minutes) after the last failure. Each cut turn is a
+retry with `attempt` 0, at that tick; its row says `■ usage limit ·
+again in 12 min`. While it holds (`World::limit_holds`, up to the tick,
+not on it) live delivers no mail, takes no wake or retry and offers no
+card (`deliver`, `offer`, the step's wakes and retries), and says so in
+`held_back` (the pot first); the person's own word still goes. A turn
+that goes through anywhere (`TurnDone { ok: true }`) lifts it
+(`World::limit_lifted`) and the cut turns go at once. The stop holds
+while anyone waits behind it or a cut agent is there: `■ STOPPED
+shop-api · your Claude usage limit is reached · opens 17:00 · 4 wait
+behind it`, the row's choice `1 try again now` (`World::try_now`). A
+quota, a bill or a sign-in is the account's item as before.
+
+**The head's own turn** (`Halt::Hung`, `Halt::Failed`). Health watches
+no head, and a head's failed turn was a journal line alone. Now a head
+(the project's leader, or a solo) mid-turn whose newest trace line (or
+its status change, whichever is later) is as old as `:health stall` is
+its team's stop: `lead's turn gives no sign of life · last: Bash "cargo
+test"` (`World::hung_since`; not while it starts, waits on the person or
+for a retry). `stall off` makes it `HUNG_MINUTES` (10), never silent:
+that knob silences what goes to the leader only. `1 end the turn, go on
+where it left off` (`Live::end_turn`: the session ends, cutting the
+turn, and resumes on `HUNG_AGAIN`, which says not to run what hung the
+same way again; refused over budget as a word is). A head's turn that
+fails with nothing imece tries again (`World::head_failed`, from
+`turn_failed`) is `lead's turn failed · error_max_turns` until the
+head's next turn, `1 tell lead to go on` (`FAILED_AGAIN`).
+`Halt::Lead` now covers a solo too, started with `SOLO_AGAIN`.
+
+**The demo** mirrors them by the clock, each once its leader is idle
+and in turn (`Extras.head_due`): every `HEAD_FAIL_EVERY` (1,100) ticks
+its turn fails; every `LIMIT_EVERY` (1,700) the plan's five hours are
+full for `LIMIT_TICKS` (60) and the leader meets the limit, which opens
+by itself (an answer lifts it only after its time); every `HUNG_EVERY`
+(2,300) it hangs (`Sim::hang`, kept hung each tick by `still_hung`)
+until the person ends the turn (`Sim::end_turn`). imece's words to a
+head (`halt::is_again`) post no cards in the demo. The tests' person
+(`answer_all`) takes the first digit of these three stops; one seeded
+test took a new seed (1).
+
 ## The points of the list
 
 - **Growth**: one `Option<Block>` per agent (record 143's), one `bool`
   and the short `World.stops`, emptied each step. No new item kind. Part
-  2: at most four stops per open project, each listing its agents; two
-  counters per agent in `Live.held_sends`.
+  2: at most seven stops per open project, each listing its agents; two
+  counters per agent in `Live.held_sends`; one `Limited` with the agents
+  it cut, and one entry per failed head.
 - **Read cost**: `stood` and `stops_read` pass over the agents once,
   at a stop or a leader's prompt, never per frame. Part 2: `held_back`
   and `look_halts` pass over the agents and the projects once a step;
-  a frame reads `World.halts` only.
+  a frame reads `World.halts` only. 2b: `hung_since` is one look at the
+  head per project a step.
 - **Ten times the scale**: at 160 agents a leader may be told several
   stops in one prompt; `MAX_WOKEN` and the pot still bound its turns, and
   a stop it lets lie still comes to the person.
@@ -203,7 +254,7 @@ tests took a new seed for it.
   (`Said`), so older rows read as before; an older imece cannot read a
   store that holds the new event. Part 2: `Event::Halted` and
   `Event::Unhalted` are new names too, with the same rule; nothing else
-  is saved.
+  is saved. 2b: three new `Halt` names in those rows, the same rule.
 - **Failure**: the block and `revived` are memory only. After a restart
   a stopped worker is asleep with its session remembered, as before, and
   its leader is not told again; one that came to the person is an inbox
@@ -211,9 +262,15 @@ tests took a new seed for it.
 
 ## Gaps
 
-- Part 2b (the usage limit as one stop of the team, not one item per
-  agent after three retries each; the leader's and a solo's hung or
-  failed turn), part 3 and part 4 are not built.
+- Part 3 and part 4 are not built.
+- Part 2b: the usage limit and a failed head are memory only; after a
+  start a cut turn is not tried again by itself (the stop is gone with
+  the run, the session remembered). A turn of another agent already
+  under way when the limit is met is not stopped; it fails on its own.
+  The limit's time is read from Claude Code's windows, never from the
+  error's words (`resets 3pm`). The demo mirrors the three stops for
+  leaders only, not for a solo; `--demo-live` (the stand-in) meets no
+  usage limit and never hangs.
 - Part 2a: the stops are memory only; after a start the engine finds
   them again at its first step. `W` does not come to a stop (it walks
   the inbox); Home lists it first. A card offer skipped for the turns is

@@ -631,7 +631,7 @@ impl App {
     }
 
     /// Flashes how the person's `text` to agent `id` fared.
-    fn report(&mut self, id: AgentId, text: &str, refused: Option<Refusal>) {
+    pub(super) fn report(&mut self, id: AgentId, text: &str, refused: Option<Refusal>) {
         let t = self.lang.text();
         let name = self.world.agents[id].name.clone();
         match refused {
