@@ -11,7 +11,6 @@ use ratatui::widgets::{Block, Paragraph};
 use super::*;
 use crate::app::{App, Copying, DiffNote, Folds};
 use crate::i18n::Text;
-use crate::motion::GlowOn;
 use crate::ui::words::card_ref;
 
 /// Line offsets of the file headers (`diff --git`) in `patch`, for
@@ -489,7 +488,7 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, id: AgentId) {
         Some(Pointing {
             from: *starts.get(n)?,
             to: (starts.get(n + 1).copied()).unwrap_or(usize::MAX),
-            lit: app.lit(GlowOn::Lines).map(lit_style),
+            lit: app.pointed_lit(id).map(lit_style),
         })
     });
     let lines = patch_rows(

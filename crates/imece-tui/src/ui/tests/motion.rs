@@ -324,16 +324,28 @@ fn a_change_opened_from_its_log_line_marks_the_file_and_lights_it_while_motion_m
     app.frame_after(ms(1200));
     assert_eq!(back(&app, "+d"), shade(4));
     assert_ne!(shade(4), shade(0));
+    // The glow over, the faintest step stays until the first key.
     app.frame_after(ms(1500));
     let plain = back(&app, "cost ·");
     assert_ne!(plain, shade(4));
-    assert_eq!(back(&app, "+d"), plain, "over: the words alone");
+    assert_eq!(back(&app, "+d"), shade(4), "it stays");
     assert_eq!(back(&app, "b.rs  ← the log's line"), pal().selection);
-    // Nothing moves: the words mark the file, nothing is lit.
+    // Nothing moves: the same faint light, which does not move either.
     app.frame_after(ms(0));
     app.motion = Motion::Off;
+    assert_eq!(back(&app, "+d"), shade(4));
+    app.motion = Motion::Calm;
+    // The first key ends it; the words on the header stay.
+    app.on_key(KeyEvent::from(KeyCode::Char('w')));
+    app.frame_after(ms(1500));
     assert_eq!(back(&app, "+d"), plain);
     assert_eq!(back(&app, "b.rs  ← the log's line"), pal().selection);
+    // A theme whose colours cannot be blended lights nothing.
+    assert!(crate::theme::set("terminal"));
+    app.pointed.as_mut().unwrap().fresh = true;
+    assert_eq!(back(&app, "+d"), back(&app, "cost ·"));
+    assert!(crate::theme::set("gruvbox-dark-medium"));
+    app.pointed.as_mut().unwrap().fresh = false;
     // Opened as any change is, it has no mark and no light.
     app.motion = Motion::Calm;
     app.pointed = None;

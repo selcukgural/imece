@@ -349,6 +349,9 @@ pub struct Pointed {
     pub patch: u64,
     /// The file's number in the patch, from 0.
     pub file: usize,
+    /// No key since it opened: its lines keep the light's last, faintest
+    /// step until the first one.
+    pub fresh: bool,
 }
 
 /// Where the person reads an agent up close (record 102): the story

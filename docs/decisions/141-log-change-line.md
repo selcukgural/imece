@@ -16,10 +16,11 @@ diff tab of the same detail, at that file:
   if it was folded;
 - the header says ` ← the log's line`, in the accent, for as long as the
   person stays on that change;
-- the file's lines are lit for 1.5 s: a background blended from the
-  theme's `accent` into its background at 30, 24, 18, 12, 6 %, a step
-  every beat (300 ms), then nothing. Never reversed, never a blink. The
-  line at hand keeps its own mark over the light;
+- the file's lines are lit: a background blended from the theme's
+  `accent` into its background at 30, 24, 18, 12, 6 %, a step every beat
+  (300 ms) for 1.5 s; the last, faintest step then stays until the
+  person's first key. Never reversed, never a blink. The line at hand
+  keeps its own mark over the light;
 - `esc` goes back to the log, at the line it was opened from (a change
   opened any other way goes back to Home, as before).
 
@@ -35,11 +36,16 @@ the change waits; an ask's three keys leave it to the help.
 - **How long, how it looks:** `Glow::Point`, `motion::POINT` 1.5 s, five
   steps of `ui::POINT_SHADES`; the accent, the colour of the bar that
   marks the log's line at hand, not `ok` (green under added lines would
-  hide them).
+  hide them). The person saw three looks on mock-ups (the fade alone, a
+  bar in the gutter, the fade that stays faint) and took the third
+  (user, 2026-11-10): `Pointed.fresh` keeps the faintest step until the
+  first key, so a glance away loses nothing.
 - **Without motion** (`:motion off`, another window; over SSH calm still
-  moves) **and where colours cannot be blended** (mono, the terminal's
-  own colours): nothing is lit; the words on the header are the mark.
-  They are there with motion too, so the light is never the only sign.
+  moves): nothing fades; the faintest step, which does not move, is
+  there from the start until the first key.
+- **Where colours cannot be blended** (mono, the terminal's own
+  colours): nothing is lit; the words on the header are the mark. They
+  are there in every theme, so the light is never the only sign.
 - **A line whose file is not in the change:** a flash and the log stays:
   `NAME shows no change yet: FILE opens here once one waits` with no
   change waiting (mid-turn, or applied), `FILE is not in the change NAME
@@ -53,7 +59,8 @@ screen or under a conversation), `App::open_change_line` (finds the
 header whose `ui::head_path` is the file, unfolds it, sets `diff_scroll`,
 `App.pointed: Pointed { worker, patch, file }` and lights
 `GlowOn::Lines`), `App::pointed_in` (only for that worker's change with
-that patch). `App::on_key` drops `pointed` once the zoom is not that
+that patch), `App::pointed_lit` (the glow's step, else the faintest
+while `fresh`; `App::around` ends `fresh` at the first key). `App::on_key` drops `pointed` once the zoom is not that
 change; `keep_reading` keeps the log's place meanwhile.
 `ui::diff::Pointing` carries the file's lines and the light into
 `patch_rows`; `ui::lit_style` words `Lit::Point`.

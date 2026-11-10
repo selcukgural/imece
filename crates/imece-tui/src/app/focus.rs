@@ -162,6 +162,7 @@ impl App {
             worker: id,
             patch,
             file: n,
+            fresh: true,
         });
         self.light(GlowOn::Lines, Glow::Point, Instant::now());
     }
@@ -169,9 +170,24 @@ impl App {
     /// The file of agent `id`'s open change the log pointed at, by its
     /// number in the patch; none once the change is another.
     pub fn pointed_in(&self, id: AgentId) -> Option<usize> {
+        self.pointed_of(id).map(|p| p.file)
+    }
+
+    /// What the log pointed at in agent `id`'s open change, while the
+    /// change is the one it was.
+    fn pointed_of(&self, id: AgentId) -> Option<Pointed> {
         let p = self.pointed.filter(|p| p.worker == id)?;
         let c = self.world.change_of(id)?;
-        (patch_key(&c.patch) == p.patch).then_some(p.file)
+        (patch_key(&c.patch) == p.patch).then_some(p)
+    }
+
+    /// How the lines the log pointed at in agent `id`'s change are lit in
+    /// this frame: the glow's step while it lasts and motion moves; else,
+    /// until the first key, its last and faintest step, which does not
+    /// move and so shows without motion too.
+    pub fn pointed_lit(&self, id: AgentId) -> Option<Lit> {
+        let p = self.pointed_of(id)?;
+        (self.lit(GlowOn::Lines)).or(p.fresh.then_some(Lit::Point(u8::MAX)))
     }
 
     /// What agent `id` waits for the person to decide, as its focus
@@ -287,6 +303,7 @@ mod tests {
             worker: w,
             patch: key_of,
             file: 1,
+            fresh: true,
         };
         assert_eq!(app.pointed, Some(pointed));
         assert_eq!(app.pointed_in(w), Some(1));
@@ -295,10 +312,24 @@ mod tests {
         // Its lines light from the next beat on.
         let lit = (app.glows.iter()).find(|g| g.0 == GlowOn::Lines).unwrap();
         assert_eq!(lit.1, Glow::Point);
+        // Until the first key its lines keep the faintest step, with
+        // the glow over and with nothing moving.
+        app.glows.clear();
+        assert_eq!(app.pointed_lit(w), Some(Lit::Point(u8::MAX)));
+        app.motion = Motion::Off;
+        assert_eq!(app.pointed_lit(w), Some(Lit::Point(u8::MAX)));
+        assert_eq!(app.pointed_lit(w + 1), None);
+        app.motion = Motion::Calm;
         // Reading on keeps the mark; `esc` goes back to the log, at the
         // line it was opened from, and the mark goes with the change.
         app.on_key(key(KeyCode::Char('j')));
-        assert_eq!((app.diff_scroll, app.pointed), (6, Some(pointed)));
+        let read = Pointed {
+            fresh: false,
+            ..pointed
+        };
+        assert_eq!((app.diff_scroll, app.pointed), (6, Some(read)));
+        assert_eq!(app.pointed_lit(w), None, "the first key ends the light");
+        assert_eq!(app.pointed_in(w), Some(1), "the words stay");
         app.on_key(key(KeyCode::Esc));
         assert_eq!((app.zoom, app.reading.sel), (Zoom::Focus(w), Some(2)));
         assert_eq!(app.pointed, None);

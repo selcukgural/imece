@@ -198,7 +198,15 @@ impl App {
     /// behind, the theme previewed, what is seen and kept.
     fn around(&mut self, act: impl FnOnce(&mut Self)) {
         let was = self.place();
+        let pointed = self.pointed;
         act(self);
+        // The first key after the log's line opened a change ends the
+        // light its lines kept.
+        if let Some(p) = &mut self.pointed
+            && pointed == Some(*p)
+        {
+            p.fresh = false;
+        }
         // A key that took the person elsewhere leaves the place behind;
         // `^o` going back does not.
         // Lines of a change being chosen to copy go with the change.
