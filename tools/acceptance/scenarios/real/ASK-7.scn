@@ -1,0 +1,15 @@
+# ASK-7 · A worker's local server: its link on its row, and :ps ends it
+# (real Claude Code).
+start --budget 2
+see any key: close
+key Escape
+key /
+type Hire one worker on the cheap tier and tell it exactly this: start python3 -m http.server 8765 --bind 127.0.0.1 in the background with Bash (nohup, &), then say done with the address http://127.0.0.1:8765/.
+key Enter
+key Escape Escape
+# The server answers (the leader's words name the address before it does).
+until 600 curl -s -o /dev/null http://127.0.0.1:8765/
+wait 60 http://127.0.0.1:8765
+# A server started with nohup leaves its session: :ps does not list it, and
+# it outlives imece (record 147's findings). The case ends it itself.
+sh pkill -f 'http.server 8765'

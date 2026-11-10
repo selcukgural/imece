@@ -1,0 +1,34 @@
+# TEAM-2 · The first task: a cheap worker in its worktree; a message
+# mid-turn taken into the turn under way; the sessions resumed after a
+# restart (real Claude Code).
+start --budget 2
+see any key: close
+key Escape
+key /
+type find() in shelf.py should ignore case. Hire one worker on the cheap tier for it; tell it to keep the change small.
+key Enter
+key Escape Escape
+# The worker starts in a worktree of its own (the setup script's ask says so).
+allow 240 claude-1
+allow 240 ●
+# A message while it works: taken into the turn under way, one turn.
+key /
+type @claude-1 also keep the old tests as they are.
+key Enter
+key Escape Escape
+# Its change comes; its tests ran without asking (record 136).
+allow 600 ready to approve || look first
+asked-none unittest
+sh test -d state/imece/worktrees && ls state/imece/worktrees | grep -q scratch
+stop
+start --budget 2
+see WHERE YOU LEFT OFF
+key Escape
+key /
+type In one sentence: what did claude-1 change?
+key Enter
+allow 240 lead ⇄ you · 
+key Escape Escape
+key J
+key J
+wait 120 goes on in the session it had

@@ -17,6 +17,8 @@ type :ps
 key Enter
 see PROCESSES
 see claude-1
+# The rows come with the first look (every 3 s): the keys wait for them.
+see MiB
 key j
 key d
 see y ends it, any other key keeps it

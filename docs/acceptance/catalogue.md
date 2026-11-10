@@ -157,49 +157,29 @@ bar is cleared.
 
 ## The team on the git path
 
-### TEAM-1 · The leader alone answers from what it reads
+### TEAM-1 · The leader alone answers from what it reads, and writes nothing
 
 - records: 02, 03, 14, 26, 88, 109, 110
 - commands: —
 - tier: real
 - after: INST-4
 
-Steps:
-1. Put `Always end a reply with the word "selvi".` in
-   `$XDG_CONFIG_HOME/imece/instructions.md`; start imece on `shelf`.
-2. `/` and write: `what does this repository do, and how are its tests run?`
-3. Then: `edit README.md yourself and add a line "hello"`.
+Steps: `scenarios/real/TEAM-1.scn`: the person's `instructions.md` asks every reply to end with `selvi`; `--agents 0`; the welcome; a question about the repository; a request that the leader edit `shelf.py` itself; `J J`.
 
-Expect: the leader answers from the files (Python, `python3 -m unittest`,
-from `CLAUDE.md`) and ends with `selvi`; the reply is a line of the
-conversation and of Home, not something to decide; the leader does not
-write (no file of the checkout changes: `git status` clean) and says it
-gives such work to a worker; the journal says the session's confine level.
+Expect: the welcome names Claude Code's real version, signed in; the answer comes from the files (`unittest`) and ends with `selvi` (the person's instructions reach the session, record 110); the leader writes nothing (`git status` clean after both); the journal says `confine standard:`.
 
-### TEAM-2 · The first task: a cheap worker in its worktree
+### TEAM-2 · The first task: a cheap worker, a message mid-turn, the sessions resumed
 
 - records: 05, 10, 20, 36, 61, 62, 63, 64, 85, 97, 105, 136, 135
 - commands: —
 - tier: real
 - after: TEAM-1
 
-Steps:
-1. Write to the leader: `find() should ignore case and match authors too.
-   One worker on the cheap tier.`
-2. While the worker works, write to it `@<worker> also keep the old tests`
-   (a message mid-turn).
-3. Watch Home and the worker's row to the end of its turn.
+Steps: `scenarios/real/TEAM-2.scn`: a task to the leader for one cheap worker; the worker's start; `@claude-1 …` while it works; its change; a stop and a start; a question to the leader; `J J`.
 
-Expect: the leader hires one worker (`hire`, cheap tier: haiku) named by
-the task, not `claude-N`, on Home; its worktree is under
-`$XDG_STATE_HOME/imece/worktrees` and its scratch beside it; the row shows
-`◌ starting…`, then `● ` with `▸` the to-do step, `≡ N/M`, the activity
-bar, `⎇ branch +N −M`; `python3 -m unittest` runs without an ask (the run
-tool or a routine command); the message mid-turn is taken into the turn
-under way: one turn, the row goes idle when it ends, the `done` reaches the
-leader. Quit and start again: the journal says the leader and the worker
-go on in the sessions they had (`--resume` on real Claude Code), and the
-pot reads what it did, not `+?`.
+By hand, in the same run: the row while it works (`▸` the step, `≡ N/M`, `⎇ branch +N −M`, the context fill), the header's usage window once a session said it.
+
+Expect: `claude-1` is hired and works in a worktree with its scratch beside it; the message mid-turn is taken into the turn under way (the change comes, the row rests); no ask was for `unittest` (record 136); after the restart the journal says the session `goes on in the session it had`.
 
 ### TEAM-3 · The change waits, with its verdict, evidence and cost
 
@@ -279,23 +259,16 @@ Steps: `scenarios/TEAM-8.scn`: `--helpers 1`, a task with `[helper]`.
 
 Expect: the helper `claude-1.1` stands under its worker (`└`), writes the tests and leaves; the worker's change waits with them.
 
-### TEAM-14 · The one-shot sessions: a commit message and a second read
+### TEAM-14 · The one-shot sessions: a second read and a commit message
 
 - records: 56, 106
 - commands: :commit, :review
 - tier: real
 - after: TEAM-3
 
-Steps:
-1. A change waiting: `:review`; when its note comes, `R`; `:review` again
-   on the same change.
-2. Apply it; `:commit`.
+Steps: `scenarios/real/TEAM-14.scn`: a cheap worker's docstring change; its check; `:review` (the note above the files), `:review` again; the yes; `:commit`.
 
-Expect: `:review` puts a tool-less session's note above the files (`R`
-whole), a second `:review` of the same change is refused in words, never
-a gate; `:commit` puts `!git commit -m '…'` on the line with a message
-that says what the staged change does (cheap tier), and the same staged
-tree asked again costs nothing; both are in the pot.
+Expect: a tool-less session's note stands above the change's files (`✎ review · …`); a second `:review` is refused (`no review: …`); `:commit` puts `!git commit -m '…'` on the line with a message of the model's, not the stand-in's words.
 
 ### TEAM-9 · Fork a worker to try another way
 
@@ -307,24 +280,18 @@ Steps: `scenarios/TEAM-9.scn`: a task done; `:fork @claude-1`; `J`; `:fork @lead
 
 Expect: a new worker `claude-2` with the line opened `@claude-2 `; the journal says forked; a fork of the leader is refused in words.
 
-### TEAM-10 · Mail, reply numbers and mail held while waiting on you
+### TEAM-10 · Mail held while a worker waits on the person
 
 - records: 58, 107
 - commands: —
 - tier: real
 - after: TEAM-9
 
-Steps:
-1. Give a worker a task whose command needs a yes (TEAM-8's
-   `python3 -c 'print(1)'` style), leave the ask open.
-2. While it waits, have the leader write to it (`ask the worker how far it
-   is`).
-3. Answer the ask; open the conversation `v`; `%` on an answer.
+Steps: `scenarios/real/TEAM-10.scn`: a cheap worker told to run `python3 -c 'print(6*7)'`; its ask left open; the leader asked to send it an inform; `J J`; its focus; the yes.
 
-Expect: while the ask waits the worker's row says `✉ 1 held` and its
-mail starts no turn; `:why` says it waits on you; after the yes the mail
-is delivered; the conversation marks answers with `↩` and `%` goes to the
-message answered and back.
+By hand, in the same run: `v` on the worker and `%` on an answer (reply numbers, `↩`).
+
+Expect: the leader's `[inform]` is in the journal while the ask waits, and the worker's focus says the message is `queued`; after the yes the worker goes on and the round ends.
 
 ### TEAM-11 · A blocked worker is the leader's first
 
@@ -333,15 +300,9 @@ message answered and back.
 - tier: real
 - after: TEAM-10
 
-Steps:
-1. To the leader: `assign a worker: import the books from data/books.csv
-   (the file does not exist; if so it must send blocked, not guess)`.
-2. Watch the leader; if it asks you, answer with a digit.
+Steps: `scenarios/real/TEAM-11.scn`: a cheap worker told to read `data/books.csv`, which does not exist, and to send `blocked` if so.
 
-Expect: the worker sends `blocked`; its row says the leader has it; the
-leader either solves it (journal `lead unblocked … after N min`) or asks
-you with what it tried and the risk, as an item with digits; an answer
-reaches the worker and it goes on; nothing about it is silent.
+Expect: the worker sends `blocked`; the leader solves it (`unblocked`) or it comes to the person as a question in TO DECIDE (`… is still blocked · lead did not solve it`); the journal has the `blocked`.
 
 ### TEAM-12 · Health notices to the leader
 
@@ -443,20 +404,15 @@ Steps: `scenarios/ASK-6.scn`: a worktree no agent owns made under the state with
 
 Expect: `WORKTREES NO AGENT OWNS` lists it; `d` asks for the teardown script first, `a` runs it, the worktree is `removed` and gone from the disk. (The setup script's ask and run are in every scripted case.)
 
-### ASK-7 · A worker's local server: its link and its process
+### ASK-7 · A worker's local server: its link on its row
 
 - records: 45
 - commands: —
 - tier: real
 
-Steps:
-1. To the leader: `a worker should serve the folder with python3 -m
-   http.server 8765 --bind 127.0.0.1 in the background, then say done`;
-   say yes to its ask.
+Steps: `scenarios/real/ASK-7.scn`: a cheap worker told to start `python3 -m http.server 8765` in the background; its asks said yes to; the server answering; `:ps`.
 
-Expect: the worker's row shows `http://127.0.0.1:8765` as a link that
-opens in the browser; the server is a process of its session (SESS-7
-ends it).
+Expect: the server answers on `http://127.0.0.1:8765` and the address shows on the worker's row; the case ends the server itself (a server started with `nohup` leaves its session: record 147's findings).
 
 ## Sessions and what is kept
 
@@ -548,7 +504,7 @@ Steps: `scenarios/SESS-8.scn`: a task done, then `/` `!true`, and the
 terminal closed while imece waits for a key after it.
 
 Expect: imece quits as on `:quit`: nothing that worked in the case's
-directory is running five seconds later (the runner checks this after
+directory is running ten seconds later (the runner checks this after
 every scripted case). Until 2026-11-10 imece spun at full CPU here, deaf
 to SIGTERM.
 
@@ -618,22 +574,18 @@ Steps: `scenarios/CARD-2.scn`: a task with `[cards 2] [stray]`; the asks.
 
 Expect: a change says `outside #…`: its worker wrote a file its card does not own.
 
-### CARD-3 · Attempts, a failed card, what waits on it, withdraw
+### CARD-3 · A card that failed, handed again, then withdrawn
 
 - records: 126, 146
 - commands: —
 - tier: real
 - after: CARD-2
 
-Steps:
-1. To the leader: `assign card X; the worker should say done with outcome
-   failed`; then `hand it again to another worker`; then `withdraw it`.
-2. A card after X (`after`) exists before X fails.
+Steps: `scenarios/real/CARD-3.scn`: a cheap worker on a card `Import books` told to say done with outcome failed; the leader asked to assign it again (a plan's yes if it hires); then to withdraw it; `:board`.
 
-Expect: the card shows ` · try 2` when handed again, `✕` FAILED when it
-failed (no change shown), the card after it waits and its leader is told;
-withdraw puts it in WITHDRAWN, tells its holder, and what waited on it
-says `✕ #X withdrawn` and never begins.
+By hand, in the same run: a card after it (`after`) waits and is told `✕ #1 withdrawn`.
+
+Expect: the card says `#1 failed` (no change); the journal says the card's `try 2`; after the withdrawal the journal says the leader `withdrew` it, Home `1 withdrawn`, and the board shows it marked `–` with its try.
 
 ### CARD-4 · A card's screen, the board, the code map and the timeline
 
@@ -647,76 +599,54 @@ Expect: the board `BOARD · cards: 1 · r ready only`, `TO REVIEW (1)`; the code
 
 ## Lonca
 
-### LONCA-1 · Sign in, import, and the policy signed
+### LONCA-1 · Import into Lonca, the policy signed, the Lonca window
 
 - records: 115, 116, 117, 121
 - commands: :lonca
 - tier: real
 
-Steps:
-1. The run's own daemon (README); `imece doctor` names Lonca.
-2. On `shelf`: `:lonca login`, then `:lonca import`; read the window (the
-   checkout as `~/…`, branch, commit); `a`.
-3. `:lonca`.
+Steps: `scenarios/real/LONCA-1.scn`: a daemon of the case's own (`bg lonca daemon`, its own `LONCA_HOME` and identities); `:lonca import lonca-one`, `a`; `J J`; `:lonca`; `:lonca import` again; `lonca policy show`.
 
-Expect: the import runs `lonca` as a child with a spinner, then the
-project is on Lonca; the policy is signed with `unobserved_critical =
-"escalate"` and `mcp_servers = ["imece"]` (the journal says so);
-`:lonca` opens the Lonca window (state, `WAITING FOR A HUMAN · N`,
-`HELD · N`); a second import is refused in words.
+Expect: the header says `lonca lonca-one …`; the journal `went into Lonca as repository lonca-one`; the window `is on Lonca repository lonca-one: trunk …`, `WAITING FOR A HUMAN · 0`, `HELD · 0`; a second import is refused (`… already`); the policy imece signed holds `escalate`.
 
-### LONCA-2 · Workers in workspaces, leases on the map
+### LONCA-2 · A worker in a workspace: its proposal is the Δ
 
 - records: 119, 123
 - commands: —
 - tier: real
 - after: LONCA-1
 
-Steps:
-1. To the leader: `plan lending in two cards, the second after the
-   first`; `a` on the plan.
-2. While they work: `:code`.
+Steps: `scenarios/real/LONCA-2.scn`: its own daemon; an import; a cheap worker's change; `:lonca`; the change opened.
 
-Expect: each worker works in a Lonca workspace (its focus's folder says
-so; no git run in it by imece); `:code` shows only the files held, each
-worker's lease and `· name` for others; a worker proposes before `done`.
+By hand, in the same run: `:code` while a worker holds a lease (its file, `· name` for others).
 
-### LONCA-3 · The Δ on Lonca: verdict, approve, reject with a reason
+Expect: the window says `WAITING FOR A HUMAN · 1` and `Δ shown`; the change says `nothing runs after your yes` and, from Lonca, why it needs the person (`needs your yes: nobody watched this session's tools …`).
+
+### LONCA-3 · The Δ on Lonca: the yes lands it on trunk
 
 - records: 120, 122, 125, 127
 - commands: :checks
 - tier: real
 - after: LONCA-2
 
-Steps:
-1. Set `[verification]` `test = "python3 -m unittest"` with
-   `lonca policy set` (README).
-2. The first proposal: read the verdict (`after your yes Lonca runs:
-   tests`), `a`.
-3. The second: `r`, write a reason, enter.
-4. `:checks tests` on the next change, then `a`.
+Steps: `scenarios/real/LONCA-3.scn`: its own daemon; an import; a cheap worker's change; its verdict; `gd` `a`; `J J`.
 
-Expect: the Δ is the newest pending proposal, shown once its worker's turn
-is over; the verdict names what runs after the yes, overlaps with another
-proposal and a stale base; `a` approves (journal `on trunk as …`, the
-queue's checks with exit codes); `r` asks for the reason first and the
-worker hears it; `:checks` changes what the yes asks for.
+By hand, in the same run: `r` on another proposal, its reason written (the worker hears it); `[verification]` set with `lonca policy set` and the verdict naming it; `:checks NAMES` on a change.
 
-### LONCA-4 · Behind trunk and `:sync`
+Expect: the verdict says what runs after the yes (`nothing runs after your yes`, or Lonca's checks by name); the yes lands it: the journal says `on trunk as …`.
+
+### LONCA-4 · Behind trunk, and :sync
 
 - records: 118
 - commands: :sync
 - tier: real
 - after: LONCA-3
 
-Steps:
-1. After a landing the header says `↓N`; `:sync`.
-2. Make a commit of your own in the checkout; land another change;
-   `:sync`.
+Steps: `scenarios/real/LONCA-4.scn`: its own daemon; an import; a cheap worker's change, approved; `:sync`.
 
-Expect: `:sync` fetches and fast-forwards the checkout (`git log` shows the
-landed commits), `↓` goes; with commits of your own it says the branch and
-trunk went apart and changes nothing of yours.
+By hand, in the same run: a commit of your own in the checkout first: `:sync` says the branch and trunk went apart and changes nothing of yours.
+
+Expect: the header says `↓1` once it landed; `:sync` takes it away and the checkout's log has the landed commit.
 
 ### LONCA-5 · The daemon goes away and comes back
 
@@ -725,13 +655,11 @@ trunk went apart and changes nothing of yours.
 - tier: real
 - after: LONCA-4
 
-Steps:
-1. Stop the daemon; wait 20 s; ask the leader to hire.
-2. Start the daemon again.
+Steps: `scenarios/real/LONCA-5.scn`: its own daemon; an import; the daemon ended (`pkill`); started again; `J J`.
 
-Expect: the header says `⌀ no lonca` after three looks; hire, fork, apply
-and reject are refused in words; when it is back the journal says so and
-the work goes on.
+By hand, in the same run: a hire asked for while it is gone is refused in words.
+
+Expect: the header says `no lonca` while it is gone and `lonca lonca-five` again after; the journal says the repository `can not be read` and then `answers again`.
 
 ## The screen
 

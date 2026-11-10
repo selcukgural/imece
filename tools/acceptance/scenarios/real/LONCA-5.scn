@@ -1,0 +1,24 @@
+# LONCA-5 · The daemon goes away and comes back.
+# A Lonca daemon of the case's own, so cases run side by side.
+env LONCA_HOME $ACC_CASE/lonca
+# Its own identities too: the run's key, no session of another daemon's.
+env LONCA_HUMANS $ACC_CASE/humans
+sh mkdir -p lonca humans && cp "$ACC"/humans/*.key humans/ && cp "$ACC"/humans/default humans/ 2>/dev/null; true
+bg lonca daemon --home $ACC_CASE/lonca --no-notify --no-proxy
+until 30 test -S lonca/lonca.sock
+start --budget 2
+see any key: close
+key Escape
+type :lonca import lonca-five
+key Enter
+see IMPORT INTO LONCA
+key a
+wait 120 lonca lonca-five 
+sh pkill -f "lonca daemon --home $ACC_CASE/lonca"
+wait 120 no lonca
+bg lonca daemon --home $ACC_CASE/lonca --no-notify --no-proxy
+wait 120 lonca lonca-five
+key J
+key J
+see can not be read
+see answers again

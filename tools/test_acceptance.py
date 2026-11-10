@@ -164,6 +164,16 @@ class CheckTest(unittest.TestCase):
         # A script with no case.
         (scripts / "TEAM-8.scn").write_text("start\n")
         self.assertIn("TEAM-8.scn: no case TEAM-8", refusal(self.root))
+        (scripts / "TEAM-8.scn").unlink()
+        # A real case's script goes under real/, and only there.
+        (scripts / "TEAM-1.scn").write_text("start\n")
+        self.assertIn("TEAM-1.scn: a real case's script goes in", refusal(self.root))
+        (scripts / "TEAM-1.scn").unlink()
+        (scripts / "real").mkdir()
+        (scripts / "real" / "TEAM-1.scn").write_text("start\nallow 60 words\n")
+        self.assertEqual(refusal(self.root), "")
+        (scripts / "real" / "TEAM-2.scn").write_text("start\n")
+        self.assertIn("real/TEAM-2.scn: a stand-in case's script goes in", refusal(self.root))
 
     def test_a_heading_not_of_a_case_is_refused(self):
         world(self.root, CASES.replace("### TEAM-1 · The", "### TEAM-1 The"))

@@ -97,8 +97,8 @@ tools/acceptance/drive.py run --jobs 4 --report docs/acceptance/runs/vX.Y.Z.md
   with `sh`). Decide on the first thing to decide with `gd`; `W` opens it.
 - Each case runs in `$ACC/s/<ID>` with its own state and copy of the
   checkouts; `--jobs` runs several at once. At its end its terminal goes,
-  and anything still working in its directory five seconds later fails
-  it. A failure's screen is in `$ACC/out/<ID>.txt`, every key in
+  and anything still working in its directory ten seconds later (fifteen
+  for a real case) fails it. A failure's screen is in `$ACC/out/<ID>.txt`, every key in
   `$ACC/drive.log`.
 - The 49 scripts (48 stand-in cases and the demo's) take about 95 s at 6
   jobs, most of it TEAM-12's minute of waiting; 15 cases stay real.
@@ -107,6 +107,33 @@ tools/acceptance/drive.py run --jobs 4 --report docs/acceptance/runs/vX.Y.Z.md
   the job's artifact. A change that breaks a script is fixed in the same
   pull request, the script too when the screen's words changed on
   purpose.
+
+## Real cases
+
+```sh
+tools/acceptance/setup.sh /tmp/imece-acc          # a world without --stand-in
+. /tmp/imece-acc/env.sh
+lonca human keygen acc                            # once: the Lonca cases' key
+tools/acceptance/drive.py run --real --jobs 4     # scenarios/real/*.scn
+```
+
+- 12 of the 15 real cases are scripts under `scenarios/real/`, played on
+  Claude Code itself (sonnet leads, haiku works). `run --real` refuses a
+  stand-in's world and plain `run` a real one: a stand-in's script never
+  spends, a real one never proves nothing.
+- A real model takes its own way, so a real script waits long (`allow 600
+  …`), accepts either of two right ends (`A || B`), says yes to whatever
+  it asks meanwhile (`allow`, `until`) and checks afterwards what must not
+  have asked (`asked-none unittest`). Words it waits for are imece's, never
+  the model's.
+- Each Lonca case runs a daemon of its own (`bg lonca daemon --home …`,
+  its own `LONCA_HOME` and `LONCA_HUMANS` with the run's key), so they run
+  side by side; the runner ends it with the case.
+- What a script can not do is the case's "By hand" line, in the same run:
+  INST-5, TEAM-13 and EYE-1 are by hand whole.
+- Measured 2026-11-11: each case a few cents; the 12 together about $0.50
+  and 10 minutes at 4 jobs (TEAM-11 and CARD-3 the longest). Each passed
+  row of the report says what its case spent.
 
 ## The run's world
 
@@ -152,7 +179,8 @@ tools/acceptance/drive.py snap imece
    Lonca's, the terminal and its size.
 3. The scripted cases first, in a stand-in world (above) with `--report`:
    their rows are written by the run. Then the `auto` cases, then the
-   `real` ones in a world of their own (below), in order. Each row: `pass`; `fail` with what was seen;
+   real scripts in a world of their own (`run --real --report`), then the
+   "By hand" lines and the cases by hand. Each row: `pass`; `fail` with what was seen;
    `skip` only where the case has `skip-if`, with why. What rubbed but did
    not fail goes under "Findings" as the field entries do; a field entry
    for the run goes in `docs/field/` the same day.

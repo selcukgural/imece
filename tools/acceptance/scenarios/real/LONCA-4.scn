@@ -1,0 +1,29 @@
+# LONCA-4 · Behind trunk after a landing, and :sync brings the checkout up.
+# A Lonca daemon of the case's own, so cases run side by side.
+env LONCA_HOME $ACC_CASE/lonca
+# Its own identities too: the run's key, no session of another daemon's.
+env LONCA_HUMANS $ACC_CASE/humans
+sh mkdir -p lonca humans && cp "$ACC"/humans/*.key humans/ && cp "$ACC"/humans/default humans/ 2>/dev/null; true
+bg lonca daemon --home $ACC_CASE/lonca --no-notify --no-proxy
+until 30 test -S lonca/lonca.sock
+start --budget 2
+see any key: close
+key Escape
+type :lonca import lonca-four
+key Enter
+see IMPORT INTO LONCA
+key a
+wait 120 lonca lonca-four 
+key /
+type Add a function count_authors() to shelf.py's Shelf returning how many authors there are, with a test. One worker on the cheap tier.
+key Enter
+key Escape Escape
+allow 900 ready to approve || look first
+key g d
+key a
+allow 300 ↓1
+type :sync
+key Enter
+gone ↓1
+sh git -C repos/shelf log --oneline | wc -l
+says 2

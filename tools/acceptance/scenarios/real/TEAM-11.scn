@@ -1,0 +1,14 @@
+# TEAM-11 · A worker that is blocked is its leader's first (real Claude
+# Code): the leader solves it, or asks the person with what it tried.
+start --budget 2
+see any key: close
+key Escape
+key /
+type Hire one worker on the cheap tier and tell it: read data/books.csv and add its books to shelf.py's sample in cli.py. The file does not exist; if so the worker must send you a message of type blocked saying so, and not guess.
+key Enter
+key Escape Escape
+# The leader solves it, or it comes to the person as a question.
+allow 900 questions || unblocked
+key J
+key J
+see blocked

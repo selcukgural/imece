@@ -1,0 +1,33 @@
+# TEAM-10 · Mail held while a worker waits on the person, delivered after
+# the yes (real Claude Code).
+start --budget 2
+see any key: close
+key Escape
+key /
+type Hire one worker on the cheap tier and tell it exactly this: run the shell command python3 -c 'print(6*7)' with Bash, then say done with its output.
+key Enter
+key Escape Escape
+# The setup script's yes; then the command's ask stays open.
+wait 300 run .imece/worktree-setup.sh
+key g d
+key a
+wait 300 run Bash: python3 -c
+key /
+type Send claude-1 an inform message asking how far it is. Do nothing else.
+key Enter
+key Escape Escape
+# The leader's inform is held with the worker that waits on the person.
+key J
+key J
+wait 300 [inform]
+key Escape
+# The worker's focus says the message waits with it.
+type :goto claude-1
+key Enter
+key Enter
+see queued
+key Escape
+key g d
+key a
+# It wrote nothing: no change, the round is over.
+allow 300 ALL DONE || ready to approve || look first

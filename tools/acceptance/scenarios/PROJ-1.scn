@@ -10,7 +10,8 @@ type count words in tally.js
 key Enter
 key Escape Escape
 # npm test needs no yes (record 136): the change comes with no ask.
-wait 60 count words in tall
+# The change itself, not the leader's words that name the task.
+wait 60 2 files +2 −0
 gone permissions
 see AT WORK
 key ]

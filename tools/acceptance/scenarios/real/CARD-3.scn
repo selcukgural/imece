@@ -1,0 +1,38 @@
+# CARD-3 · A card that failed, handed again, then withdrawn (real Claude
+# Code: the leader does each with its own tools when asked).
+start --budget 3
+see any key: close
+key Escape
+key /
+type Hire one worker on the cheap tier and assign it a card titled Import books, with this task: say done with outcome failed at once, writing nothing.
+key Enter
+key Escape Escape
+allow 600 failed
+key /
+type Assign card #1 again, to a new worker on the cheap tier, with the same task.
+key Enter
+key Escape Escape
+# A second hire waits for the plan's yes.
+# The leader hands it again: to the same worker, or a new one after a
+# plan's yes; either way the journal says the try.
+key J
+key J
+allow 600 try 2 || planned 1 card
+key Escape
+key g d
+key a
+key J
+key J
+allow 600 try 2
+key Escape
+key /
+type Withdraw card #1, saying it is not needed.
+key Enter
+key Escape Escape
+allow 600 withdrew
+see 1 withdrawn
+# On the board it stands done, marked – and its try.
+type :board
+key Enter
+see · try 2
+key Escape
