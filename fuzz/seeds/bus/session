@@ -1,0 +1,8 @@
+{"id":0,"jsonrpc":"2.0","method":"initialize","params":{"capabilities":{},"protocolVersion":"2025-06-18"}}
+{"jsonrpc":"2.0","method":"notifications/initialized"}
+{"id":1,"jsonrpc":"2.0","method":"tools/list","params":{}}
+{"id":"a","jsonrpc":"2.0","method":"tools/call","params":{"arguments":{"body":"ok","to":"lead","type":"done"},"name":"send"}}
+{"id":2,"jsonrpc":"2.0","method":"tools/call","params":{"name":"board"}}
+{"id":3,"jsonrpc":"2.0","method":"tools/call","params":{"arguments":{},"name":"exec"}}
+{"id":4,"jsonrpc":"2.0","method":"ping","params":{}}
+{"id":5,"jsonrpc":"2.0","method":"resources/list","params":{}}
