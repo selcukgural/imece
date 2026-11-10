@@ -72,7 +72,7 @@ Nothing is said while a card still waits on another whose change waits for your 
 
 ## When a whole team stops
 
-Some stops are no leader's to solve: the pot is spent, the team took its 12 turns on each other's messages since you last spoke, Lonca does not answer, the leader's own session ended. Each comes straight to you as one stop of its project, on Home's first line and as a row first in TO DECIDE, with who waits behind it and imece's own choices as digits.
+Some stops are no leader's to solve: the pot is spent, the team took its 12 turns on each other's messages since you last spoke, your Claude usage limit is reached, Lonca does not answer, the head itself (the leader, or a solo) stopped: its session ended, or its turn hangs or failed. Each comes straight to you as one stop of its project, on Home's first line and as a row first in TO DECIDE, with who waits behind it and imece's own choices as digits.
 
 ```
  ■ STOPPED  shop-api · the pot is spent · 3 wait behind it · 2 min
@@ -88,11 +88,14 @@ Some stops are no leader's to solve: the pot is spent, the team took its 12 turn
 | `the pot is spent` | the pot is spent and something waits on it: mail not delivered, a wake or a retry not taken, a message the bus refused | `1` raise it by $50, `2` by $20, `3` rest here (the row goes after everything else waiting, the line stays); `:budget USD` for another amount |
 | `the team took 12 turns on messages since you last spoke` | an agent took its 12 turns on its teammates' messages and something waits on it: a wake, a message the bus refused | `1` let it go on (12 more); writing to anyone of the team does the same |
 | `Lonca does not answer` | the project is on Lonca and its daemon does not answer, is signed out or the repository is frozen (the line says why) | `1` look again now, `2` open the [Lonca window](../concepts/projects.md#on-lonca) |
-| `lead's session ended` | the leader's session ended; its workers can not reach it | `1` start it again where it left off |
+| `your Claude usage limit is reached` | a turn met the plan's usage limit; the line says when it `opens 17:00` (from Claude Code's own windows), else when `imece tries again at 17:15` (15 minutes on) | `1` try again now; at that time imece tries the turns it cut by itself. While it holds no mail is delivered, no wake or retry is taken and no card offered; your own word still goes. One line for the team, not an item per agent |
+| `lead's session ended` | the head's session ended (a leader's, or a solo's); its workers can not reach it | `1` start it again where it left off |
+| `lead's turn gives no sign of life` | the head is mid-turn and its newest trace line is as old as [`:health stall`](../reference/commands.md#health-stallidleloop-value) (10 minutes while it is off); the line says its last call (`last: Bash "cargo test"`) | `1` end the turn: its session ends, cutting the turn, and resumes where it left off, told not to run what hung the same way again |
+| `lead's turn failed` | the head's turn failed with nothing imece tries again, its session alive; until its next turn | `1` tell it to go on, in the session it has |
 
-The preview names who waits behind it and with what (`2 messages for it, not delivered`, `its retry after an API error`, `can not reach lead`) and what each choice does. `enter` opens what stopped (the Lonca window, else the leader's work), `s` lets it rest like `3`. The header marks the project with `■` and counts the stop in `! N to decide`; the tab shows stuck. In another window [`:notify`](../reference/commands.md#notify-offbelltextpush) says it once, loud: `imece · shop-api stopped: the pot is spent`. The journal says when a team stopped and when it goes on again (`shop-api: the team goes on after 4 min: the pot has room again`).
+The preview names who waits behind it and with what (`2 messages for it, not delivered`, `its retry after an API error`, `its turn, tried again when the limit opens`, `can not reach lead`) and what each choice does. `enter` opens what stopped (the Lonca window, else the leader's work), `s` lets it rest like `3`. The header marks the project with `■` and counts the stop in `! N to decide`; the tab shows stuck. In another window [`:notify`](../reference/commands.md#notify-offbelltextpush) says it once, loud: `imece · shop-api stopped: the pot is spent`. The journal says when a team stopped and when it goes on again (`shop-api: the team goes on after 4 min: the pot has room again`).
 
-imece lifts none of these by itself: it never raises the pot, lets the team go on or starts the leader unasked. A leader that stopped is the stop's row, not a stuck row among those at work.
+imece lifts none of these by itself: it never raises the pot, lets the team go on or starts the head unasked. The usage limit is the one it waits out: when it opens, the turns it cut are tried again, and a turn that goes through ends the stop. An agent whose turn the limit cut says so on its row, `■ usage limit · again in 12 min`. A leader whose session ended is the stop's row, not a stuck row among those at work.
 
 ## The leader's line
 

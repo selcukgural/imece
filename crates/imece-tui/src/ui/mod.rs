@@ -1515,6 +1515,15 @@ fn doing_status(lang: Lang, w: &World, a: &Agent) -> Vec<Span<'static>> {
             add_quote(&mut spans, &it.detail, fg(pal().bad));
             spans
         }
+        // A turn the usage limit cut (attempt 0): its team's stop says
+        // the rest (record 146).
+        Status::Idle if let Some(r) = a.retry.filter(|r| r.attempt == 0) => {
+            let left = r.at.saturating_sub(w.tick) * SECONDS_PER_TICK;
+            vec![Span::styled(
+                fill(t.limit_row, &[&words::took_words(lang, left * 1000)]),
+                fg(pal().warn),
+            )]
+        }
         Status::Idle if let Some(r) = a.retry => {
             let left = r.at.saturating_sub(w.tick) * SECONDS_PER_TICK;
             vec![Span::styled(

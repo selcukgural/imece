@@ -1336,6 +1336,8 @@ impl Live {
                 }
                 if let AgentEvent::TurnDone { ok: true, .. } = e {
                     self.renewed[id] = false;
+                    // A turn went through: the usage limit is open again.
+                    w.limit_lifted();
                 }
                 self.turned[id] = true;
                 let done = ends.min(self.inflight[id].len());
@@ -1547,6 +1549,7 @@ impl Live {
                 && !a.gone
                 && self.woken[id] < MAX_WOKEN
                 && !self.over_budget(w)
+                && !w.limit_holds()
                 && !w.waits_on_person(id)
             {
                 self.woken[id] += 1;
@@ -1556,7 +1559,7 @@ impl Live {
             }
         }
         for id in w.retries_due() {
-            if self.turns[id] == 0 && !self.over_budget(w) {
+            if self.turns[id] == 0 && !self.over_budget(w) && !w.limit_holds() {
                 self.retry(w, id);
             }
         }
@@ -1573,14 +1576,11 @@ impl Live {
             return;
         };
         let t = w.tick;
-        w.agents[id].trace(
-            t,
-            format!(
-                "retry {}/{} after an API error",
-                r.attempt,
-                RETRY_TICKS.len()
-            ),
-        );
+        let said = match r.attempt {
+            0 => "retry after the usage limit".to_string(),
+            n => format!("retry {n}/{} after an API error", RETRY_TICKS.len()),
+        };
+        w.agents[id].trace(t, said);
         if let Err(why) = self.prompt(w, id, RETRY_PROMPT.into(), None) {
             apply(w, id, AgentEvent::Stopped(why), self.spent_before[id]);
         }

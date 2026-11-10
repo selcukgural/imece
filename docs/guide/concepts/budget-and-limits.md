@@ -32,7 +32,7 @@ The header carries the open projects, what is to decide, the pot (spent of the b
 
 ## Usage windows
 
-A team on a Claude subscription can be stopped by the plan's five-hour or weekly limit long before the pot runs dry. Claude Code sessions report their account's windows. imece keeps one per window length and shows the tightest after the pot, `claude 7d: 12% left`, in the attention colour from 90% used, with the time to the reset while it is ahead. Nothing stops a turn before a window is full: Claude Code refuses it, and imece shows the refusal. Windows are not kept between runs.
+A team on a Claude subscription can be stopped by the plan's five-hour or weekly limit long before the pot runs dry. Claude Code sessions report their account's windows. imece keeps one per window length and shows the tightest after the pot, `claude 7d: 12% left`, in the attention colour from 90% used, with the time to the reset while it is ahead. Nothing stops a turn before a window is full: Claude Code refuses it, and that refusal is one stop of the team on [Home](../screen/home.md#when-a-whole-team-stops), `■ STOPPED shop-api · your Claude usage limit is reached · opens 17:00`. Until then no mail is delivered, no wake, retry or card offer is taken; at that time imece tries the cut turns again by itself, `1` does it now, and your own word still goes. Windows are not kept between runs.
 
 ## What counts and how
 

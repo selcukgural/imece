@@ -72,7 +72,7 @@ Değişikliği evetinizi bekleyen bir karta bağlı bir kart hâlâ bekliyorsa b
 
 ## Bütün ekip durunca {#butun-ekip-durunca}
 
-Bazı duruşları lider çözemez: bütçe bitmiştir, ekip siz son yazdığınızdan beri birbirinin iletileriyle 12 turunu almıştır, Lonca yanıt vermiyordur, liderin kendi oturumu sona ermiştir. Her biri doğrudan size gelir, projesinin tek bir duruşu olarak: ana ekranın ilk satırında ve KARAR BEKLEYEN'de en üstte bir satır olarak, arkasında kimin beklediğiyle ve imece'nin kendi seçenekleri rakamlarla.
+Bazı duruşları lider çözemez: bütçe bitmiştir, ekip siz son yazdığınızdan beri birbirinin iletileriyle 12 turunu almıştır, Claude kullanım sınırına ulaşılmıştır, Lonca yanıt vermiyordur, başın kendisi (lider ya da bir solo) durmuştur: oturumu sona ermiştir ya da turunda hiç ses yoktur ya da turu başarısız olmuştur. Her biri doğrudan size gelir, projesinin tek bir duruşu olarak: ana ekranın ilk satırında ve KARAR BEKLEYEN'de en üstte bir satır olarak, arkasında kimin beklediğiyle ve imece'nin kendi seçenekleri rakamlarla.
 
 ```
  ■ DURDU  shop-api · bütçe bitti · arkasında 3 iş bekliyor · 2 dk
@@ -88,11 +88,14 @@ Bazı duruşları lider çözemez: bütçe bitmiştir, ekip siz son yazdığın�
 | `bütçe bitti` | bütçe bitmiştir ve ona bekleyen bir şey vardır: teslim edilmemiş ileti, alınmamış bir uyandırma ya da yeniden deneme, otobüsün reddettiği bir ileti | `1` $50 artır, `2` $20 artır, `3` burada kalsın (satır bekleyen her şeyin ardına geçer, üstteki satır kalır); başka bir tutar için `:budget USD` |
 | `sen son yazdığından beri ekip iletilerle 12 tur aldı` | bir ajan takım arkadaşlarının iletileriyle 12 turunu almıştır ve ona bekleyen bir şey vardır: bir uyandırma, otobüsün reddettiği bir ileti | `1` sürsün (12 tur daha); ekipten herhangi birine yazmak da aynısını yapar |
 | `Lonca yanıt vermiyor` | proje Lonca'dadır ve daemon'ı yanıt vermiyordur, oturumu kapalıdır ya da depo dondurulmuştur (satır nedenini söyler) | `1` şimdi yeniden bak, `2` [Lonca penceresini](../concepts/projects.md#loncada) aç |
-| `lead oturumu sona erdi` | liderin oturumu sona ermiştir; işçileri ona ulaşamaz | `1` kaldığı yerden yeniden başlasın |
+| `Claude kullanım sınırına ulaşıldı` | bir tur planın kullanım sınırına takılmıştır; satır ne zaman `17:00 açılıyor` olduğunu (Claude Code'un kendi pencerelerinden), yoksa `imece 17:15 yeniden dener` (15 dakika sonra) söyler | `1` şimdi yeniden dene; o saatte imece sınırın kestiği turları kendisi dener. Sürdükçe hiçbir ileti teslim edilmez, uyandırma ya da yeniden deneme alınmaz, kart önerilmez; sizin kendi sözünüz yine gider. Ekip için tek satır, ajan başına bir öğe değil |
+| `lead oturumu sona erdi` | başın oturumu sona ermiştir (liderin ya da bir solonun); işçileri ona ulaşamaz | `1` kaldığı yerden yeniden başlasın |
+| `lead turunda hiç ses yok` | baş tur ortasındadır ve en yeni iz satırı [`:health stall`](../reference/commands.md#health-stallidleloop-value) kadar eskidir (kapalıyken on dakika); satır son çağrısını söyler (`son: Bash "cargo test"`) | `1` turu bitir: oturumu biter, tur kesilir, kaldığı yerden sürer; takılanı aynı biçimde yeniden çalıştırmaması söylenir |
+| `lead turu başarısız oldu` | başın turu imece'nin yeniden denemediği bir nedenle başarısız olmuştur, oturumu yaşar; bir sonraki turuna dek | `1` sürsün desin, elindeki oturumda |
 
-Önizleme arkasında kimin, neyle beklediğini (`2 ileti ona teslim edilmedi`, `API hatasından sonraki yeniden denemesi`, `lead ile konuşamıyor`) ve her seçeneğin ne yaptığını söyler. `enter` durduran şeyi açar (Lonca penceresini, yoksa liderin işini), `s` onu `3` gibi bekletir. Başlık projeyi `■` ile işaretler ve duruşu `! N karar`'a sayar; sekme takılmış gösterir. Başka bir penceredeyseniz [`:notify`](../reference/commands.md#notify-offbelltextpush) bunu bir kez, yüksek sesle söyler: `imece · shop-api durdu: bütçe bitti`. Günlük, ekibin ne zaman durduğunu ve ne zaman yeniden sürdüğünü yazar (`shop-api: ekip 4 dk sonra sürüyor: bütçede yine yer var`).
+Önizleme arkasında kimin, neyle beklediğini (`2 ileti ona teslim edilmedi`, `API hatasından sonraki yeniden denemesi`, `turu, sınır açılınca yeniden denenecek`, `lead ile konuşamıyor`) ve her seçeneğin ne yaptığını söyler. `enter` durduran şeyi açar (Lonca penceresini, yoksa liderin işini), `s` onu `3` gibi bekletir. Başlık projeyi `■` ile işaretler ve duruşu `! N karar`'a sayar; sekme takılmış gösterir. Başka bir penceredeyseniz [`:notify`](../reference/commands.md#notify-offbelltextpush) bunu bir kez, yüksek sesle söyler: `imece · shop-api durdu: bütçe bitti`. Günlük, ekibin ne zaman durduğunu ve ne zaman yeniden sürdüğünü yazar (`shop-api: ekip 4 dk sonra sürüyor: bütçede yine yer var`).
 
-imece bunların hiçbirini kendiliğinden kaldırmaz: bütçeyi artırmaz, ekibi sürdürmez, lideri sorulmadan başlatmaz. Duran bir lider duruşun satırıdır; çalışanlar arasında takılmış bir satır değil.
+imece bunların hiçbirini kendiliğinden kaldırmaz: bütçeyi artırmaz, ekibi sürdürmez, başı sorulmadan başlatmaz. Bekleyip geçirdiği tek duruş kullanım sınırıdır: açılınca kestiği turlar yeniden denenir, geçen bir tur duruşu bitirir. Turunu sınırın kestiği bir ajan bunu satırında söyler: `■ kullanım sınırı · 12 dk sonra yeniden`. Oturumu sona eren bir lider duruşun satırıdır; çalışanlar arasında takılmış bir satır değil.
 
 ## Liderin satırı
 

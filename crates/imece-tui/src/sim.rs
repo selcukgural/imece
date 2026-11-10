@@ -339,8 +339,31 @@ const CAP_EVERY: u64 = 900;
 /// Every this many ticks a demo leader's session ends (record 146, part
 /// 2): the person starts it again from the stop.
 const LEAD_STOP_EVERY: u64 = 1_300;
+/// Every this many ticks the demo's plan reaches its usage limit for
+/// [`LIMIT_TICKS`] (record 146, part 2b): each team's leader meets it, as
+/// a live turn does, and the team waits for it to open.
+const LIMIT_EVERY: u64 = 1_700;
+const LIMIT_TICKS: u64 = 60;
+/// Claude Code's words when the plan's usage limit is reached.
+const USAGE_LIMIT: &str = "Claude usage limit reached";
+/// Every this many ticks a demo leader's turn fails with nothing to try
+/// again, its session alive (record 146, part 2b).
+const HEAD_FAIL_EVERY: u64 = 1_100;
+/// Every this many ticks a demo leader's turn hangs: it works and says
+/// nothing for the stall's minutes, until the person ends it.
+const HUNG_EVERY: u64 = 2_300;
+/// What a hung demo leader runs.
+const HUNG_ON: &str = "Bash \"cargo test --workspace\"";
 /// What a demo worker whose change failed its tests in the queue is told.
 const FIX_TESTS: &str = "fix the failing test and propose again";
+
+/// What the clock makes happen to a demo leader's next turn.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum HeadDue {
+    Fail,
+    Limit,
+    Hang,
+}
 
 /// What fake agents say, in the person's language.
 struct Content {
@@ -1032,6 +1055,12 @@ struct Extras {
     /// The projects whose team took its turns on messages since the
     /// person last spoke ([`CAP_EVERY`]).
     capped: HashSet<ProjectId>,
+    /// The projects whose leader's turn hangs ([`HUNG_EVERY`]) until the
+    /// person ends it, with the tick of its last line.
+    hung: HashMap<ProjectId, u64>,
+    /// What the clock has made due to a project's leader and waits for it
+    /// to be idle: its turn fails, the limit, a hang (record 146, 2b).
+    head_due: HashMap<ProjectId, Vec<HeadDue>>,
     /// Answers workers gave to the person's own lines with no card: each
     /// [`OWN_CHANGE_EVERY`]th comes with a change (record 126).
     own_answers: u32,
@@ -1533,6 +1562,12 @@ impl Sim {
         if w.agents[id].role == Role::Leader && self.block_answered(w, id, text) {
             return Ok(());
         }
+        // The person's word on a stop of the leader's own (record 146): it
+        // goes on where it left off and plans nothing new for it.
+        if w.agents[id].role == Role::Leader && crate::halt::is_again(text) {
+            self.went_on(w, id);
+            return Ok(());
+        }
         if w.agents[id].role == Role::Leader {
             w.plans.push(Plan {
                 project: w.agents[id].project,
@@ -1589,14 +1624,11 @@ impl Sim {
             return;
         };
         let a = &mut w.agents[id];
-        a.trace(
-            t,
-            format!(
-                "retry {}/{} after an API error",
-                r.attempt,
-                RETRY_TICKS.len()
-            ),
-        );
+        let said = match r.attempt {
+            0 => "retry after the usage limit".to_string(),
+            n => format!("retry {n}/{} after an API error", RETRY_TICKS.len()),
+        };
+        a.trace(t, said);
         a.set_status(Status::Working, t);
         if a.activity.is_none() {
             a.activity = Some(String::new());
@@ -2590,8 +2622,9 @@ impl Sim {
                 false => self.answer(w, r.agent, &r.text),
             }
         }
-        // A spent pot tries nothing again, as live's (record 146).
-        if w.spent() < w.budget {
+        // A spent pot or the usage limit tries nothing again, as live's
+        // (record 146).
+        if w.spent() < w.budget && !w.limit_holds() {
             for id in w.retries_due() {
                 self.retry(w, id);
             }
@@ -2686,6 +2719,12 @@ impl Sim {
             text: text.into(),
         });
         w.replied(id, text);
+        // A turn went through after the limit's time: it is open again
+        // (one under way before it holds in the demo, as live's would
+        // have failed).
+        if !w.limit_holds() {
+            w.limit_lifted();
+        }
         let a = &mut w.agents[id];
         a.trace(t, format!("result ok {}", dollars(a.cost)));
         a.tries = 0;
@@ -3664,11 +3703,15 @@ impl Sim {
             let said = crate::i18n::fill(self.content.posted, &[&n, &cards.join(", ")]);
             self.answer(w, leader, &said);
         }
-        // A spent pot, a team that took its turns or a leader whose
-        // session ended starts no new turns (record 146).
+        // A spent pot, a team that took its turns, the usage limit or a
+        // leader whose session ended, whose turn hangs or failed starts no
+        // new turns (record 146).
         if w.spent() >= w.budget
             || self.extras.capped.contains(&project)
+            || self.extras.hung.contains_key(&project)
+            || w.limit_holds()
             || w.agents[leader].status == Status::Stopped
+            || w.halts.failed.iter().any(|f| f.agent == leader)
         {
             return;
         }
@@ -4468,6 +4511,49 @@ impl Sim {
             {
                 self.stop(w, leader);
             }
+            if let Some(&before) = self.extras.hung.get(&p) {
+                Self::still_hung(w, leader, before);
+            }
+            for (every, due) in [
+                (HEAD_FAIL_EVERY, HeadDue::Fail),
+                (LIMIT_EVERY, HeadDue::Limit),
+                (HUNG_EVERY, HeadDue::Hang),
+            ] {
+                if t > 0 && t.is_multiple_of(every) && !self.extras.calm {
+                    self.extras.head_due.entry(p).or_default().push(due);
+                }
+            }
+            // Each in turn, once the leader is idle and nothing of the
+            // kind holds already.
+            let idle = w.agents[leader].status == Status::Idle
+                && !w.halts.failed.iter().any(|f| f.agent == leader)
+                && !self.extras.hung.contains_key(&p);
+            let next = self
+                .extras
+                .head_due
+                .get(&p)
+                .and_then(|d| d.first().copied());
+            if let Some(due) = next.filter(|_| idle) {
+                if let Some(d) = self.extras.head_due.get_mut(&p) {
+                    d.remove(0);
+                }
+                match due {
+                    HeadDue::Fail => self.failed(w, leader, self.content.max_turns, None),
+                    HeadDue::Limit => {
+                        // The plan's five hours are used up and open again
+                        // in LIMIT_TICKS, as Claude Code says it before the
+                        // error.
+                        let opens = w.now() + LIMIT_TICKS * crate::model::SECONDS_PER_TICK;
+                        w.limit(crate::model::Limit {
+                            minutes: imece_agent::FIVE_HOURS,
+                            used: 100,
+                            resets_at: Some(opens),
+                        });
+                        self.failed(w, leader, USAGE_LIMIT, Some(Fault::Account));
+                    }
+                    HeadDue::Hang => self.hang(w, leader),
+                }
+            }
         }
         let held = self.held_back(w);
         w.look_halts(&held);
@@ -4482,10 +4568,11 @@ impl Sim {
         let spent = w.spent() >= w.budget;
         let mut held = Vec::new();
         for q in w.open_projects() {
-            let by = match (spent, self.extras.capped.contains(&q.id)) {
-                (true, _) => Halt::Pot,
-                (false, true) => Halt::Woken,
-                (false, false) => continue,
+            let by = match (spent, self.extras.capped.contains(&q.id), w.limit_holds()) {
+                (true, _, _) => Halt::Pot,
+                (false, true, _) => Halt::Woken,
+                (false, false, true) => Halt::Limit,
+                (false, false, false) => continue,
             };
             let leader = q.leader;
             if w.agents[leader].gone || w.agents[leader].status == Status::Stopped {
@@ -4522,6 +4609,57 @@ impl Sim {
             }
         }
         held
+    }
+
+    /// Leader `id`'s turn hangs, as a live one that says nothing: it works
+    /// on a command and its last line is the stall's minutes old, so its
+    /// team's stop shows at once (record 146, part 2b).
+    fn hang(&mut self, w: &mut World, id: AgentId) {
+        let t = w.tick;
+        let minutes = w.health.stall.unwrap_or(crate::halt::HUNG_MINUTES);
+        let before = t.saturating_sub(u64::from(minutes) * 60 / crate::model::SECONDS_PER_TICK);
+        self.extras.hung.insert(w.agents[id].project, before);
+        w.agents[id].trace(t, HUNG_ON);
+        Self::still_hung(w, id, before);
+    }
+
+    /// Hung leader `id` says nothing since `before` and works on: what
+    /// else of the demo touched it this tick is undone.
+    fn still_hung(w: &mut World, id: AgentId, before: u64) {
+        let a = &mut w.agents[id];
+        if a.status != Status::Working {
+            a.set_status(Status::Working, before);
+        }
+        a.activity = Some(HUNG_ON.into());
+        a.watch.traced_at = before;
+    }
+
+    /// The person ends leader `id`'s hung turn: it goes on where it left
+    /// off, as live's session resumes on it.
+    pub fn end_turn(&mut self, w: &mut World, id: AgentId) -> Result<(), Refusal> {
+        self.extras.hung.remove(&w.agents[id].project);
+        w.agents[id].activity = None;
+        let t = w.tick;
+        w.agents[id].trace(t, "the person ended a turn that gave no sign of life");
+        self.told(w, id, crate::halt::HUNG_AGAIN)
+    }
+
+    /// Leader `id` goes on after a stop of its own: it works a little and
+    /// answers, as its resumed session does.
+    fn went_on(&mut self, w: &mut World, id: AgentId) {
+        let t = w.tick;
+        let a = &mut w.agents[id];
+        a.set_status(Status::Working, t);
+        a.activity = Some(String::new());
+        let text = (*self.rng.pick(self.content.acks)).to_string();
+        let at = t + self.rng.range(2, 5);
+        self.replies.push(Due {
+            agent: id,
+            at,
+            text,
+            failed: false,
+            fault: None,
+        });
     }
 
     /// The teams may take their turns on messages again: the person
@@ -5280,6 +5418,22 @@ mod tests {
                 InboxKind::Sensitive | InboxKind::Research => w.approve(i),
             }
         }
+        // The head's own stops and the usage limit (record 146, 2b), as
+        // the person's first digit does.
+        let stops: Vec<(ProjectId, crate::halt::Halt)> =
+            w.halts.stops.iter().map(|s| (s.project, s.halt)).collect();
+        for (p, halt) in stops {
+            let head = w.projects[p].leader;
+            let _ = match halt {
+                crate::halt::Halt::Limit => {
+                    w.try_now();
+                    Ok(())
+                }
+                crate::halt::Halt::Hung => s.end_turn(w, head),
+                crate::halt::Halt::Failed => s.told(w, head, crate::halt::FAILED_AGAIN),
+                _ => Ok(()),
+            };
+        }
     }
 
     /// The person tells every worker whose session stopped to go on, as
@@ -5593,6 +5747,79 @@ mod tests {
         s.told(&mut w, leader, crate::halt::LEAD_AGAIN).unwrap();
         s.step(&mut w);
         assert!(!halts(&w).contains(&Halt::Lead));
+    }
+
+    #[test]
+    fn the_demo_s_leader_fails_hangs_and_meets_the_usage_limit_by_the_clock() {
+        use crate::halt::Halt;
+        let (mut w, mut s) = world(1, 3, 0, 1, Lang::En);
+        let leader = w.projects[0].leader;
+        let halts = |w: &World| -> Vec<Halt> { w.halts.stops.iter().map(|s| s.halt).collect() };
+        // Its turn fails with nothing to try again: the person sends it on.
+        let mut failed = false;
+        while w.tick < 3 * HEAD_FAIL_EVERY && !failed {
+            s.step(&mut w);
+            failed = halts(&w).contains(&Halt::Failed);
+            if !failed {
+                answer_all(&mut w, &mut s);
+                wake_stopped(&mut w, &mut s);
+            }
+        }
+        assert!(failed, "a failed head by tick {}", w.tick);
+        assert!(w.tick >= HEAD_FAIL_EVERY, "{}", w.tick);
+        s.told(&mut w, leader, crate::halt::FAILED_AGAIN).unwrap();
+        assert_eq!(w.agents[leader].status, Status::Working);
+        let plans = w.plans.len();
+        s.step(&mut w);
+        assert!(!halts(&w).contains(&Halt::Failed));
+        assert_eq!(w.plans.len(), plans, "it plans nothing for imece's words");
+        // The usage limit by the clock: one stop, it opens by itself.
+        let mut limited = None;
+        while w.tick < 2 * LIMIT_EVERY && limited.is_none() {
+            s.step(&mut w);
+            limited = w.halts.limit.clone();
+            if limited.is_none() {
+                answer_all(&mut w, &mut s);
+                wake_stopped(&mut w, &mut s);
+            }
+        }
+        let l = limited.expect("the limit by the clock");
+        assert!(halts(&w).contains(&Halt::Limit));
+        assert!(l.opens);
+        assert_eq!(l.until, w.tick + LIMIT_TICKS);
+        assert!(
+            w.inbox
+                .iter()
+                .all(|i| i.kind != InboxKind::Fault || !i.open)
+        );
+        // Left alone, it opens by itself and a turn goes through.
+        let opens = l.until;
+        while w.tick < opens + 10 {
+            s.step(&mut w);
+        }
+        assert!(w.halts.limit.is_none(), "a turn went through");
+        assert!(!halts(&w).contains(&Halt::Limit));
+        // It hangs until the person ends the turn.
+        let mut hung = false;
+        while w.tick < 3 * HUNG_EVERY && !hung {
+            s.step(&mut w);
+            hung = halts(&w).contains(&Halt::Hung);
+            if !hung {
+                answer_all(&mut w, &mut s);
+                wake_stopped(&mut w, &mut s);
+            }
+        }
+        assert!(hung, "a hung head by tick {}", w.tick);
+        for _ in 0..30 {
+            s.step(&mut w);
+        }
+        assert!(halts(&w).contains(&Halt::Hung), "it stays hung");
+        s.end_turn(&mut w, leader).unwrap();
+        for _ in 0..6 {
+            s.step(&mut w);
+        }
+        assert!(!halts(&w).contains(&Halt::Hung));
+        assert_eq!(w.agents[leader].status, Status::Idle);
     }
 
     #[test]
@@ -10671,7 +10898,7 @@ diff --git a/b.rs b/b.rs
 
     #[test]
     fn the_demo_s_cards_wait_on_others_and_a_held_assign_goes_once_they_are_done() {
-        let (mut w, mut s) = world(1, 3, 0, 6, Lang::En);
+        let (mut w, mut s) = world(1, 3, 0, 1, Lang::En);
         let mut began_early = Vec::new();
         for _ in 0..6000 {
             s.step(&mut w);
