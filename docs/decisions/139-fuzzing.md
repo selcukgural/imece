@@ -71,7 +71,10 @@ carriage returns were lost from a part the person applies (now
 looked at every directory a written path is under one by one, each
 against every pattern, quadratic in the path's length (a path of 50,000
 directories took hours; `paths::prefixes` answers for all of them in one
-pass now, and `paths` tries a written path of any length). Not targets
+pass now, and `paths` tries a written path of any length); a card that
+owned `././x` kept `./x`, and a write to `x` strayed from it (paths are
+kept `paths::normal` now, every `.` and empty part dropped, on both
+sides). Not targets
 yet: the key file (`keys.rs`, the person's own), Lonca's replies (the
 daemon is checked to be the person's), the pty output (`shell`), the
 Markdown of a conversation, a standing yes's command split

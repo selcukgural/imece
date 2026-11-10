@@ -10,8 +10,10 @@ here when it lands.
 
 What. An `assign` or a `post` takes `paths`: at most 20 git pathspecs
 relative to the repository, each at most 200 characters, no control
-character, no `..` component, not starting with `/`; a leading `./` and a
-trailing `/` are dropped; one ending in the word `shared` is named but not
+character, no `..` component, not starting with `/`; kept as git reads
+them, every `.` part and empty one dropped (`paths::normal`: `././x/` is
+`x`; a written path and a pattern saved before are read the same way, so a
+card never strays from its own path); one ending in the word `shared` is named but not
 owned (`paths.rs`: `Owned { path, shared }`, `parse`). A path names a
 target when it is the same path, a directory the target is under, or a
 pattern the target matches whole or as a directory (`*` stands for

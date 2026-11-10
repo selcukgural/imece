@@ -4,7 +4,8 @@
 //!
 //! Holds: what is taken is at most `MAX_PATHS` paths, each non-empty, at
 //! most `MAX_PATH` characters, with no control character, relative, never
-//! through `..`, none twice; a write to a path the card owns never strays.
+//! through `..`, none twice, no `.` or empty part; a write to a path the
+//! card owns never strays, however it is written.
 
 use crate::owned::{MAX_PATH, MAX_PATHS, parse, strays};
 use serde_json::Value;
@@ -31,11 +32,10 @@ pub fn check(data: &[u8]) {
         assert!(!p.starts_with('/'), "{p:?}");
         assert!(!p.split('/').any(|s| s == ".."), "{p:?}");
         assert!(!paths[..i].iter().any(|q| q.path == *p), "{p:?} twice");
-        // A path the card owns, as it is written; `.` parts are git's to
-        // read, not this check's.
-        if !p.split('/').any(|s| s == ".") {
-            assert!(!strays(&paths, p), "{p:?} strays from its own card");
-        }
+        assert!(!p.split('/').any(|s| s.is_empty() || s == "."), "{p:?}");
+        // A path the card owns, as it is or with `./` before it.
+        assert!(!strays(&paths, p), "{p:?} strays from its own card");
+        assert!(!strays(&paths, &format!("./{p}")), "./{p:?} strays");
     }
     strays(&paths, &crate::text(written));
 }

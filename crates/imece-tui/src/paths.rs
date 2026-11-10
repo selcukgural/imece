@@ -56,8 +56,9 @@ impl Owned {
 /// The paths `v` (a tool call's `paths`) lists: nothing when it is not
 /// given, else an array of at most [`MAX_PATHS`] strings, each a path
 /// relative to the repository of at most [`MAX_PATH`] characters, no
-/// control character, no `..`; one ending in ` shared` is shared. A
-/// leading `./` and a trailing `/` are dropped. Refused whole with why.
+/// control character, no `..`; one ending in ` shared` is shared. Each
+/// path is kept as git reads it ([`normal`]: no `.` part, no empty part,
+/// so `././x/` is `x`). Refused whole with why.
 pub fn parse(v: &Value) -> Result<Vec<Owned>, String> {
     if v.is_null() {
         return Ok(Vec::new());
@@ -78,8 +79,8 @@ pub fn parse(v: &Value) -> Result<Vec<Owned>, String> {
             Some(before) if before.ends_with(char::is_whitespace) => (before.trim_end(), true),
             _ => (text, false),
         };
-        let path = path.strip_prefix("./").unwrap_or(path);
-        let path = path.strip_suffix('/').unwrap_or(path);
+        let given = path;
+        let path = normal(given);
         if path.is_empty() {
             return Err("a path is empty".into());
         }
@@ -89,9 +90,9 @@ pub fn parse(v: &Value) -> Result<Vec<Owned>, String> {
         if path.chars().any(char::is_control) {
             return Err(format!("{path:?} has a control character"));
         }
-        if path.starts_with('/') {
+        if given.starts_with('/') {
             return Err(format!(
-                "paths are relative to the repository; {path:?} starts with /"
+                "paths are relative to the repository; {given:?} starts with /"
             ));
         }
         if path.split('/').any(|part| part == "..") {
@@ -100,12 +101,20 @@ pub fn parse(v: &Value) -> Result<Vec<Owned>, String> {
         if out.iter().any(|o| o.path == path) {
             return Err(format!("paths lists {path:?} twice"));
         }
-        out.push(Owned {
-            path: path.to_string(),
-            shared,
-        });
+        out.push(Owned { path, shared });
     }
     Ok(out)
+}
+
+/// `path` with its `.` parts and empty ones left out (`./a//b/.` is
+/// `a/b`), as git reads a path: one file has one name, so a card that owns
+/// `././x` owns the `x` an agent writes. Nothing else changes: `..` and a
+/// leading `/` are refused by [`parse`], not read away.
+fn normal(path: &str) -> String {
+    (path.split('/'))
+        .filter(|part| !part.is_empty() && *part != ".")
+        .collect::<Vec<_>>()
+        .join("/")
 }
 
 /// Whether `pattern` names `target`: the same path, a directory it is
@@ -115,9 +124,9 @@ pub fn parse(v: &Value) -> Result<Vec<Owned>, String> {
 /// of thousands of directories costs no more than its length times the
 /// pattern's.
 fn names(pattern: &str, target: &str) -> bool {
-    let target = target.strip_prefix("./").unwrap_or(target);
-    let p: Vec<char> = pattern.chars().collect();
-    let t: Vec<char> = target.chars().collect();
+    // A card saved before paths were kept [`normal`] may own `./x`.
+    let p: Vec<char> = normal(pattern).chars().collect();
+    let t: Vec<char> = normal(target).chars().collect();
     let matched = prefixes(&p, &t);
     matched[t.len()] || (t.iter().zip(&matched)).any(|(&c, &m)| c == '/' && m)
 }
@@ -214,6 +223,11 @@ mod tests {
             Ok(vec![Owned::new("unshared")])
         );
         assert_eq!(parse(&json!(["a/b/"])), Ok(vec![Owned::new("a/b")]));
+        // Every `.` part and empty one goes, wherever it is.
+        assert_eq!(
+            parse(&json!(["././x", "a/./b//c/.", ".//d"])),
+            Ok(vec![Owned::new("x"), Owned::new("a/b/c"), Owned::new("d")])
+        );
         assert_eq!(
             parse(&json!(["a/b/ shared"])),
             Ok(vec![Owned::shared("a/b")])
@@ -232,6 +246,13 @@ mod tests {
         assert_eq!(refused(json!(["a", ""])), "a path is empty");
         assert_eq!(refused(json!(["./"])), "a path is empty");
         assert_eq!(refused(json!(["/"])), "a path is empty");
+        assert_eq!(refused(json!(["."])), "a path is empty");
+        assert_eq!(refused(json!(["././"])), "a path is empty");
+        assert_eq!(
+            refused(json!(["//etc"])),
+            "paths are relative to the repository; \"//etc\" starts with /"
+        );
+        assert_eq!(refused(json!(["x", "./x/"])), "paths lists \"x\" twice");
         assert_eq!(
             refused(json!(["/etc/passwd"])),
             "paths are relative to the repository; \"/etc/passwd\" starts with /"
@@ -272,6 +293,8 @@ mod tests {
     fn a_path_names_itself_what_is_under_it_and_what_its_star_matches() {
         assert!(names("src/a.rs", "src/a.rs"));
         assert!(names("src/a.rs", "./src/a.rs"));
+        assert!(names("src/a.rs", "././src//./a.rs"));
+        assert!(names("src", "src/./deep//a.rs"));
         assert!(!names("src/a.rs", "src/a.rs.bak"));
         assert!(!names("src/a.rs", "src/a"));
         assert!(!names("src/a.rs", "lib/src/a.rs"));
@@ -331,6 +354,14 @@ mod tests {
         );
         assert!(strays(&paths, "src/b.rs"));
         assert!(strays(&paths, "Cargo.toml"));
+        // A path the card owns, however either side writes it.
+        let dotted = owned(&["././x", "a/./b"]);
+        for own in ["x", "./x", "././x", "a/b", "a//b/c", "./a/./b/c"] {
+            assert!(!strays(&dotted, own), "{own}");
+        }
+        assert!(strays(&dotted, "y"));
+        // A card saved before kept `./x` as it was given.
+        assert!(!strays(&[Owned::new("./x")], "x"));
     }
 
     #[test]
