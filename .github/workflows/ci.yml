@@ -62,3 +62,44 @@ jobs:
         run: python3 -I tools/acceptance.py check
       - name: The acceptance tools' tests
         run: python3 -I -m unittest discover -s tools -p 'test_*.py'
+
+  # The scripted acceptance cases (docs/acceptance, record 147): the real
+  # Live on imece's stand-in for Claude Code, every PR, nothing spent. A
+  # failure's screens and every key sent are kept as an artifact.
+  acceptance-scripts:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: tmux
+        run: |
+          if [ "$RUNNER_OS" = Linux ]; then
+            sudo apt-get update && sudo apt-get install -y tmux
+          else
+            command -v tmux || brew install tmux
+          fi
+          tmux -V
+      - name: Rust toolchain (rust-toolchain.toml)
+        run: rustup toolchain install
+      - run: cargo build --locked -p imece
+      - name: The stand-in's world
+        run: IMECE_ACC_BIN="$PWD/target/debug/imece" tools/acceptance/setup.sh --stand-in "$RUNNER_TEMP/acc"
+      - name: Every scripted case
+        run: |
+          . "$RUNNER_TEMP/acc/env.sh"
+          python3 -I tools/acceptance/drive.py run --jobs 4
+      - name: What the failed cases showed
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: acceptance-scripts-${{ matrix.os }}
+          path: |
+            ${{ runner.temp }}/acc/out
+            ${{ runner.temp }}/acc/drive.log
+          if-no-files-found: ignore

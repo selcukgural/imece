@@ -99,6 +99,11 @@ tools/acceptance/drive.py run --jobs 4 --report docs/acceptance/runs/vX.Y.Z.md
   it. A failure's screen is in `$ACC/out/<ID>.txt`, every key in
   `$ACC/drive.log`.
 - The 13 scripts took 25-45 s at 4-6 jobs on a laptop at load 40.
+- CI runs every script on every pull request, on Linux and macOS (the
+  `acceptance-scripts` job); a failure keeps `out/` and `drive.log` as
+  the job's artifact. A change that breaks a script is fixed in the same
+  pull request, the script too when the screen's words changed on
+  purpose.
 
 ## The run's world
 
