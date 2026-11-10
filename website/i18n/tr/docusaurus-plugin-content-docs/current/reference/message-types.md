@@ -230,7 +230,7 @@ Bir işçinin ya da yardımcının çalıştırması, worktree'sinin öncesinde 
 | `input` | nesne | evet |
 | `tool_use_id` | dize | hayır |
 
-Yalnızca bir Claude ajanının soketinde ve yalnızca `standard` ile `open` altında: Claude Code kendi kurallarının soracağı bir araç çağrısından önce bunu kendisi çağırır (`--permission-prompt-tool mcp__imece__approve`) ve modelden gizler. Rutin bir komut (tek satır, bir program ve argümanları, rolün `run` politikasınca ve `--run` listenizce izinli) hemen izin alır, izde `allowed on its own` satırıyla; başka her şey KARAR BEKLEYEN'de bütünüyle gösterilen bir `⚑` kalemidir ve çağrı `a` ya da `r`'niz için bir güne dek bekler. Bir ret `The person refused this. Do not try it another way; if you need it, ask them …` diye yanıtlanır. Bkz. [onaylar ve sorular](../concepts/approvals-and-questions.md).
+Yalnızca bir Claude ajanının soketinde ve yalnızca `standard` ile `open` altında: Claude Code kendi kurallarının soracağı bir araç çağrısından önce bunu kendisi çağırır (`--permission-prompt-tool mcp__imece__approve`) ve modelden gizler. Rutin bir komut (tek satır, bir program ve argümanları, rolün `run` politikasınca ve `--run` listenizce izinli) hemen izin alır, izde `allowed on its own` satırıyla; başka her şey KARAR BEKLEYEN'de bütünüyle gösterilen bir `⚑` kalemidir ve çağrı `a` ya da `r`'niz için 24 güne dek bekler (sonra oturuma kimsenin yanıtlamadığı söylenir ve kalem kapanır). Bir ret `The person refused this. Do not try it another way; if you need it, ask them …` diye yanıtlanır. Bkz. [onaylar ve sorular](../concepts/approvals-and-questions.md).
 
 ## Bir ajana anlatılanlar
 

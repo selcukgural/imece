@@ -999,6 +999,24 @@ impl Live {
         Some((id, nth))
     }
 
+    /// The asks nobody answered in [`ASK_LIFE`]: each session that waits
+    /// on one is told no ([`claude::UNANSWERED`]) while it still waits,
+    /// and the item closes with a journal line (record 146, part 4).
+    pub(super) fn expire_asks(&mut self, w: &mut World) {
+        for item in w.asks_expired(ASK_LIFE) {
+            let Some((id, nth)) = Self::ask_at(w, item) else {
+                continue;
+            };
+            w.ask_expired(item);
+            if nth < self.pending[id].len() {
+                let p = self.pending[id].remove(nth);
+                let said = format!("no answer in time, told no: {}", p.what.line());
+                w.agents[id].trace(w.tick, said);
+                let _ = p.reply.to.send(Ok(claude::denied(claude::UNANSWERED)));
+            }
+        }
+    }
+
     /// The person allowed or refused what inbox item `item` asks: the
     /// session waiting on it goes on. An item that is not an open
     /// approval is left alone.
@@ -1146,8 +1164,9 @@ mod tests {
         for tool in ["send", "post", "board", "claim", "hire"] {
             assert_eq!(call_wait(tool, t), CALL_WAIT, "{tool}");
         }
-        // An ask waits for the person, who may be away for a day.
-        assert_eq!(call_wait("approve", t), Duration::from_secs(86_400));
+        // An ask waits for the person, who may be away for days: its 24
+        // days and an hour more.
+        assert_eq!(call_wait("approve", t), Duration::from_secs(2_077_200));
     }
 
     #[test]
@@ -1605,6 +1624,66 @@ mod tests {
             "another's directory asks the person"
         );
         assert_eq!(w.open_inbox().len(), 1);
+    }
+
+    #[test]
+    fn an_ask_nobody_answers_in_its_life_is_told_no_while_its_session_still_waits() {
+        let mut w = team(2);
+        let mut live = idle_live(3);
+        let old = ask_to_run(&live, 1, "make old");
+        let young = ask_to_run(&live, 1, "make young");
+        let other = ask_to_run(&live, 2, "make other");
+        live.step(&mut w);
+        let open = w.open_inbox();
+        assert_eq!(open.len(), 3);
+        // ASK_LIFE later by the clock: the first came at the start, the
+        // others well inside their life.
+        w.started_at -= ASK_LIFE * SECONDS_PER_TICK;
+        w.inbox[open[0]].tick = 0;
+        w.inbox[open[1]].tick = 1000;
+        w.inbox[open[2]].tick = 1000;
+        live.step(&mut w);
+        assert!(w.tick >= ASK_LIFE, "{}", w.tick);
+        let no = verdict(&old);
+        assert_eq!(no["behavior"], "deny");
+        assert_eq!(no["message"], claude::UNANSWERED);
+        assert!(young.try_recv().is_err() && other.try_recv().is_err());
+        assert_eq!(w.open_inbox(), [open[1], open[2]]);
+        assert!(w.journal.iter().any(|e| matches!(
+            &e.event,
+            Event::AskExpired { agent: 1, what } if what == "Bash: make old"
+        )));
+        assert!(
+            w.agents[1]
+                .trace
+                .iter()
+                .any(|l| l.ends_with(" no answer in time, told no: Bash: make old"))
+        );
+        // The worker's other ask is now its first, and the person's answer
+        // reaches the call that waits on it, not one gone.
+        live.decide(&mut w, open[1], true);
+        assert_eq!(verdict(&young)["updatedInput"]["command"], "make young");
+        assert!(other.try_recv().is_err());
+        // An ask closed already is not told twice.
+        w.started_at -= ASK_LIFE * SECONDS_PER_TICK;
+        live.step(&mut w);
+        assert_eq!(verdict(&other)["message"], claude::UNANSWERED);
+        assert!(w.open_inbox().is_empty());
+        let told = (w.journal.iter())
+            .filter(|e| matches!(e.event, Event::AskExpired { .. }))
+            .count();
+        assert_eq!(told, 2);
+    }
+
+    #[test]
+    fn a_session_waits_on_the_person_longer_than_an_ask_lives_and_less_than_claude_code_lets_it() {
+        let life = Duration::from_secs(ASK_LIFE * SECONDS_PER_TICK);
+        assert_eq!(life, Duration::from_secs(24 * 24 * 3600));
+        assert!(call_wait(APPROVE_TOOL, Duration::ZERO) > life);
+        assert!(
+            call_wait(APPROVE_TOOL, Duration::ZERO)
+                < Duration::from_millis(claude::CALL_TIMEOUT_MS)
+        );
     }
 
     #[test]

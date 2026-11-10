@@ -206,6 +206,9 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
             if *allowed { t.ev_allowed } else { t.ev_refused },
             &[name(w, *agent), &one_line(what)],
         ),
+        Event::AskExpired { agent, what } => {
+            fill(t.ev_ask_expired, &[name(w, *agent), &one_line(what)])
+        }
         Event::TurnYes { agent } => fill(t.ev_turn_yes, &[name(w, *agent)]),
         Event::TurnYesEnded { agent, allowed } => fill(
             t.ev_turn_yes_ended,
@@ -2489,6 +2492,18 @@ mod tests {
         assert_eq!(
             event(Lang::Tr, &w, &no),
             format!("{who} için reddettin: Bash: curl x")
+        );
+        let late = Event::AskExpired {
+            agent: 1,
+            what: "Bash: curl x\ny".into(),
+        };
+        assert_eq!(
+            event(Lang::En, &w, &late),
+            format!("{who} asked and had no answer in time, so it was told no: Bash: curl x ↵ y")
+        );
+        assert_eq!(
+            event(Lang::Tr, &w, &late),
+            format!("{who} izin istedi, vaktinde cevap gelmedi; hayır denildi: Bash: curl x ↵ y")
         );
     }
 
