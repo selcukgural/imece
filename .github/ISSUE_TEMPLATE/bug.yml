@@ -1,0 +1,36 @@
+name: Bug report
+description: Something imece does wrong, or says wrong.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A security problem is never an issue: report it
+        [privately](https://github.com/selcukgural/imece/security/advisories/new).
+        Take tokens, keys and anything private out of what you paste.
+  - type: textarea
+    id: happened
+    attributes:
+      label: What happened?
+      description: What you did (command line, keys, `:` commands) and what imece did.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: again
+    attributes:
+      label: How to see it again
+      description: Steps, if you know them. Does `imece --demo` show it too?
+  - type: textarea
+    id: doctor
+    attributes:
+      label: imece doctor
+      description: The output of `imece doctor`, or `imece --version`, `claude --version`, your system and terminal.
+      render: text
+    validations:
+      required: true

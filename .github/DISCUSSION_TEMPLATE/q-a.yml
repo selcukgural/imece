@@ -1,0 +1,28 @@
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A question about using imece. Something that looks broken is a
+        [bug report](https://github.com/selcukgural/imece/issues/new?template=bug.yml);
+        a security problem is reported
+        [privately](https://github.com/selcukgural/imece/security/advisories/new), never here.
+
+        Before you paste: take tokens, keys and anything private out of
+        logs and screens.
+  - type: textarea
+    id: question
+    attributes:
+      label: What do you want to do, or to know?
+    validations:
+      required: true
+  - type: textarea
+    id: tried
+    attributes:
+      label: What did you try, and what happened?
+      description: The command line, the keys or `:` commands, what the screen said.
+  - type: input
+    id: version
+    attributes:
+      label: Versions
+      description: "`imece --version`, `claude --version`, your system and terminal. `imece doctor` says most of it."
+      placeholder: imece 0.1.202611100124 · Claude Code 2.1.x · macOS 15 · iTerm2

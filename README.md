@@ -105,6 +105,18 @@ The reasons behind each behaviour are in [`docs/decisions/`](docs/decisions);
 the site's pages are the Markdown files in `docs/guide/` (English) and
 `website/i18n/tr/…` (Turkish).
 
+## Questions and ideas
+
+[Discussions](https://github.com/selcukgural/imece/discussions) is where
+to ask and to tell:
+[a question](https://github.com/selcukgural/imece/discussions/new?category=q-a),
+[an idea](https://github.com/selcukgural/imece/discussions/new?category=ideas)
+(start with what happened in a real session: imece takes its features
+from there), or
+[a session worth showing](https://github.com/selcukgural/imece/discussions/new?category=show-and-tell).
+Something broken is an
+[issue](https://github.com/selcukgural/imece/issues/new/choose).
+
 ## Security
 
 imece guards its own boundaries (who may call which tool, what an agent's
