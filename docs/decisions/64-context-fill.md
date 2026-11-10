@@ -47,6 +47,9 @@ sessions do near their limit, and the trace says so; the person's
 `/compact` empties it too; a stop forgets it and the next session starts
 fresh (`Sim::fill`, `Mind.filled`).
 
+A compaction Claude Code says (`system` `compact_boundary`) is a trace
+note since record 130's windows-and-context step (`claude::compacted`).
+
 Not done: a note in WAITING FOR YOU or the journal when a context nears
 full (the row's colour and the trace are all); the header has no fleet
 figure for it; the fill in the exported Markdown (record 42).

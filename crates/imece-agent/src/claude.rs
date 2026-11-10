@@ -820,6 +820,9 @@ impl Parser {
             "user" => Ok(self.results(&v)),
             "result" => Ok(self.result(&v)),
             "system" if v["subtype"] == "api_retry" => Ok(vec![Event::Note(retry(&v))]),
+            "system" if v["subtype"] == "compact_boundary" => {
+                Ok(vec![Event::Note(compacted(&v["compact_metadata"]))])
+            }
             "rate_limit_event" => Ok(limits(&v["rate_limit_info"])
                 .map(Event::Limits)
                 .into_iter()
@@ -1221,6 +1224,19 @@ fn retry(v: &Value) -> String {
         n("max_retries"),
         n("retry_delay_ms"),
     )
+}
+
+/// A compaction of the session's context, for the trace: by the session
+/// itself when it was near full, else at the person's `/compact`.
+fn compacted(meta: &Value) -> String {
+    let by = match meta["trigger"].as_str() {
+        Some("auto") => " by the session",
+        _ => "",
+    };
+    match meta["pre_tokens"].as_u64() {
+        Some(n) => format!("context compacted{by}: it held {n} tokens"),
+        None => format!("context compacted{by}"),
+    }
 }
 
 fn result(v: &Value) -> Event {
@@ -2616,9 +2632,31 @@ mod tests {
                 "api error 529 overloaded: retry 2/10 in 1163 ms".into()
             )]
         );
-        // Another system line (a hook's, a compaction's) is not a retry.
+        // Another system line (a hook's) is not a retry.
         let hook = r#"{"type":"system","subtype":"hook_response","attempt":2,"max_retries":10,"error":"overloaded"}"#;
         assert_eq!(p.line(hook).unwrap(), []);
+        // A compaction, as Claude Code 2.1.322 writes its boundary.
+        let mut compacted = |meta: &str| {
+            let line = format!(
+                r#"{{"type":"system","subtype":"compact_boundary","session_id":"s1","uuid":"u1","compact_metadata":{meta}}}"#
+            );
+            p.line(&line).unwrap()
+        };
+        assert_eq!(
+            compacted(r#"{"trigger":"auto","pre_tokens":181000}"#),
+            [Event::Note(
+                "context compacted by the session: it held 181000 tokens".into()
+            )]
+        );
+        assert_eq!(
+            compacted(r#"{"trigger":"manual","pre_tokens":9}"#),
+            [Event::Note("context compacted: it held 9 tokens".into())]
+        );
+        assert_eq!(
+            compacted(r#"{"trigger":"auto"}"#),
+            [Event::Note("context compacted by the session".into())]
+        );
+        assert_eq!(compacted("null"), [Event::Note("context compacted".into())]);
         let lost = r#"{"type":"system","subtype":"api_retry","attempt":1,"max_retries":10,"retry_delay_ms":520,"error_status":null,"error":"unknown"}"#;
         assert_eq!(
             p.line(lost).unwrap(),

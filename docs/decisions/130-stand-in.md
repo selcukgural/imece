@@ -321,8 +321,52 @@ stand-in fails any turn, so a worker's and a helper's fail too. A
 passing fault past its third try is not made to happen (as in `Sim`),
 and a helper is not lost mid-part by it: its turn is tried again.
 
-Next: rate limits and context, strays and the plan gate, the leader's
-board and cards, informs to the person, the commit and review one-shots;
-then Lonca's fake daemon, then `Engine::Sim` goes.
+## The plan's windows and a context that fills (2026-11-10)
+
+**The windows.** With `Habits.limit` (`IMECE_STAND_IN_LIMIT`, millionths
+of a dollar; none said at 0) and a home, each turn's end adds what the
+turn spent, its calls and itself, to `<home>/stand-in-usage` (a line
+`SECONDS MILLIONTHS`, appended: the plan's windows are one account's, so
+every session of a run fills the same ones) and says Claude Code's
+`rate_limit_event` just before its result (`stand_in::spend`, `limits`,
+`Stream::done`): `status` `allowed`, `unifiedWindows` `five_hour` and
+`seven_day`, each `utilization` a whole percent for every `limit` spent in
+the five hours `now` is in (four times that for the week), never over a
+hundred, `resetsAt` the next whole window of the clock, as `Sim::limits`
+counts them. A failed turn and `/clear` spend nothing and say none. The
+clock is `session`'s argument (`run` gives the machine's). imece's parser
+and `World::limit` do the rest; the demo's part is a cent (`LIMIT`
+10,000: a dollar fills five hours; the header names a window from 90%
+used, `:budget` at any time, so a demo's first minutes show none).
+
+**The context.** A message adds `Habits::message()` tokens
+(`IMECE_STAND_IN_FILL`, at 0 the 150 it always was) and a turn ten times
+that, added before the turn's last message so the message says it
+(`Stream::grow`). Past `AUTO_COMPACT` (nine tenths of `WINDOW`) the
+session compacts on its own: a `system` line `compact_boundary` with
+`compact_metadata { trigger: "auto", pre_tokens }`, the shape Claude Code
+2.1.322's own code writes (read in its program, not seen from a run), and
+the context is `CONTEXT_START` again. `/compact` (it was in
+`slash_commands` and did a turn's nothing until now) writes the boundary
+with `trigger` `manual`, answers `COMPACTED` in a message that says the
+context now, costs a turn (a model writes the summary) and keeps the mind;
+not echoed, as no command is. The demo's message is 3,000 tokens (`FILL`):
+a worker's second assign compacts.
+
+**Live too.** imece's parser said nothing of a compaction; now
+`compact_boundary` is a trace note (`claude::compacted`: `context
+compacted by the session: it held 181000 tokens`, without `by the session`
+for any other trigger, without the figure when none is said), as the
+simulation's was. The test
+`the_plan_s_windows_fill_with_every_session_s_turns_and_a_full_context_compacts`
+runs all of it on the real `Live`.
+
+Not made to happen: a window at a hundred refuses nothing (Claude Code's
+`rejected` status and the turn that fails on it are not probed), and a
+compaction is free but for `/compact`'s turn.
+
+Next: strays and the plan gate, the leader's board and cards, informs to
+the person, the commit and review one-shots; then Lonca's fake daemon,
+then `Engine::Sim` goes.
 
 Under `--replay-user-messages` (every session since record 135) it echoes each prompt as it takes it, `"isReplay": true`, before the turn's work; its commands (`/clear`) are not echoed, as Claude Code's are not.

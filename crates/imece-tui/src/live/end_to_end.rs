@@ -471,3 +471,101 @@ fn a_turn_that_fails_at_the_api_is_tried_again_and_the_account_s_waits_for_the_p
     let _ = std::fs::remove_dir_all(&dir);
     let _ = std::fs::remove_dir_all(&repo);
 }
+
+#[test]
+fn the_plan_s_windows_fill_with_every_session_s_turns_and_a_full_context_compacts() {
+    use imece_agent::stand_in::{CONTEXT_START, Habits, TURN_COST, WINDOW};
+    let dir = std::env::temp_dir().join(format!("imece-e2e-limits-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let repo = checkout("e2e-limits-repo");
+    // A turn alone is four percent of five hours, one of the week; a
+    // message is a tenth of the window, so a turn's work fills it.
+    let habits = Habits {
+        limit: TURN_COST / 4,
+        fill: WINDOW / 10,
+        ..Default::default()
+    };
+    let claude =
+        imece_agent::stand_in::install(&dir, &imece(), &dir.join("home"), &habits).unwrap();
+    let mut w = team(0);
+    let mut live = Live::new(
+        1,
+        claude_at(&claude.to_string_lossy()),
+        repo.clone(),
+        dir.join("trees"),
+    );
+    live.open_bus(&w, imece().to_string_lossy().into_owned())
+        .unwrap();
+    live.told(&mut w, 0, "Write a greeting").unwrap();
+    let until = |w: &mut World, live: &mut Live, done: &dyn Fn(&World) -> bool| {
+        let start = std::time::Instant::now();
+        while !done(w) {
+            assert!(
+                start.elapsed().as_secs() < 30,
+                "timed out: {:#?}\n{:#?}",
+                w.journal,
+                w.agents.iter().map(|a| &a.trace).collect::<Vec<_>>()
+            );
+            live.step(w);
+            thread::sleep(Duration::from_millis(20));
+        }
+    };
+    until(&mut w, &mut live, &|w| {
+        w.changes.iter().any(|c| c.agent == 1)
+            && w.agents[0].status == Status::Idle
+            && w.agents[1].status == Status::Idle
+    });
+    // Both windows, as Claude Code's `rate_limit_event` says them: the
+    // leader's and the worker's turns in the same ones, the week's a
+    // quarter as full, each ending later than now.
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let window = |minutes| w.limits.iter().find(|l| l.minutes == minutes).copied();
+    let five = window(imece_agent::FIVE_HOURS).expect("five hours");
+    let week = window(imece_agent::WEEK).expect("a week");
+    assert_eq!(w.limits.len(), 2);
+    // The pot counts ten-thousandths of a dollar, the windows millionths.
+    let spent = w.spent() * 100;
+    assert!(spent >= 3 * TURN_COST, "three turns at least: {spent}");
+    let part = TURN_COST / 4;
+    assert_eq!(u64::from(five.used), spent / part, "{:?}", w.limits);
+    assert_eq!(u64::from(week.used), spent / (4 * part), "{:?}", w.limits);
+    assert!(five.used < 100, "{:?}", w.limits);
+    assert!(
+        five.resets_at
+            .is_some_and(|at| at > now && at <= now + 5 * 3600)
+    );
+    assert!(
+        week.resets_at
+            .is_some_and(|at| at > now && at <= now + 7 * 24 * 3600)
+    );
+    // The worker's turn held more than nine tenths of its window: the
+    // session compacted it, the trace says so.
+    let compacted = |w: &World, id: AgentId, how: &str| {
+        (w.agents[id].trace.iter()).any(|l| l.contains(&format!("note context compacted{how}")))
+    };
+    assert!(
+        compacted(&w, 1, " by the session: it held "),
+        "{:#?}",
+        w.agents[1].trace
+    );
+    // The person's `/compact` empties the leader's: a turn of its own,
+    // the context said again with its answer.
+    live.command(&mut w, 0, "/compact").unwrap();
+    until(&mut w, &mut live, &|w| {
+        compacted(w, 0, ": it held ") && w.agents[0].status == Status::Idle
+    });
+    assert_eq!(
+        w.agents[0].context,
+        Some(Fill {
+            used: CONTEXT_START + WINDOW / 10,
+            size: Some(WINDOW)
+        })
+    );
+    drop(live);
+    let _ = std::fs::remove_dir_all(&dir);
+    let _ = std::fs::remove_dir_all(&repo);
+}
