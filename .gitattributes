@@ -1,0 +1,3 @@
+# Fuzz inputs are bytes: kept exactly, carriage returns and all (record 139).
+fuzz/seeds/** binary
+fuzz/regressions/** binary
