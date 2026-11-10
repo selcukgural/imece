@@ -1,0 +1,45 @@
+# SCR-3 · Writing: lines over lines, readline keys, names and files completed, the editor.
+write ed.sh printf 'from the editor\n' > "$1"
+sh chmod +x ed.sh
+env VISUAL $ACC_CASE/ed.sh
+start
+see any key: close
+key Escape
+key /
+type mend shelf.py
+key Enter
+key Escape Escape
+see run .imece/worktree-setup.sh
+key g d
+key a
+see run .imece/check on its
+key g d
+key a
+see 1 ready to approve
+key /
+type first line\
+key Enter
+type second
+see first line
+see second
+key C-w
+gone second
+# esc drops the draft; a fresh line for the completions.
+key C-u Escape Escape
+key /
+type @claude
+key Tab
+see @claude-1
+key C-u
+type see shel
+key Tab
+see shelf.py
+key C-u
+# ^x ^e: the draft to the editor and back, never sent by itself.
+key C-x C-e
+see from the editor
+key C-u Escape Escape
+type :edit some words
+key Enter
+see from the editor
+key C-u Escape Escape

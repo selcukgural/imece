@@ -1,0 +1,28 @@
+# SESS-6 · The cost ledger: one row per attempt, per model, by project.
+start
+see any key: close
+key Escape
+key /
+type mend shelf.py
+key Enter
+key Escape Escape
+see run .imece/worktree-setup.sh
+key g d
+key a
+see run .imece/check on its
+key g d
+key a
+see 1 ready to approve
+type :ledger
+key Enter
+see LEDGER · 1 attempt
+see applied $0.00 · wasted $0.00 · at work
+see #1 try 1  claude-1
+see by model:
+key Escape
+key g d
+key a
+see ALL DONE
+type :ledger
+key Enter
+see applied $0.12

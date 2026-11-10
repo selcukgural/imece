@@ -1,0 +1,17 @@
+# TEAM-8 · A worker's helper (the [helper] cue).
+start --helpers 1
+see any key: close
+key Escape
+key /
+type mend shelf.py [helper]
+key Enter
+key Escape Escape
+see run .imece/worktree-setup.sh
+key g d
+key a
+wait 60 claude-1.1
+see └
+wait 60 run .imece/check on its
+key g d
+key a
+see 1 ready to approve

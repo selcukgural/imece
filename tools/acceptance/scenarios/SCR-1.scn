@@ -1,0 +1,32 @@
+# SCR-1 · Home: what to decide first, grouped, then who works.
+start
+see any key: close
+key Escape
+key /
+type lend books in shelf.py [cards 2] [question]
+key Enter
+key Escape Escape
+see permissions
+see questions
+see one key each
+# g waits for its second key and says what it may be.
+key g
+see to decide
+see at work
+key d
+# S puts the item off and opens the next.
+key S
+see 1 put off
+key Escape
+type :waiting
+key Enter
+see TO DECIDE
+type :salon
+key Enter
+see claude-1
+type :home
+key Enter
+key W
+see diff · talk · log
+key Escape
+see TO DECIDE

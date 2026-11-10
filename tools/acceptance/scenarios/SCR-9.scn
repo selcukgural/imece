@@ -1,0 +1,18 @@
+# SCR-9 · Themes: by name, from a file, the next one; kept for the next start.
+start
+see any key: close
+key Escape
+type :theme nord
+key Enter
+see theme: nord
+type :theme $ACC_CASE/config/mine.theme
+key Enter
+see mine.theme
+type :theme zzzz
+key Enter
+see not one of
+# mono and monokai both match: enter takes the first, enter again runs it.
+type :theme mono
+key Enter
+key Enter
+see theme: mono

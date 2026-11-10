@@ -1,0 +1,16 @@
+# ASK-2 · A yes for the rest of a turn (e), on the [ask] cue.
+start
+see any key: close
+key Escape
+key /
+type mend shelf.py [ask]
+key Enter
+key Escape Escape
+see run .imece/worktree-setup.sh
+key g d
+key a
+see run Bash: python3 -m pip
+key g d
+key e
+key J
+see you say yes to everything claude-1 asks until its turn ends

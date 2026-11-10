@@ -1,0 +1,20 @@
+# ASK-4 · A focus decides its agent's ask, and says where it works.
+start
+see any key: close
+key Escape
+key /
+type mend shelf.py [ask]
+key Enter
+key Escape Escape
+see run .imece/worktree-setup.sh
+key g d
+key a
+see run Bash: python3 -m pip
+type :goto claude-1
+key Enter
+key Enter
+see FOCUS · claude-1
+see folder
+see worktree of
+key a
+gone run Bash: python3 -m pip

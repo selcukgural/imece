@@ -137,3 +137,33 @@ temporary directory, `drive.py run --jobs 4`; a failure's screens and
 `drive.log` are the job's artifact. So a script breaks in the pull
 request that breaks it, not on the day of a release, and the release
 run's scripted rows only confirm what CI saw on the candidate.
+
+## Most of the catalogue scripted (2026-11-11)
+
+The person's yes to moving every case that needs no real model onto the
+stand-in first: 36 more cases are scripts, 49 of 69 in all (48 `stand-in`
+and the demo's), about 95 s at 6 jobs; 15 stay `real`: Claude Code's own
+ways (TEAM-1, TEAM-2, TEAM-10, TEAM-11, TEAM-14, ASK-7, CARD-3), Lonca
+(LONCA-1 to 5), a GitHub issue (TEAM-13), the tab (INST-5) and EYE-1,
+which takes what a script can not see (the breath, the themes' colours,
+a note in another window and its click, the `caffeinate` child, the
+push). A case's `Expect:` says only what its script checks; the rest is
+named where it goes.
+
+The runner learnt `env NAME VALUE` (a variable for the next start: an
+editor script), `$ACC_CASE` and `$ACC_SOURCE` in a step's text, and to
+name a screen exactly (`=name:`): tmux took `-t case-scr-1` for
+case-scr-14 once case-scr-1 was gone, and a case's cleanup ended another's
+screen; the cleanup's `pgrep` matches a case's directory with its slash
+for the same reason.
+
+What the new scripts found:
+- `--confine strict` stopped every session at its start (record 28):
+  fixed here.
+- `:ps` asks `end … ? y` for a session's own process and imece's relay,
+  and only refuses after the `y`.
+- `n` on one note says `1 notes went to claude-1`.
+- A change whose worker ran its tests through Bash (`npm test`, no
+  `.imece/check`) says `nothing ran`.
+- A solo's change is titled by its reply (`Changed shelf.py.`), not by
+  the person's words.

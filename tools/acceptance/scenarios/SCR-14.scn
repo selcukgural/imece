@@ -1,0 +1,21 @@
+# SCR-14 · A secret-looking value is hidden, code that only looks like one is not.
+start
+see any key: close
+key Escape
+key /
+type mend shelf.py GITHUB_TOKEN=ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789 and max_tokens=5
+key Enter
+key Escape Escape
+see run .imece/worktree-setup.sh
+key g d
+key a
+see run .imece/check on its
+key g d
+key a
+see 1 ready to approve
+key g d
+key Enter
+see diff · talk · log
+see max_tokens=5
+gone ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789
+sh grep -c ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789 state/imece/worktrees/*/claude-1/shelf.py

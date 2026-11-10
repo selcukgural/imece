@@ -1,0 +1,32 @@
+# TEAM-4 · A note on a change's line, sent with n: the change goes back.
+start
+see any key: close
+key Escape
+key /
+type mend shelf.py
+key Enter
+key Escape Escape
+see run .imece/worktree-setup.sh
+key g d
+key a
+see run .imece/check on its
+key g d
+key a
+see 1 ready to approve
+key g d
+key Enter
+see diff · talk · log
+# A note goes on a hunk's line at the top: the next file, two lines down.
+key ]
+key j j
+key c
+see note on test_shelf.py:
+type not like this
+key Enter
+see note kept (1 on this change)
+key n
+# The change went back with the note: nothing to decide of it.
+gone 1 ready to approve
+key J
+key J
+see sent back: claude-1

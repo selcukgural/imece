@@ -1,0 +1,20 @@
+# INST-3 · imece doctor, outside and inside the screen.
+sh imece doctor --repo repos/shelf; echo "exit $?"
+says [✓]
+says exit 0
+sh imece doctor --repo repos/shelf --verbose
+says ✓
+sh imece doctor --repo repos/shelf --json
+says "claude.login"
+sh imece doctor --repo repos/shelf --lang tr --json
+says "claude.login"
+# Without Claude Code on PATH: its category fails and so does the exit.
+sh mkdir -p nobin && ln -sf "$(command -v git)" nobin/git && PATH="$PWD/nobin:/usr/bin:/bin" "$ACC/bin/imece" doctor --repo repos/shelf; test $? -eq 1
+says [✗]
+start
+see any key: close
+key Escape
+type :doctor
+key Enter
+see [✓]
+key Escape

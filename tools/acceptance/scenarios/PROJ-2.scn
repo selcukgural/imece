@@ -1,0 +1,21 @@
+# PROJ-2 · Ignored files copied into a worktree: :copy and .worktreeinclude.
+start
+see any key: close
+key Escape
+type :copy .env
+key Enter
+see .env is copied into shelf's worktrees
+type :copy
+key Enter
+see copied into shelf's worktrees: .env
+key /
+type mend shelf.py
+key Enter
+key Escape Escape
+see run .imece/worktree-setup.sh
+# The journal as it is (the story folds lines of a kind).
+key J
+key J
+see copied .env into claude-1's worktree
+see copied local.cfg into claude-1's worktree
+sh test -f state/imece/worktrees/*/claude-1/.env && test ! -L state/imece/worktrees/*/claude-1/.env

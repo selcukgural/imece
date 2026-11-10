@@ -1,0 +1,16 @@
+# DEMO-1 · The demo on fake agents: it runs, pauses, speeds, speaks Turkish and quits.
+start --bare --demo --projects 1 --agents 3
+see shop-api
+see AT WORK
+key Space
+key +
+key -
+key q
+key q
+see Pane is dead (status 0
+stop
+start --bare --demo --lang tr
+see ana ekran
+key q
+key q
+see Pane is dead (status 0

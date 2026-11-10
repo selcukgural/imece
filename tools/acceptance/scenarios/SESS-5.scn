@@ -1,0 +1,14 @@
+# SESS-5 · The pot: spent, nothing new starts, raised again.
+start
+see any key: close
+key Escape
+type :budget 0.05
+key Enter
+key /
+type mend shelf.py
+key Enter
+key Escape Escape
+wait 60 STOPPED
+type :budget 15
+key Enter
+see of $15.00

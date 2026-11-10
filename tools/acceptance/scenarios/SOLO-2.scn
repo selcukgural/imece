@@ -1,0 +1,19 @@
+# SOLO-2 · A solo in a folder without git.
+start
+see any key: close
+key Escape
+type :solo $ACC_CASE/repos/plain claude:haiku
+key Enter
+see ⌀ no git
+key /
+type add a line to notes.txt
+key Enter
+key Escape Escape
+wait 30 Changed notes.txt.
+sh grep -c 'add a line' repos/plain/notes.txt
+type :commit
+key Enter
+see git
+type :open $ACC_CASE/repos/plain
+key Enter
+see git

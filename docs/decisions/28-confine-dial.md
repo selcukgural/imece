@@ -48,3 +48,15 @@ a turn); a Bash under standard needed no approval at all until (d) routed
 Claude's prompts to the person (entry "Approval routing v0"); a Codex leader has web search but no network in
 its shell (read-only sandbox); Claude's `NotebookEdit` and the like
 come only with open.
+
+**Strict's sessions stopped at their start (fixed 2026-11-11).** Every
+agent's socket offered imece's `approve` tool, the one Claude Code asks
+the person through (record 30). Strict asks nothing
+(`--permission-prompts none`, no `--permission-prompt-tool`), so the tool
+was one the session reported and imece had not given it: the start's
+check stopped every strict session (`the session tools differ: extra
+["mcp__imece__approve"]`), the leader's first. Nothing tested strict end
+to end since approvals were routed. `Live::bind` now binds `approve` only
+under a level whose asks come to imece (`Confine::full`); the bus's test
+lists a strict socket's tools, and the acceptance case ASK-5 runs a team
+under strict to its change.

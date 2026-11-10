@@ -1,0 +1,29 @@
+# TEAM-6 · A clash with the person's own edit is sent back.
+start
+see any key: close
+key Escape
+key /
+type mend shelf.py
+key Enter
+key Escape Escape
+see run .imece/worktree-setup.sh
+key g d
+key a
+see run .imece/check on its
+key g d
+key a
+see 1 ready to approve
+# The person's own commit on the same lines the change adds to.
+sh printf '# mine\n' >> repos/shelf/shelf.py && git -C repos/shelf commit -qam mine
+key g d
+key a
+# Refused: the change says what clashes, and offers to send it back.
+key J
+see did not apply: conflicts with the checkout in shelf.py
+key Escape
+key g d
+key Enter
+see ✗ does not fit your checkout at
+see b  send the clash back
+key b
+gone does not fit your checkout

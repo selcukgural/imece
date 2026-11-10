@@ -1,0 +1,26 @@
+# CARD-1 · The plan the person sees first (the [cards 2] cue: two cards).
+start
+see any key: close
+key Escape
+type :plan on
+key Enter
+key /
+type lend books in shelf.py [cards 2]
+key Enter
+key Escape Escape
+see run .imece/worktree-setup.sh
+key g d
+key a
+see run .imece/check on its
+key g d
+key a
+see plans 1 card for $0.05
+see cli.py: lend books in
+key g d
+key Enter
+see PLAN · lead · 1 card · $0.05
+see the leader hires a second worker only once you say yes
+see owns cli.py
+key a
+wait 60 #2   cli.py: lend books
+see 2 ready to approve

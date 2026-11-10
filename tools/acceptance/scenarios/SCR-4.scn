@@ -1,0 +1,35 @@
+# SCR-4 · A conversation: turns, folds, its export (and a second export refused).
+start
+see any key: close
+key Escape
+key /
+type mend shelf.py
+key Enter
+key Escape Escape
+see run .imece/worktree-setup.sh
+key g d
+key a
+see run .imece/check on its
+key g d
+key a
+see 1 ready to approve
+type :talk @lead
+key Enter
+see CONVERSATION · lead ⇄ you
+key [ ]
+key z M
+key z R
+see CONVERSATION · lead ⇄ you
+# v chooses lines to copy; esc leaves choosing.
+key v
+see COPY ·
+key j
+key Escape
+gone COPY ·
+type :export $ACC_CASE/talk.md
+key Enter
+see written to
+sh grep -c 'mend shelf.py' talk.md
+type :export $ACC_CASE/talk.md
+key Enter
+see could not write

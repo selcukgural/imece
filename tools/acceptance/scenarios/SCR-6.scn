@@ -1,0 +1,25 @@
+# SCR-6 · Jump, peek, back.
+start
+see any key: close
+key Escape
+key /
+type mend shelf.py
+key Enter
+key Escape Escape
+see run .imece/worktree-setup.sh
+key g d
+key a
+see run .imece/check on its
+key g d
+key a
+see 1 ready to approve
+key &
+see claude-1
+key Escape
+type :goto claude-1
+key Enter
+key K
+see FOCUS · claude-1
+key Escape
+key C-o
+see TO DECIDE

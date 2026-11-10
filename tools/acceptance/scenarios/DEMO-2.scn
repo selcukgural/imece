@@ -1,5 +1,7 @@
 # DEMO-2 · The demo on the real Live, through the stand-in: nothing spent,
 # nothing left behind.
+# What demo directories there are already (another run's), to tell ours apart.
+sh ls -d "${TMPDIR:-/tmp}"/imece-demo-* 2>/dev/null > demos-before; true
 start --bare --demo-live --agents 3
 see Nothing needs you and nobody is at work.
 key /
@@ -15,4 +17,4 @@ wait 60 AT WORK
 key q
 key q
 see Pane is dead (status 0
-sh sleep 1; ! ls -d "${TMPDIR:-/tmp}"/imece-demo-* 2>/dev/null
+sh sleep 1; ls -d "${TMPDIR:-/tmp}"/imece-demo-* 2>/dev/null > demos-after; diff demos-before demos-after

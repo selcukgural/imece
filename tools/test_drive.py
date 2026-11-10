@@ -28,6 +28,11 @@ class DriveTest(unittest.TestCase):
         self.assertFalse(drive.is_tmux("imece"))
         self.assertFalse(drive.is_tmux("python3"))
 
+    def test_a_screen_is_named_whole(self):
+        # tmux takes `-t case-scr-1` for case-scr-14 when no session has
+        # that name exactly, so a case's cleanup ended another's screen.
+        self.assertEqual(drive.exact("case-scr-1"), "=case-scr-1:")
+
     def test_a_script_is_a_step_a_line(self):
         steps = drive.parse("# a comment\n\nstart --size 60x20\nwait 5 TO DECIDE\nkey g d\n")
         self.assertEqual(

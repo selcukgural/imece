@@ -21,6 +21,7 @@ VISUAL, LANG, LC_*), nothing else of the driver's environment.
 A scripted case is `tools/acceptance/scenarios/<ID>.scn`, a step a line
 (`#` starts a comment):
 
+    env NAME VALUE               NAME=VALUE for what starts after it
     start [--size CxR] [--bare] [ARG …]
                                  imece-acc with ARGs on a screen of its own;
                                  --bare: imece itself, without imece-acc's flags
@@ -36,6 +37,9 @@ A scripted case is `tools/acceptance/scenarios/<ID>.scn`, a step a line
     write FILE TEXT              TEXT and a newline into FILE (the case's directory)
     sleep SECONDS                a pause, where no word can be waited for
     stop                         the screen goes (its terminal closed)
+
+`$ACC_CASE` in a step's text is the case's directory (`sh` has it as a
+variable, and `$ACC_SOURCE`, the checkout the tools come from).
 
 Each case runs in a directory of its own under $ACC/s/<ID> (its state,
 config, Claude Code home and copy of the checkouts), so cases do not see
@@ -79,6 +83,13 @@ class Failed(Exception):
     """A scripted step that did not hold, in words."""
 
 
+def exact(name: str) -> str:
+    """Session `name`'s window by the session's whole name: tmux takes
+    `-t case-scr-1` for case-scr-14 when no session is named case-scr-1
+    exactly (`=` asks for the exact name, `:` for its window)."""
+    return "=" + name + ":"
+
+
 def tmux(*args: str, check: bool = True) -> subprocess.CompletedProcess:
     done = subprocess.run(["tmux", "-L", SERVER, *args], capture_output=True, text=True)
     if check and done.returncode != 0:
@@ -119,15 +130,15 @@ def start(name: str, size: str, command: list[str], env: dict[str, str], cwd: st
         *args,
         line,
         ";",
-        "set-option", "-t", name, "remain-on-exit", "on",
+        "set-option", "-t", exact(name), "remain-on-exit", "on",
         ";",
-        "set-option", "-t", name, "allow-passthrough", "on",
+        "set-option", "-t", exact(name), "allow-passthrough", "on",
     )
     log(f"start {name} {size}: {shlex.join(command)}")
 
 
 def snap(name: str, ansi: bool = False) -> str:
-    args = ["capture-pane", "-p", "-t", name]
+    args = ["capture-pane", "-p", "-t", exact(name)]
     if ansi:
         args.insert(1, "-e")
     return tmux(*args).stdout
@@ -155,7 +166,7 @@ class Step:
     rest: str
 
 
-VERBS = ("start", "type", "key", "see", "wait", "gone", "size", "sh", "fails", "says", "write", "sleep", "stop")
+VERBS = ("start", "env", "type", "key", "see", "wait", "gone", "size", "sh", "fails", "says", "write", "sleep", "stop")
 
 
 def parse(text: str) -> list[Step]:
@@ -167,7 +178,7 @@ def parse(text: str) -> list[Step]:
         verb, _, rest = line.partition(" ")
         if verb not in VERBS:
             raise Failed(f"line {n}: `{verb}` is not a step ({', '.join(VERBS)})")
-        if verb in ("type", "see", "gone", "sh", "fails", "says") and not rest:
+        if verb in ("type", "see", "gone", "sh", "fails", "says", "env") and not rest:
             raise Failed(f"line {n}: `{verb}` needs its text")
         if verb == "wait" and not re.fullmatch(r"[0-9.]+ \S.*", rest):
             raise Failed(f"line {n}: `wait SECONDS TEXT`")
@@ -201,6 +212,8 @@ def play(acc: Path, path: Path) -> tuple[str, float, str]:
             "XDG_CONFIG_HOME": str(d / "config"),
             "ACC_REPOS": str(d / "repos"),
             "ACC_CASE": str(d),
+            # The checkout the run's tools and site come from.
+            "ACC_SOURCE": str(SCENARIOS.parents[2]),
         }
     )
     if (acc / "stand-in").exists():
@@ -210,6 +223,9 @@ def play(acc: Path, path: Path) -> tuple[str, float, str]:
     try:
         for step in parse(path.read_text(encoding="utf-8")):
             v, rest = step.verb, step.rest
+            if v in ("type", "write", "see", "wait", "gone", "says", "env"):
+                # The case's own directory, wherever the run is.
+                rest = rest.replace("$ACC_CASE", str(d))
             if v == "start":
                 words = shlex.split(rest)
                 size, program = "120x40", "imece-acc"
@@ -219,8 +235,11 @@ def play(acc: Path, path: Path) -> tuple[str, float, str]:
                     else:
                         program, words = "imece", words[1:]
                 start(name, size, [program, *words], env, str(d))
+            elif v == "env":
+                key, _, value = rest.partition(" ")
+                env[key] = value
             elif v == "type":
-                tmux("send-keys", "-t", name, "-l", "--", rest)
+                tmux("send-keys", "-t", exact(name), "-l", "--", rest)
                 log(f"type {name}: {rest}")
                 time.sleep(KEY_GAP)
             elif v == "key":
@@ -228,7 +247,7 @@ def play(acc: Path, path: Path) -> tuple[str, float, str]:
                 # read are alt and that key, so an Escape waits longer (a
                 # loaded machine reads late).
                 for k in rest.split():
-                    tmux("send-keys", "-t", name, k)
+                    tmux("send-keys", "-t", exact(name), k)
                     time.sleep(ESCAPE_GAP if k == "Escape" else KEY_GAP)
                 log(f"key {name}: {rest}")
             elif v == "see":
@@ -240,7 +259,7 @@ def play(acc: Path, path: Path) -> tuple[str, float, str]:
                 wait_for(name, rest, SEE_WAIT, present=False)
             elif v == "size":
                 cols, rows = rest.split()
-                tmux("resize-window", "-t", name, "-x", cols, "-y", rows)
+                tmux("resize-window", "-t", exact(name), "-x", cols, "-y", rows)
                 log(f"size {name}: {cols}x{rows}")
             elif v in ("sh", "fails"):
                 done = subprocess.run(
@@ -261,9 +280,9 @@ def play(acc: Path, path: Path) -> tuple[str, float, str]:
             elif v == "sleep":
                 time.sleep(float(rest))
             elif v == "stop":
-                tmux("kill-session", "-t", name, check=False)
+                tmux("kill-session", "-t", exact(name), check=False)
         # Nothing of the case may outlive its terminal (record 86).
-        tmux("kill-session", "-t", name, check=False)
+        tmux("kill-session", "-t", exact(name), check=False)
         left = outlived(d)
         if left:
             raise Failed(f"still running {LEFT_WAIT:g} s after its terminal went: {left}")
@@ -282,7 +301,7 @@ def play(acc: Path, path: Path) -> tuple[str, float, str]:
         )
         return "fail", took, f"line {step.line}: {why}"
     finally:
-        tmux("kill-session", "-t", name, check=False)
+        tmux("kill-session", "-t", exact(name), check=False)
         # Nothing of the case is left running: imece quits when its
         # terminal goes; whatever outlived it goes now.
         time.sleep(0.5)
@@ -341,7 +360,8 @@ def outlived(d: Path) -> str:
 def leftovers(d: Path) -> None:
     """Ends what of case directory `d` still runs, never the tmux server
     (whose command line is its first session's, so it may name `d`)."""
-    found = subprocess.run(["pgrep", "-f", str(d)], capture_output=True, text=True)
+    # With its slash: SCR-1's directory is a prefix of SCR-14's.
+    found = subprocess.run(["pgrep", "-f", str(d) + "/"], capture_output=True, text=True)
     for pid in found.stdout.split():
         name = subprocess.run(["ps", "-o", "comm=", "-p", pid], capture_output=True, text=True)
         if not is_tmux(name.stdout) and int(pid) != os.getpid():
@@ -436,10 +456,10 @@ def main(argv: list[str]) -> int:
                 sys.exit("drive: start NAME [--size CxR] -- COMMAND…")
             start(args.name, args.size, command, dict(os.environ))
         elif args.what == "type":
-            tmux("send-keys", "-t", args.name, "-l", "--", args.text)
+            tmux("send-keys", "-t", exact(args.name), "-l", "--", args.text)
             log(f"type {args.name}: {args.text}")
         elif args.what == "key":
-            tmux("send-keys", "-t", args.name, *args.keys)
+            tmux("send-keys", "-t", exact(args.name), *args.keys)
             log(f"key {args.name}: {' '.join(args.keys)}")
         elif args.what == "snap":
             sys.stdout.write(snap(args.name, args.ansi))
@@ -451,10 +471,10 @@ def main(argv: list[str]) -> int:
                 print(f"drive: {why}", file=sys.stderr)
                 return 1
         elif args.what == "size":
-            tmux("resize-window", "-t", args.name, "-x", str(args.cols), "-y", str(args.rows))
+            tmux("resize-window", "-t", exact(args.name), "-x", str(args.cols), "-y", str(args.rows))
             log(f"size {args.name}: {args.cols}x{args.rows}")
         elif args.what == "stop":
-            tmux("kill-session", "-t", args.name, check=False)
+            tmux("kill-session", "-t", exact(args.name), check=False)
             log(f"stop {args.name}")
     except Failed as why:
         print(f"drive: {why}", file=sys.stderr)

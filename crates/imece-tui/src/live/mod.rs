@@ -1207,11 +1207,18 @@ impl Live {
     }
 
     /// Binds the socket of agent `id`, the next one to get a socket, with
-    /// the tools of `role` and the tool its session asks through. Without
-    /// a bus (before it opens) there is nothing to bind.
+    /// the tools of `role` and, under a level whose asks come to imece,
+    /// the tool its session asks through. Strict asks nothing
+    /// (`--permission-prompts none`), so its sessions are given no such
+    /// tool: listed, it was a tool the session reported and imece had not
+    /// asked for, and every strict session was stopped at its start
+    /// (found by the acceptance scripts, 2026-11-11). Without a bus
+    /// (before it opens) there is nothing to bind.
     fn bind(&mut self, id: AgentId, role: Role) -> io::Result<()> {
         let mut tools = tools_of(role, &self.run_programs, self.run_timeout);
-        tools.push(approve_tool());
+        if self.confine.full() {
+            tools.push(approve_tool());
+        }
         let Some(bus) = &mut self.bus else {
             return Ok(());
         };

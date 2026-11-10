@@ -457,3 +457,13 @@ nothing by chance). A Python kind joined the others (`.py`: `python3 -m
 unittest`, which imece's runners make routine in a checkout with
 Python's tests (record 136); its ask `python3 -m pip --version`), for the
 acceptance run's sample `shelf`.
+
+## A solo (2026-11-11)
+
+A solo session (record 59) did nothing on the stand-in ("Nothing for me
+to do here."), so no case of a solo could be a script. `Mind::solo`: the
+person's words are its task, done at once: the file they name best
+changed and its tests run, or, in a folder with no code, a note written
+under `stand-in/`; what it did is the turn's text (`Changed shelf.py.`),
+and it sends nothing, since it answers to the person alone. Mail alone,
+or imece's wake, is no task.
