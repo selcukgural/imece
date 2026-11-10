@@ -108,7 +108,7 @@ Bir `assign` ya da `post`, kartının sahip olduğu yolları adlandırır: `path
 - **Her kartın dokunduğu bir yol `shared`'dır.** `CHANGELOG.md shared` yolu sahiplenmeden adlandırır: başka bir kart da adlandırabilir, işçi de yazabilir. Lidere, çoğu görevin dokunduğu bir dosyayı tek bir karta vermesi ve ötekilere o dosyanın ne alması gerektiğini `done`'larında söylemeleri gerektiğini anlatması söylenir.
 - **Yollarının dışına yazan işçi sapar ve bu ona söylenir.** Oturumunun `Edit`, `Write` ve `MultiEdit` çağrıları dosyayı gösterir; kartın yollarının dışındaki bir dosyaya ilk yazışta kartın hikâyesi `değiştirdi: src/other.rs; kartın yollarının dışında`, defter `claude-1 şunu değiştirdi: src/other.rs; #3 kartının dışında` der ve işçinin sonraki istemi `you changed src/other.rs, which #3 does not own (it owns src/parser.rs); say so in your done, or ask lead to widen the card` ile başlar. Kart başına dosya başına bir kez; asla durdurulmaz, asla reddedilmez: kişi değişikliği, kartın dışındaki dosyalar yamanın üstünde sayılmış olarak okur ([değişiklikler](../screen/changes.md#yamanın-üstündekiler)).
 
-Bu, sembol lease'lerinin ucuz vekilidir (bkz. [kod haritası](../screen/board-and-code-map.md)): yol, liderin planlarken adlandırabildiği ve bir değişikliğin dosyalar okunmadan karşılaştırılabildiği şeydir. Lease'ler ancak yollar yetmezse gelir.
+imece'de sembol lease'i yoktur. Yol, liderin planlarken adlandırabildiği ve bir değişikliğin dosyalar okunmadan karşılaştırılabildiği şeydir; Lonca'daki bir projede deponun lease'leri [kod haritasında](../screen/board-and-code-map.md) görünür.
 
 ## Kartın istediği denetimler
 

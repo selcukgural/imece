@@ -87,7 +87,7 @@ Yardımcılar işçilerinin worktree'sini paylaşır ve aynısını alır; bir l
 
 ## 7. Araştırmacılar
 
-Bir araştırmacı katmanı (takım için dış dünyayı okuyan, her projenin paylaştığı bir tavan altında ajanlar) tasarlandı ama henüz yapılmadı: canlı imece başlıkta araştırmacı sayısı göstermez. `imece --demo --researchers N` önizlemesini verir: demoda tavan bütün projeler için tek havuzdur.
+Bir araştırmacı katmanı (takım için dış dünyayı okuyan, her projenin paylaştığı bir tavan altında ajanlar) kapatıldı, yapılmayacak: işçilerin web'i zaten kendilerinde. Canlı imece başlıkta araştırmacı sayısı göstermez. `imece --demo --researchers N` tavanı hâlâ önizler: demoda tavan bütün projeler için tek havuzdur.
 
 ## 8. Birini kapatın
 

@@ -108,7 +108,7 @@ An `assign` or a `post` names the paths its card owns: `paths`, at most 20 git p
 - **A path every card touches is `shared`.** `CHANGELOG.md shared` names the path without owning it: another card may name it too, and the worker may write it. The leader is told to give a file most tasks touch to one card and tell the others to say in their `done` what it should get.
 - **A worker that writes outside its paths strays, and is told.** Its session's `Edit`, `Write` and `MultiEdit` calls show the file; the first time a file outside the card's paths is written, the card's story says `changed src/other.rs, outside the card's paths`, the journal `claude-1 changed src/other.rs, which #3 does not own`, and the worker's next prompt starts with `you changed src/other.rs, which #3 does not own (it owns src/parser.rs); say so in your done, or ask lead to widen the card`. Once per file per card; never stopped, never refused: the person reads the change with the files outside the card counted above its patch ([changes](../screen/changes.md#what-is-above-the-patch)).
 
-This is the cheap stand-in for symbol leases (see [the code map](../screen/board-and-code-map.md)): a path is what the leader can name when it plans, and what a change can be checked against without reading the files. Leases come only if paths prove not enough.
+imece has no symbol leases. A path is what the leader can name when it plans, and what a change can be checked against without reading the files; on a project on Lonca the store's leases are shown on the [code map](../screen/board-and-code-map.md).
 
 ## The checks a card asks for
 

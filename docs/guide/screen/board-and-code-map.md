@@ -1,6 +1,6 @@
 ---
 title: The board and the code map
-description: Two windows over the screen - the board with every card in its column, and the code map that shows who edits what once symbol leases exist.
+description: Two windows over the screen - the board with every card in its column, and the code map that shows who holds which files, from Lonca's leases (and a preview in the demo).
 ---
 
 # The board and the code map
@@ -34,7 +34,7 @@ What a card is, how the leader posts and assigns and how a worker claims, is in 
 
 ## The code map
 
-`:code` opens CODE MAP · project · who edits what. It is meant to show one row per file of the project, and on that row one cell per symbol lease held in it:
+`:code` opens CODE MAP · project · who edits what. It shows one row per file of the project, and on that row one cell per lease held in it. The picture below is the demo's, which leases symbols; imece itself leases no symbols, and live the leases are Lonca's, per file:
 
 ```text
 ┌ CODE MAP · shop-api · who edits what ───────────────────────────────────────┐

@@ -8,9 +8,9 @@
 imece (Turkish: neighbours finishing a job together) runs a team of
 Claude Code agents on one codebase, on one screen.
 A leader reads your checkout and hires workers as the work needs them; each
-worker changes a git worktree of its own and the agents talk to each other
-over a bus. Nothing reaches your checkout until you have read the change
-and applied it.
+worker changes a git worktree of its own (or a Lonca workspace) and the
+agents talk to each other over a bus. Nothing lands until you have read the
+change and said yes to it.
 
 **Documentation, every key and scenario, video tours:
 <https://selcukgural.github.io/imece/>** (English · [Türkçe](https://selcukgural.github.io/imece/tr/))
@@ -48,9 +48,10 @@ updating and uninstalling:
   workers hire helpers for parts of a task. You talk to the leader.
 - **Long-lived Claude Code sessions.** Each agent is a session of its own.
   Claude Code's own restrictions are switched on and checked, fail closed.
-- **Your checkout is never touched.** A worker's `done` shows up as a change
-  (`Δ`) in TO DECIDE: read the diff, note lines, apply all or only the
-  hunks you choose, or send it back with your reasons.
+- **Your checkout changes only when you say so.** A worker's `done` shows up
+  as a change (`Δ`) in TO DECIDE: read the diff, note lines, apply all or
+  only the hunks you choose, or send it back with your reasons. On Lonca the
+  same yes asks the merge queue to land it.
 - **One screen to decide on.** Home lists what is to decide, grouped by
   what deciding costs (permissions, questions, changes), each row the whole
   ask with its keys, then who is at work, project by project. A change
@@ -97,9 +98,9 @@ imece --demo                               # fake agents, to see the screen at w
 [Scenarios](https://selcukgural.github.io/imece/docs/scenarios) ·
 [Videos](https://selcukgural.github.io/imece/docs/videos)
 
-> Status: early. Researchers are designed, shown by the demo, and not built
-> yet; symbol leases (several agents in one file) come from Lonca, for a
-> project on it.
+> Status: early, Claude Code only. Researchers are closed, not to be built
+> (record 01). Off Lonca, owned paths keep two cards apart, not symbol leases;
+> on a project on Lonca the store holds the leases.
 
 The reasons behind each behaviour are in [`docs/decisions/`](docs/decisions);
 the site's pages are the Markdown files in `docs/guide/` (English) and
@@ -120,8 +121,9 @@ Something broken is an
 ## Security
 
 imece guards its own boundaries (who may call which tool, what an agent's
-text may do on the screen, the pot, the gate between a worktree and your
-checkout) and is not a sandbox: an agent with a shell can do what your
+text may do on the screen, the pot, the gate between a worker's work and your
+checkout: the Δ review for a worktree, Lonca's approval for a Lonca project)
+and is not a sandbox: an agent with a shell can do what your
 account can. Please report security problems privately; see
 [SECURITY.md](SECURITY.md).
 

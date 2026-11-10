@@ -1,11 +1,11 @@
 ---
 title: The team
-description: Who is on an imece team - the leader, workers, helpers and the researchers that are not built yet - how the leader hires with tiers, and how agents are named.
+description: Who is on an imece team - the leader, workers and helpers - how the leader hires with tiers, and how agents are named.
 ---
 
 # The team
 
-An imece team is a leader that talks to you and hires workers as the work needs them, workers that may hire helpers for parts of their task, and (one day) researchers. You never pick a team size; you set caps. You meet the team on Home, under AT WORK, grouped by project.
+An imece team is a leader that talks to you and hires workers as the work needs them, and workers that may hire helpers for parts of their task. You never pick a team size; you set caps. You meet the team on Home, under AT WORK, grouped by project.
 
 ## Roles
 
@@ -15,13 +15,12 @@ An imece team is a leader that talks to you and hires workers as the work needs 
 | Worker (`claude-1`, `claude-2`, …) | Its own worktree, detached at your HEAD | `send`, `post`, `board`, `run`, `whoami`, `claim`, `hire` (helpers) |
 | Helper (`claude-1.1`, …) | Its worker's worktree, the files its worker names | `send`, `post`, `board`, `run`, `whoami` |
 | Solo (`solo`, `solo-notes`) | Its own worktree, in a project with no leader | `send`, `run`, `hire` (helpers) |
-| Researcher | not built yet | — |
 
 - **The leader** reads the checkout, splits your request into cards and hands them out with `send` (type `assign`), each with the paths it owns ([the paths a card owns](messages-and-board.md#the-paths-a-card-owns)), or puts them on the board for any worker to take. Before it hires a second worker its plan comes to you first (`▤` in TO DECIDE; [the plan](messages-and-board.md#the-plan)). A free worker (idle, its card done, no change waiting) gets the next card before anyone is hired: `whoami` lists the free workers, and `hire` on the tier of a free one answers `claude-1 is free … give it the next card`. It never changes a file, at every `--confine` level: it works in your checkout, where a write would skip the review. It gets Claude Code's read tools and, from `standard` on, the web.
 - **A worker** changes files in its own worktree, checks its work with the `run` tool, and sends `done` to whoever gave it the task. Its `done` becomes a change for you to review ([changes](../concepts/changes.md)). One card at a time per worker.
 - **A helper** is to a worker what a worker is to the leader. A worker hires one for a part that can run beside its own work, in files it is not changing. A helper is not offered cards, hires nobody (no helpers of helpers), and is not counted against `--agents`. Its `done` to its worker marks it leaving; it leaves when that turn ends, so the turn's cost is still reported. The journal says `finished and left`. A worker that stops takes its helpers with it. A helper that stops before its `done` (its session ends, or its last turn fails for good: a refused key, a spent budget) is told to its worker by imece at the worker's next turn, "the part you gave it is not done: do it yourself, or hire another helper", and an idle worker is woken for it, so it does not wait on a helper that will not answer; an API error imece tries again is not a stop yet.
 - **A solo** is a worker without a leader: you drive it yourself, on the model and effort you chose (`:solo`, `--solo`), in a project of its own. It has no board and no cards; every turn that ends with an answer shows you its worktree's diff. It may hire helpers as a worker does ([solo sessions](solo.md)).
-- **Researchers** are a planned layer (a capped pool that answers questions, with graded taint and trusted sources). They are not built; only the demo shows them (`--researchers N`).
+- **Researchers** are closed, not to be built: workers and helpers have the web themselves, so no separate pool of readers is planned. Only the demo still shows a cap for them (`--researchers N`).
 
 Claude Code's own sub-agent tool (`Agent`/`Task`) is off at every level: a sub-agent spawned inside a session would skip the worktree, the pot, the bus and the screen. Helpers are imece's answer to that need.
 

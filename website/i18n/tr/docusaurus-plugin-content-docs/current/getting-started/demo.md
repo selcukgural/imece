@@ -67,7 +67,7 @@ Canlının yaptığına her düzeltme, özellik ya da değişiklik, aynı deği�
 ## Taklit edilemeyenler
 
 - **"Nerede kalmıştın" penceresi**, bir kapanışla yarım kalan turlar ve başlangıçtan uykuda ajanlar: bunlar bir depo ve önceki bir çalıştırma gerektirir; demo hiçbirini tutmaz.
-- **Araştırmacılar**: demo onları planlananın ön izlemesi olarak gösterir; canlıda henüz yok.
+- **Araştırmacılar**: demo onları bir ön izleme olarak gösterir; canlıda yok, kapatıldı, yapılmayacak (kayıt 01).
 - **Worktree'lerdeki bir projenin kod haritası**: demo her projede kartlarından lease çizer, bir ön izleme olarak; canlıda lease yalnız Lonca'da vardır, orada harita daemon'ınkileri gösterir, worktree'lerdeki bir proje ise `henüz ortak trunk yok: her agent kendi worktree'sinde çalışıyor, kimin neyi düzenlediği gösterilemez` der. Demonun Lonca projesi `:lonca`'da tutulan sembol listelemez.
 - **Panonun DOĞRULANIYOR sütunu**: canlı kartlar, Lonca'nın merge kuyruğu değişikliklerini tutarken orada durur; demo bir öneriyi hemen indirir, bu yüzden sütunu boş kalır.
 

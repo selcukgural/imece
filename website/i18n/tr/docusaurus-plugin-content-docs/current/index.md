@@ -34,7 +34,7 @@ imece, Rust ile yazılmış bir terminal programıdır: Claude Code oturumların
 - **Bir sandbox değildir.** imece Claude Code'un kendi kısıtlamalarını açar (`--restricted` kipi) ve bir oturumun istenenle çalıştığını, kapalı düşerek (fail closed) denetler: başka araçlar bildiren bir oturum durur. Ama kabuğu olan bir ajan, hesabınızın yapabildiğini yapabilir. Bunun ötesindeki yalıtım bir konteynerin işidir. Bkz. [güvenlik](concepts/security.md).
 - **Kapı ne bir model ne de bir araç listesidir.** Son kapı kişidir: bir işçinin değişikliği checkout'unuza yalnız siz uyguladığınızda (`Δ` incelemesi) girer; Claude Code'un soracağı bir komut yalnız siz izin verince çalışır.
 - **Bir merge aracı değildir.** Düz bir git checkout'unda aynı dosyada iki işçi hâlâ bir sorundur; lider, ortak bir dosyayı (changelog, sürüm) aynı anda tek işçiye vererek bundan kaçınır. [Lonca](concepts/projects.md#loncada)'daki bir projede daha fazlası var: işçiler düzenlediklerini lease'ler, birleştirmeyi Lonca'nın merge kuyruğu yapar ve kod haritası (`:code`) kimin neyi tuttuğunu gösterir.
-- **Bitmiş değildir.** Araştırmacılar (güvenilir kaynaklardan soru yanıtlayan, tavanlı bir havuz) tasarlandı ama yapılmadı; demo onları ön izleme olarak gösterir. Proje başına bir renk de henüz yok.
+- **Bitmiş değildir.** Araştırmacılar (güvenilir kaynaklardan soru yanıtlayan, tavanlı bir havuz) kapatıldı, yapılmayacak: işçilerin ve yardımcıların web'i zaten kendilerinde. Proje başına bir renk de henüz yok.
 
 ## Döngü
 
