@@ -483,6 +483,13 @@ pub struct Limit {
     pub resets_at: Option<u64>,
 }
 
+/// What a failed turn tried again says (record 79): the failed prompt is
+/// still in the session (Claude Code keeps it), so it is not sent again.
+/// Here, not in the screen's crate, so the stand-in knows it (record 130).
+pub const RETRY_PROMPT: &str = "From imece (not from the person or a teammate): your \
+     last turn stopped on an error at Claude's API (overloaded, a server error or a lost \
+     connection). Carry on from where you stopped.";
+
 /// Why a turn failed on Claude Code's side, as far as imece acts on it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Fault {

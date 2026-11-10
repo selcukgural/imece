@@ -20,11 +20,14 @@ const HELPERS: usize = 2;
 /// How long a demo worker takes over each step of its list, in
 /// milliseconds; one assign in how many runs a command that waits for
 /// the person's yes first, one in how many asks the person a question,
-/// and one in how many hires a helper for its tests.
+/// and one in how many hires a helper for its tests; one turn in how many
+/// of any session fails at Claude's API (record 79: tried again, or the
+/// person's when it is the account's).
 const PAUSE: u64 = 1_500;
 const ASKS: u64 = 3;
 const QUESTIONS: u64 = 4;
 const HIRES: u64 = 3;
+const FAULTS: u64 = 8;
 
 /// How the demo's stand-ins work, their choices seeded by `seed`.
 fn habits(seed: u64) -> Habits {
@@ -33,6 +36,7 @@ fn habits(seed: u64) -> Habits {
         asks: ASKS,
         questions: QUESTIONS,
         helpers: HIRES,
+        faults: FAULTS,
         seed,
     }
 }
@@ -292,6 +296,7 @@ mod tests {
                 asks: 3,
                 questions: 4,
                 helpers: 3,
+                faults: 8,
                 seed: 9
             }
         );

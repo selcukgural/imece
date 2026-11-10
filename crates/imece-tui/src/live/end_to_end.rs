@@ -374,3 +374,100 @@ fn a_worker_s_helper_writes_its_tests_says_done_and_leaves() {
     let _ = std::fs::remove_dir_all(&dir);
     let _ = std::fs::remove_dir_all(&repo);
 }
+
+#[test]
+fn a_turn_that_fails_at_the_api_is_tried_again_and_the_account_s_waits_for_the_person() {
+    use imece_agent::Fault;
+    use imece_agent::stand_in::{Habits, NO_CREDIT, OVERLOADED, work};
+    let dir = std::env::temp_dir().join(format!("imece-e2e-faults-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let repo = checkout("e2e-faults-repo");
+    // Every turn fails but the one after a failure: the leader's first on
+    // a passing fault, its worker's first on the account's.
+    let habits = |seed| Habits {
+        faults: 1,
+        seed,
+        ..Default::default()
+    };
+    let first = |seed, name: &str| habits(seed).fault_now(work::roll(seed, name, 0));
+    let seed = (0..10_000u64)
+        .find(|&s| {
+            first(s, "imece lead") == Some(Fault::Passing)
+                && first(s, "imece claude-1") == Some(Fault::Account)
+        })
+        .unwrap();
+    let claude =
+        imece_agent::stand_in::install(&dir, &imece(), &dir.join("home"), &habits(seed)).unwrap();
+    let mut w = team(0);
+    let mut live = Live::new(
+        1,
+        claude_at(&claude.to_string_lossy()),
+        repo.clone(),
+        dir.join("trees"),
+    );
+    live.open_bus(&w, imece().to_string_lossy().into_owned())
+        .unwrap();
+    live.told(&mut w, 0, "Write a greeting").unwrap();
+    let until = |w: &mut World, live: &mut Live, done: &dyn Fn(&World) -> bool| {
+        let start = std::time::Instant::now();
+        while !done(w) {
+            assert!(
+                start.elapsed().as_secs() < 30,
+                "timed out: {:#?}",
+                w.journal
+            );
+            live.step(w);
+            thread::sleep(Duration::from_millis(20));
+        }
+    };
+    // The leader's turn fails on an overloaded API: imece will try it
+    // again, nobody is hired yet.
+    until(&mut w, &mut live, &|w| w.agents[0].retry.is_some());
+    assert_eq!(w.agents[0].retry.map(|r| r.attempt), Some(1));
+    assert_eq!(w.agents.len(), 1);
+    assert!(
+        w.journal.iter().any(|l| matches!(
+            &l.event,
+            Event::Retrying { agent: 0, why, .. } if why == OVERLOADED
+        )),
+        "{:#?}",
+        w.journal
+    );
+    assert!(
+        (w.agents[0].trace.iter()).any(|l| l.contains("api error 529 overloaded: retry 3/10")),
+        "Claude Code's own tries are traced"
+    );
+    // The try's time comes (the clock moved, not waited for): the leader
+    // does the work of the prompt that failed, and its worker's first
+    // turn fails on the account's fault, which waits for the person.
+    w.started_at -= RETRY_TICKS[0] * SECONDS_PER_TICK;
+    fn fault_of(w: &World, id: AgentId) -> Option<&InboxItem> {
+        (w.inbox.iter()).find(|i| i.kind == InboxKind::Fault && i.agent == id && i.open)
+    }
+    until(&mut w, &mut live, &|w| fault_of(w, 1).is_some());
+    assert!(
+        fault_of(&w, 1).unwrap().detail.contains(NO_CREDIT),
+        "{:?}",
+        fault_of(&w, 1)
+    );
+    assert_eq!(w.agents[1].retry, None, "nothing tries the account's again");
+    assert!(w.changes.is_empty());
+    // The person's word is the next try: the worker does its assign.
+    live.told(&mut w, 1, "Paid it, go on").unwrap();
+    w.said(1, "Paid it, go on");
+    assert!(fault_of(&w, 1).is_none());
+    until(&mut w, &mut live, &|w| {
+        w.changes.iter().any(|c| c.agent == 1) && w.agents[1].status == Status::Idle
+    });
+    let change = w.changes.iter().find(|c| c.agent == 1).unwrap();
+    assert_eq!(change.title, "Write a greeting");
+    assert!(
+        change.patch.contains("+Write a greeting"),
+        "{}",
+        change.patch
+    );
+    drop(live);
+    let _ = std::fs::remove_dir_all(&dir);
+    let _ = std::fs::remove_dir_all(&repo);
+}
