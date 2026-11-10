@@ -263,9 +263,11 @@ waits on a later card`). `World::ready` is every card it waits on done;
   withdrawn`).
 - **A failed card holds back what waits on it** until it is handed again
   and done; one the person failed for good, for ever. Either way the
-  leader hears which cards wait on it with its next prompt
-  (`Live::blocks`, from a failed `done` and from the person's no at the
-  breaker).
+  leader hears which cards wait on it: since record 146 (part 3b) each
+  of them is a card's wait, told at once and woken for
+  (`World::look_card_waits`); the person's no at the breaker still adds
+  that they never begin (`Live::failed_for_good`; before, `Live::blocks`
+  told both with the next prompt and woke nobody).
 - **The `board` tool lists every card**, posted or assigned (it listed
   only posted ones, the gap F8 named), the open ones apart, each with
   what it waits on (`; waits on #2, #5`, `, and #2 failed`), a held one

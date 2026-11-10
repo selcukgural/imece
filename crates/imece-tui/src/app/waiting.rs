@@ -415,11 +415,12 @@ impl App {
         }
         if matches!(
             self.world.inbox[item].kind,
-            InboxKind::Question | InboxKind::Fault | InboxKind::Blocked
+            InboxKind::Question | InboxKind::Fault | InboxKind::Blocked | InboxKind::Waits
         ) {
             // A question is answered by writing back, and an API error
             // the person mended is told the same way: the composer opens
-            // to the agent, and the item closes when the message goes.
+            // to the agent, and the item closes when the message goes. A
+            // card's wait is its leader's (record 146, part 3b).
             let name = self.world.agents[self.world.inbox[item].agent].name.clone();
             self.compose(format!("@{name} "));
             return;

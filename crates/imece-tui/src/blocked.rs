@@ -226,6 +226,8 @@ impl World {
                 b.read |= b.what != What::Said;
             }
         }
+        // And the cards' waits it was told of (record 146, part 3b).
+        self.waits_read(leader);
     }
 
     /// Whether `by`'s word may start worker `id`, whose session ended,
@@ -324,7 +326,7 @@ impl World {
     }
 
     /// The blocks `leader` has read and neither solved nor asked about.
-    fn blocks_with(&self, leader: AgentId) -> Vec<AgentId> {
+    pub(crate) fn blocks_with(&self, leader: AgentId) -> Vec<AgentId> {
         (self.agents.iter())
             .filter(|a| !a.gone)
             .filter(|a| {

@@ -102,7 +102,7 @@ impl Live {
         if about_block && (arg("to") != YOU || kind != MsgKind::Ask) {
             return Err(
                 "tried and risk go with an ask to the person about a worker's blocked \
-                 (to: you, re: the blocked's number)"
+                 or a card's wait (to: you, re: its number)"
                     .into(),
             );
         }
@@ -112,19 +112,21 @@ impl Live {
             if re.is_some() && kind != MsgKind::Ask {
                 return Err("re is for a teammate's message: the person's have no number".into());
             }
+            // Or the card's wait it is about (record 146, part 3b).
             if let Some(re) = re
                 && w.block_by_message(from, re).is_none()
+                && w.wait_for(from, Some(re)).is_none()
             {
                 return Err(format!(
-                    "message {re} is no open blocked of a worker of yours: to the person, \
-                     re goes only on an ask about such a blocked, and their own messages \
-                     have no number"
+                    "message {re} is no open blocked of a worker of yours nor a card's wait: \
+                     to the person, re goes only on an ask about one of those, and their own \
+                     messages have no number"
                 ));
             }
-            if about_block && w.block_for(from, re).is_none() {
+            if about_block && w.block_for(from, re).is_none() && w.wait_for(from, re).is_none() {
                 return Err(
-                    "tried and risk are for an ask about a worker's blocked: name it with \
-                     re, its number"
+                    "tried and risk are for an ask about a worker's blocked or a card's wait: \
+                     name it with re, its number"
                         .into(),
                 );
             }
@@ -416,6 +418,8 @@ impl Live {
             if let Some(worker) = w.block_asked(from, about, &tried, risk.as_deref()) {
                 let name = w.agents[worker].name.clone();
                 w.agents[from].trace(t, format!("asks the person about {name}'s blocked"));
+            } else if let Some(c) = w.wait_asked(from, about, &tried, risk.as_deref()) {
+                w.agents[from].trace(t, format!("asks the person about #{}'s wait", c + 1));
             }
         } else if kind == MsgKind::Done {
             w.block_over(from);
@@ -469,8 +473,8 @@ impl Live {
                 (Outcome::Late(c), false)
             }
             DoneFor::Card(c) if failed => {
+                // What waits on it is told by its wait (record 146).
                 w.card_failed(from, c, first);
-                self.blocks(w, c);
                 (Outcome::Failed(Some(c)), false)
             }
             // The person's own line it had no card for came to nothing:
@@ -554,22 +558,18 @@ impl Live {
         c
     }
 
-    /// Card `c` failed, or the person failed it for good: its leader hears
-    /// which cards wait on it (record 126, F10), with its next prompt.
-    pub(super) fn blocks(&mut self, w: &World, c: CardId) {
+    /// The person failed card `c` for good: its leader hears that what
+    /// waits on it never begins (their waits it was told of before said it
+    /// may be handed again).
+    fn failed_for_good(&mut self, w: &World, c: CardId) {
         let waiting = w.dependents(c);
         if waiting.is_empty() {
             return;
         }
         let leader = w.projects[w.cards[c].project].leader;
-        let what = if w.cards[c].breaker.stopped {
-            "the person failed it for good, so they never begin: withdraw them, or tell \
-             the person"
-        } else {
-            "they begin once it is done: hand it again, or tell the person"
-        };
         self.notes[leader].push(format!(
-            "{} wait on #{}, which failed; {what}.",
+            "{} wait on #{}, which the person failed for good, so they never begin: \
+             withdraw them, or ask the person.",
             words::card_refs(&waiting),
             c + 1
         ));
@@ -1182,7 +1182,7 @@ impl Live {
         };
         self.lost[woken] = true;
         if !yes {
-            self.blocks(w, c);
+            self.failed_for_good(w, c);
         }
         let said = if yes { "one more" } else { "failed" };
         w.agents[agent].trace(w.tick, format!("{card} {said}"));
@@ -4551,6 +4551,7 @@ in p.rs",
     fn a_card_failing_tells_the_leader_what_waits_on_it() {
         let mut w = team(2);
         let mut live = idle_live(3);
+        w.agents[0].status = Status::Idle;
         let c = with_card(&mut w, 1);
         w.agents[1].attempt = w.cards[c].attempt;
         // A card through waits on nothing any more.
@@ -4562,13 +4563,20 @@ in p.rs",
         let mut done = msg("lead", "done", "Could not");
         done["outcome"] = json!("failed");
         sent(&mut live, &mut w, 1, &done).unwrap();
+        // Its wait tells it (record 146, part 3b), and wakes it.
+        assert!(live.notes[0].iter().all(|n| !n.contains("wait")));
+        live.look_card_waits(&mut w);
+        let n = w.card_wait(1).unwrap().msg;
         assert_eq!(
             live.notes[0],
-            [
-                "#2 wait on #1, which failed; they begin once it is done: hand it again, or tell \
-              the person."
-            ]
+            [format!(
+                "#2 Tests waits on #1 fix it, which failed, so it never begins as it is. It is \
+                 yours to solve (stop {n}): hand #1 again (assign with card), withdraw #2 if \
+                 it is not needed without it, or ask the person (an ask to you with re: {n}, \
+                 what you tried, and the risk if there is one)."
+            )]
         );
+        assert!(live.lost[0], "woken");
         // The person fails it for good: they never begin.
         live.notes[0].clear();
         w.cards[c].attempt = TRIES;
@@ -4577,8 +4585,8 @@ in p.rs",
         assert!(live.decide_cap(&mut w, item, false));
         assert!(
             live.notes[0].iter().any(|n| n
-                == "#2 wait on #1, which failed; the person failed it for good, so they never \
-                    begin: withdraw them, or tell the person."),
+                == "#2 wait on #1, which the person failed for good, so they never begin: \
+                    withdraw them, or ask the person."),
             "{:?}",
             live.notes[0]
         );
@@ -4600,6 +4608,7 @@ in p.rs",
         w.agents[2].attempt = w.cards[e].attempt;
         live.notes[0].clear();
         sent(&mut live, &mut w, 2, &done).unwrap();
+        live.look_card_waits(&mut w);
         assert!(live.notes[0].is_empty(), "{:?}", live.notes[0]);
     }
 

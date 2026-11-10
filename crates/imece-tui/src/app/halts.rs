@@ -28,7 +28,7 @@ impl App {
         }
         match self.home_at()? {
             HomeRow::Stop(p, halt) => Some((p, halt)),
-            HomeRow::Item(_) | HomeRow::Agent(_) | HomeRow::Project(_) => None,
+            HomeRow::Item(_) | HomeRow::Agent(_) | HomeRow::Project(_) | HomeRow::Card(_) => None,
         }
     }
 

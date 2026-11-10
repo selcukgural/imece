@@ -401,6 +401,11 @@ struct Content {
     stop_ask: &'static str,
     stop_options: &'static [&'static str],
     stop_tried: &'static str,
+    /// The leader's question about a card nobody takes (record 146,
+    /// part 3b), its answers, and what it tried.
+    wait_ask: &'static str,
+    wait_options: &'static [&'static str],
+    wait_tried: &'static str,
     /// Why a demo worker's turn fails with nothing to try again.
     max_turns: &'static str,
     /// What an agent answers the person who told it something.
@@ -558,6 +563,9 @@ const EN: Content = Content {
     stop_options: &["give the card to another worker", "start it once more"],
     stop_tried: "Read the end of its log: it stopped in the same test run both times, \
                  nothing in the code it wrote explains it.",
+    wait_ask: "Nobody takes this card from the board: give it to a worker, or withdraw it?",
+    wait_options: &["give it to a worker", "withdraw it"],
+    wait_tried: "Offered it to every worker; each took another card first.",
     max_turns: "error_max_turns: the turn reached its limit of turns",
     acks: &[
         "Understood; I go on that way.",
@@ -705,6 +713,9 @@ const TR: Content = Content {
     stop_options: &["kartı başka işçiye ver", "bir kez daha başlat"],
     stop_tried: "Günlüğünün sonunu okudum: iki seferde de aynı test çalışmasında durdu, \
                  yazdığı kodda bunu açıklayan bir şey yok.",
+    wait_ask: "Bu kartı panodan kimse almıyor: bir işçiye mi verelim, geri mi çekelim?",
+    wait_options: &["bir işçiye ver", "geri çek"],
+    wait_tried: "Her işçiye önerdim; her biri önce başka bir kart aldı.",
     max_turns: "error_max_turns: tur, tur sınırına ulaştı",
     acks: &[
         "Anlaşıldı, o şekilde devam ediyorum.",
@@ -974,6 +985,19 @@ const STOP_FAILS: u64 = 3;
 /// has passed (record 146, part 3).
 const UNANSWERED_EVERY: u64 = 4;
 
+/// Of the cards the demo's leaders post by themselves, every
+/// `UNTAKEN_EVERY`th no worker takes from the board, so that its leader
+/// hears of it once `:health stall` has passed (record 146, part 3b).
+const UNTAKEN_EVERY: u64 = 4;
+
+/// A card's wait a demo leader took up: when it acts on it, and how.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct CardStuck {
+    card: CardId,
+    at: u64,
+    how: Way,
+}
+
 /// How the demo's leader takes the `n`th block told (from one).
 fn way_of(n: u64) -> Way {
     if n.is_multiple_of(BLOCK_SILENT) {
@@ -998,6 +1022,13 @@ struct Extras {
     asks: u64,
     /// How many times the demo's setup script ran (record 146).
     setups: u64,
+    /// The cards no worker takes by itself, how many the leaders posted
+    /// by themselves, the cards' waits the leaders took up and how many
+    /// (record 146, part 3b).
+    shunned: Vec<CardId>,
+    posts: u64,
+    card_stuck: Vec<CardStuck>,
+    waited: u64,
     /// Each usage window (five hours, then the week) as last seen: its
     /// number on the world's clock and what the agents had spent when it
     /// began. A window holds only what was spent since.
@@ -1258,6 +1289,7 @@ pub fn world(
         journal: Vec::new(),
         inbox: Vec::new(),
         stops: Vec::new(),
+        card_waits: Vec::new(),
         halts: Default::default(),
         budget: 200 * 10_000,
         // Said by its sign-in once the screen has it (`App::take_plan`).
@@ -1579,6 +1611,9 @@ impl Sim {
             w.note(Event::Resumed { agent: id });
         }
         if w.agents[id].role == Role::Leader && self.block_answered(w, id, text) {
+            return Ok(());
+        }
+        if w.agents[id].role == Role::Leader && self.wait_answered(w, id) {
             return Ok(());
         }
         // The person's word on a stop of the leader's own (record 146): it
@@ -2684,6 +2719,9 @@ impl Sim {
         // that waited too long (record 143).
         self.blocks_due(w);
         w.look_blocks();
+        // And about the cards that wait for what never comes (record 146,
+        // part 3b).
+        self.card_waits_due(w);
         // Its leader hears of a stall, an idle worker or a loop, as
         // live's does (record 128).
         for (id, _) in w.look_health() {
@@ -3584,7 +3622,9 @@ impl Sim {
             paths: Vec::new(),
             checks: demo_checks(asks, (id + DROPPED_FROM).is_multiple_of(DROPPED_EVERY)),
             closes: demo_closes(id),
-            started: 0,
+            // Put on the board now, as live's post (record 146, part 3b:
+            // a card nobody takes counts from here).
+            started: w.tick,
             finished: 0,
             attempt: 0,
             breaker: Default::default(),
@@ -3788,7 +3828,12 @@ impl Sim {
                 .map(|c| vec![c.id])
                 .filter(|_| self.rng.one_in(AFTER_ONE_IN))
                 .unwrap_or_default();
-            self.post_after(w, project, title, after);
+            let c = self.post_after(w, project, title, after);
+            // By the count, not the dice: the scenarios stay as they were.
+            self.extras.posts += 1;
+            if self.extras.posts.is_multiple_of(UNTAKEN_EVERY) {
+                self.extras.shunned.push(c);
+            }
         }
         // Work waits and nobody is free: one more worker; a second one
         // only once the person said yes to a plan (record 114), as live.
@@ -3879,6 +3924,7 @@ impl Sim {
                         && c.column == Column::Waiting
                         && c.owner.is_none()
                         && w.ready(c.id)
+                        && !self.extras.shunned.contains(&c.id)
                 })
                 .map(|c| c.id)
             else {
@@ -5216,6 +5262,112 @@ impl Sim {
         true
     }
 
+    /// The cards' waits the leaders are told of now (they take each up at
+    /// once, as live's leader takes its note with the prompt it wakes
+    /// to), the ones they had too long, and the ones due: solved, asked of
+    /// the person, or let lie, as a block is. One whose card went on
+    /// meanwhile is dropped.
+    fn card_waits_due(&mut self, w: &mut World) {
+        let t = w.tick;
+        for c in w.look_card_waits() {
+            let Some(leader) = w.card_wait(c).map(|cw| cw.leader) else {
+                continue;
+            };
+            w.waits_read(leader);
+            w.agents[leader].trace(t, format!("tool_use board: #{} waits", c + 1));
+            self.extras.waited += 1;
+            self.extras.card_stuck.push(CardStuck {
+                card: c,
+                at: t + self.rng.range(3, 8),
+                how: way_of(self.extras.waited),
+            });
+        }
+        w.waits_too_long();
+        let (due, later): (Vec<CardStuck>, Vec<CardStuck>) =
+            std::mem::take(&mut self.extras.card_stuck)
+                .into_iter()
+                .partition(|s| s.at <= t);
+        self.extras.card_stuck = later;
+        for s in due {
+            let Some(cw) = w.card_wait(s.card).cloned() else {
+                continue;
+            };
+            if !matches!(w.wait_held(&cw), crate::blocked::Held::Leader) {
+                continue;
+            }
+            match s.how {
+                Way::Solve | Way::Said(_) => self.solve_wait(w, &cw),
+                // One question of an agent's waits at a time.
+                Way::Ask if w.has_question(cw.leader) => {
+                    self.extras.card_stuck.push(CardStuck { at: t + 5, ..s })
+                }
+                Way::Ask => {
+                    let c = self.content;
+                    self.tell_you(w, cw.leader, MsgKind::Ask, c.wait_ask, c.wait_options);
+                    w.wait_asked(cw.leader, Some(cw.msg), c.wait_tried, None);
+                }
+                Way::Silent => {
+                    w.waits_unsolved(cw.leader, false);
+                }
+            }
+        }
+    }
+
+    /// The leader solves card wait `cw`: a card nobody took goes to a free
+    /// worker (or back to the board, for the next one free); a card after
+    /// a failed one has that one handed again once someone is free, when
+    /// it may be, else it is withdrawn, as it would never begin.
+    fn solve_wait(&mut self, w: &mut World, cw: &crate::card_wait::CardWait) {
+        let p = w.cards[cw.card].project;
+        let free = (w.agents.iter())
+            .filter(|a| a.project == p)
+            .map(|a| a.id)
+            .find(|&a| Self::free(w, a));
+        match cw.why {
+            crate::card_wait::Why::Untaken => {
+                self.extras.shunned.retain(|&c| c != cw.card);
+                if let Some(agent) = free {
+                    self.take(w, agent, cw.card, Taken::Assigned);
+                }
+            }
+            crate::card_wait::Why::After(d) => {
+                let again = w.cards[d].column == Column::Failed
+                    && !w.cards[d].breaker.stopped
+                    && !w.cards[d].tries_out();
+                match (again, free) {
+                    (true, Some(agent)) => self.take(w, agent, d, Taken::Handed),
+                    // Nobody free yet: once one is.
+                    (true, None) => self.extras.card_stuck.push(CardStuck {
+                        card: cw.card,
+                        at: w.tick + 5,
+                        how: Way::Solve,
+                    }),
+                    (false, _) => self.withdraw(w, cw.card, self.content.never_begins),
+                }
+            }
+        }
+    }
+
+    /// The person answered leader `id`: whether a card's wait of its was
+    /// before them (its question, or the wait itself), which it solves in
+    /// a moment (no plan comes of such a word).
+    fn wait_answered(&mut self, w: &World, id: AgentId) -> bool {
+        use crate::blocked::Stage;
+        let cards: Vec<CardId> = (w.card_waits.iter())
+            .filter(|cw| cw.leader == id)
+            .filter(|cw| matches!(cw.stage, Stage::Asked { .. } | Stage::Yours(_)))
+            .map(|cw| cw.card)
+            .collect();
+        for &card in &cards {
+            self.extras.card_stuck.push(CardStuck {
+                card,
+                at: w.tick + 2,
+                how: Way::Solve,
+            });
+        }
+        !cards.is_empty()
+    }
+
     fn block(&mut self, w: &mut World, id: AgentId) {
         let t = w.tick;
         let topic = *self.rng.pick(self.content.topics);
@@ -5402,7 +5554,7 @@ mod tests {
     #[test]
     fn the_demo_s_leader_hands_out_a_round_and_waits_for_it_to_be_all_done() {
         use crate::round::Finished;
-        let (mut w, mut s) = world(1, 2, 0, 7, Lang::En);
+        let (mut w, mut s) = world(1, 2, 0, 1, Lang::En);
         let cards = |w: &World| w.cards.iter().filter(|c| c.project == 0).count();
         // The person answers while a card is still to be done (one may
         // wait on a change's yes), then leaves the last changes: the
@@ -5449,6 +5601,10 @@ mod tests {
     /// approved.
     fn answer_all(w: &mut World, s: &mut Sim) {
         for i in w.open_inbox() {
+            // An answer before may have closed it (a word to its agent).
+            if !w.inbox[i].open {
+                continue;
+            }
             let a = w.inbox[i].agent;
             match w.inbox[i].kind {
                 InboxKind::Change => {
@@ -5467,7 +5623,7 @@ mod tests {
                 InboxKind::Close => {
                     w.decide_item(i, true);
                 }
-                InboxKind::Question | InboxKind::Fault | InboxKind::Blocked => {
+                InboxKind::Question | InboxKind::Fault | InboxKind::Blocked | InboxKind::Waits => {
                     // Closed here, once: a run's length never hangs on
                     // `said` closing it.
                     w.inbox[i].open = false;
@@ -6067,6 +6223,55 @@ mod tests {
                 .any(|s| matches!(s.event, StoryEvent::Touched(_)))),
             "nobody edited a file"
         );
+    }
+
+    #[test]
+    fn the_demo_s_cards_that_wait_for_what_never_comes_meet_each_end() {
+        use crate::card_wait::Why;
+        let (mut w, mut s) = world(1, 3, 0, 1, Lang::En);
+        let mut asked = false;
+        for tick in 0..6000 {
+            s.step(&mut w);
+            asked |= (w.open_inbox().into_iter()).any(|i| {
+                w.inbox[i].kind == InboxKind::Question && w.asked_wait(w.inbox[i].agent).is_some()
+            });
+            answer_all(&mut w, &mut s);
+            wake_stopped(&mut w, &mut s);
+            if tick % 150 == 0 {
+                let lead = w.projects[0].leader;
+                s.told(&mut w, lead, "Shipment tracking").unwrap();
+                w.said(lead, "Shipment tracking");
+            }
+        }
+        let told = |want: fn(&Why) -> bool| {
+            w.journal
+                .iter()
+                .any(|e| matches!(&e.event, Event::CardWaits { why, .. } if want(why)))
+        };
+        assert!(told(|w| *w == Why::Untaken), "a card nobody took");
+        assert!(
+            told(|w| matches!(w, Why::After(_))),
+            "a card after a failed one"
+        );
+        let ends = |f: fn(&Event) -> bool| w.journal.iter().any(|e| f(&e.event));
+        // Its leader solves it: taken, or what it waited on goes on.
+        assert!(ends(|e| matches!(
+            e,
+            Event::CardWaitOver { to: Some(_), .. }
+        )));
+        assert!(ends(|e| matches!(e, Event::CardWaitOver { to: None, .. })));
+        // Asks the person, or lets it lie.
+        assert!(asked, "the leader asked the person about a card's wait");
+        assert!(ends(|e| matches!(e, Event::CardStillWaits { .. })));
+        assert!(w.inbox.iter().any(|i| i.kind == InboxKind::Waits));
+        // Every card nobody took by itself was taken in the end (or went
+        // another way), but those posted in the last stall's minutes.
+        let left: Vec<CardId> = (s.extras.shunned.iter().copied())
+            .filter(|&c| w.cards[c].column == Column::Waiting && w.cards[c].owner.is_none())
+            .filter(|&c| w.cards[c].started + 130 <= w.tick)
+            .collect();
+        assert_eq!(left, Vec::<CardId>::new());
+        assert!(!s.extras.shunned.is_empty());
     }
 
     #[test]

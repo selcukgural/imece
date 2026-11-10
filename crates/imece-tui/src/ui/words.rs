@@ -127,6 +127,42 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
             ]),
             &[name(w, *agent), &unsolved(t, w, *leader, *why), text],
         ),
+        Event::CardWaits {
+            leader, card, why, ..
+        } => fill(
+            t.ev_card_waits,
+            &[
+                &card_ref(*card),
+                &w.cards[*card].title,
+                &wait_why(t, w, *why),
+                name(w, *leader),
+            ],
+        ),
+        Event::CardWaitOver {
+            card, minutes, to, ..
+        } => match to {
+            Some(to) => fill(
+                t.ev_card_wait_taken,
+                &[&card_ref(*card), &minutes.to_string(), name(w, *to)],
+            ),
+            None => fill(
+                t.ev_card_wait_over,
+                &[&card_ref(*card), &minutes.to_string()],
+            ),
+        },
+        Event::CardStillWaits {
+            leader,
+            card,
+            why,
+            unsolved: lie,
+        } => fill(
+            t.ev_card_still_waits,
+            &[
+                &card_ref(*card),
+                &wait_why(t, w, *why),
+                &unsolved(t, w, *leader, *lie),
+            ],
+        ),
         Event::Blocked {
             agent,
             topic,
@@ -1202,6 +1238,10 @@ pub fn notice(lang: Lang, w: &World, note: crate::notify::Note) -> String {
                 InboxKind::Tries | InboxKind::Rounds => t.notice_cap,
                 InboxKind::Close => t.notice_close,
                 InboxKind::Sensitive | InboxKind::Research => t.notice_sensitive,
+                InboxKind::Waits => {
+                    let card = item.card.map_or(String::new(), card_ref);
+                    return fill(t.notice_waits, &[&card]);
+                }
             };
             (text, item.agent)
         }
@@ -1287,6 +1327,33 @@ pub(crate) fn item_named(w: &World, item: &InboxItem) -> (String, String) {
     (n.to_string(), title)
 }
 
+/// What a card waits for that never comes (record 146, part 3b), as its
+/// row says it: `waits on #20 which failed`, `nobody took it`.
+pub fn wait_why(t: &Text, w: &World, why: crate::card_wait::Why) -> String {
+    use crate::card_wait::Why;
+    match why {
+        Why::After(d) if w.cards[d].column == crate::model::Column::Withdrawn => {
+            fill(t.wait_withdrawn, &[&card_ref(d)])
+        }
+        Why::After(d) => fill(t.wait_failed, &[&card_ref(d)]),
+        Why::Untaken => t.wait_untaken.to_string(),
+    }
+}
+
+/// What a card's wait says on its row: [`wait_why`], and for a card nobody
+/// took how long ago it was posted (`nobody took it · posted 14 min ago`).
+pub fn wait_words(lang: Lang, w: &World, cw: &crate::card_wait::CardWait) -> String {
+    let t = lang.text();
+    let why = wait_why(t, w, cw.why);
+    match cw.why {
+        crate::card_wait::Why::Untaken => {
+            let ago = w.tick.saturating_sub(cw.since) * crate::model::SECONDS_PER_TICK;
+            format!("{why} · {}", fill(t.wait_posted, &[&self::ago(lang, ago)]))
+        }
+        crate::card_wait::Why::After(_) => why,
+    }
+}
+
 /// Why a block came to the person with nobody asking them (record 143):
 /// what `leader` did not do.
 pub fn unsolved(t: &Text, w: &World, leader: AgentId, why: crate::blocked::Unsolved) -> String {
@@ -1334,6 +1401,13 @@ pub fn inbox(lang: Lang, w: &World, item: &InboxItem) -> String {
             (w.block_what(item.agent)).of([t.in_blocked, t.in_ended, t.in_failed, t.in_unanswered]),
             &[name(w, item.agent), &item.detail],
         ),
+        (InboxKind::Waits, _) => {
+            let card = item.card.map_or(String::new(), card_ref);
+            let why = (item.card)
+                .and_then(|c| w.card_wait(c))
+                .map_or(String::new(), |cw| wait_why(t, w, cw.why));
+            fill(t.in_waits, &[&card, &item.detail, &why])
+        }
         (InboxKind::Script, _) => fill(t.in_script, &[name(w, item.agent), &item.detail]),
         (InboxKind::Check, _) => fill(t.in_check, &[name(w, item.agent), &item.detail]),
         (InboxKind::Plan, _) => {
@@ -3483,6 +3557,105 @@ mod tests {
     fn a_repository_that_lets_changes_in_unseen_says_so() {
         let t = Lang::En.text();
         assert_eq!(store_down(t, StoreDown::Unguarded), t.store_unguarded);
+    }
+
+    #[test]
+    fn a_card_s_wait_is_worded_in_the_journal_the_inbox_and_the_notice() {
+        use crate::blocked::Unsolved;
+        use crate::card_wait::Why;
+        let mut w = crate::live::testing::team(1);
+        crate::live::testing::with_card(&mut w, 1);
+        let mut c = w.cards[0].clone();
+        c.id = 1;
+        c.title = "Import".into();
+        c.column = Column::Waiting;
+        c.owner = None;
+        c.after = vec![0];
+        w.cards.push(c);
+        w.cards[0].column = Column::Failed;
+        let told = Event::CardWaits {
+            leader: 0,
+            card: 1,
+            why: Why::After(0),
+            minutes: 0,
+        };
+        assert_eq!(
+            event(Lang::En, &w, &told),
+            "#2 Import: waits on #1 which failed · lead told"
+        );
+        assert_eq!(
+            event(Lang::Tr, &w, &told),
+            "#2 Import: #1 kartını bekliyor, o başarısız oldu · lead haberdar"
+        );
+        assert_eq!((told.kind(), told.agent()), (EntryKind::Blocked, 0));
+        let untaken = Event::CardWaits {
+            leader: 0,
+            card: 1,
+            why: Why::Untaken,
+            minutes: 10,
+        };
+        assert_eq!(
+            event(Lang::En, &w, &untaken),
+            "#2 Import: nobody took it · lead told"
+        );
+        let over = |to| Event::CardWaitOver {
+            leader: 0,
+            card: 1,
+            why: Why::Untaken,
+            minutes: 3,
+            to,
+        };
+        assert_eq!(
+            event(Lang::En, &w, &over(None)),
+            "#2 waits no more after 3 min"
+        );
+        assert_eq!(
+            event(Lang::Tr, &w, &over(None)),
+            "#2 artık beklemiyor, 3 dk sonra"
+        );
+        assert_eq!(
+            event(Lang::En, &w, &over(Some(1))),
+            "#2 waits no more after 3 min: claude-1 has it"
+        );
+        assert_eq!(
+            event(Lang::Tr, &w, &over(Some(1))),
+            "#2 artık beklemiyor, 3 dk sonra: claude-1 aldı"
+        );
+        assert_eq!(over(None).kind(), EntryKind::Assumption);
+        let lies = Event::CardStillWaits {
+            leader: 0,
+            card: 1,
+            why: Why::After(0),
+            unsolved: Unsolved::TooLong,
+        };
+        assert_eq!(
+            event(Lang::En, &w, &lies),
+            "#2 still waits: waits on #1 which failed · lead has not solved it in time"
+        );
+        assert_eq!(lies.agent(), 0);
+        // Withdrawn reads so.
+        w.cards[0].column = Column::Withdrawn;
+        assert_eq!(
+            event(Lang::En, &w, &told),
+            "#2 Import: waits on #1 which was withdrawn · lead told"
+        );
+        // The item and the notice name the card.
+        w.cards[0].column = Column::Failed;
+        w.look_card_waits();
+        w.waits_unsolved(0, true);
+        let i = w.open_inbox()[0];
+        assert_eq!(
+            inbox(Lang::En, &w, &w.inbox[i]),
+            "#2 Import: waits on #1 which failed · its leader did not solve it"
+        );
+        assert_eq!(
+            inbox(Lang::Tr, &w, &w.inbox[i]),
+            "#2 Import: #1 kartını bekliyor, o başarısız oldu · lideri çözmedi"
+        );
+        assert_eq!(
+            notice(Lang::En, &w, crate::notify::Note::Item(i)),
+            "imece · #2 waits for what never comes and its leader did not solve it"
+        );
     }
 
     #[test]

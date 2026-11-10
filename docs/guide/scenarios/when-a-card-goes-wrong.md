@@ -33,7 +33,7 @@ The leader can say that a card needs another card's work first: `after` on an `a
  │    ✕ #20 failed → c│
 ```
 
-`⧗ after #5` is dim: it is only waiting. `✕ #20 failed` is in the attention colour: what it waits on failed, so it will not begin until that card is handed again and done. `r` in the board shows only the cards that are ready to take, and the title says how many it hides (`· ready only: N waiting hidden · r all`); `r` again shows all. `esc` closes the board.
+`⧗ after #5` is dim: it is only waiting. `✕ #20 failed` is in the attention colour: what it waits on failed, so it will not begin until that card is handed again and done. Its leader is told so at once and woken; while it is on it, Home lists the card under AT WORK, `■ #21 Import from CSV  waits on #20 which failed · lead is on it`, and one it lets lie comes to you ([a card that waits for what never comes](../concepts/messages-and-board.md#a-card-that-waits-for-what-never-comes)). A card on the board nobody takes is its leader's the same way, once it has waited the stall's minutes. `r` in the board shows only the cards that are ready to take, and the title says how many it hides (`· ready only: N waiting hidden · r all`); `r` again shows all. `esc` closes the board.
 
 `#6` on the command line opens the card. Under its column it lists what it waits on, `✓` done, `✕` failed, `⧗` not yet:
 

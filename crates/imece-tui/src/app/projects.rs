@@ -449,6 +449,7 @@ impl App {
             HomeRow::Agent(a) => self.world.agents[a].project == p,
             HomeRow::Item(i) => self.world.agents[self.world.inbox[i].agent].project == p,
             HomeRow::Stop(q, _) => q == p,
+            HomeRow::Card(c) => self.world.cards[c].project == p,
         }) {
             self.at_home.at = None;
         }

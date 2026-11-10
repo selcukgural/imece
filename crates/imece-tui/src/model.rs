@@ -2091,6 +2091,31 @@ pub enum Event {
         #[serde(default)]
         what: crate::blocked::What,
     },
+    /// Card `card` waits for what never comes, `why`, for `minutes`:
+    /// `leader` is told it is its to solve (record 146, part 3b).
+    CardWaits {
+        leader: AgentId,
+        card: CardId,
+        why: crate::card_wait::Why,
+        minutes: u16,
+    },
+    /// Card `card` waits no more, `minutes` after `leader` was told: `to`
+    /// took it, or what it waited on goes on, or it is through.
+    CardWaitOver {
+        leader: AgentId,
+        card: CardId,
+        why: crate::card_wait::Why,
+        minutes: u16,
+        to: Option<AgentId>,
+    },
+    /// Card `card`'s wait came to the person: `leader` let it lie,
+    /// `unsolved`.
+    CardStillWaits {
+        leader: AgentId,
+        card: CardId,
+        why: crate::card_wait::Why,
+        unsolved: crate::blocked::Unsolved,
+    },
     /// A live agent's turn failed, `why` in Claude Code's words, and
     /// imece does not try it again; its session lives (record 146).
     TurnFailed {
@@ -2629,10 +2654,14 @@ impl Event {
             | Event::LateDone { .. }
             | Event::WorktreeKept { .. }
             | Event::OffLonca { .. } => EntryKind::Assumption,
-            Event::Blocked { .. } | Event::Capped { .. } | Event::StillBlocked { .. } => {
-                EntryKind::Blocked
+            Event::Blocked { .. }
+            | Event::Capped { .. }
+            | Event::StillBlocked { .. }
+            | Event::CardWaits { .. }
+            | Event::CardStillWaits { .. } => EntryKind::Blocked,
+            Event::Unblocked { .. } | Event::Unhalted { .. } | Event::CardWaitOver { .. } => {
+                EntryKind::Assumption
             }
-            Event::Unblocked { .. } | Event::Unhalted { .. } => EntryKind::Assumption,
             Event::Health { sign, .. } if sign.wakes() => EntryKind::Blocked,
             Event::Health { .. } => EntryKind::Assumption,
             Event::ResearchOpened { .. }
@@ -2750,6 +2779,9 @@ impl Event {
             | Event::Archived { leader, .. }
             | Event::Restored { leader, .. }
             | Event::Standing { leader, .. }
+            | Event::CardWaits { leader, .. }
+            | Event::CardWaitOver { leader, .. }
+            | Event::CardStillWaits { leader, .. }
             | Event::Renamed { leader, .. } => leader,
             Event::Assign { agent, .. }
             | Event::Assumption { agent, .. }
@@ -2908,6 +2940,12 @@ pub enum InboxKind {
     /// line. Closes when the person writes to the worker, or the leader
     /// does after all. Its mail waits.
     Blocked,
+    /// A card waits for what never comes (record 146, part 3b: one it
+    /// waits on failed or was withdrawn, or nobody takes it) and its
+    /// leader let it lie. The agent is the leader, the card the item's,
+    /// the detail its title. Closes when the wait is over or the person
+    /// writes to the leader. The leader's mail goes on.
+    Waits,
 }
 
 impl InboxKind {
@@ -2927,6 +2965,7 @@ impl InboxKind {
                 | InboxKind::Check
                 | InboxKind::Tries
                 | InboxKind::Close
+                | InboxKind::Waits
         )
     }
 
@@ -2940,6 +2979,7 @@ impl InboxKind {
                 | InboxKind::Fault
                 | InboxKind::Plan
                 | InboxKind::Blocked
+                | InboxKind::Waits
         )
     }
 }
@@ -3412,6 +3452,9 @@ pub struct World {
     /// leader has not been told yet (record 146): whoever drives the
     /// agents takes them. Memory only.
     pub stops: Vec<AgentId>,
+    /// The cards that wait for what never comes, their leaders' to solve
+    /// (record 146, part 3b). Memory only.
+    pub card_waits: Vec<crate::card_wait::CardWait>,
     /// What stops a whole team (record 146, part 2), kept by
     /// `World::look_halts` from what the engine holds back. Memory only.
     pub halts: crate::halt::Halts,
@@ -4157,6 +4200,7 @@ impl World {
             journal,
             inbox: self.inbox.clone(),
             stops: Vec::new(),
+            card_waits: Vec::new(),
             halts: Default::default(),
             budget: self.budget,
             estimated: self.estimated,
@@ -6127,6 +6171,9 @@ impl World {
         self.close_plans(id);
         // Their word is the answer a blocked worker waited for.
         self.block_over(id);
+        // A card's wait that came to them is the leader's again, with
+        // their word (record 146, part 3b).
+        self.waits_said(id);
         // The person started it: its leader may start it once again
         // after its next stop (record 146).
         self.agents[id].revived = false;
@@ -6541,6 +6588,7 @@ mod tests {
             journal: Vec::new(),
             inbox: Vec::new(),
             stops: Vec::new(),
+            card_waits: Vec::new(),
             halts: Default::default(),
             budget: 10_000,
             estimated: false,
@@ -7494,6 +7542,7 @@ mod tests {
             (Plan, true, true),
             (Tries, false, false),
             (Rounds, true, false),
+            (Waits, false, true),
         ] {
             assert_eq!(kind.holds_mail(), holds, "{kind:?}");
             assert_eq!(kind.closes_on_word(), word, "{kind:?}");

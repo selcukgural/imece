@@ -629,7 +629,7 @@ pub(crate) fn inbox_line(app: &App, i: usize) -> Line<'static> {
         InboxKind::Change => ("Δ", bold(pal().strong)),
         InboxKind::Question => ("?", bold(pal().warn)),
         InboxKind::Approval => ("⚑", bold(pal().warn)),
-        InboxKind::Fault | InboxKind::Blocked => ("■", bold(pal().bad)),
+        InboxKind::Fault | InboxKind::Blocked | InboxKind::Waits => ("■", bold(pal().bad)),
         InboxKind::Script | InboxKind::Check => ("▶", bold(pal().warn)),
         InboxKind::Plan => ("▤", bold(pal().warn)),
         InboxKind::Tries | InboxKind::Rounds => ("⊘", bold(pal().warn)),

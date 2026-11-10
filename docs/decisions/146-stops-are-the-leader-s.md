@@ -293,6 +293,69 @@ traced to the worker and its leader in live's words; a proposal the
 demo's queue sends back is traced to the leader (`Sim::leader_hears`).
 Two seeded tests took new seeds (1 and 2).
 
+## Part 3b, as built
+
+The person took look K1 of the mock-up (2026-11-10): a card that waits
+is a row of Home's AT WORK while its leader is on it.
+
+**A card's wait** (`card_wait.rs`, `World.card_waits`, memory only):
+`Why::After(d)` (a card it waits on, or one those wait on, failed or was
+withdrawn: `blocked_on`) or `Why::Untaken` (posted, ready, nobody's, on
+the board `:health stall` minutes since it was posted or since the last
+card it waited on was done). `World::look_card_waits`, each step after
+`look_stops` (live) and `blocks_due` (the demo), ends the waits whose
+reason is gone (`still_waits`: taken, begun, handed again, withdrawn,
+through; `Event::CardWaitOver` with who has it) and opens the new ones
+(`Event::CardWaits`), each with a number of its own (`World::number`),
+told to its leader: none while the project is closed or archived, its
+head is no leader that runs, a stop of the whole team or the usage
+limit holds, or the leader waits on the person (`told_of_card`). `stall
+off` opens no `Untaken`: that knob silences what goes to the leader.
+"Cards open and nobody working" and a refused `hire` are no wait of
+their own: a card left open is one of these two, or behind another
+stop.
+
+**The leader is told and woken** (`Live::look_card_waits`,
+`wait_note`): the card, what it waits on, the stop's number and the
+ways on (hand the failed card again, withdraw the card, assign it, hire,
+ask the person with `re`). `Live::blocks` (record 126's note, never
+woken) is gone: the wait says it. The person failing a card for good
+still tells the leader that what waits on it never begins
+(`failed_for_good`). `stops_read` takes the waits too (`waits_read`).
+Record 143's three ends follow: solved (the journal's
+`CardWaitOver`), asked (`World::wait_asked` from the bus's ask with `re`
+of the wait's number, or, naming none, the only wait read when no
+worker's block is: the question stands on the card; the bus takes a
+wait's number as `re` and `tried`/`risk` for it, `wait_for`), or let
+lie: a turn of the leader's that ends with it read (`waits_unsolved`,
+also when the leader stops) or one older than the stall
+(`waits_too_long`, from `Live::look_blocks`) is `InboxKind::Waits` on
+the leader, with the card (`Event::CardStillWaits`); it holds no mail
+and closes on the person's word to the leader (`waits_said`: the wait
+is the leader's again from then) or when the wait ends.
+
+**Home** (K1): `HomeRow::Card` in `HomeGroup::Waits`, after a project's
+stuck agents, while the leader has it or asked the person about it
+(`waits_with_leader`): `■ #21 Import from CSV  waits on #20 which
+failed · lead is on it · 3 min`, `nobody took it · posted 14 min ago`,
+`lead asked you`; `enter` opens the card; the preview says since when,
+who has it, what waits on it and what the leader does. The leader's
+question reads `waits on #20 which failed · lead asks: …`; the item
+`waits on #20 which failed · lead did not solve it` with `a  answer`.
+The journal, the inbox line and the notice word it (`wait_why`,
+`wait_words`), English and Turkish.
+
+**The demo**: every `UNTAKEN_EVERY` (4th) card a leader posts by itself
+no worker takes by itself (`Extras.shunned`); the demo's leaders take
+each wait up at once (`card_waits_due`) and take the three ways of
+`way_of`: solved (`solve_wait`: the card to a free worker, the failed
+card handed again once someone is free and it may be, else the card
+withdrawn), asked (`wait_ask` with two answers), or let lie; the
+person's word solves it (`wait_answered`). The demo's cards now take the
+tick they are posted at as `started`, as live's do. The tests' person
+(`answer_all`) leaves an item an earlier answer closed; one seeded test
+took a new seed (1).
+
 ## The points of the list
 
 - **Growth**: one `Option<Block>` per agent (record 143's), one `bool`
@@ -306,12 +369,17 @@ Two seeded tests took new seeds (1 and 2).
   a frame reads `World.halts` only. 2b: `hung_since` is one look at the
   head per project a step.
   3a: one `Option<Awaits>` per agent; the bus sets and clears it per
-  message, health reads it once per sign.
+  message, health reads it once per sign. 3b: one `CardWait` per card
+  that waits; `look_card_waits` passes over the cards once a step (a
+  column test for most, `blocked_on` for a waiting card with `after`),
+  with a flag per card for the open waits; a frame reads the waits of
+  the projects it draws.
 - **Ten times the scale**: at 160 agents a leader may be told several
   stops in one prompt; `MAX_WOKEN` and the pot still bound its turns, and
   a stop it lets lie still comes to the person. 3a: more asks only
   mean more waits, each bound by its teammate's next word or the
-  stall's minutes.
+  stall's minutes. 3b: a chain of cards after one that failed opens a
+  wait each, told in one prompt; the stall still brings the rest.
 - **Migration**: no schema change. `Event::TurnFailed` is a new name in
   saved rows, and `Unblocked`/`StillBlocked` carry `what` with a default
   (`Said`), so older rows read as before; an older imece cannot read a
@@ -320,7 +388,8 @@ Two seeded tests took new seeds (1 and 2).
   is saved. 2b: three new `Halt` names in those rows, the same rule.
   3a: `What::Unanswered` is a new name in `Unblocked`/`StillBlocked`
   rows, the same rule; `Status::Asking` is not saved (a start puts every
-  agent asleep).
+  agent asleep). 3b: `InboxKind::Waits` and the three card events are
+  new names in saved rows, the same rule.
 - **Failure**: the block and `revived` are memory only. After a restart
   a stopped worker is asleep with its session remembered, as before, and
   its leader is not told again; one that came to the person is an inbox
@@ -328,8 +397,12 @@ Two seeded tests took new seeds (1 and 2).
 
 ## Gaps
 
-- Part 3b (cards that wait for what never comes) and part 4 are not
-  built.
+- Part 4 is not built.
+- Part 3b: a wait is memory only; after a start it is found again and
+  its leader told once more. Who a card nobody took was offered to is
+  the bus's and not said. A card whose holder (an `assign` held for it)
+  left is not followed. The demo's solos post no cards; `--demo-live`
+  (the stand-in) leaves no card on the board.
 - Part 3a: a wait is memory only; after a start the asker does not
   wait any more (its session remembers the ask). A wait without a card
   is not told (health watches a card's worker). A teammate that left

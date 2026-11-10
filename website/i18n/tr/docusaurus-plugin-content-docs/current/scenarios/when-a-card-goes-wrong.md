@@ -33,7 +33,7 @@ Lider bir kartın önce başka bir kartın işine ihtiyaç duyduğunu söyleyebi
  │    ✕ #20 başarısız…│
 ```
 
-`⧗ #5 bitince` soluktur: yalnızca bekliyor. `✕ #20 başarısız` dikkat renginde: beklediği kart başarısız oldu, o kart yeniden verilip bitmeden bu başlamaz. Panoda `r` yalnız alınmaya hazır kartları gösterir ve başlık kaçını gizlediğini söyler (`· yalnız hazırlar: N bekleyen gizli · r hepsi`); yine `r` hepsini gösterir. `esc` panoyu kapatır.
+`⧗ #5 bitince` soluktur: yalnızca bekliyor. `✕ #20 başarısız` dikkat renginde: beklediği kart başarısız oldu, o kart yeniden verilip bitmeden bu başlamaz. Liderine bu hemen söylenir ve lider uyandırılır; lider ilgilenirken Home kartı ÇALIŞAN altında listeler, `■ #21 Import from CSV  #20 kartını bekliyor, o başarısız oldu · lead ilgileniyor`, liderin kendi hâline bıraktığı size gelir ([gelmeyecek bir şeyi bekleyen kart](../concepts/messages-and-board.md#gelmeyecek-bir-seyi-bekleyen-kart)). Panoda kimsenin almadığı bir kart da stall'un dakikaları dolunca aynı yolla liderin olur. Panoda `r` yalnız alınmaya hazır kartları gösterir ve başlık kaçını gizlediğini söyler (`· yalnız hazırlar: N bekleyen gizli · r hepsi`); yine `r` hepsini gösterir. `esc` panoyu kapatır.
 
 Komut satırında `#6` kartı açar. Sütununun altında neyi beklediğini sayar: `✓` bitti, `✕` başarısız, `⧗` henüz değil:
 

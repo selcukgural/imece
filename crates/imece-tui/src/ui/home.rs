@@ -300,7 +300,10 @@ fn group_line(app: &App, group: HomeGroup, listed: &Listed, width: usize) -> Lin
                         item.kind == InboxKind::Change
                             && w.verdict(item.agent).is_some_and(|v| v.ready)
                     }
-                    HomeRow::Agent(_) | HomeRow::Project(_) | HomeRow::Stop(..) => false,
+                    HomeRow::Agent(_)
+                    | HomeRow::Project(_)
+                    | HomeRow::Stop(..)
+                    | HomeRow::Card(_) => false,
                 })
                 .count();
             (ready > 0).then(|| fill(t.home_ready, &[&ready.to_string()]))
@@ -476,6 +479,7 @@ fn card_of(w: &World, row: HomeRow) -> Option<&Card> {
     let id = match row {
         HomeRow::Item(i) => (w.inbox[i].card).or(w.agents[w.inbox[i].agent].card),
         HomeRow::Agent(a) => w.agents[a].card,
+        HomeRow::Card(c) => Some(c),
         HomeRow::Project(_) | HomeRow::Stop(..) => None,
     };
     id.and_then(|c| w.cards.get(c))
@@ -519,6 +523,7 @@ fn agent_of(w: &World, row: HomeRow) -> AgentId {
         HomeRow::Item(i) => w.inbox[i].agent,
         HomeRow::Agent(a) => a,
         HomeRow::Project(p) | HomeRow::Stop(p, _) => w.projects[p].leader,
+        HomeRow::Card(c) => w.projects[w.cards[c].project].leader,
     }
 }
 
@@ -622,6 +627,16 @@ fn item_tail(app: &App, i: usize) -> Tail {
             // A leader's question about a worker's block says so first
             // (record 143): the row is the blocked work's.
             let asked = match w.asked_block(item.agent) {
+                // A leader's question about a card's wait (record 146,
+                // part 3b) says the wait first.
+                None if let Some(cw) = w.asked_wait(item.agent) => fill(
+                    t.row_wait_asks,
+                    &[
+                        &words::wait_why(t, w, cw.why),
+                        &w.agents[item.agent].name,
+                        &plain(&item.detail),
+                    ],
+                ),
                 Some((worker, b)) => fill(
                     (b.what).of([
                         t.row_block_asks,
@@ -656,6 +671,21 @@ fn item_tail(app: &App, i: usize) -> Tail {
                     format!("{said} · {}", words::unsolved(t, w, leader, *why))
                 }
                 _ => said,
+            }
+        }
+        InboxKind::Waits => {
+            let cw = item.card.and_then(|c| w.card_wait(c));
+            match cw {
+                Some(cw) => {
+                    let said = words::wait_words(app.lang, w, cw);
+                    match cw.stage {
+                        crate::blocked::Stage::Yours(why) => {
+                            format!("{said} · {}", words::unsolved(t, w, cw.leader, why))
+                        }
+                        _ => said,
+                    }
+                }
+                None => clean(&item.detail),
             }
         }
         InboxKind::Research => {
@@ -756,6 +786,28 @@ fn agent_tail(app: &App, id: AgentId, glyph: &str) -> Tail {
     Tail::Cut(text)
 }
 
+/// What a card's row says while its leader is on its wait (record 146,
+/// part 3b): what it waits for, who has it, and for how long from a
+/// minute on.
+fn card_tail(app: &App, c: CardId) -> Tail {
+    let w = &app.world;
+    let t = app.lang.text();
+    let Some(cw) = w.card_wait(c) else {
+        return Tail::Cut(String::new());
+    };
+    let leader = clean(&w.agents[cw.leader].name);
+    let held = match w.wait_held(cw) {
+        crate::blocked::Held::Asked => fill(t.blocked_asked, &[&leader]),
+        _ => fill(t.blocked_leader, &[&leader]),
+    };
+    let mut text = format!("{} · {held}", words::wait_words(app.lang, w, cw));
+    let since = w.tick.saturating_sub(cw.at) * SECONDS_PER_TICK;
+    if since >= 60 {
+        text.push_str(&format!(" · {}", words::ago(app.lang, since)));
+    }
+    Tail::Cut(text)
+}
+
 /// The keys that decide the row at hand, at its end: the two that
 /// decide, in a word each; the status line has the rest.
 fn row_keys(app: &App) -> Vec<Span<'static>> {
@@ -775,7 +827,7 @@ fn row_keys(app: &App) -> Vec<Span<'static>> {
             InboxKind::Question if !pick.is_empty() => {
                 vec![(pick.as_str(), t.home_pick), ("a", t.home_answer)]
             }
-            InboxKind::Question | InboxKind::Fault | InboxKind::Blocked => {
+            InboxKind::Question | InboxKind::Fault | InboxKind::Blocked | InboxKind::Waits => {
                 vec![("a", t.home_answer), ("enter", t.home_open)]
             }
             // A reply asks for nothing: `enter` reads it, `r` puts it away.
@@ -786,7 +838,7 @@ fn row_keys(app: &App) -> Vec<Span<'static>> {
             InboxKind::Close => vec![("a", t.home_close), ("r", t.home_leave)],
             _ => vec![("a", t.home_yes), ("r", t.home_no)],
         },
-        Some(HomeRow::Agent(_)) => vec![("enter", t.home_open)],
+        Some(HomeRow::Agent(_) | HomeRow::Card(_)) => vec![("enter", t.home_open)],
         // A heading decides nothing: the status line has its keys. A
         // stop's row draws its own (`halt::row`).
         Some(HomeRow::Project(_) | HomeRow::Stop(..)) | None => Vec::new(),
@@ -861,11 +913,14 @@ fn row_lines(
     let agent = &w.agents[agent_of(w, row)];
     let (glyph, colour) = match row {
         HomeRow::Agent(_) => glyph(agent),
+        // Its leader is on it: the attention colour, as a blocked worker's.
+        HomeRow::Card(_) => ("■", pal().warn),
         HomeRow::Item(_) | HomeRow::Project(_) | HomeRow::Stop(..) => ("!", pal().warn),
     };
     let tail = match row {
         HomeRow::Item(i) => item_tail(app, i),
         HomeRow::Agent(id) => agent_tail(app, id, glyph),
+        HomeRow::Card(c) => card_tail(app, c),
         HomeRow::Project(_) | HomeRow::Stop(..) => unreachable!("a heading is its own row"),
     };
     let mut head = vec![Span::styled(
@@ -881,7 +936,7 @@ fn row_lines(
     // A working row's glyph breathes as the team's did (record 84).
     let glyph_style = match row {
         HomeRow::Agent(id) => glyph_style(app, agent, app.rungs()[id], colour),
-        HomeRow::Item(_) | HomeRow::Project(_) | HomeRow::Stop(..) => fg(colour),
+        HomeRow::Item(_) | HomeRow::Project(_) | HomeRow::Stop(..) | HomeRow::Card(_) => fg(colour),
     };
     head.push(Span::styled(glyph, glyph_style));
     head.push(Span::raw(" "));
@@ -1429,9 +1484,43 @@ fn preview_lines(app: &App, row: HomeRow, room: usize, rows: usize) -> Vec<Line<
             }
         }
         HomeRow::Agent(_) => agent_lines(app, id, &mut lines, room, rows),
+        HomeRow::Card(c) => wait_lines(app, c, &mut lines, room, rows),
         HomeRow::Stop(..) => {}
     }
     lines
+}
+
+/// A card's wait in the preview (record 146, part 3b): what it waits for
+/// and since when, who has it, what waits on it, then what its leader
+/// does.
+fn wait_lines(app: &App, c: CardId, lines: &mut Vec<Line<'static>>, room: usize, rows: usize) {
+    let w = &app.world;
+    let t = app.lang.text();
+    let Some(cw) = w.card_wait(c) else {
+        return;
+    };
+    let leader = clean(&w.agents[cw.leader].name);
+    let held = match w.wait_held(cw) {
+        crate::blocked::Held::Asked => fill(t.blocked_asked, &[&leader]),
+        _ => fill(t.blocked_leader, &[&leader]),
+    };
+    lines.push(Line::from(vec![
+        Span::styled(
+            format!("■ {}", words::wait_words(app.lang, w, cw)),
+            bold(pal().warn),
+        ),
+        Span::styled(format!(" · {}", crate::model::clock(cw.since)), dim()),
+    ]));
+    lines.push(Line::from(Span::styled(held, dim())));
+    let behind = w.dependents(c);
+    if !behind.is_empty() {
+        let said = fill(t.wait_behind, &[&words::card_refs(&behind)]);
+        for row in overlay::wrap_words(&said, room) {
+            lines.push(Line::from(Span::styled(row, dim())));
+        }
+    }
+    lines.push(Line::default());
+    agent_lines(app, cw.leader, lines, room, rows);
 }
 
 #[cfg(test)]
@@ -3405,6 +3494,160 @@ mod tests {
         assert!(
             got.iter().all(|l| !l.contains("did not solve it")),
             "{got:?}"
+        );
+    }
+
+    /// A card of `home`'s first project that waits on one that failed,
+    /// its wait told to the leader: the card, the failed one, the leader.
+    fn with_card_wait(app: &mut App) -> (CardId, CardId, AgentId) {
+        let a = worker(app);
+        let p = app.world.agents[a].project;
+        let lead = app.world.projects[p].leader;
+        let mut failed = app.world.cards[0].clone();
+        failed.id = app.world.cards.len();
+        failed.project = p;
+        failed.title = "Export as CSV".into();
+        failed.column = Column::Failed;
+        failed.owner = Some(a);
+        failed.finished = app.world.tick;
+        failed.after = Vec::new();
+        let d = failed.id;
+        app.world.cards.push(failed.clone());
+        let mut waits = failed;
+        waits.id = d + 1;
+        waits.title = "Import from CSV".into();
+        waits.column = Column::Waiting;
+        waits.owner = None;
+        waits.after = vec![d];
+        app.world.cards.push(waits);
+        app.world.agents[lead].status = Status::Idle;
+        assert_eq!(app.world.look_card_waits(), [d + 1]);
+        (d + 1, d, lead)
+    }
+
+    #[test]
+    fn a_card_that_waits_for_what_never_comes_is_a_row_at_work_while_its_leader_is_on_it() {
+        let mut app = home(Lang::En);
+        let (c, d, lead) = with_card_wait(&mut app);
+        let rows = app.home_rows_in(None);
+        let at = rows.iter().position(|r| r.1 == HomeRow::Card(c));
+        let at = at.unwrap_or_else(|| panic!("{rows:?}"));
+        assert_eq!(rows[at].0, HomeGroup::Waits);
+        // Before its project's agents at work.
+        let p = app.world.cards[c].project;
+        let at_work = rows.iter().position(|r| {
+            r.0 == HomeGroup::Work
+                && matches!(r.1, HomeRow::Agent(a) if app.world.agents[a].project == p)
+        });
+        assert!(at_work.is_none_or(|w| at < w), "{rows:?}");
+        let leader = clean(&app.world.agents[lead].name);
+        let row = |app: &App| {
+            let got = lines(app, 150);
+            got.into_iter()
+                .find(|l| l.contains("Import from CSV"))
+                .unwrap()
+        };
+        let said = format!("waits on #{} which failed · {leader} is on it", d + 1);
+        assert!(row(&app).contains(&said), "{}", row(&app));
+        assert!(row(&app).contains("■"), "{}", row(&app));
+        // A minute on, it says how long.
+        app.world.tick += 12;
+        assert!(
+            row(&app).contains(&format!("{said} · 1 min")),
+            "{}",
+            row(&app)
+        );
+        // At hand: `enter` opens it, the status line names its card.
+        app.at_home.at = Some(HomeRow::Card(c));
+        app.home_settle();
+        assert!(row(&app).contains(" enter  open"), "{}", row(&app));
+        let s = render(&app, 150, 40);
+        assert!(
+            s.contains(&format!("■ waits on #{} which failed", d + 1)),
+            "{s}"
+        );
+        assert!(s.contains(&format!("{leader} is on it")), "{s}");
+        // Asked about: the person has it.
+        app.world.waits_read(lead);
+        let n = app.world.card_wait(c).unwrap().msg;
+        app.world.asked_you(lead, "Withdraw #3?");
+        app.world.wait_asked(lead, Some(n), "Looked.", None);
+        let got = lines(&app, 160);
+        let asked = format!("which failed · {leader} asked you");
+        assert!(got.iter().any(|l| l.contains(&asked)), "{got:?}");
+        let q = format!("#{}   Import from CSV", c + 1);
+        let q = got.iter().find(|l| l.contains(&q) && l.contains("asks:"));
+        let q = q.unwrap_or_else(|| panic!("{got:?}"));
+        let said = format!(
+            "waits on #{} which failed · {leader} asks: Withdraw #3?",
+            d + 1
+        );
+        assert!(q.contains(&said), "{q}");
+        // Turkish says the same.
+        app.lang = Lang::Tr;
+        let tr = format!("#{} kartını bekliyor, o başarısız oldu", d + 1);
+        assert!(row(&app).contains(&tr), "{}", row(&app));
+    }
+
+    #[test]
+    fn a_card_s_wait_the_leader_let_lie_is_a_row_to_decide_and_gone_once_solved() {
+        let mut app = home(Lang::En);
+        let (c, d, lead) = with_card_wait(&mut app);
+        app.world.waits_read(lead);
+        app.world.waits_unsolved(lead, false);
+        let i = (app.world.open_inbox().into_iter())
+            .find(|&i| app.world.inbox[i].kind == InboxKind::Waits)
+            .unwrap();
+        let rows = app.home_rows_in(None);
+        assert!(
+            rows.contains(&(HomeGroup::Question, HomeRow::Item(i))),
+            "{rows:?}"
+        );
+        assert!(
+            !rows.iter().any(|r| r.1 == HomeRow::Card(c)),
+            "its item is its row"
+        );
+        let leader = clean(&app.world.agents[lead].name);
+        let got = lines(&app, 170);
+        let said = format!(
+            "waits on #{} which failed · {leader} did not solve it",
+            d + 1
+        );
+        let row = got.iter().find(|l| l.contains(&said));
+        let row = row.unwrap_or_else(|| panic!("{got:?}"));
+        assert!(row.contains("Import from CSV"), "{row}");
+        assert!(
+            row.contains(" a  answer") && row.contains(" enter  open"),
+            "{row}"
+        );
+        let s = render(&app, 150, 40);
+        assert!(
+            s.contains(&format!(
+                "#{} Import from CSV: waits on #{} which failed · its leader did not solve it",
+                c + 1,
+                d + 1
+            )),
+            "{s}"
+        );
+        // At hand, the status line says `a` writes (app::home's test
+        // presses it).
+        app.at_home.at = Some(HomeRow::Item(i));
+        app.home_settle();
+        let status = render(&app, 150, 40);
+        assert!(status.contains("a  answer"), "{status}");
+        // The card it waited on goes again: the row is gone.
+        app.world.cards[d].column = Column::Working;
+        app.world.look_card_waits();
+        assert!(
+            app.world
+                .open_inbox()
+                .iter()
+                .all(|&i| app.world.inbox[i].kind != InboxKind::Waits)
+        );
+        assert!(
+            !app.home_rows_in(None)
+                .iter()
+                .any(|r| r.1 == HomeRow::Card(c))
         );
     }
 }

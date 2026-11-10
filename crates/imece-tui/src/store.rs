@@ -1702,6 +1702,7 @@ impl Store {
             journal: Vec::new(),
             inbox: Vec::new(),
             stops: Vec::new(),
+            card_waits: Vec::new(),
             halts: Default::default(),
             budget,
             estimated: false,
@@ -2659,6 +2660,7 @@ mod tests {
                 },
             ],
             stops: Vec::new(),
+            card_waits: Vec::new(),
             halts: Default::default(),
             inbox: vec![
                 InboxItem {
