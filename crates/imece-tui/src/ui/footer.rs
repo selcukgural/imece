@@ -405,7 +405,7 @@ pub(crate) fn home_hints(app: &App) -> Vec<(&'static str, &'static str)> {
     };
     let mut keys = match kind {
         Some(InboxKind::Change) => vec![("enter", t.home_read), ("a", t.apply), ("r", t.reject)],
-        Some(InboxKind::Question | InboxKind::Fault) => vec![
+        Some(InboxKind::Question | InboxKind::Fault | InboxKind::Blocked) => vec![
             ("a", t.home_answer),
             ("enter", t.home_open),
             ("s", t.home_later),

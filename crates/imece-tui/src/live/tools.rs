@@ -696,7 +696,24 @@ pub(super) fn send_tool() -> Tool {
                                     message you get is headed [type number]. An answer \
                                     to an ask, and a done for an assign, carry it. Only \
                                     a message sent to you, and the reply goes to its \
-                                    sender.",
+                                    sender. The leader's ask to the person about a \
+                                    worker's blocked carries the blocked's number (to: \
+                                    you, with tried and risk).",
+                },
+                "tried": {
+                    "type": "string",
+                    "description": "With the leader's ask to the person about a worker's \
+                                    blocked (to: you, re: its number): what you looked at \
+                                    and ruled out before asking, in a few lines. The \
+                                    person reads it under the worker's own words.",
+                    "maxLength": crate::blocked::TRIED_MAX,
+                },
+                "risk": {
+                    "type": "string",
+                    "description": "With the same ask: one line on why the way on is \
+                                    risky (what it would delete, reach or change). Leave \
+                                    it out when you ask because you could not solve it.",
+                    "maxLength": crate::blocked::RISK_MAX,
                 },
                 "paths": paths_schema(),
                 "checks": checks_schema(),

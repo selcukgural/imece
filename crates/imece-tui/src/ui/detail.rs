@@ -142,20 +142,50 @@ pub(crate) fn question_lines(
 ) -> Vec<Line<'static>> {
     let t = app.lang.text();
     let name = clean(&app.world.agents[id].name);
-    let mut lines = vec![Line::from(Span::styled(
+    let mut head = vec![Span::styled(
         fill(t.asks_you_head, &[&name]),
         bold(pal().warn),
-    ))];
-    let room = width.saturating_sub(2).max(1);
-    // Cleaned line by line: a newline is a control character too.
-    for text in q.text.lines().map(|l| clean(l.trim_end())) {
-        if text.trim().is_empty() {
-            continue;
-        }
-        for row in overlay::wrap_words(&text, room) {
-            lines.push(Line::from(vec![Span::raw("  "), Span::raw(row)]));
-        }
+    )];
+    // A leader's question about a worker's block (record 143) says why
+    // it asks, and reads the worker's words and what the leader tried
+    // before the question.
+    let block = app.world.asked_block(id).map(|(_, b)| b);
+    let asked = match block.map(|b| &b.stage) {
+        Some(crate::blocked::Stage::Asked { tried, risk }) => Some((tried, risk)),
+        _ => None,
+    };
+    if let Some((_, risk)) = asked {
+        let why = match risk {
+            Some(risk) => fill(t.block_risky, &[&super::plain(risk)]),
+            None => t.block_could_not.to_string(),
+        };
+        head.push(Span::styled(format!(" · {why}"), dim()));
     }
+    let mut lines = super::wrap(Line::from(head), width.max(1));
+    let lead = if asked.is_some() { "    " } else { "  " };
+    let room = width.saturating_sub(lead.len()).max(1);
+    // Cleaned line by line: a newline is a control character too.
+    let said = |text: &str, lines: &mut Vec<Line<'static>>| {
+        for text in text.lines().map(|l| clean(l.trim_end())) {
+            if text.trim().is_empty() {
+                continue;
+            }
+            for row in overlay::wrap_words(&text, room) {
+                lines.push(Line::from(vec![Span::raw(lead), Span::raw(row)]));
+            }
+        }
+    };
+    if let (Some(b), Some((tried, _))) = (block, asked) {
+        let label = |text: String| Line::from(Span::styled(format!("  {text}"), dim()));
+        lines.push(label(t.blocked_word.to_string()));
+        said(&b.said, &mut lines);
+        if !tried.trim().is_empty() {
+            lines.push(label(fill(t.block_tried, &[&name])));
+            said(tried, &mut lines);
+        }
+        lines.push(label(t.block_asks.to_string()));
+    }
+    said(q.text, &mut lines);
     lines.push(Line::default());
     let mut keys = vec![Span::raw("  ")];
     for (n, option) in q.options.iter().enumerate() {
@@ -556,6 +586,57 @@ mod tests {
         assert!(
             rows[4].contains('┌'),
             "the window starts under the tabs: {s}"
+        );
+    }
+
+    #[test]
+    fn a_leader_s_question_about_a_block_reads_the_worker_s_words_and_what_it_tried() {
+        let mut app = team();
+        let a = worker(&app);
+        let lead = app.world.projects[app.world.agents[a].project].leader;
+        let leader = app.world.agents[lead].name.clone();
+        app.world
+            .blocked(a, lead, 4, "No clock.\nI own only model.rs.");
+        app.world.asked_you(lead, "Let it in?");
+        let q = Question {
+            text: "Let it in?",
+            options: &[],
+        };
+        let text = |app: &App| -> Vec<String> {
+            (question_lines(app, lead, &q, 100).iter())
+                .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect())
+                .collect()
+        };
+        // About no block yet: as any question.
+        assert_eq!(
+            text(&app)[..2],
+            [format!("{leader} asks you"), "  Let it in?".to_string()]
+        );
+        app.world
+            .block_asked(lead, Some(4), "Looked.", Some("it widens the card"));
+        assert_eq!(
+            text(&app)[..8],
+            [
+                format!("{leader} asks you · risky: it widens the card"),
+                "  blocked".to_string(),
+                "    No clock.".to_string(),
+                "    I own only model.rs.".to_string(),
+                format!("  {leader} tried"),
+                "    Looked.".to_string(),
+                "  asks".to_string(),
+                "    Let it in?".to_string(),
+            ]
+        );
+        app.world.block_asked(lead, Some(4), "", None);
+        assert_eq!(
+            text(&app)[..5],
+            [
+                format!("{leader} asks you · could not solve it"),
+                "  blocked".to_string(),
+                "    No clock.".to_string(),
+                "    I own only model.rs.".to_string(),
+                "  asks".to_string(),
+            ]
         );
     }
 }

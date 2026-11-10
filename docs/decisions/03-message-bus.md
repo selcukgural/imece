@@ -91,3 +91,7 @@ roles are refused (`only the leader writes to a group`). The demo's
 leader tells the other workers, one inform each, when the person applies
 a change (`Sim::tell_the_others`).
 
+
+**Later (record 143).** A worker's `blocked` to its leader opens a block
+the leader is to solve first; `re` may go on the leader's ask to the
+person when it names that blocked, and nowhere else to the person.

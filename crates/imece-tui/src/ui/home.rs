@@ -407,7 +407,15 @@ fn title_of(w: &World, row: HomeRow) -> String {
     if let Some(c) = card_of(w, row) {
         return clean(&c.title);
     }
-    let a = &w.agents[agent_of(w, row)];
+    // A leader's question about a worker's block is the blocked work's
+    // row (record 143): called by that worker's work.
+    let asked = match row {
+        HomeRow::Item(i) if w.inbox[i].kind == InboxKind::Question => {
+            w.asked_block(w.inbox[i].agent).map(|(worker, _)| worker)
+        }
+        _ => None,
+    };
+    let a = &w.agents[asked.unwrap_or_else(|| agent_of(w, row))];
     match &a.task.own {
         Some(own) => clean(&own.title),
         None => clean(&a.name),
@@ -520,7 +528,33 @@ fn item_tail(app: &App, i: usize) -> Tail {
         }
         InboxKind::Question => {
             let options = w.question_of(item.agent).map(|q| q.options.to_vec());
-            return Tail::Asked(plain(&item.detail), options.unwrap_or_default());
+            // A leader's question about a worker's block says so first
+            // (record 143): the row is the blocked work's.
+            let asked = match w.asked_block(item.agent) {
+                Some((worker, _)) => fill(
+                    t.row_block_asks,
+                    &[
+                        &w.agents[worker].name,
+                        &w.agents[item.agent].name,
+                        &plain(&item.detail),
+                    ],
+                ),
+                None => plain(&item.detail),
+            };
+            return Tail::Asked(asked, options.unwrap_or_default());
+        }
+        InboxKind::Blocked => {
+            let said = fill(t.row_blocked, &[&plain(&item.detail)]);
+            match w.agents[item.agent]
+                .block
+                .as_ref()
+                .map(|b| (b.leader, &b.stage))
+            {
+                Some((leader, crate::blocked::Stage::Yours(why))) => {
+                    format!("{said} · {}", words::unsolved(t, w, leader, *why))
+                }
+                _ => said,
+            }
         }
         InboxKind::Research => {
             let by = item.researcher.map_or("?", |r| w.agents[r].name.as_str());
@@ -639,7 +673,7 @@ fn row_keys(app: &App) -> Vec<Span<'static>> {
             InboxKind::Question if !pick.is_empty() => {
                 vec![(pick.as_str(), t.home_pick), ("a", t.home_answer)]
             }
-            InboxKind::Question | InboxKind::Fault => {
+            InboxKind::Question | InboxKind::Fault | InboxKind::Blocked => {
                 vec![("a", t.home_answer), ("enter", t.home_open)]
             }
             // A reply asks for nothing: `enter` reads it, `r` puts it away.
@@ -1048,6 +1082,22 @@ fn agent_lines(app: &App, id: AgentId, lines: &mut Vec<Line<'static>>, room: usi
     let a = &w.agents[id];
     let t = app.lang.text();
     lines.push(Line::from(status_spans(app.lang, w, a)));
+    // Blocked between turns (record 143): what it said, whole, then
+    // what its leader has done about it so far.
+    if let Some(b) = a.block.as_ref().filter(|_| !a.status.busy()) {
+        let leader = clean(&w.agents[b.leader].name);
+        let told = fill(t.block_told, &[&leader, &crate::model::clock(b.at)]);
+        lines.push(Line::from(Span::styled(told, dim())));
+        lines.push(Line::default());
+        said_lines(&b.said, "", lines, room);
+        lines.push(Line::default());
+        let so_far = fill(t.block_so_far, &[&leader]);
+        lines.push(Line::from(Span::styled(so_far, dim())));
+        let left = rows.saturating_sub(lines.len());
+        let trace = &w.agents[b.leader].trace;
+        lines.extend(newest_trace(trace, speaker_color(b.leader), room, left));
+        return;
+    }
     lines.push(Line::default());
     lines.extend(focus::plan_lines(t, &a.plan));
     if !a.plan.is_empty() {
@@ -1099,19 +1149,85 @@ fn question_lines(t: &Text, q: &Question, lines: &mut Vec<Line<'static>>, room: 
             }
         }
     }
-    if !q.options.is_empty() {
-        lines.push(Line::default());
-        for (n, option) in q.options.iter().enumerate() {
-            let key = Span::styled(format!(" {} ", n + 1), key_style());
-            let left = room.saturating_sub(key.width() + 1).max(1);
+    option_lines(q, lines, room);
+    lines.push(Line::default());
+    lines.push(Line::from(Span::styled(t.home_so_far.to_string(), dim())));
+}
+
+/// The answers a question offers, each with the key that picks it, a
+/// line before them; nothing when it offers none.
+fn option_lines(q: &Question, lines: &mut Vec<Line<'static>>, room: usize) {
+    if q.options.is_empty() {
+        return;
+    }
+    lines.push(Line::default());
+    for (n, option) in q.options.iter().enumerate() {
+        let key = Span::styled(format!(" {} ", n + 1), key_style());
+        let left = room.saturating_sub(key.width() + 1).max(1);
+        lines.push(Line::from(vec![
+            key,
+            Span::raw(format!(" {}", fit(&clean(option), left).trim_end())),
+        ]));
+    }
+}
+
+/// An agent's words whole, cleaned line by line (a newline is a control
+/// character too) and wrapped behind `lead`; blank lines left out.
+fn said_lines(text: &str, lead: &str, lines: &mut Vec<Line<'static>>, room: usize) {
+    let room = room.saturating_sub(lead.width()).max(1);
+    for line in text.lines().map(|l| clean(l.trim_end())) {
+        if line.trim().is_empty() {
+            continue;
+        }
+        for row in overlay::wrap_words(&line, room) {
             lines.push(Line::from(vec![
-                key,
-                Span::raw(format!(" {}", fit(&clean(option), left).trim_end())),
+                Span::raw(lead.to_string()),
+                Span::raw(row),
             ]));
         }
     }
+}
+
+/// A leader's question about a worker's block, read whole (record 143):
+/// who asks and why (it is risky, or the leader could not solve it),
+/// then the worker's words, what the leader tried, what it asks and the
+/// answers it offers, then a line before what the leader did so far.
+pub(crate) fn block_question_lines(
+    t: &Text,
+    leader: &str,
+    b: &crate::blocked::Block,
+    q: &Question,
+    lines: &mut Vec<Line<'static>>,
+    room: usize,
+) {
+    let (tried, risk) = match &b.stage {
+        crate::blocked::Stage::Asked { tried, risk } => (tried.as_str(), risk.as_deref()),
+        _ => ("", None),
+    };
+    let why = match risk {
+        Some(risk) => fill(t.block_risky, &[&plain(risk)]),
+        None => t.block_could_not.to_string(),
+    };
+    let head = Line::from(vec![
+        Span::styled(fill(t.asks_you_head, &[leader]), bold(pal().warn)),
+        Span::styled(format!(" · {why}"), dim()),
+    ]);
+    lines.extend(super::wrap(head, room.max(1)));
     lines.push(Line::default());
-    lines.push(Line::from(Span::styled(t.home_so_far.to_string(), dim())));
+    let mut part = |label: String, text: &str| {
+        if text.trim().is_empty() {
+            return;
+        }
+        lines.push(Line::from(Span::styled(label, dim())));
+        said_lines(text, "  ", lines, room);
+    };
+    part(t.blocked_word.to_string(), &b.said);
+    part(fill(t.block_tried, &[leader]), tried);
+    part(t.block_asks.to_string(), q.text);
+    option_lines(q, lines, room);
+    lines.push(Line::default());
+    let so_far = fill(t.block_so_far, &[leader]);
+    lines.push(Line::from(Span::styled(so_far, dim())));
 }
 
 /// What a row holds, read without a key: a heading, then what it is.
@@ -1160,12 +1276,25 @@ fn preview_lines(app: &App, row: HomeRow, room: usize, rows: usize) -> Vec<Line<
                 lines.push(Line::default());
                 let left = rows.saturating_sub(lines.len());
                 lines.extend(patch_lines(&c.patch, room, left));
+            } else if let (InboxKind::Question, Some((_, b)), Some(q)) = (
+                item.kind,
+                w.asked_block(item.agent),
+                w.question_of(item.agent),
+            ) {
+                // The leader's question about a worker's block.
+                block_question_lines(t, &clean(&a.name), b, &q, &mut lines, room);
+                let left = rows.saturating_sub(lines.len());
+                lines.extend(newest_trace(&a.trace, speaker_color(id), room, left));
             } else {
                 let said = words::inbox(app.lang, w, item);
                 for row in overlay::wrap_words(&said, room) {
                     lines.push(Line::from(Span::raw(row)));
                 }
-                if let Some(q) = w.question_of(item.agent) {
+                if item.kind == InboxKind::Blocked {
+                    // What the worker said, whole, and what its leader did.
+                    lines.push(Line::default());
+                    agent_lines(app, id, &mut lines, room, rows);
+                } else if let Some(q) = w.question_of(item.agent) {
                     question_lines(t, &q, &mut lines, room);
                     agent_lines(app, id, &mut lines, room, rows);
                 } else if !item.detail.is_empty() && !said.contains(item.detail.as_str()) {
@@ -2818,5 +2947,171 @@ mod tests {
         );
         assert!(got[1].chars().count() <= 40, "{got:?}");
         assert!(got.iter().all(|l| l.chars().count() <= 40), "{got:?}");
+    }
+
+    /// The first worker of `home`, blocked: its leader, and the block's
+    /// message as its leader read it.
+    fn with_block(app: &mut App) -> (AgentId, AgentId) {
+        let a = worker(app);
+        let lead = app.world.projects[app.world.agents[a].project].leader;
+        let said = "The retry test needs a clock.\nI own only model.rs.";
+        app.world.blocked(a, lead, 4, said);
+        app.world.block_read(a, 4);
+        (a, lead)
+    }
+
+    #[test]
+    fn a_blocked_worker_stays_at_work_and_its_row_says_who_has_its_block() {
+        let mut app = home(Lang::En);
+        let (a, lead) = with_block(&mut app);
+        app.unseen.insert(a);
+        assert!(
+            app.home_rows_in(None)
+                .contains(&(HomeGroup::Work, HomeRow::Agent(a)))
+        );
+        assert_eq!(
+            app.rungs()[a],
+            Rung::Idle,
+            "not done, not the person's turn"
+        );
+        let leader = clean(&app.world.agents[lead].name);
+        let row = |app: &App| {
+            let got = lines(app, 140);
+            got.into_iter().find(|l| l.contains("clock")).unwrap()
+        };
+        let at_work = row(&app);
+        assert!(at_work.contains("■"), "{at_work}");
+        let said = format!("blocked \"The retry test needs a clock.\" · {leader} is on it");
+        assert!(at_work.contains(&said), "{at_work}");
+        // The preview reads it whole, then what the leader did.
+        app.world.agents[lead].trace(0, "tool_use Grep RETRY_TICKS".to_string());
+        app.at_home.at = Some(HomeRow::Agent(a));
+        let s = render(&app, 150, 40);
+        let order = |needle: &str| s.find(needle).unwrap_or_else(|| panic!("{needle}: {s}"));
+        assert!(order(&format!("told {leader} at ")) < order("I own only model.rs."));
+        assert!(order("I own only model.rs.") < order(&format!("{leader}, so far:")));
+        assert!(order(&format!("{leader}, so far:")) < order("RETRY_TICKS"));
+        // The leader asked the person: the row says so while they have
+        // not answered.
+        app.world.asked_you(lead, "Let it in?");
+        app.world.block_asked(lead, Some(4), "", None);
+        let asked = row(&app);
+        assert!(asked.contains(&format!("· {leader} asked you")), "{asked}");
+        app.world.close_questions(lead);
+        assert!(row(&app).contains(&format!("· {leader} is on it")));
+        // Turkish says the same.
+        app.lang = Lang::Tr;
+        let said = format!("takıldı \"The retry test needs a clock.\" · {leader} ilgileniyor");
+        assert!(row(&app).contains(&said), "{}", row(&app));
+    }
+
+    #[test]
+    fn a_leader_s_question_about_a_block_is_the_blocked_work_s_row_and_reads_in_parts() {
+        let mut app = home(Lang::En);
+        let (a, lead) = with_block(&mut app);
+        let card = app.world.agents[a].card;
+        let (worker, leader) = (
+            clean(&app.world.agents[a].name),
+            clean(&app.world.agents[lead].name),
+        );
+        app.world.note(Event::ToYou {
+            from: lead,
+            kind: MsgKind::Ask,
+            text: "Let it into live/mod.rs?".into(),
+            options: vec!["let it in".into(), "wait".into()],
+        });
+        app.world.asked_you(lead, "Let it into live/mod.rs?");
+        let tried = "Looked for a test clock.\nThere is none.";
+        app.world
+            .block_asked(lead, Some(4), tried, Some("it widens the card"));
+        let i = app.world.open_inbox()[0];
+        assert_eq!(app.world.inbox[i].card, card, "the blocked work's card");
+        let got = lines(&app, 140);
+        let said = format!("{worker} is blocked · {leader} asks: Let it into live/mod.rs?");
+        let row = got.iter().position(|l| l.contains(&said));
+        let row = row.unwrap_or_else(|| panic!("{got:?}"));
+        assert_eq!(got[row + 1].trim(), "1  let it in");
+        let s = render(&app, 150, 40);
+        let order = |needle: &str| s.find(needle).unwrap_or_else(|| panic!("{needle}: {s}"));
+        let head = format!("{leader} asks you · risky: it widens the card");
+        assert!(order(&head) < order("│blocked"));
+        assert!(order("│blocked") < order("│  I own only model.rs."));
+        assert!(order("│  I own only model.rs.") < order(&format!("│{leader} tried")));
+        assert!(order(&format!("│{leader} tried")) < order("│  There is none."));
+        assert!(order("│  There is none.") < order("│asks"));
+        assert!(order("│asks") < order("│ 1  let it in"));
+        assert!(order("│ 1  let it in") < order(&format!("{leader}, so far:")));
+        // The row is called by the blocked work, not by who asks.
+        let row = got.iter().find(|l| l.contains(&said)).unwrap();
+        let before = &row[..row.find(&said).unwrap()];
+        assert!(
+            before.contains(&worker) && !before.contains(&leader),
+            "{row}"
+        );
+        // No risk named: the leader could not solve it; nothing tried,
+        // no such part.
+        app.world.block_asked(lead, Some(4), " ", None);
+        let s = render(&app, 150, 40);
+        assert!(
+            s.contains(&format!("{leader} asks you · could not solve it")),
+            "{s}"
+        );
+        assert!(!s.contains(&format!("{leader} tried")), "{s}");
+        // A question of its that is about no block reads as any other.
+        app.world.agents[a].block = None;
+        let got = lines(&app, 140);
+        assert!(got.iter().all(|l| !l.contains("is blocked")), "{got:?}");
+        assert!(got.iter().any(|l| l.contains("Let it into live/mod.rs?")));
+    }
+
+    #[test]
+    fn a_block_the_leader_let_lie_is_a_row_to_decide_with_its_keys_and_its_words() {
+        let mut app = home(Lang::En);
+        let (a, lead) = with_block(&mut app);
+        let leader = clean(&app.world.agents[lead].name);
+        app.world.blocks_unsolved(lead, false);
+        let i = app.world.open_inbox()[0];
+        assert_eq!(
+            app.home_rows_in(None)[0],
+            (HomeGroup::Question, HomeRow::Item(i))
+        );
+        assert!(
+            !app.home_rows_in(None)
+                .iter()
+                .any(|r| r.1 == HomeRow::Agent(a)),
+            "the item is its row"
+        );
+        assert_eq!(app.rungs()[a], Rung::Waiting);
+        let got = lines(&app, 170);
+        let said = format!("blocked: The retry test needs a clock. · {leader} did not solve it");
+        let row = got.iter().find(|l| l.contains(&said));
+        let row = row.unwrap_or_else(|| panic!("{got:?}"));
+        assert!(
+            row.contains(" a  answer") && row.contains(" enter  open"),
+            "{row}"
+        );
+        let s = render(&app, 150, 40);
+        let name = clean(&app.world.agents[a].name);
+        assert!(
+            s.contains(&format!(
+                "{name} is blocked and its leader did not solve it"
+            )),
+            "{s}"
+        );
+        assert!(s.contains("I own only model.rs."), "{s}");
+        assert!(s.contains(&format!("{leader}, so far:")), "{s}");
+        // Read back from the store the block is gone: the item's own
+        // words are what is left.
+        app.world.agents[a].block = None;
+        let got = lines(&app, 170);
+        assert!(
+            got.iter()
+                .any(|l| l.contains("blocked: The retry test needs a clock.  ")),
+            "{got:?}"
+        );
+        assert!(
+            got.iter().all(|l| !l.contains("did not solve it")),
+            "{got:?}"
+        );
     }
 }

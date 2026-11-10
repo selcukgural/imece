@@ -48,7 +48,7 @@ What an ask shows: for a shell command the command; for another tool what it tou
 
 ## Questions (`?`)
 
-An agent asks you with `send(to: "you", type: "ask", body)`, and may offer the answers to pick from (`options`: at most four, each a short line, the one it would take first). It becomes a `?` item under **questions**, "claude-2 asks you: keep the old CLI flag?" in the journal, and the agent is that row while the question is open. A newer question from the same agent replaces the older.
+An agent asks you with `send(to: "you", type: "ask", body)`, and may offer the answers to pick from (`options`: at most four, each a short line, the one it would take first). It becomes a `?` item under **questions**, "claude-2 asks you: keep the old CLI flag?" in the journal, and the agent is that row while the question is open. A newer question from the same agent replaces the older. A leader's question about a worker's block says so and reads in parts: the worker's words, what the leader tried, why it asks ([a worker that is blocked](messages-and-board.md#a-worker-that-is-blocked)).
 
 On [Home](../screen/home.md) the row says the question and, under it, each answer offered with the key that picks it:
 

@@ -19,7 +19,7 @@ Every message is a typed envelope plus a free-text body: `send(to, type, body)`,
 | `inform` | something worth knowing, no action | no |
 | `handoff` | a task passed on to another agent | yes |
 | `done` | the task is finished; a worker's `done` becomes a change | yes |
-| `blocked` | cannot go on, and why | yes |
+| `blocked` | cannot go on, and why; a worker's to its leader is the leader's to solve first ([a worker that is blocked](#a-worker-that-is-blocked)) | yes |
 | `progress` | where the work stands | no |
 | `notice` | a short note to the team | no |
 | `cancel` | the task is withdrawn | yes |
@@ -68,9 +68,20 @@ The bus reaches you as `you`: `send(to: "you", type, body)`.
 - An `ask` to you becomes a question in TO DECIDE (`?`, "claude-1 asks you: …"). While it is open the agent is that row, and is not listed under AT WORK. A newer question from the same agent takes the older's place. You answer by writing to the agent (`@claude-1 …`, or `a`/`r` on the item, which open the composer), and that starts its next turn.
 - `inform`, `progress`, `notice`, `done`, `blocked` and `answer` to you only inform: a line in the conversation and the story, no item, nothing wakes. A worker's `done` to you shows its change like any `done`.
 - `assign`, `handoff` and `cancel` to you are refused.
-- Messages to you take no number and no `re`; your own messages have none. Nothing to you counts against the mail caps or the pot.
+- Messages to you take no number and no `re`, but for the leader's `ask` about a worker's blocked, which names it ([a worker that is blocked](#a-worker-that-is-blocked)); your own messages have none. Nothing to you counts against the mail caps or the pot.
 
 The prompts say when to ask: the leader may ask you mid-task; a worker asks its leader first and sends you only what only you can decide; a helper only what no teammate can answer. More on [approvals and questions](../concepts/approvals-and-questions.md).
+
+## A worker that is blocked
+
+A worker that cannot go on sends its leader `blocked`. The leader tries to solve it itself first: it reads the code, searches, and sends the worker the way on, or hands the card to another worker. You hear of it only when the leader asks you, or when the leader lets it lie.
+
+- **While the leader has it** the worker stays under AT WORK with a `■` in the attention colour: `blocked "the retry test needs a clock" · lead is on it`. It is not your turn: it is not counted as stuck and nothing rings. Its preview reads the worker's message whole and what the leader has done about it so far.
+- **Solved.** Any waking message of the leader's to that worker (an `answer`, a new `assign`) ends the block, and the journal says `lead unblocked claude-2 after 3 min: World::at is there for tests`. Handing its card to another worker or withdrawing it, the worker's own `done`, and your word to the worker end it too.
+- **Asked.** The leader asks you only when the way on is risky, or when it found none. Risky is: deleting or overwriting work; reaching outside the repository (credentials, installs, network services, money); widening what the card owns or its task; dropping a requirement or skipping a test; changing something you decided. Such an `ask` names the blocked it is about (`re`: its number) and carries what the leader tried (`tried`) and why it is risky (`risk`, left out when it could not solve it). On Home the question is the blocked work's row, `claude-2 is blocked · lead asks: Let it into live/mod.rs?`, with the answers it offers under it. Its preview and its detail read `lead asks you · risky: it widens what #6 owns` (or `· could not solve it`), then the worker's words, what the leader tried, the question and the answers. Your answer goes to the leader, which sends the worker the way on; until you answer, the worker's row says `· lead asked you`.
+- **Let lie.** A turn of the leader's that ends with a blocked it read neither answered nor asked about puts the block before you: a row under questions, `blocked: the retry test needs a clock · lead did not solve it`, where `a` writes to the worker and `enter` opens it. So does a block older than [`:health stall`](../reference/commands.md#health-stallidleloop-value) allows (ten minutes by default: `lead has not solved it in time`), and one whose leader stopped. This one is your turn: it is counted, it rings in another window, and the worker's mail waits with it. Your word to the worker ends it, and so does the leader's after all; the leader hears with its next prompt that you have it.
+
+A `blocked` to a teammate that is not the worker's leader, a helper's to its worker and a `blocked` to `you` are plain messages, as before. A block the leader still had is not kept between runs (the [health notice](team.md#health-notices) for a stalled card finds that worker again); one that came to you is.
 
 ## Mail waits with an agent that waits on you
 

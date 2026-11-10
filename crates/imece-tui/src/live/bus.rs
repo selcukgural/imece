@@ -96,11 +96,45 @@ impl Live {
         if handed.is_some() && !after.is_empty() {
             return Err("a card handed again waits on what it did; leave after out".into());
         }
+        let tried = words_of(&args["tried"], "tried", crate::blocked::TRIED_MAX)?;
+        let risk = words_of(&args["risk"], "risk", crate::blocked::RISK_MAX)?;
+        let about_block = tried.is_some() || risk.is_some();
+        if about_block && (arg("to") != YOU || kind != MsgKind::Ask) {
+            return Err(
+                "tried and risk go with an ask to the person about a worker's blocked \
+                 (to: you, re: the blocked's number)"
+                    .into(),
+            );
+        }
         if arg("to") == YOU {
-            if re.is_some() {
+            // On an ask to the person, re names the blocked it is about
+            // (record 143), and nothing else.
+            if re.is_some() && kind != MsgKind::Ask {
                 return Err("re is for a teammate's message: the person's have no number".into());
             }
-            return self.send_you(w, from, kind, body, options, failed);
+            if let Some(re) = re
+                && w.block_by_message(from, re).is_none()
+            {
+                return Err(format!(
+                    "message {re} is no open blocked of a worker of yours: to the person, \
+                     re goes only on an ask about such a blocked, and their own messages \
+                     have no number"
+                ));
+            }
+            if about_block && w.block_for(from, re).is_none() {
+                return Err(
+                    "tried and risk are for an ask about a worker's blocked: name it with \
+                     re, its number"
+                        .into(),
+                );
+            }
+            let asked = Asked {
+                options,
+                about: re,
+                tried: tried.unwrap_or_default(),
+                risk,
+            };
+            return self.send_you(w, from, kind, body, asked, failed);
         }
         let project = w.agents[from].project;
         if w.agent_by_name(arg("to")).is_none()
@@ -243,6 +277,18 @@ impl Live {
                 text: first.clone(),
             });
         }
+        // A worker's blocked is its leader's to solve; the leader's word
+        // to a blocked worker is the way on; a done ends a block as it
+        // ends the work (record 143).
+        if kind == MsgKind::Blocked && w.opens_block(from, to) {
+            w.blocked(from, to, id, body);
+        } else if kind == MsgKind::Done {
+            w.block_over(from);
+        }
+        let solves = (w.agents[to].block.as_ref()).is_some_and(|b| b.leader == from);
+        if solves && kind.wakes() && w.unblocked(to, from, body) {
+            w.agents[to].trace(t, format!("unblocked by message {id}"));
+        }
         let held = kind != MsgKind::Cancel && w.waits_on_person(to);
         if held {
             w.agents[to].trace(t, format!("held until the person answers: message {id}"));
@@ -297,9 +343,15 @@ impl Live {
         from: AgentId,
         kind: MsgKind,
         body: &str,
-        options: Vec<String>,
+        asked: Asked,
         failed: bool,
     ) -> Result<(String, Option<String>), String> {
+        let Asked {
+            options,
+            about,
+            tried,
+            risk,
+        } = asked;
         if matches!(kind, MsgKind::Assign | MsgKind::Handoff | MsgKind::Cancel) {
             return Err(format!(
                 "{} is not for the person; ask them, or tell them (inform, done, blocked)",
@@ -327,6 +379,14 @@ impl Live {
         });
         if kind == MsgKind::Ask {
             w.asked_you(from, body);
+            // A leader's question about a worker's block is that block's
+            // from here (record 143).
+            if let Some(worker) = w.block_asked(from, about, &tried, risk.as_deref()) {
+                let name = w.agents[worker].name.clone();
+                w.agents[from].trace(t, format!("asks the person about {name}'s blocked"));
+            }
+        } else if kind == MsgKind::Done {
+            w.block_over(from);
         }
         let a = &mut w.agents[from];
         a.trace(t, format!("send to=you type={}", kind.wire()));
@@ -960,6 +1020,10 @@ impl Live {
             return;
         }
         self.woken[id] += 1;
+        // The blocks this turn reads are its to solve (record 143).
+        for m in mail.iter().filter(|m| m.kind == MsgKind::Blocked) {
+            w.block_read(m.from, m.id);
+        }
         let first = mail
             .iter()
             .find(|m| m.kind == MsgKind::Assign)
@@ -1338,6 +1402,38 @@ fn said_of(w: &World, outcome: Outcome) -> String {
             .to_string(),
         Outcome::Ok => String::new(),
     }
+}
+
+/// A leader's own words on a block (`tried`, `risk`): one field of the
+/// `send` tool, trimmed, none when left out or empty; refused when it is
+/// no string, longer than `most` characters, or holds a control
+/// character other than a line's end.
+fn words_of(v: &Value, field: &str, most: usize) -> Result<Option<String>, String> {
+    if v.is_null() {
+        return Ok(None);
+    }
+    let Some(text) = v.as_str() else {
+        return Err(format!("{field} must be a string"));
+    };
+    let text = text.trim();
+    if text.chars().count() > most {
+        return Err(format!("{field} is longer than {most} characters"));
+    }
+    if text.chars().any(|c| c.is_control() && c != '\n') {
+        return Err(format!("{field} has a control character"));
+    }
+    Ok((!text.is_empty()).then(|| text.to_string()))
+}
+
+/// What an ask to the person carries beside its words: the answers it
+/// offers, and for a leader's ask about a worker's block (record 143)
+/// the blocked's number, what the leader tried and why it is risky.
+#[derive(Default)]
+pub(super) struct Asked {
+    pub options: Vec<String>,
+    pub about: Option<MsgId>,
+    pub tried: String,
+    pub risk: Option<String>,
 }
 
 fn reply_to(re: &Value) -> Result<Option<MsgId>, String> {
