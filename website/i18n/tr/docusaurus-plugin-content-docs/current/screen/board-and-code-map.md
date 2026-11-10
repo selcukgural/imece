@@ -1,6 +1,6 @@
 ---
 title: Pano ve kod haritası
-description: Ekranın üstünde iki pencere - her kartı kendi sütununda gösteren pano ve sembol lease'leri gelince kimin neyi düzenlediğini gösteren kod haritası.
+description: Ekranın üstünde iki pencere - her kartı kendi sütununda gösteren pano ve Lonca'nın lease'lerinden kimin hangi dosyayı tuttuğunu gösteren kod haritası (bir de demoda önizleme).
 ---
 
 # Pano ve kod haritası
@@ -34,7 +34,7 @@ Kartın ne olduğu, liderin nasıl astığı ve görev verdiği, bir işçinin n
 
 ## Kod haritası
 
-`:code`, KOD HARİTASI · proje · kim neyi düzenliyor penceresini açar. Projenin her dosyası için bir satır ve o satırda dosyada tutulan her sembol lease'i için bir hücre göstermek üzere tasarlandı:
+`:code`, KOD HARİTASI · proje · kim neyi düzenliyor penceresini açar. Projenin her dosyası için bir satır ve o satırda tutulan her lease için bir hücre gösterir. Aşağıdaki resim demonun resmidir; demo sembol lease'i kullanır, imece'nin kendisi sembol lease'i kullanmaz, canlıda lease'ler Lonca'nındır ve dosya başınadır:
 
 ```text
 ┌ KOD HARİTASI · shop-api · kim neyi düzenliyor ──────────────────────────────┐

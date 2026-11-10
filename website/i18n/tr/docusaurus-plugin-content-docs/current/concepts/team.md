@@ -1,11 +1,11 @@
 ---
 title: Ekip
-description: Bir imece ekibinde kim var - lider, işçiler, yardımcılar ve henüz yapılmamış araştırmacılar - lider kademelerle nasıl işe alır, ajanlar nasıl adlandırılır.
+description: Bir imece ekibinde kim var - lider, işçiler ve yardımcılar - lider kademelerle nasıl işe alır, ajanlar nasıl adlandırılır.
 ---
 
 # Ekip
 
-Bir imece ekibi, sizinle konuşan ve iş gerektirdikçe işçi alan bir lider, görevlerinin parçaları için yardımcı alabilen işçiler ve (bir gün) araştırmacılardan oluşur. Ekip boyutunu siz seçmezsiniz; üst sınırları koyarsınız. Ekiple ana ekranda, ÇALIŞAN altında, projeye göre gruplanmış olarak karşılaşırsınız.
+Bir imece ekibi, sizinle konuşan ve iş gerektirdikçe işçi alan bir lider ile görevlerinin parçaları için yardımcı alabilen işçilerden oluşur. Ekip boyutunu siz seçmezsiniz; üst sınırları koyarsınız. Ekiple ana ekranda, ÇALIŞAN altında, projeye göre gruplanmış olarak karşılaşırsınız.
 
 ## Roller
 
@@ -15,13 +15,12 @@ Bir imece ekibi, sizinle konuşan ve iş gerektirdikçe işçi alan bir lider, g
 | İşçi (`claude-1`, `claude-2`, …) | HEAD'inizde detached kendi worktree'si | `send`, `post`, `board`, `run`, `whoami`, `claim`, `hire` (yardımcılar) |
 | Yardımcı (`claude-1.1`, …) | İşçisinin worktree'si, işçisinin adını verdiği dosyalar | `send`, `post`, `board`, `run`, `whoami` |
 | Solo (`solo`, `solo-notes`) | Kendi worktree'si, lideri olmayan bir projede | `send`, `run`, `hire` (yardımcılar) |
-| Araştırmacı | henüz yapılmadı | — |
 
 - **Lider** checkout'u okur, isteğinizi kartlara böler ve her birini sahip olduğu yollarla ([kartın sahip olduğu yollar](messages-and-board.md#kartın-sahip-olduğu-yollar)) `send` (tür `assign`) ile dağıtır ya da herhangi bir işçinin alması için panoya asar. İkinci işçiyi almadan önce planı önce size gelir (KARAR BEKLEYEN'de `▤`; [plan](messages-and-board.md#plan)). Boşta bir işçi (kartı bitmiş, bekleyen değişikliği yok) kimse alınmadan sonraki kartı alır: `whoami` boştaki işçileri listeler, boştaki birinin katmanında `hire` da `claude-1 is free … give it the next card` diye yanıt verir. Hiçbir `--confine` düzeyinde dosya değiştirmez: checkout'unuzda çalışır, orada bir yazma incelemeyi atlar. Claude Code'un okuma araçlarını ve `standard`'dan itibaren web'i alır.
 - **Bir işçi** kendi worktree'sinde dosya değiştirir, işini `run` aracıyla denetler ve görevi kim verdiyse ona `done` gönderir. `done`'ı, incelemeniz için bir değişikliğe dönüşür ([değişiklikler](../concepts/changes.md)). İşçi başına bir anda bir kart.
 - **Bir yardımcı**, işçi için liderin işçisi neyse odur. İşçi, kendi işinin yanında yürüyebilecek bir parça için, değiştirmediği dosyalarda bir yardımcı alır. Yardımcıya kart teklif edilmez, kimseyi işe almaz (yardımcının yardımcısı yok) ve `--agents` sınırına sayılmaz. İşçisine gönderdiği `done` ayrılışını işaretler; o tur bitince ayrılır, böylece turun maliyeti yine raporlanır. Günlük `işini bitirdi, ayrıldı` der. Duran bir işçi yardımcılarını da götürür. `done`'undan önce duran bir yardımcıyı (oturumu biter ya da son turu kalıcı olarak düşer: reddedilen bir anahtar, biten bütçe) imece işçisine onun bir sonraki turunda söyler, "ona verdiğin parça yapılmadı: kendin yap ya da başka bir yardımcı al", ve boştaki bir işçi bunun için uyandırılır; böylece yanıt vermeyecek bir yardımcıyı beklemez. imece'nin yeniden denediği bir API hatası henüz durmak sayılmaz.
 - **Bir solo**, lideri olmayan bir işçidir: onu, seçtiğiniz model ve çabada (`:solo`, `--solo`) kendi başına bir projede siz sürersiniz. Panosu ve kartı yoktur; bir yanıtla biten her turda worktree'sinin diff'ini size gösterir. Bir işçi gibi yardımcı alabilir ([solo oturumlar](solo.md)).
-- **Araştırmacılar** planlanmış bir katmandır (soruları yanıtlayan sınırlı bir havuz, dereceli kirlilik ve güvenilir kaynaklarla). Yapılmadı; yalnız demo gösterir (`--researchers N`).
+- **Araştırmacılar** kapatıldı, yapılmayacak: işçilerin ve yardımcıların web'i zaten kendilerinde, bu yüzden ayrı bir okuyucu havuzu planlanmıyor. Yalnız demo hâlâ bir tavan gösterir (`--researchers N`).
 
 Claude Code'un kendi alt ajan aracı (`Agent`/`Task`) her düzeyde kapalıdır: oturumun içinde açılan bir alt ajan worktree'yi, bütçeyi, bus'ı ve ekranı atlardı. Yardımcılar imece'nin bu ihtiyaca yanıtıdır.
 

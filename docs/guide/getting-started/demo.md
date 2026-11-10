@@ -67,7 +67,7 @@ Every fix, feature or change to what live does is shown by the demo in the same 
 ## What cannot be faked
 
 - **The "where you left off" window**, turns cut short by a close, and agents asleep from a start: they need a store and an earlier run, and the demo keeps none.
-- **Researchers**: the demo shows them as a preview of what is planned; live has none yet.
+- **Researchers**: the demo shows them as a preview; live has none, and they are closed, not to be built (record 01).
 - **The code map of a project in worktrees**: the demo draws leases from its cards on every project, as a preview; live has leases only on Lonca, where the map shows the daemon's, and a project in worktrees says `no shared trunk yet: each agent works in its own worktree, so there is nothing to show of who edits what`. The demo's Lonca project lists no held symbols in `:lonca`.
 - **The board's VERIFYING column**: live cards stand there while Lonca's merge queue holds their change; the demo lands a proposal at once, so its column stays empty.
 

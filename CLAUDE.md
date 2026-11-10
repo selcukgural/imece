@@ -115,7 +115,7 @@ Each decision, with its reasons, probe facts and known gaps, is a file in
 changing the part it covers; a change that alters a decision updates its
 record in the same PR.
 
-- 01 `researchers`: optional researcher layer, graded taint, trusted sources (not built).
+- 01 `researchers`: closed, not to be built: record 26 gave workers the web, so a separate researcher layer guards nothing; the code's researcher cap and rows stay until a follow-up removes them.
 - 02 `live`: one long-lived `claude -p` session per agent, worktrees, the one budget pot, `:budget`; a session ends with SIGINT, SIGTERM after `INT_GRACE` 1.2 s, SIGKILL after `TERM_GRACE` 0.3 s.
 - 03 `message-bus`: `send(to, type, body)` over imece's own MCP server, a socket per agent that takes calls only from its agent's session (`mcp::peer_pid`, `child::descends` of `Agent::pid`), mail caps; a call is taken by imece or given up by its caller, never both (`live::answer_of`), so a retry is not done twice. `whoami` (every role) says name, role, project, who it answers to, the pot left and `may hire` from `Live::hire_room`, the same words `hire` refuses with. The leader may send an inform or notice to a group (`workers`, `idle`: `bus::Group`), one message per worker through `Live::message`; a name comes first.
 - 04 `board`: `post`/`board`/`claim`, one offer per idle worker, card caps.

@@ -87,7 +87,7 @@ Helpers share their worker's worktree and get the same; a leader works in the ch
 
 ## 7. Researchers
 
-A researcher layer (agents that read the outside world for the team, under a cap shared by every project) is designed but not built: live imece shows no researcher count in the header. `imece --demo --researchers N` previews it: in the demo the cap is one pool for all projects.
+A researcher layer (agents that read the outside world for the team, under a cap shared by every project) is closed and not to be built: workers have the web themselves. Live imece shows no researcher count in the header. `imece --demo --researchers N` still previews the cap: in the demo it is one pool for all projects.
 
 ## 8. Close one
 
