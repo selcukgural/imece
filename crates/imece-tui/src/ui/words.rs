@@ -107,8 +107,9 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
             by,
             text,
             minutes,
+            what,
         } => fill(
-            t.ev_unblocked,
+            what.of([t.ev_unblocked, t.ev_revived, t.ev_unfailed]),
             &[name(w, *by), name(w, *agent), &minutes.to_string(), text],
         ),
         Event::StillBlocked {
@@ -116,8 +117,9 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
             leader,
             why,
             text,
+            what,
         } => fill(
-            t.ev_still_blocked,
+            what.of([t.ev_still_blocked, t.ev_still_ended, t.ev_still_failed]),
             &[name(w, *agent), &unsolved(t, w, *leader, *why), text],
         ),
         Event::Blocked {
@@ -184,6 +186,7 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
             ],
         ),
         Event::Stopped { agent, why } => fill(t.ev_stopped, &[name(w, *agent), why]),
+        Event::TurnFailed { agent, why } => fill(t.ev_turn_failed, &[name(w, *agent), why]),
         Event::Interrupted { agent } => fill(t.ev_interrupted, &[name(w, *agent)]),
         Event::Retrying {
             agent,
@@ -1147,7 +1150,10 @@ pub fn notice(lang: Lang, w: &World, note: crate::notify::Note) -> String {
                 InboxKind::Reply => t.notice_reply,
                 InboxKind::Approval => t.notice_approval,
                 InboxKind::Fault => t.notice_fault,
-                InboxKind::Blocked => t.notice_blocked,
+                InboxKind::Blocked => {
+                    w.block_what(item.agent)
+                        .of([t.notice_blocked, t.notice_ended, t.notice_failed])
+                }
                 InboxKind::Script => t.notice_script,
                 InboxKind::Check => t.notice_check,
                 InboxKind::Plan => t.notice_plan,
@@ -1280,7 +1286,10 @@ pub fn inbox(lang: Lang, w: &World, item: &InboxItem) -> String {
             &[name(w, item.agent), &one_line(&item.detail)],
         ),
         (InboxKind::Fault, _) => fill(t.in_fault, &[name(w, item.agent), &item.detail]),
-        (InboxKind::Blocked, _) => fill(t.in_blocked, &[name(w, item.agent), &item.detail]),
+        (InboxKind::Blocked, _) => fill(
+            (w.block_what(item.agent)).of([t.in_blocked, t.in_ended, t.in_failed]),
+            &[name(w, item.agent), &item.detail],
+        ),
         (InboxKind::Script, _) => fill(t.in_script, &[name(w, item.agent), &item.detail]),
         (InboxKind::Check, _) => fill(t.in_check, &[name(w, item.agent), &item.detail]),
         (InboxKind::Plan, _) => {
@@ -3338,6 +3347,82 @@ mod tests {
     }
 
     #[test]
+    fn a_stop_is_worded_by_what_it_is_of() {
+        use crate::blocked::{Unsolved, What};
+        let mut w = crate::live::testing::team(1);
+        let solved = |what| Event::Unblocked {
+            agent: 1,
+            by: 0,
+            text: "Go on.".into(),
+            minutes: 2,
+            what,
+        };
+        let lies = |what| Event::StillBlocked {
+            agent: 1,
+            leader: 0,
+            why: Unsolved::TurnEnded,
+            text: "exited".into(),
+            what,
+        };
+        for (what, en, tr, en_lies, tr_lies) in [
+            (
+                What::Ended,
+                "lead started claude-1 again after 2 min: Go on.",
+                "lead, claude-1 oturumunu 2 dk sonra yeniden başlattı: Go on.",
+                "claude-1's session ended · lead did not solve it: exited",
+                "claude-1 oturumu bitti · lead çözmedi: exited",
+            ),
+            (
+                What::Failed,
+                "lead got claude-1 going again after 2 min: Go on.",
+                "lead, claude-1 işçisini 2 dk sonra yeniden yürüttü: Go on.",
+                "claude-1's turn failed · lead did not solve it: exited",
+                "claude-1 turu başarısız · lead çözmedi: exited",
+            ),
+        ] {
+            assert_eq!(event(Lang::En, &w, &solved(what)), en);
+            assert_eq!(event(Lang::Tr, &w, &solved(what)), tr);
+            assert_eq!(event(Lang::En, &w, &lies(what)), en_lies);
+            assert_eq!(event(Lang::Tr, &w, &lies(what)), tr_lies);
+        }
+        let failed = Event::TurnFailed {
+            agent: 1,
+            why: "error_max_turns".into(),
+        };
+        assert_eq!(
+            event(Lang::En, &w, &failed),
+            "claude-1: turn failed: error_max_turns"
+        );
+        assert_eq!(
+            event(Lang::Tr, &w, &failed),
+            "claude-1: tur başarısız oldu: error_max_turns"
+        );
+        assert_eq!((failed.kind(), failed.agent()), (EntryKind::Failed, 1));
+        // What waits for the person says which stop it is.
+        for (what, en_item, en_notice) in [
+            (
+                What::Ended,
+                "claude-1's session ended and its leader did not solve it: exited",
+                "imece · claude-1's session ended and its leader did not solve it",
+            ),
+            (
+                What::Failed,
+                "claude-1's turn failed and its leader did not solve it: exited",
+                "imece · claude-1's turn failed and its leader did not solve it",
+            ),
+        ] {
+            w.inbox.clear();
+            w.stood(1, what, "exited");
+            w.blocks_unsolved(0, true);
+            let i = w.open_inbox()[0];
+            assert_eq!(inbox(Lang::En, &w, &w.inbox[i]), en_item);
+            let note = crate::notify::Note::Item(i);
+            assert_eq!(notice(Lang::En, &w, note), en_notice);
+            w.block_over(1);
+        }
+    }
+
+    #[test]
     fn a_block_solved_or_let_lie_is_worded_in_the_journal_and_in_another_window() {
         use crate::blocked::Unsolved;
         let mut w = crate::live::testing::team(1);
@@ -3346,6 +3431,7 @@ mod tests {
             by: 0,
             text: "Use the fake.".into(),
             minutes: 3,
+            what: crate::blocked::What::Said,
         };
         assert_eq!(
             event(Lang::En, &w, &solved),
@@ -3360,6 +3446,7 @@ mod tests {
             leader: 0,
             why,
             text: "Stuck.".into(),
+            what: crate::blocked::What::Said,
         };
         for (why, en, tr) in [
             (Unsolved::TurnEnded, "lead did not solve it", "lead çözmedi"),

@@ -35,6 +35,57 @@ impl Live {
             self.notes[leader].push(said);
         }
     }
+
+    /// The workers whose session ended or whose turn failed just now
+    /// (record 146): their leader hears it, and what it may do, with a
+    /// prompt that comes now.
+    pub(super) fn look_stops(&mut self, w: &mut World) {
+        for worker in std::mem::take(&mut w.stops) {
+            let Some(b) = w.agents[worker].block.as_ref() else {
+                continue;
+            };
+            let leader = b.leader;
+            let said = stop_note(w, worker, b);
+            w.agents[leader].trace(w.tick, format!("told: {said}"));
+            self.notes[leader].push(said);
+            self.lost[leader] = true;
+        }
+    }
+}
+
+/// What a leader is told of worker `worker`'s stop `b`: what happened,
+/// and the ways on it has.
+fn stop_note(w: &World, worker: AgentId, b: &crate::blocked::Block) -> String {
+    use crate::blocked::What;
+    let name = &w.agents[worker].name;
+    let on = b.card.map_or(String::new(), |c| {
+        format!(" on #{} {}", c + 1, w.cards[c].title)
+    });
+    let n = b.msg;
+    let ask = format!(
+        "or ask the person (an ask to you with re: {n}, what you tried, and the risk if \
+         there is one)"
+    );
+    match b.what {
+        What::Failed => format!(
+            "{name}'s turn failed{on}: {}. Its session lives. It is yours to solve (stop \
+             {n}): tell {name} how to go on, hand its card to another worker (assign with \
+             card), {ask}.",
+            b.said
+        ),
+        _ if w.agents[worker].revived => format!(
+            "{name}'s session ended again{on} after you started it: {}. It is not started \
+             a second time. It is yours to solve (stop {n}): hand its card to another \
+             worker (assign with card), {ask}.",
+            b.said
+        ),
+        _ => format!(
+            "{name}'s session ended{on}: {}. It is yours to solve (stop {n}): your next \
+             message to {name} starts it again where it left off, once; or hand its card \
+             to another worker (assign with card), {ask}.",
+            b.said
+        ),
+    }
 }
 
 /// What a leader is told of worker `worker`'s block it did not solve.
@@ -54,7 +105,7 @@ fn unsolved_note(w: &World, worker: AgentId, stopped: bool) -> String {
 mod tests {
     use super::testing::*;
     use super::*;
-    use crate::blocked::{Held, Stage, Unsolved};
+    use crate::blocked::{Held, Stage, Unsolved, What};
     use serde_json::json;
 
     /// A leader (0) and two idle workers (1, 2), no sessions, no git.
@@ -129,6 +180,7 @@ mod tests {
                     by: 0,
                     text: "World::at is there.".into(),
                     minutes: 0,
+                    what: What::Said,
                 }
         });
         assert!(said, "{:?}", w.journal);
@@ -387,5 +439,205 @@ mod tests {
         }
         let worker = prompts::system_prompt(&w, 1, 4, 0, Confine::Standard);
         assert!(!worker.contains("yours to solve first"), "{worker}");
+    }
+
+    fn ended(live: &Live, id: AgentId, why: &str) {
+        hear(live, id, AgentEvent::Stopped(why.into()));
+    }
+
+    fn failed(live: &Live, id: AgentId, why: &str) {
+        let done = AgentEvent::TurnDone {
+            ok: false,
+            text: why.into(),
+            cost: 5,
+            denied: 0,
+        };
+        hear(live, id, done);
+    }
+
+    fn told(live: &Live) -> String {
+        queued(live, 0).join("\n")
+    }
+
+    #[test]
+    fn a_worker_whose_session_ended_is_its_leader_s_and_its_word_starts_it_once() {
+        let (mut w, mut live) = idle_team();
+        let card = with_card(&mut w, 1);
+        ended(&live, 1, "exited with code 1: out of memory\nmore");
+        live.step(&mut w);
+        assert_eq!(w.agents[1].status, Status::Stopped);
+        let b = w.agents[1].block.clone().expect("its leader's to solve");
+        assert_eq!(
+            (b.what, b.leader, b.card, b.said.as_str()),
+            (
+                What::Ended,
+                0,
+                Some(card),
+                "exited with code 1: out of memory"
+            )
+        );
+        assert!(w.blocked_with_leader(1), "not the person's yet");
+        assert!(open(&w).is_empty());
+        assert!(w.stops.is_empty(), "taken");
+        // The leader is told now, with what it may do, and woken.
+        assert_eq!(live.turns[0], 1);
+        let note = told(&live);
+        assert!(note.contains("claude-1's session ended on #1"), "{note}");
+        assert!(note.contains(&format!("(stop {})", b.msg)), "{note}");
+        assert!(
+            note.contains("starts it again where it left off, once"),
+            "{note}"
+        );
+        assert!(
+            w.agents[1].block.as_ref().unwrap().read,
+            "its prompt read it"
+        );
+        // Whoever starts it again goes on with the session it had.
+        assert!(live.remembered[1]);
+        // A word that does not wake starts nothing.
+        let inform = sent(&mut live, &mut w, 0, &msg("claude-1", "inform", "Hm."));
+        assert!(inform.unwrap_err().contains("does not start it again"));
+        // A teammate's word waits for the person, as before.
+        let other = sent(&mut live, &mut w, 2, &msg("claude-1", "ask", "Up?"));
+        assert!(other.unwrap_err().contains("when the person talks to it"));
+        // The leader's starts it, once.
+        sent(&mut live, &mut w, 0, &msg("claude-1", "answer", "Go on.")).unwrap();
+        assert_eq!(w.agents[1].block, None);
+        assert!(w.agents[1].revived);
+        assert_eq!(w.agents[1].status, Status::Idle);
+        let revived = Event::Unblocked {
+            agent: 1,
+            by: 0,
+            text: "Go on.".into(),
+            minutes: 0,
+            what: What::Ended,
+        };
+        assert_eq!(journaled(&w, &revived), 1);
+        live.step(&mut w);
+        assert_eq!(live.turns[1], 1, "the mail started it");
+        // It stops again: its leader hears so, and may not start it.
+        ended(&live, 1, "exited with code 1");
+        live.step(&mut w);
+        assert_eq!(w.agents[1].block.as_ref().unwrap().what, What::Ended);
+        let again = sent(&mut live, &mut w, 0, &msg("claude-1", "answer", "Again."));
+        assert!(again.unwrap_err().contains("not started a second time"));
+        assert_eq!(w.agents[1].status, Status::Stopped);
+    }
+
+    #[test]
+    fn a_turn_s_good_end_lets_its_leader_start_it_again_next_time() {
+        let (mut w, mut live) = idle_team();
+        w.agents[1].revived = true;
+        hear(
+            &live,
+            1,
+            AgentEvent::TurnDone {
+                ok: true,
+                text: "Done.".into(),
+                cost: 5,
+                denied: 0,
+            },
+        );
+        live.step(&mut w);
+        assert!(!w.agents[1].revived);
+        assert!(!w.may_revive(1, 0), "nothing to start");
+    }
+
+    #[test]
+    fn a_session_imece_stopped_for_its_settings_is_the_person_s_alone() {
+        let (mut w, mut live) = idle_team();
+        let why = format!(
+            "{}did not run with the tools asked",
+            imece_agent::claude::CHECK_STOPPED
+        );
+        ended(&live, 1, &why);
+        live.step(&mut w);
+        assert_eq!(w.agents[1].status, Status::Stopped);
+        assert_eq!(w.agents[1].block, None);
+        assert_eq!(live.turns[0], 0, "the leader is not woken");
+        assert!(live.notes[0].is_empty());
+    }
+
+    #[test]
+    fn a_stop_under_a_stopped_leader_or_of_a_leader_is_the_person_s() {
+        let (mut w, mut live) = idle_team();
+        ended(&live, 0, "gone");
+        live.step(&mut w);
+        assert_eq!(w.agents[0].block, None, "a leader has no leader");
+        ended(&live, 1, "gone too");
+        live.step(&mut w);
+        assert_eq!(w.agents[1].block, None, "nobody runs to solve it");
+        assert_eq!(w.agents[1].status, Status::Stopped);
+    }
+
+    #[test]
+    fn a_failed_turn_with_nothing_to_try_again_is_its_leader_s() {
+        let (mut w, mut live) = idle_team();
+        failed(&live, 1, "\nerror_max_turns\nmore");
+        live.step(&mut w);
+        assert_eq!(w.agents[1].status, Status::Idle, "its session lives");
+        let b = w.agents[1].block.clone().unwrap();
+        assert_eq!((b.what, b.said.as_str()), (What::Failed, "error_max_turns"));
+        let event = Event::TurnFailed {
+            agent: 1,
+            why: "\nerror_max_turns\nmore".into(),
+        };
+        assert_eq!(journaled(&w, &event), 1);
+        assert!(
+            !w.journal
+                .iter()
+                .any(|e| matches!(e.event, Event::Stopped { .. })),
+            "no session ended"
+        );
+        let note = told(&live);
+        assert!(
+            note.contains("claude-1's turn failed: error_max_turns. Its session lives."),
+            "{note}"
+        );
+        // The leader's word gets it going; it says so.
+        sent(
+            &mut live,
+            &mut w,
+            0,
+            &msg("claude-1", "answer", "Split it."),
+        )
+        .unwrap();
+        assert_eq!(w.agents[1].block, None);
+        assert!(!w.agents[1].revived, "it never stopped");
+        let going = Event::Unblocked {
+            agent: 1,
+            by: 0,
+            text: "Split it.".into(),
+            minutes: 0,
+            what: What::Failed,
+        };
+        assert_eq!(journaled(&w, &going), 1);
+    }
+
+    #[test]
+    fn a_stop_the_leader_let_lie_comes_to_the_person_said_as_a_stop() {
+        let (mut w, mut live) = idle_team();
+        ended(&live, 1, "exited with code 1");
+        live.step(&mut w);
+        finish(&mut live, &mut w, 0, "Looked.");
+        // Beside the leader's closing words to the person.
+        assert_eq!(open(&w), [(InboxKind::Blocked, 1), (InboxKind::Reply, 0)]);
+        assert_eq!(w.block_held(1), Some(Held::Yours));
+        assert!(w.journal.iter().any(|e| matches!(
+            e.event,
+            Event::StillBlocked {
+                agent: 1,
+                why: Unsolved::TurnEnded,
+                what: What::Ended,
+                ..
+            }
+        )));
+        // The person's word starts it, as ever, and lets its leader start
+        // it once again after its next stop.
+        w.agents[1].revived = true;
+        w.said(1, "Go on.");
+        assert!(!w.agents[1].revived);
+        assert_eq!(w.agents[1].block, None);
+        assert_eq!(open(&w), [(InboxKind::Reply, 0)]);
     }
 }

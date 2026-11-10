@@ -94,7 +94,11 @@ impl App {
             .map(|a| {
                 if a.gone {
                     Rung::Idle
-                } else if matches!(a.status, Status::Blocked | Status::Stopped) {
+                } else if a.status == Status::Blocked
+                    || (a.status == Status::Stopped && !w.blocked_with_leader(a.id))
+                {
+                    // A session that ended and whose leader has it is
+                    // not the person's turn yet (record 146).
                     Rung::Stuck
                 } else if waits[a.id] || a.status == Status::WaitingHuman {
                     Rung::Waiting
@@ -722,6 +726,28 @@ mod tests {
         assert_eq!(app.needs()[2], Need::Nothing, "gone and blocked");
         assert!(Need::Stuck > Need::Waiting && Need::Waiting > Need::Done);
         assert!(Need::Done > Need::Nothing);
+    }
+
+    #[test]
+    fn a_stopped_worker_its_leader_has_is_not_stuck_until_it_is_the_person_s() {
+        let mut app = quiet();
+        let w = &mut app.world;
+        let id = (w.agents.iter())
+            .find(|a| a.role == Role::Worker)
+            .map(|a| a.id)
+            .unwrap();
+        let leader = w.projects[w.agents[id].project].leader;
+        w.agents[id].status = Status::Stopped;
+        assert_eq!(app.rungs()[id], Rung::Stuck, "nobody has it");
+        let w = &mut app.world;
+        assert_eq!(
+            w.stood(id, crate::blocked::What::Ended, "gone"),
+            Some(leader)
+        );
+        assert_eq!(app.rungs()[id], Rung::Idle, "its leader has it");
+        app.world.stops_read(leader);
+        app.world.blocks_unsolved(leader, false);
+        assert_eq!(app.rungs()[id], Rung::Stuck, "the person's now");
     }
 
     #[test]

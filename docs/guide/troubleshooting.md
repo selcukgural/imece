@@ -51,7 +51,7 @@ Before going through the list: `imece doctor` checks what a start needs in one g
 
 ### `claude-1 stopped: tools differ: extra ["WebFetch"], missing []`
 
-**What you see.** The row shows `■ session ended · write to it to restart`; the journal has `claude-1 stopped: tools differ …`.
+**What you see.** The row shows `■ session ended · write to it to restart`; the journal has `claude-1 stopped: tools differ …`. A stop like this one, where the session did not run with what was asked, is yours alone: its leader is not asked to start it again ([a worker that stopped](concepts/messages-and-board.md#a-worker-that-stopped)).
 
 **Why.** imece asks Claude Code for exactly the tools of the role and the confine level, then checks what the session reports it runs with on every turn. Anything else stops the session: a Claude Code update that adds a tool, a setting that pulls in a server, must be looked at, not worked around.
 

@@ -175,10 +175,26 @@ impl Live {
         depends(w, project, &after)?;
         self.owned_elsewhere(w, project, Some(to), &paths)?;
         checks_run(w, project, &checks)?;
-        if w.agents[to].status == Status::Stopped {
-            return Err(format!(
-                "{name} has stopped; it runs again when the person talks to it"
-            ));
+        // A leader's word starts a worker whose session ended again,
+        // once for a stop (record 146); anyone else's waits for the
+        // person.
+        let revives = kind.wakes() && w.may_revive(to, from);
+        if w.agents[to].status == Status::Stopped && !revives {
+            let stop = (w.agents[to].block.as_ref())
+                .filter(|b| b.leader == from && b.what == crate::blocked::What::Ended);
+            return Err(match stop {
+                Some(b) if w.agents[to].revived => format!(
+                    "{name} stopped again after you started it; it is not started a second \
+                     time. Hand its card to another worker (assign with card), or ask the \
+                     person (an ask to you with re: {})",
+                    b.msg
+                ),
+                Some(_) => format!(
+                    "{name} has stopped; an inform, progress or notice does not start it \
+                     again: send it what it is to do"
+                ),
+                None => format!("{name} has stopped; it runs again when the person talks to it"),
+            });
         }
         if kind.wakes() && self.over_budget(w) {
             return Err("the budget is spent; nobody takes new turns".into());
@@ -288,6 +304,11 @@ impl Live {
         let solves = (w.agents[to].block.as_ref()).is_some_and(|b| b.leader == from);
         if solves && kind.wakes() && w.unblocked(to, from, body) {
             w.agents[to].trace(t, format!("unblocked by message {id}"));
+            if w.agents[to].status == Status::Stopped {
+                // Its next turn starts its session again, with this.
+                w.agents[to].set_status(Status::Idle, t);
+                w.agents[to].trace(t, "started again by its leader");
+            }
         }
         let held = kind != MsgKind::Cancel && w.waits_on_person(to);
         if held {

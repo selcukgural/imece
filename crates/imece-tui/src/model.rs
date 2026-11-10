@@ -940,6 +940,9 @@ pub struct Agent {
     /// It told its leader it is blocked and nothing has ended that yet
     /// (record 143). Memory only.
     pub block: Option<crate::blocked::Block>,
+    /// Its leader started it again after its session ended, and no turn
+    /// of its has ended well since (record 146). Memory only.
+    pub revived: bool,
     /// What of its spending is booked on the ledger, and where its next
     /// goes (record 133). Memory only.
     pub meter: crate::ledger::Meter,
@@ -1179,6 +1182,7 @@ impl Agent {
             attempt: 0,
             watch: Default::default(),
             block: None,
+            revived: false,
             meter: Default::default(),
             gone: false,
         }
@@ -2067,6 +2071,9 @@ pub enum Event {
         by: AgentId,
         text: String,
         minutes: u16,
+        /// What the block was of (record 146).
+        #[serde(default)]
+        what: crate::blocked::What,
     },
     /// Worker `agent`'s block, `text` its first line, came to the person:
     /// `leader` let it lie, `why` (record 143).
@@ -2075,6 +2082,15 @@ pub enum Event {
         leader: AgentId,
         why: crate::blocked::Unsolved,
         text: String,
+        /// What the block is of (record 146).
+        #[serde(default)]
+        what: crate::blocked::What,
+    },
+    /// A live agent's turn failed, `why` in Claude Code's words, and
+    /// imece does not try it again; its session lives (record 146).
+    TurnFailed {
+        agent: AgentId,
+        why: String,
     },
     /// The person ended process `pid`, named `name`, under agent
     /// `agent`'s session (`:ps`, record 129).
@@ -2619,6 +2635,7 @@ impl Event {
             Event::Failed { .. }
             | Event::CardFailed { .. }
             | Event::Stopped { .. }
+            | Event::TurnFailed { .. }
             | Event::Interrupted { .. }
             | Event::SuggestFailed { .. }
             | Event::ReviewFailed { .. }
@@ -2728,6 +2745,7 @@ impl Event {
             | Event::TurnYesEnded { agent, .. }
             | Event::Replied { agent, .. }
             | Event::Stopped { agent, .. }
+            | Event::TurnFailed { agent, .. }
             | Event::Retrying { agent, .. }
             | Event::Interrupted { agent }
             | Event::Posted { agent, .. }
@@ -3368,6 +3386,10 @@ pub struct World {
     pub cards: Vec<Card>,
     pub journal: Vec<Entry>,
     pub inbox: Vec<InboxItem>,
+    /// The workers whose stop became their leader's to solve and whose
+    /// leader has not been told yet (record 146): whoever drives the
+    /// agents takes them. Memory only.
+    pub stops: Vec<AgentId>,
     /// What all agents together may spend, in ten-thousandths of a dollar;
     /// one pot, kept between runs.
     pub budget: u64,
@@ -4108,6 +4130,7 @@ impl World {
             cards: self.cards.clone(),
             journal,
             inbox: self.inbox.clone(),
+            stops: Vec::new(),
             budget: self.budget,
             estimated: self.estimated,
             max_researchers: self.max_researchers,
@@ -5731,10 +5754,16 @@ impl World {
                 card: self.card_of(id),
             });
         }
-        self.note(Event::Stopped {
+        self.note(Event::TurnFailed {
             agent: id,
             why: why.into(),
         });
+        if fault.is_none() {
+            // Nothing tries it again and nothing waits for the person:
+            // its leader's to solve (record 146).
+            let first = why.lines().find(|l| !l.trim().is_empty());
+            self.stood(id, crate::blocked::What::Failed, first.unwrap_or_default());
+        }
     }
 
     /// The agents whose failed turn is due to be tried again, in id
@@ -6063,6 +6092,9 @@ impl World {
         self.close_plans(id);
         // Their word is the answer a blocked worker waited for.
         self.block_over(id);
+        // The person started it: its leader may start it once again
+        // after its next stop (record 146).
+        self.agents[id].revived = false;
         // The person's word is the next try: a new count from it.
         self.agents[id].retry = None;
         self.agents[id].tries = 0;
@@ -6473,6 +6505,7 @@ mod tests {
             cards: Vec::new(),
             journal: Vec::new(),
             inbox: Vec::new(),
+            stops: Vec::new(),
             budget: 10_000,
             estimated: false,
             max_researchers: 0,
@@ -8834,7 +8867,7 @@ mod tests {
         );
         assert_eq!(
             w.journal.last().unwrap().event,
-            Event::Stopped {
+            Event::TurnFailed {
                 agent: 1,
                 why: "\n \nstill overloaded\nmore".into()
             }
@@ -8862,7 +8895,7 @@ mod tests {
         assert_eq!((w.agents[2].retry, w.agents[2].tries), (None, 2));
         assert!(matches!(
             w.journal.last().unwrap().event,
-            Event::Stopped { agent: 2, .. }
+            Event::TurnFailed { agent: 2, .. }
         ));
         // The person's word closes what waits and counts again from it.
         w.agents[1].tries = 1;

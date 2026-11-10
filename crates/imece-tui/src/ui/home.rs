@@ -615,8 +615,8 @@ fn item_tail(app: &App, i: usize) -> Tail {
             // A leader's question about a worker's block says so first
             // (record 143): the row is the blocked work's.
             let asked = match w.asked_block(item.agent) {
-                Some((worker, _)) => fill(
-                    t.row_block_asks,
+                Some((worker, b)) => fill(
+                    (b.what).of([t.row_block_asks, t.row_ended_asks, t.row_failed_asks]),
                     &[
                         &w.agents[worker].name,
                         &w.agents[item.agent].name,
@@ -628,7 +628,8 @@ fn item_tail(app: &App, i: usize) -> Tail {
             return Tail::Asked(asked, options.unwrap_or_default());
         }
         InboxKind::Blocked => {
-            let said = fill(t.row_blocked, &[&plain(&item.detail)]);
+            let words = (w.block_what(item.agent)).of([t.row_blocked, t.row_ended, t.row_failed]);
+            let said = fill(words, &[&plain(&item.detail)]);
             match w.agents[item.agent]
                 .block
                 .as_ref()
@@ -1305,7 +1306,8 @@ pub(crate) fn block_question_lines(
         lines.push(Line::from(Span::styled(label, dim())));
         said_lines(text, "  ", lines, room);
     };
-    part(t.blocked_word.to_string(), &b.said);
+    let word = (b.what).of([t.blocked_word, t.ended_word, t.failed_word]);
+    part(word.to_string(), &b.said);
     part(fill(t.block_tried, &[leader]), tried);
     part(t.block_asks.to_string(), q.text);
     option_lines(q, lines, room);

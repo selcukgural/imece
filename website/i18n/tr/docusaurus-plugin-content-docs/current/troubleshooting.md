@@ -51,7 +51,7 @@ Listeye girmeden önce: `imece doctor` bir açılışın ihtiyaç duyduğu her �
 
 ### `claude-1 durdu: tools differ: extra ["WebFetch"], missing []`
 
-**Ne görürsünüz.** Satır `■ oturum bitti · yazınca yeniden başlar` gösterir; günlükte `claude-1 durdu: tools differ …`.
+**Ne görürsünüz.** Satır `■ oturum bitti · yazınca yeniden başlar` gösterir; günlükte `claude-1 durdu: tools differ …`. Oturumun istenenle çalışmadığı böyle bir duruş yalnızca sizindir: lideri onu yeniden başlatmaya çağrılmaz ([duran işçi](concepts/messages-and-board.md#duran-işçi)).
 
 **Neden.** imece Claude Code'dan tam olarak rolün ve confine düzeyinin araçlarını ister, sonra oturumun neyle çalıştığını bildirdiğini denetler her turda. Başka her şey oturumu durdurur: araç ekleyen bir Claude Code güncellemesi, sunucu getiren bir ayar, etrafından dolaşılmak yerine bakılmalıdır.
 

@@ -177,7 +177,8 @@ pub(crate) fn question_lines(
     };
     if let (Some(b), Some((tried, _))) = (block, asked) {
         let label = |text: String| Line::from(Span::styled(format!("  {text}"), dim()));
-        lines.push(label(t.blocked_word.to_string()));
+        let word = (b.what).of([t.blocked_word, t.ended_word, t.failed_word]);
+        lines.push(label(word.to_string()));
         said(&b.said, &mut lines);
         if !tried.trim().is_empty() {
             lines.push(label(fill(t.block_tried, &[&name])));

@@ -113,6 +113,7 @@ pub(crate) fn card_for(w: &World, held: &Held, e: &Entry) -> Option<CardId> {
                 e.event,
                 Event::Failed { .. }
                     | Event::Stopped { .. }
+                    | Event::TurnFailed { .. }
                     | Event::Interrupted { .. }
                     | Event::ApplyFailed { .. }
             ) =>

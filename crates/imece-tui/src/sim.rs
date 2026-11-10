@@ -358,6 +358,17 @@ struct Content {
     block_risks: &'static [&'static str],
     /// How the leader passes the person's answer on to the worker.
     person_said: &'static str,
+    /// What a leader does when a worker's session ended or its turn
+    /// failed (record 146): its word that starts the worker again, the
+    /// one after a failed turn, the question it asks the person when it
+    /// cannot, its answers, and what it tried.
+    stop_way: &'static str,
+    failed_way: &'static str,
+    stop_ask: &'static str,
+    stop_options: &'static [&'static str],
+    stop_tried: &'static str,
+    /// Why a demo worker's turn fails with nothing to try again.
+    max_turns: &'static str,
     /// What an agent answers the person who told it something.
     acks: &'static [&'static str],
     /// A leader's answer to a request: how many cards, and which.
@@ -506,6 +517,13 @@ const EN: Content = Content {
         "it changes what a public endpoint returns",
     ],
     person_said: "The person says: {}",
+    stop_way: "Start again where you left off; run the tests one file at a time this time.",
+    failed_way: "Split the rest into two turns: finish the code first, the tests after.",
+    stop_ask: "Give its card to another worker, or start it once more?",
+    stop_options: &["give the card to another worker", "start it once more"],
+    stop_tried: "Read the end of its log: it stopped in the same test run both times, \
+                 nothing in the code it wrote explains it.",
+    max_turns: "error_max_turns: the turn reached its limit of turns",
     acks: &[
         "Understood; I go on that way.",
         "Done, changed as you said.",
@@ -645,6 +663,13 @@ const TR: Content = Content {
         "açık bir uç noktanın döndürdüğünü değiştirir",
     ],
     person_said: "Kişi diyor ki: {}",
+    stop_way: "Kaldığın yerden başla; bu kez testleri dosya dosya çalıştır.",
+    failed_way: "Kalanı iki tura böl: önce kodu bitir, testleri sonra.",
+    stop_ask: "Kartı başka bir işçiye mi verelim, yoksa bir kez daha mı başlatalım?",
+    stop_options: &["kartı başka işçiye ver", "bir kez daha başlat"],
+    stop_tried: "Günlüğünün sonunu okudum: iki seferde de aynı test çalışmasında durdu, \
+                 yazdığı kodda bunu açıklayan bir şey yok.",
+    max_turns: "error_max_turns: tur, tur sınırına ulaştı",
     acks: &[
         "Anlaşıldı, o şekilde devam ediyorum.",
         "Tamam, dediğin gibi değiştirdim.",
@@ -904,6 +929,10 @@ enum Way {
 const BLOCK_ASKS: u64 = 3;
 const BLOCK_SILENT: u64 = 5;
 
+/// Of the demo workers' stops, every `STOP_FAILS`th is a failed turn
+/// rather than a session that ended (record 146).
+const STOP_FAILS: u64 = 3;
+
 /// How the demo's leader takes the `n`th block told (from one).
 fn way_of(n: u64) -> Way {
     if n.is_multiple_of(BLOCK_SILENT) {
@@ -922,6 +951,8 @@ struct Extras {
     /// were told so far.
     stuck: Vec<Stuck>,
     blocked: u64,
+    /// How many times a demo worker stopped (record 146).
+    stops: u64,
     /// Each usage window (five hours, then the week) as last seen: its
     /// number on the world's clock and what the agents had spent when it
     /// began. A window holds only what was spent since.
@@ -1167,6 +1198,7 @@ pub fn world(
         cards: Vec::new(),
         journal: Vec::new(),
         inbox: Vec::new(),
+        stops: Vec::new(),
         budget: 200 * 10_000,
         // Said by its sign-in once the screen has it (`App::take_plan`).
         estimated: false,
@@ -4110,7 +4142,7 @@ impl Sim {
                 self.send(w, id, leader, MsgKind::Progress, d, None);
             }
             15..16 => self.helper_if_it_may(w, id, card),
-            16..17 if self.rng.one_in(4) => self.stop(w, id),
+            16..17 if self.rng.one_in(4) => self.halt(w, id),
             20..70 => self.tool(w, id, card),
             _ => {}
         }
@@ -4392,6 +4424,18 @@ impl Sim {
         }
     }
 
+    /// Worker `id` stops: every `STOP_FAILS`th time a turn of its fails
+    /// with nothing to try again, its session alive; else its session
+    /// ends (record 146).
+    fn halt(&mut self, w: &mut World, id: AgentId) {
+        self.extras.stops += 1;
+        if self.extras.stops.is_multiple_of(STOP_FAILS) {
+            self.failed(w, id, self.content.max_turns, None);
+        } else {
+            self.stop(w, id);
+        }
+    }
+
     /// Worker `id`'s session ends under it; the person's next message
     /// resumes it. Each second stop of a worker on Lonca is live's for a
     /// session whose hooks Lonca did not hear (lonca#190).
@@ -4422,6 +4466,7 @@ impl Sim {
         a.set_status(Status::Stopped, t);
         a.trace(t, format!("stopped {why:?}"));
         w.story(card, StoryEvent::Stopped(why.clone()));
+        w.stood(id, crate::blocked::What::Ended, &why);
         w.note(Event::Stopped { agent: id, why });
         Self::helper_lost(w, id);
     }
@@ -4759,6 +4804,22 @@ impl Sim {
     /// person wrote to it, its card went elsewhere) is dropped.
     fn blocks_due(&mut self, w: &mut World) {
         let t = w.tick;
+        // A worker's stop is its leader's as a block is (record 146): the
+        // demo's leader takes it up at once.
+        for id in std::mem::take(&mut w.stops) {
+            let Some(leader) = w.agents[id].block.as_ref().map(|b| b.leader) else {
+                continue;
+            };
+            w.stops_read(leader);
+            w.agents[leader].trace(t, "tool_use Read the end of its log");
+            self.extras.blocked += 1;
+            self.extras.stuck.push(Stuck {
+                worker: id,
+                at: t + self.rng.range(3, 8),
+                which: 0,
+                how: way_of(self.extras.blocked),
+            });
+        }
         let (due, later): (Vec<Stuck>, Vec<Stuck>) = std::mem::take(&mut self.extras.stuck)
             .into_iter()
             .partition(|s| s.at <= t);
@@ -4767,7 +4828,25 @@ impl Sim {
             let Some(b) = w.agents[s.worker].block.clone() else {
                 continue;
             };
+            let c = self.content;
+            let stopped = b.what != crate::blocked::What::Said;
+            // A worker started again that stops again is not started a
+            // second time: its leader asks the person (live's bus refuses
+            // the word).
+            let how = match s.how {
+                Way::Solve if stopped && w.agents[s.worker].revived => Way::Ask,
+                how => how,
+            };
+            let s = Stuck { how, ..s };
             match s.how {
+                Way::Solve if stopped => {
+                    let way = b.what.of(["", c.stop_way, c.failed_way]);
+                    self.way_on(w, s.worker, &b, way)
+                }
+                Way::Ask if stopped && !w.has_question(b.leader) => {
+                    self.tell_you(w, b.leader, MsgKind::Ask, c.stop_ask, c.stop_options);
+                    w.block_asked(b.leader, Some(b.msg), c.stop_tried, None);
+                }
                 Way::Solve => self.way_on(w, s.worker, &b, self.content.ways[s.which]),
                 Way::Said(text) => self.way_on(w, s.worker, &b, &text),
                 // One question of an agent's waits at a time.
@@ -4795,7 +4874,13 @@ impl Sim {
         // Before the answer: what waited for the person on it closes, so
         // the answer is not held.
         w.unblocked(id, b.leader, text);
-        self.send(w, b.leader, id, MsgKind::Answer, text, Some(b.msg));
+        if w.agents[id].status == Status::Stopped {
+            // Its leader's word starts it again (record 146).
+            w.agents[id].set_status(Status::Idle, t);
+            w.agents[id].trace(t, "started again by its leader");
+        }
+        let re = (b.what == crate::blocked::What::Said).then_some(b.msg);
+        self.send(w, b.leader, id, MsgKind::Answer, text, re);
         if Self::unfinished(w, id) && !w.waits_on_person(id) {
             let a = &mut w.agents[id];
             a.set_status(Status::Working, t);
@@ -7409,7 +7494,7 @@ diff --git a/b.rs b/b.rs
         );
         assert_eq!(
             w.journal.last().unwrap().event,
-            Event::Stopped {
+            Event::TurnFailed {
                 agent: worker,
                 why: "no".into()
             }
@@ -10883,6 +10968,102 @@ diff --git a/b.rs b/b.rs
         s.blocks_due(&mut w);
         assert!(s.extras.stuck.is_empty());
         assert_eq!(w.messages, sent, "nothing is sent for it");
+    }
+
+    #[test]
+    fn a_demo_worker_that_stops_is_its_leader_s_and_started_again_once() {
+        use crate::blocked::What;
+        let (mut w, mut s, id, leader) = blocked_world();
+        w.agents[id].status = Status::Working;
+        s.stop(&mut w, id);
+        assert_eq!(w.agents[id].status, Status::Stopped);
+        let b = w.agents[id].block.clone().expect("its leader's");
+        assert_eq!((b.what, b.leader), (What::Ended, leader));
+        s.blocks_due(&mut w);
+        assert!(w.stops.is_empty(), "taken");
+        assert!(w.agents[id].block.as_ref().unwrap().read);
+        assert_eq!(s.extras.stuck[0].how, Way::Solve);
+        // Its leader starts it again, once, with a word of the content's.
+        w.tick = s.extras.stuck[0].at;
+        s.blocks_due(&mut w);
+        assert_eq!(w.agents[id].block, None);
+        assert!(w.agents[id].revived);
+        assert_ne!(w.agents[id].status, Status::Stopped);
+        let started = w.journal.iter().any(|e| {
+            matches!(&e.event, Event::Sent { from, to, kind: MsgKind::Answer, text, re: None, .. }
+                if (*from, *to) == (leader, id) && text == s.content.stop_way)
+        });
+        assert!(started, "{:?}", w.journal);
+        assert!(w.journal.iter().any(|e| matches!(
+            e.event,
+            Event::Unblocked {
+                what: What::Ended,
+                ..
+            }
+        )));
+        // Stopped again before a turn ended well: the person is asked.
+        s.stop(&mut w, id);
+        s.blocks_due(&mut w);
+        w.tick = s.extras.stuck[0].at;
+        s.blocks_due(&mut w);
+        let (worker, b) = w.asked_block(leader).expect("asked");
+        assert_eq!(worker, id);
+        assert_eq!(
+            b.stage,
+            crate::blocked::Stage::Asked {
+                tried: s.content.stop_tried.into(),
+                risk: None,
+            }
+        );
+        assert_eq!(w.question_of(leader).unwrap().text, s.content.stop_ask);
+        assert_eq!(w.agents[id].status, Status::Stopped);
+    }
+
+    #[test]
+    fn every_third_demo_stop_is_a_failed_turn_its_leader_gets_going() {
+        use crate::blocked::What;
+        let (mut w, mut s, id, leader) = blocked_world();
+        s.extras.stops = STOP_FAILS - 1;
+        w.agents[id].status = Status::Working;
+        s.halt(&mut w, id);
+        assert_eq!(w.agents[id].status, Status::Idle, "its session lives");
+        assert_eq!(w.agents[id].block.as_ref().unwrap().what, What::Failed);
+        assert!(
+            w.journal
+                .iter()
+                .any(|e| matches!(e.event, Event::TurnFailed { .. }))
+        );
+        s.blocks_due(&mut w);
+        w.tick = s.extras.stuck[0].at;
+        s.blocks_due(&mut w);
+        assert_eq!(w.agents[id].block, None);
+        assert!(!w.agents[id].revived, "it never stopped");
+        let went = w.journal.iter().any(|e| {
+            matches!(&e.event, Event::Sent { from, kind: MsgKind::Answer, text, .. }
+                if *from == leader && text == s.content.failed_way)
+        });
+        assert!(went, "{:?}", w.journal);
+        // The next stop is a session that ends.
+        s.halt(&mut w, id);
+        assert_eq!(w.agents[id].status, Status::Stopped);
+    }
+
+    #[test]
+    fn the_demo_s_stop_content_is_whole_in_both_languages() {
+        for lang in [Lang::En, Lang::Tr] {
+            let (_, s) = world(1, 2, 0, 7, lang);
+            let c = s.content;
+            for text in [
+                c.stop_way,
+                c.failed_way,
+                c.stop_ask,
+                c.stop_tried,
+                c.max_turns,
+            ] {
+                assert!(!text.is_empty());
+            }
+            assert_eq!(c.stop_options.len(), 2);
+        }
     }
 
     #[test]

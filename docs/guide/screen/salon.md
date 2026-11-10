@@ -102,7 +102,7 @@ Every glyph the `?` help lists, as the screen draws them:
 | `●` | at work: mid-turn, its session starting (`starting…` as its status), asking a teammate (`? → claude-2`), researching |
 | `○` | idle, or asleep since an earlier run (writing to it wakes it) |
 | `✓` | done, not seen: finished a turn you have not opened since |
-| `■` | stuck: blocked (`BLOCKED` as its status), or its session ended (`■ stopped`; writing to it starts a new one); also a count of stuck agents on a project header. In the attention colour: a worker that told its leader it is blocked, while the leader has it (`blocked "…" · lead is on it`; not counted as stuck: [a worker that is blocked](../concepts/messages-and-board.md#a-worker-that-is-blocked)) |
+| `■` | stuck: blocked (`BLOCKED` as its status), or its session ended (`■ stopped`; writing to it starts a new one); also a count of stuck agents on a project header. In the attention colour: a worker that told its leader it is blocked, while the leader has it (`blocked "…" · lead is on it`; not counted as stuck: [a worker that is blocked](../concepts/messages-and-board.md#a-worker-that-is-blocked)), and one whose session ended or whose turn failed, while its leader has it (`session ended "…" · lead is on it`: [a worker that stopped](../concepts/messages-and-board.md#a-worker-that-stopped)) |
 | `⇄` | a conversation line |
 | `▾` `▸` | a project, open or folded |
 | `▴` | a pinned project |
