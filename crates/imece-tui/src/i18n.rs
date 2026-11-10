@@ -1030,6 +1030,16 @@ pub struct Text {
     pub home_idle_count: &'static str,
     /// An idle agent's row.
     pub home_idle: &'static str,
+    /// AT WORK's heading: how many of the idle finished their work.
+    pub home_finished_count: &'static str,
+    /// Beside an idle worker's `idle`, what became of its last work: its
+    /// change applied, done with no change, its card failed or withdrawn
+    /// (`{}` the card), never given any.
+    pub rest_applied: &'static str,
+    pub rest_done: &'static str,
+    pub rest_failed: &'static str,
+    pub rest_withdrawn: &'static str,
+    pub rest_nothing: &'static str,
     /// What a row asks or says, after its title, without the agent's name:
     /// a permission (`{}` the command), a worktree setup script and the
     /// repository's check (the file, then its commands), a researcher's
@@ -2317,6 +2327,12 @@ pub const EN: Text = Text {
     home_stuck_count: "stuck {}",
     home_idle_count: "idle {}",
     home_idle: "idle",
+    home_finished_count: "finished {}",
+    rest_applied: "finished, applied",
+    rest_done: "finished",
+    rest_failed: "{} failed",
+    rest_withdrawn: "{} withdrawn",
+    rest_nothing: "no work yet",
     row_run: "run {}?",
     row_script: "run {} in its new worktrees?  {}",
     row_check: "run {} on its changes?  {}",
@@ -3857,6 +3873,12 @@ pub const TR: Text = Text {
     home_stuck_count: "takılan {}",
     home_idle_count: "boşta {}",
     home_idle: "boşta",
+    home_finished_count: "bitiren {}",
+    rest_applied: "bitirdi, uygulandı",
+    rest_done: "bitirdi",
+    rest_failed: "{} başarısız",
+    rest_withdrawn: "{} geri çekildi",
+    rest_nothing: "henüz iş yok",
     row_run: "{} çalışsın mı?",
     row_script: "{} yeni worktree'lerinde çalışsın mı?  {}",
     row_check: "{} değişikliklerinde çalışsın mı?  {}",

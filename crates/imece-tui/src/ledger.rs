@@ -102,6 +102,32 @@ impl Attempt {
     }
 }
 
+/// What became of the work an agent with nothing in hand last had: what
+/// its row says beside `idle`, so one that finished reads apart from one
+/// never given anything.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Last {
+    /// It was never given any.
+    Nothing,
+    /// Its change was applied.
+    Applied,
+    /// Done, with no change to apply.
+    Done,
+    /// Its try at this card failed.
+    Failed(CardId),
+    /// The leader withdrew this card.
+    Withdrawn(CardId),
+    /// In hand still, handed on, or not known: nothing is said of it.
+    Unsaid,
+}
+
+impl Last {
+    /// Whether it finished what it was given.
+    pub fn finished(self) -> bool {
+        matches!(self, Last::Applied | Last::Done)
+    }
+}
+
 /// What an agent's spending was booked up to (memory only: a load sets it
 /// at the agent's figure, which the store keeps with the rows).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -243,6 +269,30 @@ impl World {
             ..Attempt::default()
         });
         self.ledger.len() - 1
+    }
+
+    /// What became of the work agent `id` last had: how its newest row
+    /// ended. The person's line it has no card for yet is work in hand,
+    /// and so is a row still open; an agent with no row, no card and no
+    /// line was never given anything.
+    pub fn last_work(&self, id: AgentId) -> Last {
+        let a = &self.agents[id];
+        if a.task.own.is_some() {
+            return Last::Unsaid;
+        }
+        let Some(row) = self.ledger.iter().rfind(|r| r.agent == id) else {
+            return match a.card {
+                None => Last::Nothing,
+                Some(_) => Last::Unsaid,
+            };
+        };
+        match (row.outcome, row.card) {
+            (Outcome::Applied, _) => Last::Applied,
+            (Outcome::Done, _) => Last::Done,
+            (Outcome::Failed, Some(c)) => Last::Failed(c),
+            (Outcome::Withdrawn, Some(c)) => Last::Withdrawn(c),
+            _ => Last::Unsaid,
+        }
     }
 
     /// The row of worker `id`'s try `attempt` at card `c`.
@@ -890,6 +940,54 @@ mod tests {
         ] {
             assert_eq!(o.kept(), kept.contains(&o), "{o:?}");
         }
+    }
+
+    #[test]
+    fn what_an_agent_last_had_is_how_its_newest_row_ended() {
+        let mut w = team(2);
+        // No row, no card, no line: never given anything.
+        assert_eq!(w.last_work(1), Last::Nothing);
+        assert!(!Last::Nothing.finished());
+        // A card in hand with nothing spent on it yet.
+        let c = with_card(&mut w, 1);
+        w.agents[1].card = Some(c);
+        assert_eq!(w.last_work(1), Last::Unsaid);
+        w.takes(1, c);
+        assert_eq!(w.last_work(1), Last::Unsaid, "its row is open");
+        // Its change applied whole.
+        w.agents[1].status = Status::Working;
+        w.change_ready(change(1));
+        assert_eq!(w.last_work(1), Last::Unsaid, "its change waits");
+        w.change_applied(1, "m".into(), true);
+        assert_eq!(w.last_work(1), Last::Applied);
+        assert!(Last::Applied.finished() && Last::Done.finished());
+        // Another's rows are not its own.
+        assert_eq!(w.last_work(2), Last::Nothing);
+        // The person's line with no card yet is work in hand.
+        w.own_line(1, "And the docs");
+        assert_eq!(w.last_work(1), Last::Unsaid);
+        w.agents[1].task.own = None;
+        // The newest row says it: done with nothing to apply, failed,
+        // withdrawn.
+        let c = with_card(&mut w, 1);
+        w.takes(1, c);
+        w.change_none(1);
+        assert_eq!(w.last_work(1), Last::Done);
+        let c = with_card(&mut w, 1);
+        w.takes(1, c);
+        w.card_failed(1, c, "no");
+        assert_eq!(w.last_work(1), Last::Failed(c));
+        assert!(!Last::Failed(c).finished() && !Last::Withdrawn(c).finished());
+        assert!(!Last::Unsaid.finished());
+        let c = with_card(&mut w, 1);
+        w.takes(1, c);
+        w.withdraw(c, 0, "moot");
+        assert_eq!(w.last_work(1), Last::Withdrawn(c));
+        // Handed to another while at work: nothing is said of it.
+        let c = with_card(&mut w, 1);
+        w.takes(1, c);
+        w.hand(c, 2);
+        assert_eq!(w.last_work(1), Last::Unsaid);
     }
 
     #[test]
