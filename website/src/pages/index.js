@@ -182,21 +182,17 @@ export default function Home() {
         </div>
       </header>
       <main>
-        <section className="imece-video">
-          <video
-            controls
-            preload="metadata"
-            playsInline
-            poster={useBaseUrl('/video/imece-tour.jpg')}>
-            <source src={useBaseUrl('/video/imece-tour.mp4')} type="video/mp4" />
-            <track
-              kind="captions"
-              srcLang="en"
-              label="English"
-              src={useBaseUrl('/video/imece-tour.vtt')}
-              default
-            />
-          </video>
+        <section className="imece-picture">
+          <img
+            src={useBaseUrl('/img/imece-team.svg')}
+            width="1200"
+            height="560"
+            alt={translate({
+              id: 'home.picture.alt',
+              message:
+                'You ask the leader; the leader and its workers work round one job; what they made waits for you as a change (Δ), and only your yes puts it in your checkout.',
+            })}
+          />
         </section>
         <section className="imece-features container">
           <div className="row">

@@ -154,16 +154,19 @@
   font-size: 0.78rem;
   line-height: 1.35;
 }
-.imece-video {
-  max-width: 960px;
+.imece-picture {
+  max-width: 1080px;
   margin: 0 auto;
-  padding: 0 1rem 3rem;
+  padding: 2.5rem 1rem 1rem;
 }
-.imece-video video {
+.imece-picture img {
+  display: block;
   width: 100%;
-  border-radius: 12px;
+  height: auto;
+  border-radius: 18px;
   border: 1px solid var(--ifm-color-emphasis-300);
-  background: #000;
+  background: #15161b;
+  box-shadow: 0 24px 60px -24px rgba(227, 169, 63, 0.35);
 }
 .imece-terminal {
   max-width: 760px;
