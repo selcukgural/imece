@@ -395,6 +395,9 @@ struct Content {
     /// cannot, its answers, and what it tried.
     stop_way: &'static str,
     failed_way: &'static str,
+    /// What the leader tells a worker whose ask has had no answer (record
+    /// 146, part 3).
+    unanswered_way: &'static str,
     stop_ask: &'static str,
     stop_options: &'static [&'static str],
     stop_tried: &'static str,
@@ -550,6 +553,7 @@ const EN: Content = Content {
     person_said: "The person says: {}",
     stop_way: "Start again where you left off; run the tests one file at a time this time.",
     failed_way: "Split the rest into two turns: finish the code first, the tests after.",
+    unanswered_way: "Go on without the answer: the stub listens on 8080, the test setup says so.",
     stop_ask: "Give its card to another worker, or start it once more?",
     stop_options: &["give the card to another worker", "start it once more"],
     stop_tried: "Read the end of its log: it stopped in the same test run both times, \
@@ -696,6 +700,7 @@ const TR: Content = Content {
     person_said: "Kişi diyor ki: {}",
     stop_way: "Kaldığın yerden başla; bu kez testleri dosya dosya çalıştır.",
     failed_way: "Kalanı iki tura böl: önce kodu bitir, testleri sonra.",
+    unanswered_way: "Yanıtı bekleme: sahte sunucu 8080'de dinliyor, test kurulumu öyle diyor.",
     stop_ask: "Kartı başka bir işçiye mi verelim, yoksa bir kez daha mı başlatalım?",
     stop_options: &["kartı başka işçiye ver", "bir kez daha başlat"],
     stop_tried: "Günlüğünün sonunu okudum: iki seferde de aynı test çalışmasında durdu, \
@@ -964,6 +969,11 @@ const BLOCK_SILENT: u64 = 5;
 /// rather than a session that ended (record 146).
 const STOP_FAILS: u64 = 3;
 
+/// Of the demo workers' asks to a teammate, every `UNANSWERED_EVERY`th
+/// gets no answer, so that its leader hears of it once `:health stall`
+/// has passed (record 146, part 3).
+const UNANSWERED_EVERY: u64 = 4;
+
 /// How the demo's leader takes the `n`th block told (from one).
 fn way_of(n: u64) -> Way {
     if n.is_multiple_of(BLOCK_SILENT) {
@@ -984,6 +994,10 @@ struct Extras {
     blocked: u64,
     /// How many times a demo worker stopped (record 146).
     stops: u64,
+    /// How many asks the demo's workers sent a teammate (record 146).
+    asks: u64,
+    /// How many times the demo's setup script ran (record 146).
+    setups: u64,
     /// Each usage window (five hours, then the week) as last seen: its
     /// number on the world's clock and what the agents had spent when it
     /// began. A window holds only what was spent since.
@@ -1154,6 +1168,11 @@ npm run db:migrate\n";
 
 /// What the demo's setup script says as it ends.
 const DEMO_SETUP_SAYS: [&str; 2] = ["added 412 packages in 3s", "migrations: 7 applied"];
+
+/// Every `SETUP_FAILS`th run of the demo's setup script fails, as a
+/// network that times out would (record 146, part 3), with these words.
+const SETUP_FAILS: u64 = 3;
+const DEMO_SETUP_FAILS: [&str; 2] = ["npm ERR! code ETIMEDOUT", "npm ERR! network timeout"];
 
 /// The repository's check every demo checkout has (`.imece/check`,
 /// record 112), run on each change as live runs it.
@@ -1911,7 +1930,10 @@ impl Sim {
                 ],
             );
             // Its rounds out, it is not woken: the person decides.
-            if let Some(c) = w.rounds_out_of(id) {
+            let out = w.rounds_out_of(id);
+            let how = Landed::Rejected(vec!["verification_failed:tests".into()]);
+            Self::leader_hears(w, id, &how, out.is_some());
+            if let Some(c) = out {
                 w.capped(Cap::Rounds, id, c);
                 return;
             }
@@ -1936,9 +1958,20 @@ impl Sim {
         }
         let symbol = (w.change_of(id).and_then(|c| c.files.first()))
             .map_or_else(String::new, |f| f.path.clone());
-        w.proposal_left(id, Landed::Conflicted(vec![symbol]));
+        let how = Landed::Conflicted(vec![symbol]);
+        Self::leader_hears(w, id, &how, false);
+        w.proposal_left(id, how);
         // Nobody may hear it (a budget spent): the journal has said it.
         let _ = self.told(w, id, "sync and propose again");
+    }
+
+    /// Worker `id`'s leader hears Lonca sent its proposal back, as live's
+    /// does with its next prompt (record 146, part 3).
+    fn leader_hears(w: &mut World, id: AgentId, how: &Landed, out: bool) {
+        let said = crate::live::lonca::sent_back(w, id, how, out);
+        if let (Some(leader), Some(said)) = (w.told_of(id), said) {
+            w.agents[leader].trace(w.tick, format!("told: {said}"));
+        }
     }
 
     /// The person rejects worker `id`'s proposal, saying why; the same line
@@ -2980,7 +3013,7 @@ impl Sim {
             return;
         }
         if w.setup_approved.contains(&key) {
-            return Self::setup_ran(w, id);
+            return self.setup_ran(w, id);
         }
         let open =
             |(item, k, _): &&mut (usize, String, Vec<AgentId>)| *k == key && w.inbox[*item].open;
@@ -3000,14 +3033,31 @@ impl Sim {
         });
     }
 
-    /// The demo's setup script ran in worker `id`'s worktree.
-    fn setup_ran(w: &mut World, id: AgentId) {
-        w.agents[id].trace(w.tick, "worktree setup: exit 0, 4.2 s");
+    /// The demo's setup script ran in worker `id`'s worktree; one that
+    /// failed is told to the worker and its leader as live tells them.
+    fn setup_ran(&mut self, w: &mut World, id: AgentId) {
+        self.extras.setups += 1;
+        let ok = !self.extras.setups.is_multiple_of(SETUP_FAILS);
+        let (end, says) = match ok {
+            true => ("exit 0, 4.2 s", DEMO_SETUP_SAYS),
+            false => ("exit 1, 30.1 s", DEMO_SETUP_FAILS),
+        };
+        let lines: Vec<String> = says.map(String::from).to_vec();
+        let t = w.tick;
+        w.agents[id].trace(t, format!("worktree setup: {end}"));
+        if !ok {
+            let note = setup::failed_note(end, &lines);
+            w.agents[id].trace(t, format!("told: {note}"));
+            if let Some(leader) = w.told_of(id) {
+                let told = setup::failed_told(&w.agents[id].name, end);
+                w.agents[leader].trace(t, format!("told: {told}"));
+            }
+        }
         w.note(Event::SetupRan {
             agent: id,
-            ok: true,
-            end: "exit 0, 4.2 s".into(),
-            lines: DEMO_SETUP_SAYS.map(String::from).to_vec(),
+            ok,
+            end: end.into(),
+            lines,
         });
     }
 
@@ -3055,7 +3105,7 @@ impl Sim {
         for id in agents {
             match check {
                 true => self.check_runs(w, id),
-                false => Self::setup_ran(w, id),
+                false => self.setup_ran(w, id),
             }
         }
         true
@@ -4131,6 +4181,7 @@ impl Sim {
                 let answer = *self.rng.pick(self.content.answers);
                 let re = self.mind(id).question.take();
                 self.send(w, to, id, MsgKind::Answer, answer, re);
+                w.answered(id, to, answer);
                 w.agents[id].set_status(Status::Working, t);
             }
             Status::Idle
@@ -5009,9 +5060,15 @@ impl Sim {
         }
         let to = *self.rng.pick(&others);
         let q = *self.rng.pick(self.content.questions);
-        let until = t + self.rng.range(3, 8);
+        let mut until = t + self.rng.range(3, 8);
+        self.extras.asks += 1;
+        if self.extras.asks.is_multiple_of(UNANSWERED_EVERY) {
+            // Nobody answers this one: its leader hears of it.
+            until = u64::MAX;
+        }
         let n = self.send(w, id, to, MsgKind::Ask, q, None);
         self.mind(id).question = Some(n);
+        w.asks(id, to, n, q);
         w.agents[id].set_status(Status::Asking { to, until }, t);
     }
 
@@ -5077,14 +5134,18 @@ impl Sim {
             // A worker started again that stops again is not started a
             // second time: its leader asks the person (live's bus refuses
             // the word).
+            let unanswered = b.what == crate::blocked::What::Unanswered;
             let how = match s.how {
+                // The person has no question of the demo's about an ask
+                // with no answer: its leader answers it.
+                Way::Ask if unanswered => Way::Solve,
                 Way::Solve if stopped && w.agents[s.worker].revived => Way::Ask,
                 how => how,
             };
             let s = Stuck { how, ..s };
             match s.how {
                 Way::Solve if stopped => {
-                    let way = b.what.of(["", c.stop_way, c.failed_way]);
+                    let way = b.what.of(["", c.stop_way, c.failed_way, c.unanswered_way]);
                     self.way_on(w, s.worker, &b, way)
                 }
                 Way::Ask if stopped && !w.has_question(b.leader) => {
@@ -5849,7 +5910,7 @@ mod tests {
     #[test]
     fn the_demo_shows_a_change_that_overlaps_another_waiting_and_one_that_does_not() {
         // Seeded: the same every time (the seed is one that shows both).
-        let (mut w, mut s) = world(1, 3, 0, 1, Lang::En);
+        let (mut w, mut s) = world(1, 3, 0, 2, Lang::En);
         let (mut alone, mut shared) = (None, None);
         for tick in 0..6000 {
             s.step(&mut w);
@@ -5919,7 +5980,7 @@ mod tests {
     /// the old merge queue does.
     #[test]
     fn a_long_run_shows_what_live_shows_and_nothing_live_does_not() {
-        let (mut w, mut s) = world(2, 6, 2, 7, Lang::En);
+        let (mut w, mut s) = world(2, 6, 2, 1, Lang::En);
         let mut unheard_seen = false;
         for tick in 0..8000 {
             s.step(&mut w);
@@ -11480,6 +11541,129 @@ diff --git a/b.rs b/b.rs
     }
 
     #[test]
+    fn every_fourth_demo_ask_gets_no_answer_and_its_leader_answers_it() {
+        use crate::blocked::What;
+        let (mut w, mut s, id, leader) = blocked_world();
+        let other = (w.agents.iter())
+            .find(|a| a.role == Role::Worker && a.id != id)
+            .map(|a| a.id)
+            .unwrap();
+        let card = crate::live::testing::with_card(&mut w, id);
+        w.agents[id].status = Status::Working;
+        w.agents[other].status = Status::Working;
+        // The first three are answered in their ticks.
+        for _ in 1..UNANSWERED_EVERY {
+            s.ask(&mut w, id);
+            let Status::Asking { until, .. } = w.agents[id].status else {
+                panic!("{:?}", w.agents[id].status);
+            };
+            assert!(until < u64::MAX);
+            assert_eq!(w.agents[id].awaits.as_ref().map(|a| a.to), Some(other));
+            w.tick = until;
+            s.worker(&mut w, id);
+            assert_eq!(w.agents[id].awaits, None, "answered");
+            assert_eq!(w.agents[id].status, Status::Working);
+        }
+        // The fourth waits: once `:health stall` has passed it is its
+        // leader's, which the demo's leader answers even on its turn to
+        // ask the person.
+        s.ask(&mut w, id);
+        assert_eq!(
+            w.agents[id].status,
+            Status::Asking {
+                to: other,
+                until: u64::MAX,
+            }
+        );
+        w.tick += 10_000;
+        s.worker(&mut w, id);
+        assert!(
+            matches!(w.agents[id].status, Status::Asking { .. }),
+            "nobody answers"
+        );
+        w.look_health();
+        let b = w.agents[id].block.clone().expect("its leader's");
+        assert_eq!(
+            (b.what, b.leader, b.card),
+            (What::Unanswered, leader, Some(card))
+        );
+        s.extras.blocked = BLOCK_ASKS - 1;
+        s.blocks_due(&mut w);
+        assert_eq!(s.extras.stuck[0].how, Way::Ask);
+        w.tick = s.extras.stuck[0].at;
+        s.blocks_due(&mut w);
+        assert_eq!(w.agents[id].block, None);
+        assert_eq!(w.agents[id].awaits, None);
+        assert_eq!(w.question_of(leader), None, "the person is not asked");
+        let way = w.journal.iter().any(|e| {
+            matches!(&e.event, Event::Sent { from, to, kind: MsgKind::Answer, text, .. }
+                if (*from, *to) == (leader, id) && text == s.content.unanswered_way)
+        });
+        assert!(way, "{:?}", w.journal);
+        assert!(w.journal.iter().any(|e| matches!(
+            e.event,
+            Event::Unblocked {
+                what: What::Unanswered,
+                ..
+            }
+        )));
+    }
+
+    #[test]
+    fn every_third_demo_setup_fails_and_its_worker_and_leader_hear() {
+        let (mut w, mut s, id, leader) = blocked_world();
+        let told = |w: &World, a: AgentId| {
+            (w.agents[a].trace.iter())
+                .filter(|l| l.contains("told: ") && l.contains("worktree setup"))
+                .count()
+        };
+        for n in 1..=SETUP_FAILS {
+            s.setup_ran(&mut w, id);
+            let failed = n == SETUP_FAILS;
+            let Some(Event::SetupRan { ok, end, lines, .. }) = w.journal.last().map(|e| &e.event)
+            else {
+                panic!("{:?}", w.journal.last());
+            };
+            assert_eq!(*ok, !failed, "{n}");
+            assert_eq!(lines.len(), 2);
+            assert_eq!(
+                end,
+                if failed {
+                    "exit 1, 30.1 s"
+                } else {
+                    "exit 0, 4.2 s"
+                }
+            );
+            assert_eq!(
+                (told(&w, id), told(&w, leader)),
+                if failed { (1, 1) } else { (0, 0) }
+            );
+        }
+    }
+
+    #[test]
+    fn the_demo_s_leader_hears_a_proposal_lonca_sent_back() {
+        let (mut w, _, id, leader) = blocked_world();
+        crate::live::testing::with_card(&mut w, id);
+        let told = |w: &World| {
+            (w.agents[leader].trace.iter())
+                .filter(|l| l.contains("told: Lonca sent"))
+                .count()
+        };
+        Sim::leader_hears(&mut w, id, &Landed::Integrated("abc".into()), false);
+        assert_eq!(told(&w), 0, "on trunk: nothing sent back");
+        Sim::leader_hears(
+            &mut w,
+            id,
+            &Landed::Conflicted(vec!["src/a.rs".into()]),
+            false,
+        );
+        assert_eq!(told(&w), 1);
+        let last = w.agents[leader].trace.back().unwrap();
+        assert!(last.contains("it did not merge (src/a.rs)"), "{last}");
+    }
+
+    #[test]
     fn the_demo_s_stop_content_is_whole_in_both_languages() {
         for lang in [Lang::En, Lang::Tr] {
             let (_, s) = world(1, 2, 0, 7, lang);
@@ -11487,6 +11671,7 @@ diff --git a/b.rs b/b.rs
             for text in [
                 c.stop_way,
                 c.failed_way,
+                c.unanswered_way,
                 c.stop_ask,
                 c.stop_tried,
                 c.max_turns,

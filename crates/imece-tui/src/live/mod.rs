@@ -62,7 +62,7 @@ mod halts;
 mod health;
 mod hiring;
 mod items;
-mod lonca;
+pub(crate) mod lonca;
 mod paid;
 mod procs;
 pub(crate) use self::procs::proc_name;

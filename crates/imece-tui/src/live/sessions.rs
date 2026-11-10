@@ -172,7 +172,16 @@ pub fn apply(w: &mut World, id: AgentId, e: AgentEvent, before: u64) {
                     dollars(a.cost)
                 ),
             );
-            a.set_status(Status::Idle, t);
+            // A teammate's answer it asked for and has not had: it waits
+            // on it between its turns (record 146, part 3).
+            let rest = match &a.awaits {
+                Some(x) if ok => Status::Asking {
+                    to: x.to,
+                    until: u64::MAX,
+                },
+                _ => Status::Idle,
+            };
+            a.set_status(rest, t);
             if ok {
                 a.tries = 0;
                 a.revived = false;

@@ -109,7 +109,7 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
             minutes,
             what,
         } => fill(
-            what.of([t.ev_unblocked, t.ev_revived, t.ev_unfailed]),
+            what.of([t.ev_unblocked, t.ev_revived, t.ev_unfailed, t.ev_answered]),
             &[name(w, *by), name(w, *agent), &minutes.to_string(), text],
         ),
         Event::StillBlocked {
@@ -119,7 +119,12 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
             text,
             what,
         } => fill(
-            what.of([t.ev_still_blocked, t.ev_still_ended, t.ev_still_failed]),
+            what.of([
+                t.ev_still_blocked,
+                t.ev_still_ended,
+                t.ev_still_failed,
+                t.ev_still_unanswered,
+            ]),
             &[name(w, *agent), &unsolved(t, w, *leader, *why), text],
         ),
         Event::Blocked {
@@ -1185,10 +1190,12 @@ pub fn notice(lang: Lang, w: &World, note: crate::notify::Note) -> String {
                 InboxKind::Reply => t.notice_reply,
                 InboxKind::Approval => t.notice_approval,
                 InboxKind::Fault => t.notice_fault,
-                InboxKind::Blocked => {
-                    w.block_what(item.agent)
-                        .of([t.notice_blocked, t.notice_ended, t.notice_failed])
-                }
+                InboxKind::Blocked => w.block_what(item.agent).of([
+                    t.notice_blocked,
+                    t.notice_ended,
+                    t.notice_failed,
+                    t.notice_unanswered,
+                ]),
                 InboxKind::Script => t.notice_script,
                 InboxKind::Check => t.notice_check,
                 InboxKind::Plan => t.notice_plan,
@@ -1324,7 +1331,7 @@ pub fn inbox(lang: Lang, w: &World, item: &InboxItem) -> String {
         ),
         (InboxKind::Fault, _) => fill(t.in_fault, &[name(w, item.agent), &item.detail]),
         (InboxKind::Blocked, _) => fill(
-            (w.block_what(item.agent)).of([t.in_blocked, t.in_ended, t.in_failed]),
+            (w.block_what(item.agent)).of([t.in_blocked, t.in_ended, t.in_failed, t.in_unanswered]),
             &[name(w, item.agent), &item.detail],
         ),
         (InboxKind::Script, _) => fill(t.in_script, &[name(w, item.agent), &item.detail]),
@@ -3511,6 +3518,13 @@ mod tests {
                 "claude-1's turn failed · lead did not solve it: exited",
                 "claude-1 turu başarısız · lead çözmedi: exited",
             ),
+            (
+                What::Unanswered,
+                "lead answered claude-1 after 2 min: Go on.",
+                "lead, claude-1 işçisine 2 dk sonra yanıt verdi: Go on.",
+                "claude-1 has had no answer · lead did not solve it: exited",
+                "claude-1 yanıt alamadı · lead çözmedi: exited",
+            ),
         ] {
             assert_eq!(event(Lang::En, &w, &solved(what)), en);
             assert_eq!(event(Lang::Tr, &w, &solved(what)), tr);
@@ -3541,6 +3555,11 @@ mod tests {
                 What::Failed,
                 "claude-1's turn failed and its leader did not solve it: exited",
                 "imece · claude-1's turn failed and its leader did not solve it",
+            ),
+            (
+                What::Unanswered,
+                "claude-1 has had no answer and its leader did not solve it: exited",
+                "imece · claude-1 has had no answer and its leader did not solve it",
             ),
         ] {
             w.inbox.clear();

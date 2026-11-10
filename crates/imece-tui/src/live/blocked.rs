@@ -67,6 +67,17 @@ fn stop_note(w: &World, worker: AgentId, b: &crate::blocked::Block) -> String {
          there is one)"
     );
     match b.what {
+        What::Unanswered => {
+            let to = (w.agents[worker].awaits.as_ref())
+                .map_or("its teammate", |a| w.agents[a.to].name.as_str());
+            format!(
+                "{name} asked {to}{on} and has had no answer: {:?}. It is yours to solve \
+                 (stop {n}): answer {name} yourself or tell it how to go on without the \
+                 answer (your word ends its wait), get {to} to answer, hand its card to \
+                 another worker (assign with card), {ask}.",
+                b.said
+            )
+        }
         What::Failed => format!(
             "{name}'s turn failed{on}: {}. Its session lives. It is yours to solve (stop \
              {n}): tell {name} how to go on, hand its card to another worker (assign with \
@@ -459,6 +470,10 @@ mod tests {
         queued(live, 0).join("\n")
     }
 
+    fn journaled_health(w: &World) -> bool {
+        (w.journal.iter()).any(|e| matches!(e.event, Event::Health { .. }))
+    }
+
     #[test]
     fn a_worker_whose_session_ended_is_its_leader_s_and_its_word_starts_it_once() {
         let (mut w, mut live) = idle_team();
@@ -612,6 +627,166 @@ mod tests {
             what: What::Failed,
         };
         assert_eq!(journaled(&w, &going), 1);
+    }
+
+    #[test]
+    fn a_worker_waits_on_its_teammate_s_answer_between_its_turns() {
+        let (mut w, mut live) = idle_team();
+        sent(&mut live, &mut w, 1, &msg("claude-2", "ask", "Which port?")).unwrap();
+        assert_eq!(
+            w.agents[1].awaits.as_ref().map(|a| (a.to, a.msg)),
+            Some((2, 1))
+        );
+        // A leader's or a helper's ask is not followed: a worker's is.
+        sent(&mut live, &mut w, 0, &msg("claude-2", "ask", "Up?")).unwrap();
+        assert_eq!(w.agents[0].awaits, None);
+        finish(&mut live, &mut w, 1, "Waiting on claude-2.");
+        assert_eq!(
+            w.agents[1].status,
+            Status::Asking {
+                to: 2,
+                until: u64::MAX,
+            }
+        );
+        // A turn that failed waits on nothing but its failure.
+        let (mut w2, mut live2) = idle_team();
+        sent(
+            &mut live2,
+            &mut w2,
+            1,
+            &msg("claude-2", "ask", "Which port?"),
+        )
+        .unwrap();
+        failed(&live2, 1, "error_max_turns");
+        live2.step(&mut w2);
+        assert_ne!(
+            w2.agents[1].status,
+            Status::Asking {
+                to: 2,
+                until: u64::MAX,
+            }
+        );
+        // Its teammate's word, whatever it is, ends the wait.
+        sent(&mut live, &mut w, 2, &msg("claude-1", "inform", "8080.")).unwrap();
+        assert_eq!(w.agents[1].awaits, None);
+        assert_eq!(w.agents[1].status, Status::Idle);
+        assert!(
+            (w.agents[1].trace.iter()).any(|l| l.ends_with("answered by message 3")),
+            "{:?}",
+            w.agents[1].trace
+        );
+        // A done waits on nothing.
+        sent(
+            &mut live,
+            &mut w,
+            1,
+            &msg("claude-2", "ask", "And the host?"),
+        )
+        .unwrap();
+        sent(
+            &mut live,
+            &mut w,
+            1,
+            &msg("lead", "done", "Did it without."),
+        )
+        .unwrap();
+        assert_eq!(w.agents[1].awaits, None);
+    }
+
+    #[test]
+    fn an_ask_with_no_answer_is_the_leader_s_to_solve_once_the_stall_has_passed() {
+        let (mut w, mut live) = idle_team();
+        w.health.stall = Some(10);
+        let card = with_card(&mut w, 1);
+        sent(
+            &mut live,
+            &mut w,
+            1,
+            &msg("claude-2", "ask", "Which port does the stub use?"),
+        )
+        .unwrap();
+        finish(&mut live, &mut w, 1, "Waiting.");
+        // The step reads the clock: the look is called at a tick of the
+        // test's.
+        let asked = w.agents[1].changed_at;
+        w.tick = asked + 119;
+        live.look_health(&mut w);
+        assert_eq!(w.agents[1].block, None, "a tick short");
+        w.tick = asked + 120;
+        live.look_health(&mut w);
+        live.step(&mut w);
+        let b = w.agents[1].block.clone().expect("its leader's");
+        assert_eq!(
+            (b.what, b.card, b.said.as_str()),
+            (
+                What::Unanswered,
+                Some(card),
+                "Which port does the stub use?"
+            )
+        );
+        // Told now, with what it may do, and woken.
+        assert_eq!(live.turns[0], 1);
+        let note = told(&live);
+        assert!(
+            note.contains(&format!(
+                "claude-1 asked claude-2 on #1 fix it and has had no answer: \"Which port \
+                 does the stub use?\". It is yours to solve (stop {}): answer claude-1 \
+                 yourself or tell it how to go on without the answer (your word ends its \
+                 wait), get claude-2 to answer, hand its card to another worker (assign with \
+                 card), or ask the person",
+                b.msg
+            )),
+            "{note}"
+        );
+        assert!(!journaled_health(&w), "a stop, not a notice");
+        // The leader's word ends it and the wait: it goes on without.
+        sent(
+            &mut live,
+            &mut w,
+            0,
+            &msg("claude-1", "answer", "Use 8080."),
+        )
+        .unwrap();
+        assert_eq!(
+            (w.agents[1].block.clone(), w.agents[1].awaits.clone()),
+            (None, None)
+        );
+        let solved = Event::Unblocked {
+            agent: 1,
+            by: 0,
+            text: "Use 8080.".into(),
+            minutes: 0,
+            what: What::Unanswered,
+        };
+        assert_eq!(journaled(&w, &solved), 1);
+    }
+
+    #[test]
+    fn an_ask_its_leader_let_lie_comes_to_the_person_and_the_answer_still_ends_it() {
+        let (mut w, mut live) = idle_team();
+        w.health.stall = Some(10);
+        sent(&mut live, &mut w, 1, &msg("claude-2", "ask", "Which port?")).unwrap();
+        let c = with_card(&mut w, 1);
+        finish(&mut live, &mut w, 1, "Waiting.");
+        w.tick = w.agents[1].changed_at + 120;
+        live.look_health(&mut w);
+        live.step(&mut w);
+        assert_eq!(w.agents[1].block.as_ref().map(|b| b.card), Some(Some(c)));
+        finish(&mut live, &mut w, 0, "Looked.");
+        assert!(open(&w).contains(&(InboxKind::Blocked, 1)));
+        assert_eq!(w.block_held(1), Some(Held::Yours));
+        // The teammate answers at last: the person has nothing left there.
+        sent(&mut live, &mut w, 2, &msg("claude-1", "answer", "8080.")).unwrap();
+        assert!(!open(&w).contains(&(InboxKind::Blocked, 1)));
+        assert_eq!(w.agents[1].block, None);
+        let answered = Event::Unblocked {
+            agent: 1,
+            by: 2,
+            text: "8080.".into(),
+            minutes: 0,
+            what: What::Unanswered,
+        };
+        assert_eq!(journaled(&w, &answered), 1);
     }
 
     #[test]

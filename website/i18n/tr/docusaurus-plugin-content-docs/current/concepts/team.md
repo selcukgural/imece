@@ -76,7 +76,7 @@ Bir işçinin satırı kartıyla başlar (`#13 E-posta şablonları`), sonra yap
 
 imece birkaç saniyede bir ekibe bakar ve liderin bilmek isteyeceğini liderin bir sonraki isteminde söyler:
 
-- **takılan bir kart**: işçisi on dakikadır `done` demeden boşta, bir yanıt bekliyor ya da turunda hiçbir şey demiyor;
+- **takılan bir kart**: işçisi on dakikadır `done` demeden boşta ya da turunda hiçbir şey demiyor (bu kadar zamandır bir takım arkadaşının yanıtını bekleyen işçi ise liderinin çözeceği bir duruştur: [yanıt bekleyen işçi](messages-and-board.md#yanıt-bekleyen-işçi));
 - **boştaki bir işçi**: kartı olmayan bir işçi on dakikadır boşta;
 - **bir döngü**: bir çağrı (bir hedefte bir araç, `Bash cargo test`) bir turda üç kez hata verdi.
 

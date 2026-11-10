@@ -212,6 +212,29 @@ pub fn last_lines(output: &str) -> Vec<String> {
         .collect()
 }
 
+/// What a worker hears of the setup that failed in its worktree, ending
+/// as `end` with `lines` (record 146, part 3).
+pub(crate) fn failed_note(end: &str, lines: &[String]) -> String {
+    let said = match lines {
+        [] => String::new(),
+        lines => format!(" It ended with:\n{}", lines.join("\n")),
+    };
+    format!(
+        "The repository's worktree setup ({FILE}) failed in your worktree: {end}. What it \
+         sets up may be missing; look before you rely on it, and say so in your done if it \
+         changed what you could check.{said}"
+    )
+}
+
+/// What the leader hears of the setup that failed in worker `name`'s
+/// worktree.
+pub(crate) fn failed_told(name: &str, end: &str) -> String {
+    format!(
+        "The worktree setup ({FILE}) failed in {name}'s new worktree: {end}. {name} was told; \
+         it works without what the script sets up."
+    )
+}
+
 /// How a run ended, in the journal's words: `exit 0, 3.2 s` or `killed
 /// after 60 s` (its `deadline`); whether it went well.
 pub fn ended(o: &Outcome, deadline: Duration) -> (bool, String) {
@@ -313,6 +336,9 @@ impl Live {
                 let (ok, end) = ended(&o, DEADLINE);
                 let lines = last_lines(&o.output);
                 w.agents[id].trace(w.tick, format!("worktree setup: {end}"));
+                if !ok {
+                    self.setup_failed(w, id, &end, &lines);
+                }
                 w.note(Event::SetupRan {
                     agent: id,
                     ok,
@@ -321,12 +347,24 @@ impl Live {
                 });
             }
             Done::Ran(Err(why)) => {
-                w.note(Event::SetupFailed {
-                    agent: id,
-                    why: crate::i18n::clean(&why),
-                });
+                let why = crate::i18n::clean(&why);
+                self.setup_failed(w, id, &why, &[]);
+                w.note(Event::SetupFailed { agent: id, why });
             }
             Done::Ask(script) => self.ask_script(w, id, script),
+        }
+    }
+
+    /// Agent `id`'s worktree went without its setup, which ended as `end`
+    /// (`lines` its last): it hears so with its next prompt, and its
+    /// leader too, neither woken (record 146, part 3). The worker can see
+    /// what is missing; the script is the person's, approved by its bytes.
+    fn setup_failed(&mut self, w: &mut World, id: AgentId, end: &str, lines: &[String]) {
+        self.notes[id].push(failed_note(end, lines));
+        if let Some(leader) = w.told_of(id) {
+            let told = failed_told(&w.agents[id].name, end);
+            w.agents[leader].trace(w.tick, format!("told: {told}"));
+            self.notes[leader].push(told);
         }
     }
 
@@ -706,6 +744,25 @@ mod tests {
     }
 
     #[test]
+    fn a_failed_setup_is_told_in_words_the_worker_and_its_leader_can_act_on() {
+        assert_eq!(
+            failed_note(
+                "exit 1, 30.1 s",
+                &["npm ERR! a".into(), "npm ERR! b".into()]
+            ),
+            "The repository's worktree setup (.imece/worktree-setup.sh) failed in your \
+             worktree: exit 1, 30.1 s. What it sets up may be missing; look before you rely on \
+             it, and say so in your done if it changed what you could check. It ended \
+             with:\nnpm ERR! a\nnpm ERR! b"
+        );
+        assert_eq!(
+            failed_told("claude-2", "exit 1, 30.1 s"),
+            "The worktree setup (.imece/worktree-setup.sh) failed in claude-2's new worktree: \
+             exit 1, 30.1 s. claude-2 was told; it works without what the script sets up."
+        );
+    }
+
+    #[test]
     fn what_a_start_did_is_journaled_and_an_ask_is_one_per_script() {
         let repo = temp("done");
         let (mut w, mut live) = live_on(&repo, 3);
@@ -728,11 +785,19 @@ mod tests {
                 .unwrap()
                 .ends_with("worktree setup: exit 0, 1.5 s")
         );
+        assert!(live.notes.iter().all(Vec::is_empty), "a run that went well");
         live.setup_done(&mut w, 1, Done::Ran(Ok(outcome(Some(2), ""))));
         assert!(
             matches!(&w.journal[1].event, Event::SetupRan { ok: false, lines, .. } if lines.is_empty())
         );
+        // A failure is told to the worker and its leader, neither woken
+        // (record 146, part 3).
+        assert_eq!(live.notes[1], [failed_note("exit 2, 1.5 s", &[])]);
+        assert_eq!(live.notes[0], [failed_told("claude-1", "exit 2, 1.5 s")]);
+        assert!(!live.lost[0] && !live.lost[1]);
         live.setup_done(&mut w, 2, Done::Ran(Err("TOKEN=abc gone".into())));
+        assert_eq!(live.notes[2], [failed_note("[***] gone", &[])]);
+        assert_eq!(live.notes[0][1], failed_told("claude-2", "[***] gone"));
         assert_eq!(
             w.journal[2].event,
             Event::SetupFailed {

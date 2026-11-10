@@ -94,6 +94,18 @@ A worker whose session ended (the process exited, Claude Code could not start, i
 
 A worker's row, the journal and a stop's item say a turn that failed apart from a session that ended: `claude-2: turn failed: error_max_turns` is not `session ended`.
 
+## A worker that waits on an answer
+
+A worker that sends a teammate an `ask` waits on its answer between its turns: its row says `? → claude-3`. Any message of that teammate's to it ends the wait, whatever its type, and so does the worker's own `done`; a newer `ask` takes the older's place.
+
+An answer that does not come is its leader's to solve, as a `blocked` is, once the worker on a card has waited as long as [`:health stall`](../reference/commands.md#health-stallidleloop-value) allows (ten minutes by default):
+
+- **Its leader hears it**, and is woken for it: who was asked, on which card, the question, and the ways on (answer it itself, tell the worker how to go on without it, get the teammate to answer, hand the card, ask you). The row stays under AT WORK, `■` in the attention colour: `no answer from claude-3 "Which port does the stub use?" · lead is on it`.
+- **Ended** by the leader's waking word to the worker (the way on without the answer), by the teammate's answer at last (`claude-3 answered claude-2 after 12 min: 8080, the stub's default`), by your word to the worker, or by its card going elsewhere.
+- **Asked or let lie** go as for a `blocked`: let lie, it comes to you as `no answer to: Which port does the stub use? · lead did not solve it`.
+
+With `stall off` nothing is said: the leader is not told, and nothing comes to you. A leader's and a helper's asks are not followed this way.
+
 ## Mail waits with an agent that waits on you
 
 An agent with something open that only you can settle does not go on because a teammate wrote: a question of its in TO DECIDE, a tool call waiting for your yes, an API error, a setup script, a sensitive change or a research report. Its mail stays queued and starts no turn, and no board card is offered to it. The sender hears `held as message 7; …`, and the agent's row and `:why` say how many messages wait: `✉ 2 queued`.

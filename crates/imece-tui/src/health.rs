@@ -309,6 +309,18 @@ impl World {
                 continue;
             }
             self.agents[id].watch.told = Some(since);
+            // An ask with no answer is a stop its leader is to solve
+            // (record 146, part 3): told as one, with record 143's ends.
+            if let Sign::Waiting { .. } = sign {
+                let text =
+                    (self.agents[id].awaits.as_ref()).map_or(String::new(), |a| a.text.clone());
+                if self
+                    .stood(id, crate::blocked::What::Unanswered, &text)
+                    .is_some()
+                {
+                    continue;
+                }
+            }
             signs.push(self.sign(id, sign));
         }
         signs
@@ -456,11 +468,34 @@ mod tests {
     }
 
     #[test]
-    fn a_card_waiting_on_an_answer_is_told_as_one() {
+    fn a_card_waiting_on_an_answer_is_a_stop_its_leader_is_to_solve() {
         let (mut w, c) = stalled();
+        w.asks(1, 2, 7, "Which port does the stub use?\nAnd why?");
         w.agents[1].status = Status::Asking { to: 2, until: 999 };
         w.tick = 119;
         assert_eq!(w.look_health(), vec![]);
+        w.tick = 120;
+        // Not a notice: a stop of its leader's, with record 143's ends
+        // (record 146, part 3).
+        assert_eq!(w.look_health(), vec![]);
+        assert!(told(&w).is_empty());
+        let b = w.agents[1].block.clone().unwrap();
+        assert_eq!(
+            (b.what, b.leader, b.card, b.said.as_str()),
+            (
+                crate::blocked::What::Unanswered,
+                0,
+                Some(c),
+                "Which port does the stub use?"
+            )
+        );
+        assert_eq!(w.stops, [1]);
+        w.tick = 9_999;
+        assert_eq!(w.look_health(), vec![], "once");
+        // Its leader stopped: nobody runs to solve it, the notice is said.
+        let (mut w, c) = stalled();
+        w.agents[0].status = Status::Stopped;
+        w.agents[1].status = Status::Asking { to: 2, until: 999 };
         w.tick = 120;
         let sign = Sign::Waiting {
             card: c,
@@ -468,7 +503,7 @@ mod tests {
             minutes: 10,
         };
         assert_eq!(w.look_health(), vec![(1, sign)]);
-        w.health.stall = None;
+        assert_eq!(w.agents[1].block, None);
         let (mut w, _) = stalled();
         w.agents[1].status = Status::Asking { to: 2, until: 999 };
         w.health.stall = None;

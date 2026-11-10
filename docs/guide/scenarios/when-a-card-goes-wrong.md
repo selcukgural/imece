@@ -105,10 +105,12 @@ imece watches every agent for four signs and tells the leader, not you, since th
 
 | Sign | When | Journal line |
 | --- | --- | --- |
-| stalled | a worker's card is at work, the worker idle or waiting on a teammate for 10 min | `claude-2 has been idle 10 min on #9 Currency support without a done` |
+| stalled | a worker's card is at work, the worker idle for 10 min | `claude-2 has been idle 10 min on #9 Currency support without a done` |
 | silent | an agent other than the leader is mid-turn with no trace line for 10 min | `claude-2 has said nothing for 10 min in its turn; last: Bash dotnet test` |
 | free | a worker with no card is idle for 10 min | `claude-3 has been idle 10 min with no card` |
 | looping | one call fails 3 times in one turn | `claude-2 failed 3 times this turn on run dotnet test` |
+
+A worker that has waited 10 minutes on a teammate's answer is no notice: it is its leader's to solve, as a `blocked` is, and its row says `no answer from claude-3 "…" · lead is on it` ([a worker that waits on an answer](../concepts/messages-and-board.md#a-worker-that-waits-on-an-answer)).
 
 The demo shows the loop: every fourth failing test run fails three times in a row.
 

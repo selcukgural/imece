@@ -52,6 +52,21 @@ pub enum What {
     Ended,
     /// Its turn failed and its session lives (record 146).
     Failed,
+    /// It asked a teammate and has had no answer for `:health stall`
+    /// (record 146, part 3).
+    Unanswered,
+}
+
+/// A teammate's `ask` that has had no answer yet (record 146, part 3):
+/// between its turns the agent is `Status::Asking`. Memory only.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Awaits {
+    /// The teammate asked.
+    pub to: AgentId,
+    /// The ask's number.
+    pub msg: MsgId,
+    /// The ask's first line.
+    pub text: String,
 }
 
 /// Where a block stands.
@@ -101,12 +116,13 @@ fn minutes_in(ticks: u64) -> u16 {
 
 impl What {
     /// The one of `words` (for a block said, a session ended, a turn
-    /// failed) that is this.
-    pub fn of<T: Copy>(self, words: [T; 3]) -> T {
+    /// failed, an ask with no answer) that is this.
+    pub fn of<T: Copy>(self, words: [T; 4]) -> T {
         match self {
             What::Said => words[0],
             What::Ended => words[1],
             What::Failed => words[2],
+            What::Unanswered => words[3],
         }
     }
 }
@@ -162,6 +178,46 @@ impl World {
         Some(leader)
     }
 
+    /// Agent `id` asked teammate `to` in message `msg`: until `to`
+    /// writes back, it waits on the answer between its turns. A newer
+    /// ask takes the older's place.
+    pub fn asks(&mut self, id: AgentId, to: AgentId, msg: MsgId, text: &str) {
+        self.agents[id].awaits = Some(Awaits {
+            to,
+            msg,
+            text: text.lines().next().unwrap_or_default().to_string(),
+        });
+    }
+
+    /// `by` wrote to agent `id`: when `id` waited on its answer, the wait
+    /// is over, and a block of it (no answer) is solved, the journal
+    /// says so. Whether it waited.
+    pub fn answered(&mut self, id: AgentId, by: AgentId, text: &str) -> bool {
+        if self.agents[id].awaits.as_ref().is_none_or(|a| a.to != by) {
+            return false;
+        }
+        let unanswered =
+            (self.agents[id].block.as_ref()).is_some_and(|b| b.what == What::Unanswered);
+        if unanswered {
+            self.unblocked(id, by, text);
+        }
+        self.awaits_over(id);
+        true
+    }
+
+    /// Agent `id` waits on no answer any more: it is done, or it left.
+    pub fn awaits_over(&mut self, id: AgentId) {
+        self.agents[id].awaits = None;
+        if (self.agents[id].block.as_ref()).is_some_and(|b| b.what == What::Unanswered) {
+            self.agents[id].block = None;
+            self.close_blocked(id);
+        }
+        if let crate::model::Status::Asking { .. } = self.agents[id].status {
+            let t = self.tick;
+            self.agents[id].set_status(crate::model::Status::Idle, t);
+        }
+    }
+
     /// Leader `leader`'s next prompt takes what imece told it: the stops
     /// of its workers are its to solve from here.
     pub fn stops_read(&mut self, leader: AgentId) {
@@ -197,8 +253,12 @@ impl World {
     /// Worker `id`'s block is over, and nothing says so: the person
     /// wrote to it, its card went elsewhere, it left.
     pub fn block_over(&mut self, id: AgentId) {
-        self.agents[id].block = None;
+        let b = self.agents[id].block.take();
         self.close_blocked(id);
+        // What ended a wait on an answer is the way on without it.
+        if b.is_some_and(|b| b.what == What::Unanswered) {
+            self.awaits_over(id);
+        }
     }
 
     /// Leader `by` sent worker `id` word: its block, if it has one, is
@@ -211,6 +271,10 @@ impl World {
         self.close_blocked(id);
         // Started again by its leader: not a second time for this stop.
         self.agents[id].revived |= b.what == What::Ended;
+        // The leader's word is the way on without the answer.
+        if b.what == What::Unanswered {
+            self.awaits_over(id);
+        }
         self.note(Event::Unblocked {
             agent: id,
             by,
@@ -724,6 +788,121 @@ mod tests {
         w.blocks_unsolved(0, true);
         assert!(w.waits_on_person(1));
         assert!(w.word_frees(1));
+    }
+
+    #[test]
+    fn an_ask_waits_on_the_teammate_asked_and_its_word_ends_it() {
+        use crate::model::Status;
+        let mut w = world();
+        w.asks(1, 2, 7, "Which port?\nThe stub's.");
+        assert_eq!(
+            w.agents[1].awaits,
+            Some(Awaits {
+                to: 2,
+                msg: 7,
+                text: "Which port?".into(),
+            })
+        );
+        w.agents[1].status = Status::Asking { to: 2, until: 9 };
+        // Another's word is not the answer.
+        assert!(!w.answered(1, 0, "Later."));
+        assert!(w.agents[1].awaits.is_some());
+        assert!(!w.answered(2, 1, "Me?"), "it waits on nobody");
+        w.tick = 5;
+        assert!(w.answered(1, 2, "8080."));
+        assert_eq!(w.agents[1].awaits, None);
+        assert_eq!(w.agents[1].status, Status::Idle);
+        assert_eq!(w.agents[1].changed_at, 5);
+        assert!(w.journal.is_empty(), "no stop was open: nothing to say");
+        // A newer ask takes the older's place.
+        w.asks(1, 2, 7, "One.");
+        w.asks(1, 0, 9, "Two.");
+        assert_eq!(
+            w.agents[1].awaits.as_ref().map(|a| (a.to, a.msg)),
+            Some((0, 9))
+        );
+        // Done, it waits on nothing; another status is left as it is.
+        w.agents[1].status = Status::Working;
+        w.awaits_over(1);
+        assert_eq!(w.agents[1].awaits, None);
+        assert_eq!(w.agents[1].status, Status::Working);
+    }
+
+    #[test]
+    fn an_ask_with_no_answer_is_a_stop_the_answer_or_the_leader_s_word_ends() {
+        use crate::model::Status;
+        // The teammate answers at last: the journal says after how long.
+        let mut w = world();
+        w.tick = 10;
+        w.asks(1, 2, 7, "Which port?");
+        w.agents[1].status = Status::Asking { to: 2, until: 9 };
+        assert_eq!(w.stood(1, What::Unanswered, "Which port?"), Some(0));
+        w.tick = 10 + 12 * 4;
+        assert!(w.answered(1, 2, "8080.\nSee the stub."));
+        assert_eq!(w.agents[1].block, None);
+        assert_eq!(
+            w.journal.last().unwrap().event,
+            Event::Unblocked {
+                agent: 1,
+                by: 2,
+                text: "8080.".into(),
+                minutes: 4,
+                what: What::Unanswered,
+            }
+        );
+        assert!(!w.agents[1].revived, "it never stopped");
+        // The leader's word is the way on without it.
+        let mut w = world();
+        w.asks(1, 2, 7, "Which port?");
+        w.stood(1, What::Unanswered, "Which port?");
+        assert!(w.unblocked(1, 0, "Use 8080."));
+        assert_eq!(w.agents[1].awaits, None);
+        // So is the person's, and a card that went elsewhere.
+        for end in 0..2 {
+            let mut w = world();
+            let c = w.agents[1].card.unwrap();
+            w.asks(1, 2, 7, "Which port?");
+            w.agents[1].status = Status::Asking { to: 2, until: 9 };
+            w.stood(1, What::Unanswered, "Which port?");
+            match end {
+                0 => w.said(1, "Use 8080."),
+                _ => w.blocks_on(c, None),
+            }
+            assert_eq!(
+                (w.agents[1].awaits.clone(), w.agents[1].block.clone()),
+                (None, None),
+                "{end}"
+            );
+            assert_eq!(w.agents[1].status, Status::Idle, "{end}");
+        }
+        // A wait that ends otherwise ends its stop too, in silence.
+        let mut w = world();
+        w.asks(1, 2, 7, "Which port?");
+        w.stood(1, What::Unanswered, "Which port?");
+        w.blocks_unsolved(0, true);
+        assert_eq!(open(&w), [(InboxKind::Blocked, 1)]);
+        let said = w.journal.len();
+        w.awaits_over(1);
+        assert_eq!(w.agents[1].block, None);
+        assert!(open(&w).is_empty());
+        assert_eq!(w.journal.len(), said);
+        // Another stop is not a wait's to end.
+        w.asks(1, 2, 7, "Which port?");
+        w.stood(1, What::Failed, "max_turns");
+        w.block_over(1);
+        assert!(w.agents[1].awaits.is_some(), "still waits on the answer");
+        w.stood(1, What::Failed, "max_turns");
+        w.awaits_over(1);
+        assert_eq!(w.block_what(1), What::Failed);
+    }
+
+    #[test]
+    fn what_a_stop_is_of_picks_its_own_word() {
+        let words = ["a", "b", "c", "d"];
+        assert_eq!(
+            [What::Said, What::Ended, What::Failed, What::Unanswered].map(|w| w.of(words)),
+            words
+        );
     }
 
     #[test]
