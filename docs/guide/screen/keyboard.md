@@ -59,7 +59,7 @@ While the first key of a chord waits for its second, the row lists what the seco
 | --- | --- |
 | `#N`  `#word`  `n` `p` | a card by number or title: its detail (the log tab: its standing, who had a part, its story); on it `n` `p`: next / previous card |
 | `&`  `:goto` | go to an agent or a project: type a name, `1`-`9` the nth on the list, `!` keeps only what needs you; `&#` turns to the cards |
-| `1`-`9` | on Home, or on a question's detail, with a question that offers answers at hand: pick one ([questions](../concepts/approvals-and-questions.md#questions-)); the digits do nothing else. The views they once opened are windows by name: `:board`, `:code`, `:timeline` ([board and code map](board-and-code-map.md), [timeline](timeline.md)); [`:home`](home.md) is the one screen, `:salon` its AT WORK |
+| `1`-`9` | on Home, or on a question's detail, with a question that offers answers at hand: pick one ([questions](../concepts/approvals-and-questions.md#questions-)); on a stop of a whole team at hand, one of imece's choices on it ([when a whole team stops](home.md#when-a-whole-team-stops)); the digits do nothing else (the help's row: `W`  `S`  `1-9`). The views they once opened are windows by name: `:board`, `:code`, `:timeline` ([board and code map](board-and-code-map.md), [timeline](timeline.md)); [`:home`](home.md) is the one screen, `:salon` its AT WORK |
 | `[`  `]` | in the timeline's window: a column of 5 s · 30 s · 1 min |
 | `r` | in the board's window: only the cards ready to take (no card they wait on undone), again: all ([board](board-and-code-map.md#the-board)) |
 | `↑` `↓`  `j` `k` | select |

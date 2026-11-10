@@ -7,16 +7,19 @@
 use super::*;
 
 /// A row of Home: an item waiting for the person, by its index in
-/// `World::inbox`, an agent, or a project's heading over its agents
-/// (record 125, step 5: the team is Home's lower half).
+/// `World::inbox`, an agent, a project's heading over its agents (record
+/// 125, step 5: the team is Home's lower half), or what stops a whole
+/// team (record 146).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum HomeRow {
     Item(usize),
     Agent(AgentId),
     Project(ProjectId),
+    Stop(ProjectId, crate::halt::Halt),
 }
 
-/// The groups of Home's list, in their order (record 125): what is to
+/// The groups of Home's list, in their order (record 125): what stops a
+/// whole team first (record 146), then what is to
 /// decide by what deciding costs (a permission is one key, a question is
 /// read and answered, a change is a diff read; a reply asks for nothing
 /// and comes after them; what the person put off with `s` last), then
@@ -24,6 +27,7 @@ pub enum HomeRow {
 /// and quiet.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum HomeGroup {
+    Stopped,
     Permission,
     Question,
     Change,
@@ -64,7 +68,8 @@ impl HomeGroup {
     /// The heading the group stands under.
     pub fn heading(self) -> Heading {
         match self {
-            HomeGroup::Permission
+            HomeGroup::Stopped
+            | HomeGroup::Permission
             | HomeGroup::Question
             | HomeGroup::Change
             | HomeGroup::Reply
@@ -117,10 +122,19 @@ impl App {
         let mut items = w.shown_inbox();
         items.retain(|&i| ours(w.inbox[i].agent));
         items.sort_by_key(|&i| self.waiting_rank(i));
-        let mut rows: Vec<_> = items
-            .iter()
-            .map(|&i| (self.home_group(i), HomeRow::Item(i)))
+        // What stops a whole team first; one the person let rest after
+        // everything else waiting (record 146).
+        let halts = self.halts_in(scope);
+        let mut rows: Vec<_> = (halts.iter())
+            .filter(|h| !h.0)
+            .map(|&(_, p, halt)| (HomeGroup::Stopped, HomeRow::Stop(p, halt)))
             .collect();
+        rows.extend((items.iter()).map(|&i| (self.home_group(i), HomeRow::Item(i))));
+        rows.extend(
+            (halts.iter())
+                .filter(|h| h.0)
+                .map(|&(_, p, halt)| (HomeGroup::Later, HomeRow::Stop(p, halt))),
+        );
         let rungs = self.rungs();
         let waits_on_item = |id: AgentId| {
             let open = |kind| w.open_item(id, kind).is_some();
@@ -137,6 +151,10 @@ impl App {
         };
         let group_of = |a: &Agent| -> Option<HomeGroup> {
             if a.gone || w.put_away(a.id) || hidden(a) {
+                return None;
+            }
+            // A leader whose session ended is its team's stop, listed above.
+            if a.role == Role::Leader && w.lead_halted(a.project) {
                 return None;
             }
             let at_work = a.status.busy() || matches!(a.status, Status::Asking { .. });
@@ -216,7 +234,7 @@ impl App {
     fn home_project(&self) -> Option<ProjectId> {
         let w = &self.world;
         Some(match self.home_at()? {
-            HomeRow::Project(p) => p,
+            HomeRow::Project(p) | HomeRow::Stop(p, _) => p,
             HomeRow::Agent(id) => w.agents[id].project,
             HomeRow::Item(i) => w.agents[w.inbox[i].agent].project,
         })
@@ -302,7 +320,7 @@ impl App {
                 self.pane = Pane::Salon;
                 self.selected = Sel::Agent(id);
             }
-            Some(HomeRow::Project(p)) => {
+            Some(HomeRow::Project(p) | HomeRow::Stop(p, _)) => {
                 self.pane = Pane::Salon;
                 self.selected = Sel::Project(p);
             }
@@ -369,6 +387,9 @@ impl App {
     /// the list; an agent or a project hidden instead (`home_hide`); the
     /// row in its place comes to hand.
     fn home_later(&mut self) {
+        if let Some(HomeRow::Stop(p, halt)) = self.at_home.at {
+            return self.rest(p, halt);
+        }
         let Some(HomeRow::Item(i)) = self.at_home.at else {
             return self.home_hide();
         };
@@ -391,6 +412,12 @@ impl App {
             KeyCode::Char('s') => self.home_later(),
             KeyCode::Left | KeyCode::Char('h') => self.home_fold(true),
             KeyCode::Right | KeyCode::Char('l') => self.home_fold(false),
+            // A stop opens what stopped.
+            KeyCode::Enter if matches!(self.at_home.at, Some(HomeRow::Stop(..))) => {
+                if let Some(HomeRow::Stop(p, halt)) = self.at_home.at {
+                    self.open_halt(p, halt);
+                }
+            }
             // A project's heading opens its leader's work.
             KeyCode::Enter if matches!(self.at_home.at, Some(HomeRow::Project(_))) => {
                 if let Some(HomeRow::Project(p)) = self.at_home.at {
@@ -421,7 +448,7 @@ impl App {
         }
         match self.home_at()? {
             HomeRow::Item(i) if w.inbox[i].kind == InboxKind::Question => Some(i),
-            HomeRow::Item(_) | HomeRow::Agent(_) | HomeRow::Project(_) => None,
+            HomeRow::Item(_) | HomeRow::Agent(_) | HomeRow::Project(_) | HomeRow::Stop(..) => None,
         }
     }
 
@@ -616,7 +643,7 @@ mod tests {
         assert!(of_p.len() < all);
         let shown = |r: &(HomeGroup, HomeRow)| match r.1 {
             HomeRow::Agent(id) => app.world.agents[id].project == 0,
-            HomeRow::Item(_) | HomeRow::Project(_) => false,
+            HomeRow::Item(_) | HomeRow::Project(_) | HomeRow::Stop(..) => false,
         };
         assert!(of_p.iter().all(shown), "narrowed: no heading either");
         app.home_key(key(KeyCode::Char(']')));

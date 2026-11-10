@@ -529,8 +529,7 @@ impl Live {
             return Err(Refusal::Budget);
         }
         // The person is here again: agents may wake each other anew.
-        self.woken.iter_mut().for_each(|n| *n = 0);
-        self.posted.iter_mut().for_each(|n| *n = 0);
+        self.go_on();
         let title = text.lines().next().unwrap_or_default().to_string();
         let mail = if self.turns[id] == 0 && w.word_frees(id) {
             std::mem::take(&mut self.mail[id])
@@ -2233,8 +2232,13 @@ mod tests {
         wait_for(&mut live, &mut w, |w| w.agents[0].status == Status::Stopped);
         assert!(matches!(live.slots[0], Slot::None));
         assert!(!w.agents[0].starting, "ended: not starting any more");
+        // Said in the journal; a leader that stopped is its team's stop
+        // too (record 146), said after it.
+        let stopped = (w.journal.iter().rev())
+            .find(|e| matches!(e.event, Event::Stopped { .. }))
+            .unwrap();
         assert!(matches!(
-            &w.journal.last().unwrap().event,
+            &stopped.event,
             Event::Stopped { agent: 0, why } if why.contains("/nonexistent/claude")
         ));
         // Talking to it again tries a new session.

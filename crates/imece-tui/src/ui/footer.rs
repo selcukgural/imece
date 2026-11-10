@@ -428,6 +428,12 @@ pub(crate) fn home_hints(app: &App) -> Vec<(&'static str, &'static str)> {
         Some(InboxKind::Close) => vec![("a", t.home_close), ("r", t.home_leave)],
         Some(_) => vec![("enter", t.home_open), ("a", t.home_yes), ("r", t.home_no)],
         None => match app.home_at() {
+            // A stop of a whole team: its choices, then what stopped.
+            Some(crate::app::HomeRow::Stop(_, halt)) => vec![
+                (super::halt::digits(halt), t.home_pick),
+                ("enter", t.home_open),
+                ("s", t.home_later),
+            ],
             Some(crate::app::HomeRow::Project(_)) => {
                 vec![
                     ("enter", t.home_open),
@@ -544,7 +550,9 @@ fn place_spans(app: &App) -> Vec<Span<'static>> {
             }
             Some(crate::app::HomeRow::Agent(id)) => (Some(id), None),
             // A project's heading is about no card: the project is named.
-            Some(crate::app::HomeRow::Project(_)) | None => (None, None),
+            Some(crate::app::HomeRow::Project(_) | crate::app::HomeRow::Stop(..)) | None => {
+                (None, None)
+            }
         }
     } else {
         // A detail is about the card its head names: a change's or an

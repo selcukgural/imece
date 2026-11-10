@@ -11,7 +11,7 @@ The budget is one pot for the whole team: once all agents together have spent it
 
 - `--budget USD` sets it; the first time it is $50. The pot is **kept between runs**: a start without `--budget` goes on with what was left. `--budget` on a later start sets it anew.
 - Every agent's turns, of every project, come out of it, and so do imece's own paid calls (`:commit`, `:review`). There is no share per agent.
-- When it is spent, no agent gets a waking message and no card is offered; a `send` that would wake someone is refused with "the budget is spent".
+- When it is spent, no agent gets a waking message and no card is offered; a `send` that would wake someone is refused with "the budget is spent". While something waits on it, the pot is a stop of the whole team on [Home](../screen/home.md#when-a-whole-team-stops): `■ STOPPED shop-api · the pot is spent · 3 wait behind it`, with `1` raise by $50, `2` by $20, `3` rest here. Raised, whoever's message it refused is woken to go on.
 - **A per-session hard cap:** each Claude Code session also gets what was left of the pot when it started as its own `--max-budget-usd`, so a session running away on its own cannot pass it either. It is a last stop, not a share.
 
 ### `:budget USD`

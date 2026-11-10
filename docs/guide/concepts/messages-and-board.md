@@ -42,7 +42,7 @@ Caps keep one agent from flooding another and from running up the pot on its own
 | --- | --- |
 | Body | 4000 characters |
 | Unread mail per agent | 20 (a `send` to a full box is refused: "wait for it") |
-| Message-driven turns per agent | 12 since you last spoke to the team; then waking mail is refused until you write |
+| Message-driven turns per agent | 12 since you last spoke to the team; then waking mail is refused until you write, and while something waits on it the team's stop is yours on [Home](../screen/home.md#when-a-whole-team-stops) (`1` lets it go on) |
 | A stopped agent | gets no waking mail |
 | Budget spent | nobody gets a waking message |
 

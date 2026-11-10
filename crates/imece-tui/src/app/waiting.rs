@@ -134,6 +134,8 @@ impl App {
             .max();
         match top {
             Some(Rung::Stuck) => Progress::Stuck,
+            // A whole team stopped (record 146).
+            _ if !w.halts.stops.is_empty() => Progress::Stuck,
             _ if !w.open_inbox().is_empty() => Progress::Waiting,
             Some(Rung::Waiting) => Progress::Waiting,
             Some(Rung::Working | Rung::Starting) => Progress::Working,
@@ -1305,31 +1307,31 @@ mod rank_tests {
         app.world.inbox.push(item(InboxKind::Question, 2, None));
         app.world.inbox.push(item(InboxKind::Approval, 3, None));
         app.world.inbox.push(item(InboxKind::Approval, 4, None));
-        assert_eq!(app.waiting_rank(2), (0, false, 2));
-        assert_eq!(app.waiting_rank(3), (0, false, 3));
-        assert_eq!(app.waiting_rank(1), (1, false, 1));
+        assert_eq!(app.waiting_rank(2), (1, false, 2));
+        assert_eq!(app.waiting_rank(3), (1, false, 3));
+        assert_eq!(app.waiting_rank(1), (2, false, 1));
         // A change without a proof is hard; one proved clean and inside
         // its card's paths is not.
-        assert_eq!(app.waiting_rank(0), (2, true, 0));
+        assert_eq!(app.waiting_rank(0), (3, true, 0));
         app.world.changes.push(change(1, true, "src/a.rs"));
-        assert_eq!(app.waiting_rank(0), (2, false, 0));
+        assert_eq!(app.waiting_rank(0), (3, false, 0));
         app.world.changes[0].runs[0].code = Some(1);
-        assert_eq!(app.waiting_rank(0), (2, true, 0));
+        assert_eq!(app.waiting_rank(0), (3, true, 0));
         app.world.changes[0].runs[0].code = Some(0);
         app.world.cards[0].paths = crate::paths::parse(&serde_json::json!(["docs/"])).unwrap();
         app.world.inbox[0].card = Some(0);
-        assert_eq!(app.waiting_rank(0), (2, true, 0), "outside its card");
+        assert_eq!(app.waiting_rank(0), (3, true, 0), "outside its card");
         app.world.cards[0].paths = crate::paths::parse(&serde_json::json!(["src/"])).unwrap();
-        assert_eq!(app.waiting_rank(0), (2, false, 0));
+        assert_eq!(app.waiting_rank(0), (3, false, 0));
         // Overlapping another change waiting in the project: hard.
         app.world.changes.push(change(2, true, "src/a.rs"));
-        assert_eq!(app.waiting_rank(0), (2, true, 0), "overlaps");
+        assert_eq!(app.waiting_rank(0), (3, true, 0), "overlaps");
         app.world.changes.pop();
-        assert_eq!(app.waiting_rank(0), (2, false, 0));
+        assert_eq!(app.waiting_rank(0), (3, false, 0));
         // Put off: after everything, in the order put off.
         app.deferred = vec![3, 2];
-        assert_eq!(app.waiting_rank(3), (4, false, 0));
-        assert_eq!(app.waiting_rank(2), (4, false, 1));
+        assert_eq!(app.waiting_rank(3), (5, false, 0));
+        assert_eq!(app.waiting_rank(2), (5, false, 1));
         assert!(app.waiting_rank(3) < app.waiting_rank(2));
         assert!(
             app.waiting_rank(0) < app.waiting_rank(3),

@@ -295,7 +295,7 @@ impl App {
                 .agent_at_hand()
                 .map(|id| self.world.agents[id].name.clone()),
             "next" | "waiting" => {
-                let open = self.world.open_decisions().to_string();
+                let open = self.world.to_decide().to_string();
                 Some(fill(t.value_waiting, &[&open]))
             }
             "story" => Some(on_off(self.story)),
@@ -670,15 +670,7 @@ impl App {
         }
         match long {
             "budget" => match parse_dollars(arg) {
-                Some(to) => {
-                    let from = self.world.budget;
-                    self.world.budget = to;
-                    // A new pot is worth a new warning.
-                    self.world.spending.warned = false;
-                    let leader = self.world.projects[self.current_project()].leader;
-                    self.world.note(Event::Budget { leader, from, to });
-                    self.flash(fill(t.budget_is, &[&dollars(to)]));
-                }
+                Some(to) => self.set_budget(to),
                 None => self.flash(fill(t.bad_budget, &[arg])),
             },
             "theme" if arg.is_empty() => self.next_theme(),

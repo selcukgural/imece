@@ -126,7 +126,7 @@ impl App {
 
     /// Bare `:lonca`: the window on project `p`'s repository; off Lonca,
     /// a flash says so and how to get on.
-    fn open_lonca(&mut self, p: ProjectId) {
+    pub(super) fn open_lonca(&mut self, p: ProjectId) {
         if self.world.projects[p].lonca.is_none() {
             return self.flash(self.lonca_state(p));
         }

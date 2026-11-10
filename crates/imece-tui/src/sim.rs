@@ -331,6 +331,14 @@ const WITHDRAW_EVERY: u64 = 300;
 /// round: long enough to read that all is done.
 const ROUND_CARDS: usize = 12;
 const ROUND_REST: u64 = 24;
+/// Every this many ticks a demo team has taken its turns on messages
+/// since the person last spoke (record 146, part 2), as a live leader
+/// does after `MAX_WOKEN` dones: it hands out nothing until the person
+/// speaks or lets it go on. By the clock, not the dice.
+const CAP_EVERY: u64 = 900;
+/// Every this many ticks a demo leader's session ends (record 146, part
+/// 2): the person starts it again from the stop.
+const LEAD_STOP_EVERY: u64 = 1_300;
 /// What a demo worker whose change failed its tests in the queue is told.
 const FIX_TESTS: &str = "fix the failing test and propose again";
 
@@ -1021,6 +1029,9 @@ struct Extras {
     hard: HashSet<CardId>,
     /// No API errors: a test that counts answers.
     calm: bool,
+    /// The projects whose team took its turns on messages since the
+    /// person last spoke ([`CAP_EVERY`]).
+    capped: HashSet<ProjectId>,
     /// Answers workers gave to the person's own lines with no card: each
     /// [`OWN_CHANGE_EVERY`]th comes with a change (record 126).
     own_answers: u32,
@@ -1199,6 +1210,7 @@ pub fn world(
         journal: Vec::new(),
         inbox: Vec::new(),
         stops: Vec::new(),
+        halts: Default::default(),
         budget: 200 * 10_000,
         // Said by its sign-in once the screen has it (`App::take_plan`).
         estimated: false,
@@ -1494,6 +1506,8 @@ impl Sim {
         if w.spent() >= w.budget {
             return Err(Refusal::Budget);
         }
+        // The person is here again: the teams may take their turns anew.
+        self.go_on();
         let t = w.tick;
         let stopped = w.agents[id].status == Status::Stopped;
         let had = self.mind(id).started;
@@ -2576,9 +2590,13 @@ impl Sim {
                 false => self.answer(w, r.agent, &r.text),
             }
         }
-        for id in w.retries_due() {
-            self.retry(w, id);
+        // A spent pot tries nothing again, as live's (record 146).
+        if w.spent() < w.budget {
+            for id in w.retries_due() {
+                self.retry(w, id);
+            }
         }
+        self.halts_due(w);
         for p in 0..w.projects.len() {
             if !w.projects[p].closed {
                 self.leader(w, p);
@@ -3646,8 +3664,12 @@ impl Sim {
             let said = crate::i18n::fill(self.content.posted, &[&n, &cards.join(", ")]);
             self.answer(w, leader, &said);
         }
-        // A spent pot starts no new turns.
-        if w.spent() >= w.budget {
+        // A spent pot, a team that took its turns or a leader whose
+        // session ended starts no new turns (record 146).
+        if w.spent() >= w.budget
+            || self.extras.capped.contains(&project)
+            || w.agents[leader].status == Status::Stopped
+        {
             return;
         }
 
@@ -4422,6 +4444,90 @@ impl Sim {
             worker.set_status(Status::Working, t);
             worker.activity.get_or_insert_with(String::new);
         }
+    }
+
+    /// By the clock (record 146, part 2): every [`CAP_EVERY`] ticks each
+    /// open team has taken its turns on messages, every
+    /// [`LEAD_STOP_EVERY`] its leader's session ends; then what the demo
+    /// holds back is said to the world, as live's is each step.
+    fn halts_due(&mut self, w: &mut World) {
+        let t = w.tick;
+        let teams: Vec<ProjectId> = (w.open_projects())
+            .filter(|q| w.agents[q.leader].role == Role::Leader && !w.agents[q.leader].gone)
+            .map(|q| q.id)
+            .collect();
+        for &p in &teams {
+            let leader = w.projects[p].leader;
+            if t > 0 && t.is_multiple_of(CAP_EVERY) {
+                self.extras.capped.insert(p);
+                w.agents[leader].trace(t, "took its turns on messages; waits for the person");
+            }
+            if t > 0
+                && t.is_multiple_of(LEAD_STOP_EVERY)
+                && w.agents[leader].status != Status::Stopped
+            {
+                self.stop(w, leader);
+            }
+        }
+        let held = self.held_back(w);
+        w.look_halts(&held);
+    }
+
+    /// What the demo holds back this step, as live's [`Live`] says it:
+    /// while the pot is spent or a team took its turns, a free worker
+    /// with a card it could take and the leader that would hand it, or
+    /// would hand out more; with the pot spent, a retry not tried.
+    fn held_back(&self, w: &World) -> Vec<crate::halt::Held> {
+        use crate::halt::{Halt, Held, Waits};
+        let spent = w.spent() >= w.budget;
+        let mut held = Vec::new();
+        for q in w.open_projects() {
+            let by = match (spent, self.extras.capped.contains(&q.id)) {
+                (true, _) => Halt::Pot,
+                (false, true) => Halt::Woken,
+                (false, false) => continue,
+            };
+            let leader = q.leader;
+            if w.agents[leader].gone || w.agents[leader].status == Status::Stopped {
+                continue;
+            }
+            let free: Vec<AgentId> = (w.agents.iter())
+                .filter(|a| a.project == q.id && Self::free(w, a.id))
+                .map(|a| a.id)
+                .collect();
+            let cards = (w.cards.iter())
+                .any(|c| c.project == q.id && c.column == Column::Waiting && w.ready(c.id));
+            if (cards || Self::hands_out(w, q.id)) && !free.is_empty() {
+                held.push(Held {
+                    agent: leader,
+                    by,
+                    waits: Waits::Wake,
+                });
+            }
+            if cards {
+                held.extend(free.iter().map(|&agent| Held {
+                    agent,
+                    by,
+                    waits: Waits::Wake,
+                }));
+            }
+        }
+        if spent {
+            for a in w.agents.iter().filter(|a| !a.gone && a.retry.is_some()) {
+                held.push(Held {
+                    agent: a.id,
+                    by: Halt::Pot,
+                    waits: Waits::Retry,
+                });
+            }
+        }
+        held
+    }
+
+    /// The teams may take their turns on messages again: the person
+    /// spoke, or chose so on the stop.
+    pub fn go_on(&mut self) {
+        self.extras.capped.clear();
     }
 
     /// Worker `id` stops: every `STOP_FAILS`th time a turn of its fails
@@ -5418,9 +5524,105 @@ mod tests {
     }
 
     #[test]
+    fn the_demo_s_team_stops_by_the_clock_and_goes_on_at_the_person_s_word() {
+        use crate::halt::Halt;
+        let (mut w, mut s) = world(1, 3, 0, 1, Lang::En);
+        let leader = w.projects[0].leader;
+        let halts = |w: &World| -> Vec<Halt> { w.halts.stops.iter().map(|h| h.halt).collect() };
+        // Changes applied and asks allowed as they come; an answer to a
+        // question is the person's word, which lets the team go on.
+        let answer = |w: &mut World, s: &mut Sim| {
+            for i in w.open_inbox() {
+                let a = w.inbox[i].agent;
+                match w.inbox[i].kind {
+                    InboxKind::Change => {
+                        let _ = s.apply_change(w, a, Vec::new());
+                    }
+                    InboxKind::Approval => w.decided(i, true),
+                    _ => {}
+                }
+            }
+        };
+        // Until the turns are used up, nothing stops it.
+        while w.tick + 1 < CAP_EVERY {
+            s.step(&mut w);
+            answer(&mut w, &mut s);
+            assert!(!halts(&w).contains(&Halt::Woken), "tick {}", w.tick);
+        }
+        // It took its turns: it hands out nothing, and the stop says so
+        // while something waits behind it.
+        let posted = |w: &World| {
+            (w.journal.iter())
+                .filter(|e| matches!(e.event, Event::Posted { .. }))
+                .count()
+        };
+        let mut stopped = None;
+        for _ in 0..200 {
+            s.step(&mut w);
+            answer(&mut w, &mut s);
+            if halts(&w).contains(&Halt::Woken) {
+                stopped = Some(posted(&w));
+                break;
+            }
+        }
+        let before = stopped.expect("the turns never stopped the team");
+        for _ in 0..40 {
+            s.step(&mut w);
+            answer(&mut w, &mut s);
+        }
+        assert_eq!(posted(&w), before, "nothing posted while it is stopped");
+        // The person lets it go on: the stop is over at the next step.
+        s.go_on();
+        s.step(&mut w);
+        assert!(!halts(&w).contains(&Halt::Woken));
+        assert!((w.journal.iter()).any(|e| matches!(
+            e.event,
+            Event::Unhalted {
+                halt: Halt::Woken,
+                ..
+            }
+        )));
+        // Its leader's session ends by the clock; the person's word
+        // starts it again and the stop is over.
+        while w.tick < LEAD_STOP_EVERY {
+            s.step(&mut w);
+            answer_all(&mut w, &mut s);
+        }
+        assert_eq!(w.agents[leader].status, Status::Stopped);
+        assert!(halts(&w).contains(&Halt::Lead));
+        s.told(&mut w, leader, crate::halt::LEAD_AGAIN).unwrap();
+        s.step(&mut w);
+        assert!(!halts(&w).contains(&Halt::Lead));
+    }
+
+    #[test]
+    fn the_demo_s_spent_pot_holds_its_leader_and_its_retries_behind_it() {
+        use crate::halt::{Halt, Waits};
+        let (mut w, mut s) = world(1, 3, 0, 1, Lang::En);
+        for _ in 0..60 {
+            s.step(&mut w);
+        }
+        w.budget = w.spent();
+        w.agents[2].retry = Some(Retry { attempt: 1, at: 0 });
+        let held = s.held_back(&w);
+        assert!(
+            held.iter()
+                .any(|h| h.agent == 2 && h.by == Halt::Pot && h.waits == Waits::Retry),
+            "{held:?}"
+        );
+        // Nothing is tried again while it is spent.
+        s.step(&mut w);
+        assert!(w.agents[2].retry.is_some(), "not tried");
+        assert!(w.halt_of(0, Halt::Pot).is_some());
+        w.budget = w.spent() + 1_000_000;
+        s.step(&mut w);
+        assert!(w.halt_of(0, Halt::Pot).is_none());
+    }
+
+    #[test]
     fn the_demo_shows_a_change_that_overlaps_another_waiting_and_one_that_does_not() {
         // Seeded: the same every time (the seed is one that shows both).
-        let (mut w, mut s) = world(1, 3, 0, 0, Lang::En);
+        let (mut w, mut s) = world(1, 3, 0, 1, Lang::En);
         let (mut alone, mut shared) = (None, None);
         for tick in 0..6000 {
             s.step(&mut w);
@@ -10469,12 +10671,14 @@ diff --git a/b.rs b/b.rs
 
     #[test]
     fn the_demo_s_cards_wait_on_others_and_a_held_assign_goes_once_they_are_done() {
-        let (mut w, mut s) = world(1, 3, 0, 4, Lang::En);
+        let (mut w, mut s) = world(1, 3, 0, 6, Lang::En);
         let mut began_early = Vec::new();
         for _ in 0..6000 {
             s.step(&mut w);
             answer_all(&mut w, &mut s);
             wake_stopped(&mut w, &mut s);
+            // The person lets a team that took its turns go on (record 146).
+            s.go_on();
             // Nothing waiting on a card not done has begun.
             for c in &w.cards {
                 if !matches!(c.column, Column::Waiting | Column::Withdrawn) && !w.ready(c.id) {

@@ -124,27 +124,101 @@ again (`stop_way`, `failed_way`), asks the person (`stop_ask` with two
 answers, no risk: it could not solve it), or lets it lie; a worker
 started again that stops again is asked about, never started twice.
 
+## Part 2, as built
+
+Part 2 itself went in two: 2a (this) is the stop of a whole team and
+four of its causes; the usage limit as one stop of the team and the
+leader's or a solo's hung or failed turn are 2b.
+
+**A stop of a whole team** (`halt.rs`): `Halt` Pot, Woken, Store, Lead,
+one `Stop` per project and halt (`World.halts`, memory only), with when
+it began and who waits behind it (`Behind`: an agent and its `Waits`:
+mail not delivered, a wake held, a retry, messages the bus refused, or
+that it can not report). The engine says each step what it holds back
+and why (`Held`), for only it sees its mail and wakes:
+`Live::held_back` (`live/halts.rs`) and `Sim::held_back`.
+`World::look_halts` makes the stops of that and of the world: the pot
+spent and something held by it; an agent at `MAX_WOKEN` (moved to
+`halt.rs`) with a wake held or a message refused; the project on Lonca
+with its store `Down` (not while still asking); the leader `Stopped`.
+A stop that begins is journaled (`Event::Halted`: `shop-api: the team
+stopped: the pot is spent · 3 wait behind it`), one that ends too
+(`Event::Unhalted`, with how long); one of a project closed goes unsaid.
+
+**What it holds back.** The bus counts each sender's waking messages
+refused for the pot or for the turns (`Live.held_sends`, reset when the
+person speaks): that sender waits behind the stop. When the pot has
+room again (`after_halts`) or the team may go on (`Live::go_on`, also
+what the person's word does), each such sender is woken (`lost`) to go
+on, for the message never went. Before, it stayed refused and nobody
+woke it.
+
+**Home** (A): `■ STOPPED  shop-api · the pot is spent · 3 wait behind
+it · 2 min` on the first line (`ui/halt.rs` `banner`, above record 145's
+line), and `HomeRow::Stop` rows first in TO DECIDE under the group
+`stopped` (`HomeGroup::Stopped`, the heading counts `1 stopped`); the
+row at hand ends with imece's choices as digits (S1, `Halt::choices`,
+the one that changes least first): the pot `1 raise by $50.00  2 raise
+by $20.00  3 rest here`, the turns `1 let it go on (12 more)`, Lonca `1
+look again now  2 open the Lonca window`, the leader `1 start lead
+again, where it left off` (`LEAD_AGAIN` to it as the person's word,
+which resumes its session). `3 rest here` and `s` put the row after
+everything else waiting (`App.rested`, forgotten when the stop is over);
+the line stays. `enter` opens what stopped: the Lonca window, else the
+leader's work. The preview names each agent behind it with what it
+waits with, and what each choice does. A leader that is the stop has no
+stuck row in AT WORK. The header puts ` ■` after the project and counts
+stops in `! N to decide` (`World::to_decide`, the title and the
+farewell too); the tab is stuck. A stop rings as an item does
+(`Note::Halt`, loud: `imece · shop-api stopped: the pot is spent`), a
+click lands on its row. The help's `W  S` row names `1-9`.
+
+The mock-up's `start lead fresh` is not built: a resume Claude Code
+refuses already starts afresh (record 20). The usage limit's line is
+2b.
+
+**The demo** mirrors it by the clock, so its dice and its scenarios stay
+as they were: every `CAP_EVERY` (900) ticks each team has taken its
+turns and its leader hands out nothing (`Extras.capped`, cleared by the
+person's word or `1`); every `LEAD_STOP_EVERY` (1,300) its leader's
+session ends; a spent pot tries no retry and holds the leader that
+would hand out and the free workers that would take a card. Two seeded
+tests took a new seed for it.
+
 ## The points of the list
 
 - **Growth**: one `Option<Block>` per agent (record 143's), one `bool`
-  and the short `World.stops`, emptied each step. No new item kind.
+  and the short `World.stops`, emptied each step. No new item kind. Part
+  2: at most four stops per open project, each listing its agents; two
+  counters per agent in `Live.held_sends`.
 - **Read cost**: `stood` and `stops_read` pass over the agents once,
-  at a stop or a leader's prompt, never per frame.
+  at a stop or a leader's prompt, never per frame. Part 2: `held_back`
+  and `look_halts` pass over the agents and the projects once a step;
+  a frame reads `World.halts` only.
 - **Ten times the scale**: at 160 agents a leader may be told several
   stops in one prompt; `MAX_WOKEN` and the pot still bound its turns, and
   a stop it lets lie still comes to the person.
 - **Migration**: no schema change. `Event::TurnFailed` is a new name in
   saved rows, and `Unblocked`/`StillBlocked` carry `what` with a default
   (`Said`), so older rows read as before; an older imece cannot read a
-  store that holds the new event.
+  store that holds the new event. Part 2: `Event::Halted` and
+  `Event::Unhalted` are new names too, with the same rule; nothing else
+  is saved.
 - **Failure**: the block and `revived` are memory only. After a restart
   a stopped worker is asleep with its session remembered, as before, and
   its leader is not told again; one that came to the person is an inbox
   item and comes back, worded as a `blocked` (its `what` is gone).
 
-## Gaps (part 1)
+## Gaps
 
-- Parts 2-4 above are not built.
+- Part 2b (the usage limit as one stop of the team, not one item per
+  agent after three retries each; the leader's and a solo's hung or
+  failed turn), part 3 and part 4 are not built.
+- Part 2a: the stops are memory only; after a start the engine finds
+  them again at its first step. `W` does not come to a stop (it walks
+  the inbox); Home lists it first. A card offer skipped for the turns is
+  not counted behind the stop. `--demo-live` (the stand-in) does not
+  reach the pot or the turns by itself.
 - A helper's or a researcher's stop is not followed here: a helper's is
   told to its worker as before (`helper_lost`).
 - Prompts queued while a session started and then failed are still

@@ -211,6 +211,10 @@ fn decide_heading(app: &App, listed: &Listed) -> Line<'static> {
     let t = app.lang.text();
     let w = &app.world;
     let mut spans = vec![Span::styled(format!(" {} ", t.home_turn), bold(pal().warn))];
+    let stopped = match listed.many(HomeGroup::Stopped) {
+        0 => None,
+        n => Some(counted(n, t.halt_count)),
+    };
     let counts: Vec<String> = [
         HomeGroup::Permission,
         HomeGroup::Question,
@@ -226,7 +230,7 @@ fn decide_heading(app: &App, listed: &Listed) -> Line<'static> {
         n => Some(fill(many, &[&n.to_string()])),
     })
     .collect();
-    let mut words = counts;
+    let mut words: Vec<String> = stopped.into_iter().chain(counts).collect();
     // What `:clear` took off the list, still open (record 90).
     let hidden = w.hidden_inbox();
     if hidden > 0 {
@@ -278,6 +282,7 @@ fn group_line(app: &App, group: HomeGroup, listed: &Listed, width: usize) -> Lin
     let t = app.lang.text();
     let w = &app.world;
     let word = match group {
+        HomeGroup::Stopped => t.halt_group,
         HomeGroup::Permission => t.home_groups[0],
         HomeGroup::Question => t.home_groups[1],
         HomeGroup::Change => t.home_groups[2],
@@ -295,7 +300,7 @@ fn group_line(app: &App, group: HomeGroup, listed: &Listed, width: usize) -> Lin
                         item.kind == InboxKind::Change
                             && w.verdict(item.agent).is_some_and(|v| v.ready)
                     }
-                    HomeRow::Agent(_) | HomeRow::Project(_) => false,
+                    HomeRow::Agent(_) | HomeRow::Project(_) | HomeRow::Stop(..) => false,
                 })
                 .count();
             (ready > 0).then(|| fill(t.home_ready, &[&ready.to_string()]))
@@ -416,9 +421,11 @@ fn list_drawn(app: &App, width: usize, stacked: bool, at: Option<HomeRow>) -> Dr
         }
         at_lines = at_lines.map(|(from, to)| (from + 1, to + 1));
     }
-    // What is finished in view is said first (record 145), and when
-    // nothing is listed under it, it has said that nothing is left.
-    let done = round::banner(app, width);
+    // What stops a team is said first (record 146), then what is
+    // finished in view (record 145); when nothing is listed under that,
+    // it has said that nothing is left.
+    let mut done = halt::banner(app, width);
+    done.extend(round::banner(app, width));
     if listed.rows.is_empty() && !round::in_home(app).is_some_and(|f| f.all()) {
         // Whole: wrapped to the width, never cut.
         for row in overlay::wrap_words(t.home_nothing, width.saturating_sub(1).max(1)) {
@@ -469,7 +476,7 @@ fn card_of(w: &World, row: HomeRow) -> Option<&Card> {
     let id = match row {
         HomeRow::Item(i) => (w.inbox[i].card).or(w.agents[w.inbox[i].agent].card),
         HomeRow::Agent(a) => w.agents[a].card,
-        HomeRow::Project(_) => None,
+        HomeRow::Project(_) | HomeRow::Stop(..) => None,
     };
     id.and_then(|c| w.cards.get(c))
 }
@@ -478,7 +485,7 @@ fn card_of(w: &World, row: HomeRow) -> Option<&Card> {
 /// person's line it works on with no card yet (record 126), else the
 /// agent's name; a project's heading its name.
 fn title_of(w: &World, row: HomeRow) -> String {
-    if let HomeRow::Project(p) = row {
+    if let HomeRow::Project(p) | HomeRow::Stop(p, _) = row {
         return clean(&w.projects[p].name);
     }
     let change = match row {
@@ -511,7 +518,7 @@ fn agent_of(w: &World, row: HomeRow) -> AgentId {
     match row {
         HomeRow::Item(i) => w.inbox[i].agent,
         HomeRow::Agent(a) => a,
-        HomeRow::Project(p) => w.projects[p].leader,
+        HomeRow::Project(p) | HomeRow::Stop(p, _) => w.projects[p].leader,
     }
 }
 
@@ -770,8 +777,9 @@ fn row_keys(app: &App) -> Vec<Span<'static>> {
             _ => vec![("a", t.home_yes), ("r", t.home_no)],
         },
         Some(HomeRow::Agent(_)) => vec![("enter", t.home_open)],
-        // A heading decides nothing: the status line has its keys.
-        Some(HomeRow::Project(_)) | None => Vec::new(),
+        // A heading decides nothing: the status line has its keys. A
+        // stop's row draws its own (`halt::row`).
+        Some(HomeRow::Project(_) | HomeRow::Stop(..)) | None => Vec::new(),
     };
     let mut spans = hint_spans(&keys);
     for s in &mut spans {
@@ -836,15 +844,19 @@ fn row_lines(
     if let HomeRow::Project(p) = row {
         return vec![project_row(app, p, here)];
     }
+    if let HomeRow::Stop(p, halt) = row {
+        let title_width = TITLE.min(width.saturating_sub(40)).max(TITLE_MIN);
+        return halt::row(app, p, halt, width, narrow, here, title_width);
+    }
     let agent = &w.agents[agent_of(w, row)];
     let (glyph, colour) = match row {
         HomeRow::Agent(_) => glyph(agent),
-        HomeRow::Item(_) | HomeRow::Project(_) => ("!", pal().warn),
+        HomeRow::Item(_) | HomeRow::Project(_) | HomeRow::Stop(..) => ("!", pal().warn),
     };
     let tail = match row {
         HomeRow::Item(i) => item_tail(app, i),
         HomeRow::Agent(id) => agent_tail(app, id, glyph),
-        HomeRow::Project(_) => unreachable!("a heading is its own row"),
+        HomeRow::Project(_) | HomeRow::Stop(..) => unreachable!("a heading is its own row"),
     };
     let mut head = vec![Span::styled(
         if here { "▸" } else { " " },
@@ -859,7 +871,7 @@ fn row_lines(
     // A working row's glyph breathes as the team's did (record 84).
     let glyph_style = match row {
         HomeRow::Agent(id) => glyph_style(app, agent, app.rungs()[id], colour),
-        HomeRow::Item(_) | HomeRow::Project(_) => fg(colour),
+        HomeRow::Item(_) | HomeRow::Project(_) | HomeRow::Stop(..) => fg(colour),
     };
     head.push(Span::styled(glyph, glyph_style));
     head.push(Span::raw(" "));
@@ -1318,6 +1330,9 @@ pub(crate) fn block_question_lines(
 
 /// What a row holds, read without a key: a heading, then what it is.
 fn preview_lines(app: &App, row: HomeRow, room: usize, rows: usize) -> Vec<Line<'static>> {
+    if let HomeRow::Stop(p, halt) = row {
+        return halt::preview(app, p, halt, room);
+    }
     let w = &app.world;
     let t = app.lang.text();
     let id = agent_of(w, row);
@@ -1399,6 +1414,7 @@ fn preview_lines(app: &App, row: HomeRow, room: usize, rows: usize) -> Vec<Line<
             }
         }
         HomeRow::Agent(_) => agent_lines(app, id, &mut lines, room, rows),
+        HomeRow::Stop(..) => {}
     }
     lines
 }

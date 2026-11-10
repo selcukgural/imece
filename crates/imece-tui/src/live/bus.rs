@@ -197,9 +197,11 @@ impl Live {
             });
         }
         if kind.wakes() && self.over_budget(w) {
+            self.held_sends[from][0] += 1;
             return Err("the budget is spent; nobody takes new turns".into());
         }
         if kind.wakes() && self.woken[to] >= MAX_WOKEN {
+            self.held_sends[from][1] += 1;
             return Err(format!(
                 "{name} took {MAX_WOKEN} turns on messages since the person last spoke; \
                  stop and tell the person what you need"

@@ -36,7 +36,8 @@ Ana ekran, imece'nin açıldığı ve karar verdiğiniz ekrandır; `:home` geri 
 
 | Grup | İçindekiler |
 | --- | --- |
-| KARAR BEKLEYEN | her türü sayar: `1 izin · 2 soru · 3 değişiklik · 1 yanıt · 1 ertelenen` |
+| KARAR BEKLEYEN | her türü sayar: `1 durdu · 1 izin · 2 soru · 3 değişiklik · 1 yanıt · 1 ertelenen` |
+| durdu | bütün bir ekibi durduran şey, her şeyden önce: [bütün ekip durunca](#butun-ekip-durunca) |
 | izinler | her biri tek tuş: bir ajanın çalıştırmak istediği komut, worktree kurulum betiği, deponun kontrolü. Satır neyin çalışacağını söyler: `.imece/check değişikliklerinde çalışsın mı?` ve ardından betiğin komutları (yorum olmayan satırları; `enter` her baytını gösterir) |
 | sorular | okuyup yanıtlanacaklar: bir ajanın sorusu bütün olarak, altında sunduğu yanıtlarla (`1`-`9` birini seçer, `/` kendinizinkini yazar: [sorular](../concepts/approvals-and-questions.md#sorular-)), bir araştırmacının raporu, bir API hatası, liderin planı; liderin size sorduğu bir takılma (satır takılan işindir: `claude-2 takıldı · lead soruyor: …`) ya da kendi hâline bıraktığı bir takılma (`takıldı: … · lead çözmedi`): [takılan işçi](../concepts/messages-and-board.md#takılan-işçi) |
 | değişiklikler | okunacak bir diff: `✓ dotnet build · ✓ dotnet test · 2 dosya +4 −2 · 1 kartın dışında (#51): Money.cs` — başı olmadan [hüküm](changes.md#yamanın-üstündekiler): ağacında kanıtlanan (çalıştıysa deponun kontrolü, sonra imece'nin çalıştırmaları, yoksa `hiçbir şey koşmadı`), kartının sahip olduğu yollara göre dosyalar ve satırlar, bekleyen hangi başka değişiklikle çakıştığı, onayından sonra Lonca'nın ne çalıştıracağı. Hazır olanlar (temiz kanıtlanmış, yollarının içinde, çakışmayan, uyan, bütün) önce gelir; grubun satırı onları sayar, `2 onaya hazır` |
@@ -68,6 +69,30 @@ Hepsi bitti: sizi bekleyen de yok. Başlıkta projenin adının yanına `✓` ge
 Başarısız olan ya da geri çekilen bir kart satırı engellemez ve her zaman satırda sayılır, başarısız olan kırmızıyla. Rakamlar turundur: projenin en son açık kartı kalmadığı andan sonra açılan kartlar, onların denemelerinin tuttuğu para (liderin kendi harcaması içinde değildir) ve ilk karttan sonuncunun bitişine kadar geçen süre. Yeni bir kart durumu bitirir ve, hepsi bittikten sonra, sıradaki turu başlatır. Birden çok proje görünürken satır onları birlikte sayar (`2 proje · 9 kart …`) ve ancak kartı olan her ekip bitirdiğinde gelir; `[` `]` tek projeye daraltır. Ekrana sığmayan satır kesilmez, altına devam eder. Bir solonun böyle bir satırı yoktur: ona kart dağıtan yoktur.
 
 Değişikliği evetinizi bekleyen bir karta bağlı bir kart hâlâ bekliyorsa bir şey söylenmez: o kart başlamamıştır, yani ekip bitirmemiştir.
+
+## Bütün ekip durunca {#butun-ekip-durunca}
+
+Bazı duruşları lider çözemez: bütçe bitmiştir, ekip siz son yazdığınızdan beri birbirinin iletileriyle 12 turunu almıştır, Lonca yanıt vermiyordur, liderin kendi oturumu sona ermiştir. Her biri doğrudan size gelir, projesinin tek bir duruşu olarak: ana ekranın ilk satırında ve KARAR BEKLEYEN'de en üstte bir satır olarak, arkasında kimin beklediğiyle ve imece'nin kendi seçenekleri rakamlarla.
+
+```
+ ■ DURDU  shop-api · bütçe bitti · arkasında 3 iş bekliyor · 2 dk
+
+ KARAR BEKLEYEN 1 durdu · 1 değişiklik
+ durdu
+▸■      shop-api                  bütçe bitti · $200.00 / $200.00 · arkasında 3 iş bekliyor
+                                  1  $50.00 artır   2  $20.00 artır   3  burada kalsın
+```
+
+| Duruş | Ne zaman | Seçenekler |
+| --- | --- | --- |
+| `bütçe bitti` | bütçe bitmiştir ve ona bekleyen bir şey vardır: teslim edilmemiş ileti, alınmamış bir uyandırma ya da yeniden deneme, otobüsün reddettiği bir ileti | `1` $50 artır, `2` $20 artır, `3` burada kalsın (satır bekleyen her şeyin ardına geçer, üstteki satır kalır); başka bir tutar için `:budget USD` |
+| `sen son yazdığından beri ekip iletilerle 12 tur aldı` | bir ajan takım arkadaşlarının iletileriyle 12 turunu almıştır ve ona bekleyen bir şey vardır: bir uyandırma, otobüsün reddettiği bir ileti | `1` sürsün (12 tur daha); ekipten herhangi birine yazmak da aynısını yapar |
+| `Lonca yanıt vermiyor` | proje Lonca'dadır ve daemon'ı yanıt vermiyordur, oturumu kapalıdır ya da depo dondurulmuştur (satır nedenini söyler) | `1` şimdi yeniden bak, `2` [Lonca penceresini](../concepts/projects.md#loncada) aç |
+| `lead oturumu sona erdi` | liderin oturumu sona ermiştir; işçileri ona ulaşamaz | `1` kaldığı yerden yeniden başlasın |
+
+Önizleme arkasında kimin, neyle beklediğini (`2 ileti ona teslim edilmedi`, `API hatasından sonraki yeniden denemesi`, `lead ile konuşamıyor`) ve her seçeneğin ne yaptığını söyler. `enter` durduran şeyi açar (Lonca penceresini, yoksa liderin işini), `s` onu `3` gibi bekletir. Başlık projeyi `■` ile işaretler ve duruşu `! N karar`'a sayar; sekme takılmış gösterir. Başka bir penceredeyseniz [`:notify`](../reference/commands.md#notify-offbelltextpush) bunu bir kez, yüksek sesle söyler: `imece · shop-api durdu: bütçe bitti`. Günlük, ekibin ne zaman durduğunu ve ne zaman yeniden sürdüğünü yazar (`shop-api: ekip 4 dk sonra sürüyor: bütçede yine yer var`).
+
+imece bunların hiçbirini kendiliğinden kaldırmaz: bütçeyi artırmaz, ekibi sürdürmez, lideri sorulmadan başlatmaz. Duran bir lider duruşun satırıdır; çalışanlar arasında takılmış bir satır değil.
 
 ## Liderin satırı
 
