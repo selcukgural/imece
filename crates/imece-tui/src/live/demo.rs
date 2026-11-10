@@ -26,7 +26,10 @@ const HELPERS: usize = 2;
 /// a percent of the plan's five-hour window, in millionths of a dollar
 /// (a cent, so a dollar fills it; the week's takes four), and the tokens
 /// a message adds to a session's context (a worker's second assign
-/// compacts it).
+/// compacts it); into how many cards a leader cuts the person's task (one
+/// more than the workers it may hire by default, so the plan gate holds
+/// the second hire and the last card goes on the board), and one assign
+/// in how many of a card that owns paths changes a file outside them.
 const PAUSE: u64 = 1_500;
 const ASKS: u64 = 3;
 const QUESTIONS: u64 = 4;
@@ -34,6 +37,8 @@ const HIRES: u64 = 3;
 const FAULTS: u64 = 8;
 const LIMIT: u64 = 10_000;
 const FILL: u64 = 3_000;
+const CARDS: u64 = 4;
+const STRAYS: u64 = 3;
 
 /// How the demo's stand-ins work, their choices seeded by `seed`.
 fn habits(seed: u64) -> Habits {
@@ -45,6 +50,8 @@ fn habits(seed: u64) -> Habits {
         faults: FAULTS,
         limit: LIMIT,
         fill: FILL,
+        cards: CARDS,
+        strays: STRAYS,
         seed,
     }
 }
@@ -307,7 +314,9 @@ mod tests {
                 faults: 8,
                 limit: 10_000,
                 fill: 3_000,
-                seed: 9
+                cards: 4,
+                strays: 3,
+                seed: 9,
             }
         );
     }

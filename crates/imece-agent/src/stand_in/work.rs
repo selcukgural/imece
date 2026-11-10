@@ -10,6 +10,10 @@
 //! turn, and goes on when the helper says done (or does them itself when
 //! the helper stops first); the helper notes them in the test file, runs
 //! them and tells its worker.
+//! A card that owns paths (record 114) is done in the files it owns, and
+//! sometimes the worker changes one file more, outside them, and says so
+//! in its `done`. Offered the board's open cards, it takes the first with
+//! `claim` and does it as an assign.
 //! A directory with nothing to change gets the task written in a file of
 //! its own. Its commands are never run: what they say is made up.
 
@@ -45,6 +49,8 @@ pub const HELPERS_VAR: &str = "IMECE_STAND_IN_HELPERS";
 pub const FAULTS_VAR: &str = "IMECE_STAND_IN_FAULTS";
 pub const LIMIT_VAR: &str = "IMECE_STAND_IN_LIMIT";
 pub const FILL_VAR: &str = "IMECE_STAND_IN_FILL";
+pub const CARDS_VAR: &str = "IMECE_STAND_IN_CARDS";
+pub const STRAYS_VAR: &str = "IMECE_STAND_IN_STRAYS";
 
 /// Of the turns that fail at Claude's API, one in this many is the
 /// account's (it waits for the person); the rest pass (imece tries them
@@ -90,8 +96,11 @@ pub const WROTE_TESTS: &str = "Wrote the tests in ";
 /// of the sessions' spending is a percent of the plan's five-hour window
 /// (`limit` millionths of a dollar, four times that for the week's; at 0
 /// no window is said), the tokens each message adds to a session's
-/// context (`fill`; at 0 a tenth of [`super::CONTEXT_TURN`]), and the seed
-/// of its choices.
+/// context (`fill`; at 0 a tenth of [`super::CONTEXT_TURN`]), into how
+/// many cards a leader cuts the person's task (`cards`; under 2 the task
+/// goes whole to one worker), how often a worker whose card owns paths
+/// changes a file outside them (one assign in `strays`, never at 0), and
+/// the seed of its choices.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Habits {
     pub pause: Duration,
@@ -101,6 +110,8 @@ pub struct Habits {
     pub faults: u64,
     pub limit: u64,
     pub fill: u64,
+    pub cards: u64,
+    pub strays: u64,
     pub seed: u64,
 }
 
@@ -121,6 +132,8 @@ impl Habits {
             faults: n(FAULTS_VAR),
             limit: n(LIMIT_VAR),
             fill: n(FILL_VAR),
+            cards: n(CARDS_VAR),
+            strays: n(STRAYS_VAR),
             seed: n(SEED_VAR),
         }
     }
@@ -129,7 +142,7 @@ impl Habits {
     pub fn vars(&self) -> String {
         format!(
             "{PAUSE_VAR}={} {ASKS_VAR}={} {QUESTIONS_VAR}={} {HELPERS_VAR}={} {FAULTS_VAR}={} \
-             {LIMIT_VAR}={} {FILL_VAR}={} {SEED_VAR}={}",
+             {LIMIT_VAR}={} {FILL_VAR}={} {CARDS_VAR}={} {STRAYS_VAR}={} {SEED_VAR}={}",
             self.pause.as_millis(),
             self.asks,
             self.questions,
@@ -137,6 +150,8 @@ impl Habits {
             self.faults,
             self.limit,
             self.fill,
+            self.cards,
+            self.strays,
             self.seed
         )
     }
@@ -166,6 +181,12 @@ impl Habits {
     /// tests, by other bits of it than the two above's.
     pub fn helps_now(&self, roll: u64) -> bool {
         self.helpers > 0 && (roll >> 32).is_multiple_of(self.helpers)
+    }
+
+    /// Whether the assign `roll` stands for changes a file its card does
+    /// not own, by the roll's bits from the 56th.
+    pub fn strays_now(&self, roll: u64) -> bool {
+        self.strays > 0 && (roll >> 56).is_multiple_of(self.strays)
     }
 
     /// The fault the turn `roll` stands for fails on at Claude's API, if
@@ -450,20 +471,123 @@ pub fn pick<'a>(files: &'a [String], task: &str, roll: u64) -> Option<(&'a str, 
         .filter(|f| score(f, &task) == best)
         .collect();
     let main = ties[(roll % ties.len() as u64) as usize];
+    Some((main, test_for(files, main)))
+}
+
+/// The test file of `files` to note a change to `main` in: the one that
+/// names most of its name's words, the first of equals; none when no
+/// test names one.
+pub fn test_for<'a>(files: &'a [String], main: &str) -> Option<&'a str> {
     let stem = Path::new(main)
         .file_stem()
         .map(|s| words(&s.to_string_lossy()))
         .unwrap_or_default();
-    let tests: Vec<&str> = (can.iter().copied())
-        .filter(|f| is_test(f) && *f != main)
+    let tests: Vec<&str> = (files.iter().map(String::as_str))
+        .filter(|f| editable(f) && is_test(f) && *f != main)
         .collect();
     let most = tests
         .iter()
         .map(|f| score(f, &stem))
         .max()
         .filter(|&m| m > 0);
-    let test = most.and_then(|m| tests.into_iter().find(|f| score(f, &stem) == m));
-    Some((main, test))
+    most.and_then(|m| tests.into_iter().find(|f| score(f, &stem) == m))
+}
+
+/// The files of `files` that are code (of a kind that has tests: no
+/// document, no settings), those that name most of `task`'s words first,
+/// equals in their order.
+pub fn code_for<'a>(files: &'a [String], task: &str) -> Vec<&'a str> {
+    let task = words(task);
+    let mut code: Vec<&str> = (files.iter().map(String::as_str))
+        .filter(|f| kind_of(f).test.is_some() && !is_test(f))
+        .collect();
+    code.sort_by_key(|f| std::cmp::Reverse(score(f, &task)));
+    code
+}
+
+/// How imece says what a card owns at the end of its task (`bus::owns`
+/// in the screen's crate), up to its paths and after them.
+pub const OWNS: &str = "\n\nThis card owns ";
+pub const OWNS_END: &str = ": stay in them";
+/// How it says the checks a card asks for (`bus::asks` there).
+pub const ASKS_CHECKS: &str = "\n\nThis card asks for ";
+
+/// The paths the card of task `task` owns, as imece listed them; none
+/// when it owns none.
+pub fn owned_of(task: &str) -> Vec<&str> {
+    let Some((_, rest)) = task.split_once(OWNS) else {
+        return Vec::new();
+    };
+    let Some((paths, _)) = rest.split_once(OWNS_END) else {
+        return Vec::new();
+    };
+    (paths.split(", "))
+        .map(|p| p.strip_suffix(" (shared)").unwrap_or(p))
+        .collect()
+}
+
+/// Task `task` as it was written: without what imece added on its card's
+/// paths and checks.
+pub fn plain(task: &str) -> &str {
+    let end = [OWNS, ASKS_CHECKS]
+        .iter()
+        .filter_map(|m| task.find(m))
+        .min();
+    &task[..end.unwrap_or(task.len())]
+}
+
+/// The file to change for `task` and its test file: the code and the
+/// test its card owns, when it owns a file that is there; else what
+/// [`pick`] finds.
+pub fn chosen<'a>(
+    files: &'a [String],
+    task: &str,
+    roll: u64,
+) -> Option<(&'a str, Option<&'a str>)> {
+    let owned = owned_of(task);
+    let mine = |test: bool| {
+        (files.iter().map(String::as_str))
+            .find(|f| owned.contains(f) && editable(f) && is_test(f) == test)
+    };
+    match mine(false) {
+        Some(main) => Some((main, mine(true))),
+        None => pick(files, plain(task), roll),
+    }
+}
+
+/// The file a worker whose card owns `owned` strays into: code a note
+/// can go in that the card does not own, by the roll's bits from the
+/// 60th; none when the card owns nothing or all of it.
+pub fn outside<'a>(files: &'a [String], owned: &[&str], roll: u64) -> Option<&'a str> {
+    if owned.is_empty() {
+        return None;
+    }
+    let out: Vec<&str> = (files.iter().map(String::as_str))
+        .filter(|f| editable(f) && !is_test(f) && !owned.contains(f))
+        .collect();
+    let n = u64::try_from(out.len()).ok().filter(|&n| n > 0)?;
+    Some(out[((roll >> 60) % n) as usize])
+}
+
+/// How the prompt that offers a worker the board's open cards begins
+/// (`board_prompt` in the screen's crate).
+pub const BOARD: &str = "Open cards on imece's board";
+
+/// The first card prompt `prompt` offers, by its number; none when it
+/// offers none.
+pub fn offered(prompt: &str) -> Option<u64> {
+    let (_, cards) = prompt.split_once(BOARD)?;
+    let line = cards.lines().find(|l| l.starts_with('#'))?;
+    line[1..].split(' ').next()?.parse().ok()
+}
+
+/// The task of a card taken, from `claim`'s answer `said`: what was
+/// posted, and what imece added on the card's paths and checks.
+pub fn claimed(said: &str) -> Option<String> {
+    let (_, rest) = said.split_once("):\n\n")?;
+    let (body, after) = rest.rsplit_once("\n\nWhen it is done, send ")?;
+    let (_, added) = after.split_once(" a done message.")?;
+    Some(format!("{body}{added}"))
 }
 
 /// What the stand-in's shell says for `command`.
@@ -585,8 +709,16 @@ impl Mind {
                 },
             };
         }
-        let Some(task) = body_of(prompt, "assign") else {
-            return "Nothing assigned to me.".into();
+        let task = match (body_of(prompt, "assign"), offered(prompt)) {
+            (Some(task), _) => task,
+            (None, Some(card)) => match hands.call("claim", json!({ "card": card })) {
+                Ok(said) => match claimed(&said) {
+                    Some(task) => task,
+                    None => return format!("I took #{card}, but could not read its task."),
+                },
+                Err(why) => return format!("I could not take #{card}: {why}"),
+            },
+            (None, None) => return "Nothing assigned to me.".into(),
         };
         self.worked += 1;
         let me = self.me.get("name").cloned().unwrap_or_default();
@@ -594,7 +726,7 @@ impl Mind {
         let habits = *hands.habits();
         let roll = roll(habits.seed, &me, self.worked);
         let files = hands.files();
-        let Some((main, _)) = pick(&files, &task, roll) else {
+        let Some((main, _)) = chosen(&files, &task, roll) else {
             return write_up(hands, &me, &lead, &task);
         };
         let list = List::made(hands);
@@ -647,11 +779,11 @@ impl Mind {
         let lead = self.lead_of();
         let roll = self.roll_now(hands);
         let files = hands.files();
-        let Some((main, test)) = pick(&files, task, roll) else {
+        let Some((main, test)) = chosen(&files, task, roll) else {
             return write_up(hands, &me, &lead, task);
         };
         list.begin(hands, 1);
-        if let Err(why) = append(hands, main, task) {
+        if let Err(why) = append(hands, main, plain(task)) {
             return format!("I could not change {main}: {why}");
         }
         list.mark(hands, 1, "completed");
@@ -691,7 +823,7 @@ impl Mind {
         }
         let roll = self.roll_now(hands);
         let files = hands.files();
-        let Some((main, test)) = pick(&files, &waiting.task, roll) else {
+        let Some((main, test)) = chosen(&files, &waiting.task, roll) else {
             return format!("I can no longer find what {helper} tested.");
         };
         let mut notes = said_note(waiting.said.as_deref());
@@ -719,12 +851,22 @@ impl Mind {
         hands: &mut impl Hands,
         task: &str,
         list: List,
-        changed: Vec<String>,
+        mut changed: Vec<String>,
         mut notes: Vec<String>,
     ) -> String {
         let lead = self.lead_of();
         let roll = self.roll_now(hands);
         let habits = *hands.habits();
+        let files = hands.files();
+        if habits.strays_now(roll)
+            && let Some(other) = outside(&files, &owned_of(task), roll)
+            && append(hands, other, plain(task)).is_ok()
+        {
+            changed.push(other.to_string());
+            notes.push(format!(
+                "Also changed {other}, which the card does not own."
+            ));
+        }
         list.mark(hands, 2, "completed");
         list.begin(hands, 3);
         if hands.has(crate::claude::SHELL_TOOL) {
@@ -848,7 +990,7 @@ fn hire_for(hands: &mut impl Hands, test: &str, main: &str, task: &str) -> Optio
         .next()
         .filter(|n| !n.is_empty())?
         .to_string();
-    let part = helper_task(test, main, task);
+    let part = helper_task(test, main, plain(task));
     let assign = json!({ "to": name, "type": "assign", "body": part });
     hands.call("send", assign).ok()?;
     Some(name)
@@ -858,7 +1000,7 @@ fn hire_for(hands: &mut impl Hands, test: &str, main: &str, task: &str) -> Optio
 /// file of its own, [`OUT_DIR`]`/<name>.md`, and a `done` that names it.
 fn write_up(hands: &mut impl Hands, me: &str, lead: &str, task: &str) -> String {
     let path = format!("{OUT_DIR}/{me}.md");
-    let text = format!("# {}\n\n{task}\n", first_line(task));
+    let text = format!("# {}\n\n{}\n", first_line(task), plain(task));
     if let Err(why) = hands.tool("Write", json!({ "file_path": path, "content": text })) {
         return format!("I could not write {path}: {why}");
     }
@@ -877,9 +1019,19 @@ mod tests {
 
     #[test]
     fn habits_come_from_their_variables_and_go_back_to_them() {
-        let vars = |[pause, asks, questions, helpers, faults, limit, fill, seed]: [&str; 8]| {
-            let [pause, asks, questions, helpers, faults, limit, fill, seed] =
-                [pause, asks, questions, helpers, faults, limit, fill, seed].map(String::from);
+        let vars = |v: [&str; 10]| {
+            let [
+                pause,
+                asks,
+                questions,
+                helpers,
+                faults,
+                limit,
+                fill,
+                cards,
+                strays,
+                seed,
+            ] = v.map(String::from);
             Habits::of(move |k| match k {
                 PAUSE_VAR => Some(pause.clone()),
                 ASKS_VAR => Some(asks.clone()),
@@ -888,11 +1040,13 @@ mod tests {
                 FAULTS_VAR => Some(faults.clone()),
                 LIMIT_VAR => Some(limit.clone()),
                 FILL_VAR => Some(fill.clone()),
+                CARDS_VAR => Some(cards.clone()),
+                STRAYS_VAR => Some(strays.clone()),
                 SEED_VAR => Some(seed.clone()),
                 _ => None,
             })
         };
-        let h = vars([" 1500 ", "3", "4", "5", "6", "7", "8", "42"]);
+        let h = vars([" 1500 ", "3", "4", "5", "6", "7", "8", "9", "10", "42"]);
         assert_eq!(
             h,
             Habits {
@@ -903,27 +1057,30 @@ mod tests {
                 faults: 6,
                 limit: 7,
                 fill: 8,
-                seed: 42
+                cards: 9,
+                strays: 10,
+                seed: 42,
             }
         );
         assert_eq!(
             h.vars(),
             "IMECE_STAND_IN_PAUSE_MS=1500 IMECE_STAND_IN_ASKS=3 IMECE_STAND_IN_QUESTIONS=4 \
              IMECE_STAND_IN_HELPERS=5 IMECE_STAND_IN_FAULTS=6 IMECE_STAND_IN_LIMIT=7 \
-             IMECE_STAND_IN_FILL=8 IMECE_STAND_IN_SEED=42"
+             IMECE_STAND_IN_FILL=8 IMECE_STAND_IN_CARDS=9 IMECE_STAND_IN_STRAYS=10 \
+             IMECE_STAND_IN_SEED=42"
         );
         assert_eq!(Habits::of(|_| None), Habits::default());
         assert_eq!(
-            vars(["x", "-1", "y", "z", "f", "l", "c", ""]),
+            vars(["x", "-1", "y", "z", "f", "l", "c", "k", "s", ""]),
             Habits::default(),
             "not numbers: 0"
         );
         assert_eq!(
-            vars(["10000", "0", "0", "0", "0", "0", "0", "0"]).pause,
+            vars(["10000", "0", "0", "0", "0", "0", "0", "0", "0", "0"]).pause,
             Duration::from_millis(10_000)
         );
         assert_eq!(
-            vars(["10001", "0", "0", "0", "0", "0", "0", "0"]).pause,
+            vars(["10001", "0", "0", "0", "0", "0", "0", "0", "0", "0"]).pause,
             Duration::from_millis(PAUSE_MOST),
             "at most"
         );
@@ -1901,5 +2058,236 @@ mod tests {
             Mind::default().turn(&mut f, &part(&task)),
             "Wrote the tests in tests/MoneyTests.cs, but claude-1 did not hear: gone"
         );
+    }
+
+    const OWNING: &str = "src/alpha.rs: Round up\nwell\n\nThis card owns src/alpha.rs, src/alpha_test.rs \
+        (shared): stay in them; what else needs changing goes in your done, or ask for the \
+        card to be widened.\n\nThis card asks for Lonca's checks api: once";
+
+    #[test]
+    fn a_task_says_what_its_card_owns_and_is_plain_without_what_imece_added() {
+        assert_eq!(owned_of(OWNING), ["src/alpha.rs", "src/alpha_test.rs"]);
+        assert_eq!(plain(OWNING), "src/alpha.rs: Round up\nwell");
+        assert_eq!(owned_of("Round up"), [""; 0]);
+        assert_eq!(plain("Round up"), "Round up");
+        // Half of imece's words is not its words; the checks alone end
+        // the task too.
+        assert_eq!(owned_of("x\n\nThis card owns a.rs, b.rs"), [""; 0]);
+        assert_eq!(owned_of("x This card owns a.rs: stay in them"), [""; 0]);
+        assert_eq!(plain("x\n\nThis card asks for Lonca's checks api"), "x");
+        assert_eq!(
+            plain("x\n\nThis card asks for y\n\nThis card owns a: stay in them"),
+            "x",
+            "whichever comes first"
+        );
+    }
+
+    #[test]
+    fn a_card_s_own_files_are_chosen_before_what_the_task_names() {
+        let files = owned(&[
+            "src/alpha.rs",
+            "src/alpha_test.rs",
+            "src/beta.rs",
+            "src/beta_test.rs",
+            "b.json",
+        ]);
+        // The task names b; the card owns a and its test.
+        let task = "beta beta_test\n\nThis card owns src/alpha_test.rs, src/alpha.rs: stay in them";
+        assert_eq!(
+            chosen(&files, task, 0),
+            Some(("src/alpha.rs", Some("src/alpha_test.rs")))
+        );
+        // Code alone: no test; a test alone, a file that is not there or
+        // one no note can go in: what the task names.
+        let task = "beta\n\nThis card owns src/alpha.rs: stay in them";
+        assert_eq!(chosen(&files, task, 0), Some(("src/alpha.rs", None)));
+        for own in ["src/alpha_test.rs", "src/gone.rs", "b.json"] {
+            let task = format!("beta.rs\n\nThis card owns {own}: stay in them");
+            assert_eq!(
+                chosen(&files, &task, 0),
+                Some(("src/beta.rs", Some("src/beta_test.rs"))),
+                "{own}"
+            );
+        }
+        assert_eq!(chosen(&files, "beta.rs", 0), pick(&files, "beta.rs", 0));
+    }
+
+    #[test]
+    fn the_code_for_a_task_is_what_it_names_best_first_and_a_test_names_its_file() {
+        let files = owned(&[
+            "a.json",
+            "docs/gamma.md",
+            "src/alpha.rs",
+            "src/beta.rs",
+            "src/gamma.rs",
+            "tests/beta_test.rs",
+        ]);
+        assert_eq!(
+            code_for(&files, "the gamma and beta of src/gamma"),
+            ["src/gamma.rs", "src/beta.rs", "src/alpha.rs"],
+            "gamma twice and src, beta and src, src; no test, no JSON, no document"
+        );
+        assert_eq!(test_for(&files, "src/beta.rs"), Some("tests/beta_test.rs"));
+        assert_eq!(test_for(&files, "src/alpha.rs"), None);
+        assert_eq!(test_for(&files, "tests/beta_test.rs"), None, "not itself");
+        let json = owned(&["money.rs", "money_test.json"]);
+        assert_eq!(test_for(&json, "money.rs"), None, "no note goes in JSON");
+    }
+
+    #[test]
+    fn a_stray_goes_into_code_the_card_does_not_own_by_the_roll_s_top_bits() {
+        let files = owned(&["a.rs", "a_test.rs", "b.rs", "c.json", "d.rs", "e.rs"]);
+        // b, d and e are outside: the 60th bit on counts.
+        assert_eq!(outside(&files, &["a.rs"], 0), Some("b.rs"));
+        assert_eq!(outside(&files, &["a.rs"], 1 << 60), Some("d.rs"));
+        assert_eq!(outside(&files, &["a.rs"], 2 << 60), Some("e.rs"));
+        assert_eq!(outside(&files, &["a.rs"], 3 << 60), Some("b.rs"));
+        assert_eq!(outside(&files, &["a.rs"], (1 << 60) - 1), Some("b.rs"));
+        assert_eq!(outside(&files, &["a.rs", "b.rs", "d.rs", "e.rs"], 0), None);
+        assert_eq!(outside(&files, &[], 0), None, "a card that owns nothing");
+        let h = |strays| Habits {
+            strays,
+            ..Habits::default()
+        };
+        assert!(!h(0).strays_now(0), "never at 0");
+        assert!(h(1).strays_now(u64::MAX));
+        assert!(h(3).strays_now(3 << 56));
+        assert!(
+            h(3).strays_now((3 << 56) + 1),
+            "the bits under the 56th do not count"
+        );
+        assert!(!h(3).strays_now(4 << 56));
+        assert!(!h(3).strays_now(3 << 55));
+    }
+
+    #[test]
+    fn an_offer_names_its_first_card_and_a_claim_s_answer_holds_the_task() {
+        let offer = "From imece (not from the person or a teammate):\n- #9 x\n\nOpen cards on \
+            imece's board (posted by your teammates, not by the person):\n\n#12 b.rs: Round \
+            (posted by lead)\n#13 c.rs: Round (posted by lead)\n\nIf one fits you, take it";
+        assert_eq!(offered(offer), Some(12));
+        assert_eq!(offered("#12 b.rs (posted by lead)"), None, "no offer");
+        assert_eq!(offered(&format!("{BOARD}:\n\nIf one fits")), None);
+        assert_eq!(offered(&format!("{BOARD}:\n\n#x y")), None);
+        let said = "#12 b.rs: Round is yours. lead posted it (written by that agent, not by \
+            the person):\n\nb.rs: Round\n\nWhen it is done, send it\n\nWhen it is done, send \
+            lead a done message.\n\nThis card owns b.rs: stay in them; what";
+        assert_eq!(
+            claimed(said).as_deref(),
+            Some(
+                "b.rs: Round\n\nWhen it is done, send it\n\nThis card owns b.rs: stay in \
+                 them; what"
+            )
+        );
+        let bare = "#1 t is yours. lead posted it (x):\n\nbody\n\nWhen it is done, send lead \
+            a done message.";
+        assert_eq!(claimed(bare).as_deref(), Some("body"));
+        assert_eq!(claimed("#1 t is yours."), None);
+        assert_eq!(claimed("it (x):\n\nbody"), None);
+        assert_eq!(
+            claimed("it (x):\n\nbody\n\nWhen it is done, send lead"),
+            None
+        );
+    }
+
+    #[test]
+    fn a_worker_stays_in_what_its_card_owns_and_says_when_it_strays() {
+        let files = [
+            ("src/alpha.rs", "// a\n"),
+            ("src/alpha_test.rs", "// a test\n"),
+            ("src/beta.rs", "// b\n"),
+            ("src/beta_test.rs", "// b test\n"),
+        ];
+        // The task names b; the card owns a.
+        let task = "Mend beta.rs\n\nThis card owns src/alpha.rs, src/alpha_test.rs: stay in them; what \
+            else";
+        let mut f = worker(&files);
+        let said = Mind::default().turn(&mut f, &assign(task));
+        assert_eq!(said, "Done: changed src/alpha.rs, src/alpha_test.rs.");
+        assert_eq!(
+            f.files["src/alpha.rs"], "// a\n// Mend beta.rs\n",
+            "imece's words stay out"
+        );
+        assert_eq!(f.files["src/beta.rs"], "// b\n");
+        assert_eq!(
+            f.calls[1].1["body"],
+            "Mend beta.rs\n\nChanged src/alpha.rs, src/alpha_test.rs.\ncargo test: All 12 tests passed."
+        );
+        // Every assign strays: one file more, outside, before the tests
+        // run, and the done says so.
+        let mut f = worker(&files);
+        f.habits.strays = 1;
+        let said = Mind::default().turn(&mut f, &assign(task));
+        assert_eq!(
+            said,
+            "Done: changed src/alpha.rs, src/alpha_test.rs, src/beta.rs."
+        );
+        assert_eq!(f.files["src/beta.rs"], "// b\n// Mend beta.rs\n");
+        assert_eq!(f.files["src/beta_test.rs"], "// b test\n");
+        assert_eq!(
+            f.calls[1].1["body"],
+            "Mend beta.rs\n\nChanged src/alpha.rs, src/alpha_test.rs, src/beta.rs.\nAlso changed src/beta.rs, \
+             which the card does not own.\ncargo test: All 12 tests passed."
+        );
+        let writes: Vec<(String, String)> = (used(&f).into_iter())
+            .filter(|(t, _)| t == "Edit" || t == "Bash")
+            .collect();
+        assert_eq!(
+            writes,
+            pairs(&[
+                ("Edit", "src/alpha.rs"),
+                ("Edit", "src/alpha_test.rs"),
+                ("Edit", "src/beta.rs"),
+                ("Bash", "cargo test"),
+            ])
+        );
+        // A card that owns nothing has no outside; an edit refused is
+        // not said.
+        let mut f = worker(&files);
+        f.habits.strays = 1;
+        let said = Mind::default().turn(&mut f, &assign("Mend beta.rs"));
+        assert_eq!(said, "Done: changed src/beta.rs, src/beta_test.rs.");
+        assert_eq!(f.files["src/alpha.rs"], "// a\n");
+    }
+
+    #[test]
+    fn a_worker_offered_the_board_takes_the_first_card_and_does_it() {
+        let offer = format!("{BOARD} (posted by your teammates):\n\n#7 b.rs (posted by lead)\n");
+        let mut f = worker(&[("src/alpha.rs", "// a\n"), ("src/beta.rs", "// b\n")]);
+        f.answers.insert(
+            "claim".into(),
+            Ok(
+                "#7 b.rs is yours. lead posted it (x):\n\nMend it\n\nWhen it is done, send \
+                lead a done message.\n\nThis card owns src/beta.rs: stay in them; what"
+                    .into(),
+            ),
+        );
+        let mut m = Mind::default();
+        assert_eq!(m.turn(&mut f, &offer), "Done: changed src/beta.rs.");
+        assert_eq!(m.worked, 1);
+        assert_eq!(f.calls[1], ("claim".into(), json!({ "card": 7 })));
+        assert_eq!(f.files["src/beta.rs"], "// b\n// Mend it\n");
+        assert_eq!(f.calls[2].1["to"], "lead");
+        // An assign in the same prompt comes first; a claim refused or
+        // an answer it can not read: said, nothing done.
+        let both = format!("{}\n{offer}", assign("Mend a.rs"));
+        let mut f = worker(&[("src/alpha.rs", "// a\n")]);
+        assert_eq!(
+            Mind::default().turn(&mut f, &both),
+            "Done: changed src/alpha.rs."
+        );
+        assert!(f.calls.iter().all(|(t, _)| t != "claim"));
+        let mut f = worker(&[("src/alpha.rs", "// a\n")]);
+        f.answers.insert("claim".into(), Err("#7 was taken".into()));
+        let mut m = Mind::default();
+        assert_eq!(m.turn(&mut f, &offer), "I could not take #7: #7 was taken");
+        assert_eq!((m.worked, f.used.len()), (0, 0));
+        let mut f = worker(&[("src/alpha.rs", "// a\n")]);
+        f.answers.insert("claim".into(), Ok("yours".into()));
+        assert_eq!(
+            Mind::default().turn(&mut f, &offer),
+            "I took #7, but could not read its task."
+        );
+        assert!(f.used.is_empty());
     }
 }

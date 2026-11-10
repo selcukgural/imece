@@ -569,3 +569,167 @@ fn the_plan_s_windows_fill_with_every_session_s_turns_and_a_full_context_compact
     let _ = std::fs::remove_dir_all(&dir);
     let _ = std::fs::remove_dir_all(&repo);
 }
+
+#[test]
+fn the_stand_in_reads_imece_s_words_as_imece_writes_them() {
+    use imece_agent::stand_in::{lead, work};
+    assert!(PLAN_YES.starts_with(lead::PLAN_YES));
+    assert!(PLAN_NO.starts_with(lead::PLAN_NO));
+    assert_eq!(GO_ON, lead::GO_ON);
+    assert_eq!(MAX_TITLE, lead::TITLE_MAX);
+    let w = team(0);
+    assert!(prompts::board_prompt(&w, &[]).starts_with(work::BOARD));
+    let owned = crate::paths::parse(&serde_json::json!(["a.rs", "docs shared"])).unwrap();
+    let task = format!("Mend it{}{}", bus::owns(&owned), bus::asks(&["api".into()]));
+    assert_eq!(work::owned_of(&task), ["a.rs", "docs"]);
+    assert_eq!(work::plain(&task), "Mend it");
+    assert_eq!(
+        work::plain(&format!("Mend it{}", bus::asks(&["api".into()]))),
+        "Mend it"
+    );
+}
+
+#[test]
+fn a_leader_plans_its_cards_hands_them_out_at_the_yes_and_a_worker_takes_one_from_the_board() {
+    let dir = std::env::temp_dir().join(format!("imece-e2e-plan-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let repo = checkout("e2e-plan-repo");
+    std::fs::remove_file(repo.join("a.txt")).unwrap();
+    std::fs::create_dir_all(repo.join("src")).unwrap();
+    for (file, text) in [
+        ("money.rs", "// money\n"),
+        ("money_test.rs", "// money test\n"),
+        ("rates.rs", "// rates\n"),
+        ("taxes.rs", "// taxes\n"),
+    ] {
+        std::fs::write(repo.join("src").join(file), text).unwrap();
+    }
+    let git = |args: &[&str]| {
+        let out = std::process::Command::new("git")
+            .args(["-c", "user.name=t", "-c", "user.email=t@t"])
+            .args(["-c", "commit.gpgsign=false"])
+            .args(args)
+            .current_dir(&repo)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "git {args:?}");
+    };
+    git(&["add", "--all"]);
+    git(&["commit", "--quiet", "-m", "code"]);
+    // A card per file of code, and every card's worker strays.
+    let habits = imece_agent::stand_in::Habits {
+        cards: 3,
+        strays: 1,
+        ..Default::default()
+    };
+    let claude =
+        imece_agent::stand_in::install(&dir, &imece(), &dir.join("home"), &habits).unwrap();
+    let mut w = team(0);
+    w.projects[0].plan.on = true;
+    // Two workers at most: the third card has nobody to be hired for.
+    let mut live = Live::new(
+        1,
+        claude_at(&claude.to_string_lossy()),
+        repo.clone(),
+        dir.join("trees"),
+    );
+    live.max_workers = 2;
+    live.open_bus(&w, imece().to_string_lossy().into_owned())
+        .unwrap();
+    live.told(&mut w, 0, "Round half up").unwrap();
+    let until = |live: &mut Live, w: &mut World, done: &dyn Fn(&World) -> bool| {
+        let start = std::time::Instant::now();
+        while !done(w) {
+            assert!(
+                start.elapsed().as_secs() < 60,
+                "timed out: {:#?}\n{:#?}\n{:#?}",
+                w.journal,
+                w.cards,
+                w.agents
+                    .iter()
+                    .map(|a| (&a.name, &a.status, &a.trace))
+                    .collect::<Vec<_>>()
+            );
+            live.step(w);
+            thread::sleep(Duration::from_millis(20));
+        }
+    };
+    // The first worker is hired and has the first card; the second hire
+    // waits for a plan, which the leader puts before the person.
+    until(&mut live, &mut w, &|w| {
+        w.plan_item(0).is_some() && w.agents[0].status == Status::Idle
+    });
+    let workers = |w: &World| w.agents.iter().filter(|a| a.role == Role::Worker).count();
+    assert_eq!(workers(&w), 1);
+    let owned = |c: &Card| (c.paths.iter().map(|p| p.words())).collect::<Vec<_>>();
+    assert_eq!(w.cards.len(), 1);
+    assert_eq!(w.cards[0].title, "src/money.rs: Round half up");
+    assert_eq!(owned(&w.cards[0]), ["src/money.rs", "src/money_test.rs"]);
+    let plan = w.projects[0].plan.proposal.clone().expect("the plan");
+    let planned: Vec<(&str, Vec<String>)> = (plan.cards.iter())
+        .map(|c| {
+            (
+                c.title.as_str(),
+                c.paths.iter().map(|p| p.words()).collect(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        planned,
+        [
+            (
+                "src/rates.rs: Round half up",
+                vec!["src/rates.rs".to_string()]
+            ),
+            (
+                "src/taxes.rs: Round half up",
+                vec!["src/taxes.rs".to_string()]
+            ),
+        ]
+    );
+    assert_eq!(plan.cost, 1_000, "ten cents, in the pot's ten-thousandths");
+    // The yes: a second worker for the second card; the team full, the
+    // third goes on the board, and a worker that is free takes it.
+    let item = w.plan_item(0).unwrap();
+    assert!(live.decide_plan(&mut w, item, true));
+    until(&mut live, &mut w, &|w| {
+        w.cards.len() == 3
+            && w.cards.iter().all(|c| c.column == Column::Review)
+            && w.agents.iter().all(|a| a.status == Status::Idle)
+    });
+    assert_eq!(workers(&w), 2);
+    assert_eq!(owned(&w.cards[1]), ["src/rates.rs"]);
+    assert_eq!(owned(&w.cards[2]), ["src/taxes.rs"]);
+    assert_eq!(
+        w.cards[1].owner,
+        Some(2),
+        "assigned to the worker hired for it"
+    );
+    assert!(w.cards[2].owner.is_some(), "claimed");
+    let story =
+        |c: &Card, wanted: &dyn Fn(&StoryEvent) -> bool| c.story.iter().any(|s| wanted(&s.event));
+    assert!(story(&w.cards[2], &|e| matches!(
+        e,
+        StoryEvent::Posted { by: 0, .. }
+    )));
+    assert!(story(&w.cards[2], &|e| matches!(
+        e,
+        StoryEvent::Took { .. }
+    )));
+    // Each card's worker changed a file its card does not own, once, and
+    // the card's story says which.
+    for c in &w.cards {
+        let strayed: Vec<&str> = (c.story.iter())
+            .filter_map(|s| match &s.event {
+                StoryEvent::Strayed(file) => Some(file.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(strayed.len(), 1, "#{}: {strayed:?}", c.id + 1);
+        assert!(!owned(c).iter().any(|p| p == strayed[0]), "{strayed:?}");
+    }
+    drop(live);
+    let _ = std::fs::remove_dir_all(&dir);
+    let _ = std::fs::remove_dir_all(&repo);
+}

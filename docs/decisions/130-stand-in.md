@@ -365,8 +365,77 @@ Not made to happen: a window at a hundred refuses nothing (Claude Code's
 `rejected` status and the turn that fails on it are not probed), and a
 compaction is free but for `/compact`'s turn.
 
-Next: strays and the plan gate, the leader's board and cards, informs to
-the person, the commit and review one-shots; then Lonca's fake daemon,
-then `Engine::Sim` goes.
+## A leader that plans, cards that own paths, the board (2026-11-10)
+
+**The leader** (`stand_in/lead.rs`). With `Habits.cards`
+(`IMECE_STAND_IN_CARDS`; under 2 the task goes whole to one worker, as
+before) the person's task is cut into cards (`lead::parts`): one per
+file of code in the leader's directory (of a kind that has tests: no
+document, no settings), those the task names best first
+(`work::code_for`), at most `cards` and never more than `CARDS_MOST` 8,
+each owning its file and the test that names it (`work::test_for`; a
+test an earlier card owns is left out, so no two cards own a path),
+its task `FILE: the person's words`, its title that task's first line cut
+to imece's 120 characters. Fewer than two files of code: no cards, the
+task whole.
+
+`Mind::hand_out` gives them out in order: to the workers it has (a new
+task's cards), then to workers it hires, each with `send type assign`
+and the card's `paths` (record 114). When `hire` is refused with a word
+of a plan (imece's plan gate: no second worker before the person's yes)
+the cards left go to the `plan` tool, five cents a card, are kept in
+`Mind.planned` (in the transcript), and the turn ends: `claude-1 has
+src/money.rs: …; my plan for 3 more cards waits for your yes.` When it is
+refused for anything else (the team is full) they go on the board with
+`post`, as they do when the plan itself is refused. With nobody hired
+and no hire, it says so and does nothing.
+
+The person's answer comes as imece's note (`PLAN_YES`, `PLAN_NO`, read
+by how they begin): at a yes the planned cards are handed out, to new
+workers only (the ones it has keep their cards), the rest posted once
+the team is full; at a no the plan is dropped and said. Until then mail
+is read as ever and the plan waits. Two things the leader did wrong
+before and now does not: mail that came with a note of imece's was taken
+for the person's task (it looked for the mail at the prompt's start),
+and so was imece's bare wake (`GO_ON`).
+
+**The worker.** A task that ends with what its card owns (`bus::owns`'
+words, read by `work::owned_of`) is done in the code and the test it
+owns (`work::chosen`; a card that owns no file that is there falls back
+to what the task names, `pick`), and what imece added to the task stays
+out of the notes it writes (`work::plain`). One assign in `Habits.strays`
+(`IMECE_STAND_IN_STRAYS`, never at 0; the roll's bits from the 56th, the
+file by those from the 60th) of a card that owns paths also changes one
+file of code outside them (`work::outside`), before its tests run, and
+its `done` says `Also changed FILE, which the card does not own.` imece
+sees the write as it sees Claude Code's and does the rest (the card's
+story, the journal, the note in the next prompt, the Δ's `outside` line).
+
+Offered the board's open cards (`board_prompt`), a worker takes the
+first with `claim` and does the task of its answer (`work::offered`,
+`work::claimed`) as an assign; an assign in the same prompt comes first,
+and a claim refused is said.
+
+The demo cuts a task into four cards (`CARDS` 4: with the three workers
+`--demo-live` allows by default, the gate holds the second hire and the
+fourth card goes on the board) and strays one assign in three (`STRAYS`
+3). The test
+`a_leader_plans_its_cards_hands_them_out_at_the_yes_and_a_worker_takes_one_from_the_board`
+runs it on the real `Live` with two workers and three cards: one hired
+and assigned, the plan with the other two in TO DECIDE, the yes, a
+second worker hired, the third card posted, offered and claimed, every
+card's change waiting and every card's story with its one stray.
+`the_stand_in_reads_imece_s_words_as_imece_writes_them` holds the words
+the stand-in reads to imece's own.
+
+Against `Sim`: its leader proposes a card per waiting card of the board
+with a tier each and `after` between them; the stand-in's plan has no
+tiers, no `after` and no checks, and its leader never withdraws a card,
+hands one again or answers a failed one. A no to the plan ends the
+planning (a real leader would ask); the person's words to it are a new
+task.
+
+Next: informs to the person, the commit and review one-shots; then
+Lonca's fake daemon, then `Engine::Sim` goes.
 
 Under `--replay-user-messages` (every session since record 135) it echoes each prompt as it takes it, `"isReplay": true`, before the turn's work; its commands (`/clear`) are not echoed, as Claude Code's are not.
