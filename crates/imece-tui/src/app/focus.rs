@@ -22,10 +22,12 @@ impl App {
     }
 
     /// What is read follows the agent of the focus or the raw stream:
-    /// another agent's starts afresh, leaving both forgets it.
+    /// another agent's starts afresh, leaving both forgets it. A change
+    /// opened from a line of the log keeps the line, for the way back.
     pub(super) fn keep_reading(&mut self) {
         match self.zoom {
             Zoom::Focus(id) | Zoom::Trace(id) => self.reading_for(id),
+            Zoom::Diff(id) if self.pointed.is_some_and(|p| p.worker == id) => {}
             _ => self.reading = Reading::default(),
         }
     }
@@ -107,6 +109,71 @@ impl App {
         true
     }
 
+    /// The file the entry at hand on agent `id`'s focus says it changed
+    /// (`changed src/a.rs`, in or outside its card's paths); none on any
+    /// other line, and on a card's screen, whose story has no line at
+    /// hand.
+    pub fn change_line(&self, id: AgentId) -> Option<&str> {
+        if self.on_card() || self.thread.is_some() {
+            return None;
+        }
+        let story = &self.world.cards[self.world.agents[id].card?].story;
+        let at = match self.reading.agent == Some(id) {
+            true => self.reading.at(story.len()),
+            false => story.len().saturating_sub(1),
+        };
+        match &story.get(at)?.event {
+            StoryEvent::Touched(file) | StoryEvent::Strayed(file) => Some(file),
+            _ => None,
+        }
+    }
+
+    /// `enter` on a change line of agent `id`'s log (record 141): its
+    /// change opens at that file's part of the patch, unfolded, the lines
+    /// marked as the ones asked for ([`App::pointed`]) and lit for a
+    /// moment where motion moves. With no change waiting, or one that no
+    /// longer has the file, a line says so and the log stays.
+    pub(super) fn open_change_line(&mut self, id: AgentId) {
+        let Some(file) = self.change_line(id).map(str::to_string) else {
+            return;
+        };
+        let t = self.lang.text();
+        let name = &self.world.agents[id].name;
+        let Some(c) = self.world.change_of(id) else {
+            self.flash(fill(t.line_no_change, &[name, &file]));
+            return;
+        };
+        let heads = (c.patch.lines().enumerate()).filter(|(_, l)| l.starts_with("diff --git "));
+        let found = heads
+            .enumerate()
+            .find(|(_, (_, l))| ui::head_path(l) == file)
+            .map(|(n, (line, _))| (n, line));
+        let Some((n, line)) = found else {
+            self.flash(fill(t.line_not_in_change, &[&file, name]));
+            return;
+        };
+        let patch = patch_key(&c.patch);
+        let mut folds = self.diff_folds_of(id);
+        folds.set(n, false);
+        self.diff_folds = Some((id, patch, folds));
+        self.diff_scroll = line;
+        self.zoom = Zoom::Diff(id);
+        self.pointed = Some(Pointed {
+            worker: id,
+            patch,
+            file: n,
+        });
+        self.light(GlowOn::Lines, Glow::Point, Instant::now());
+    }
+
+    /// The file of agent `id`'s open change the log pointed at, by its
+    /// number in the patch; none once the change is another.
+    pub fn pointed_in(&self, id: AgentId) -> Option<usize> {
+        let p = self.pointed.filter(|p| p.worker == id)?;
+        let c = self.world.change_of(id)?;
+        (patch_key(&c.patch) == p.patch).then_some(p.file)
+    }
+
     /// What agent `id` waits for the person to decide, as its focus
     /// shows it: its oldest open ask (the one its status quotes), else
     /// its change; an index into `World.inbox`.
@@ -177,6 +244,165 @@ impl App {
 mod tests {
     use super::super::tests::*;
     use super::*;
+
+    /// A change of two files, `x` (its header line 1) and `y` (line 5).
+    const TWO: &str = "note\ndiff --git a/x b/x\nnew file mode 1\n@@ -0 +1 @@\n+one\n\
+                       diff --git a/y b/y\nnew file mode 1\n@@ -0 +1 @@\n+two\n+three\n";
+
+    /// A worker whose change of `TWO` waits, its log open: entry 0 a
+    /// decision, 1 `changed x`, 2 `changed y` outside its card's paths,
+    /// 3 `changed z`, which the change does not have.
+    fn log_with_change() -> (App, AgentId) {
+        let (mut app, w) = with_change(TWO);
+        let c = app.world.cards[0].id;
+        app.world.agents[w].card = Some(c);
+        app.world.cards[c].story.clear();
+        for e in [
+            StoryEvent::Decision("x first".into()),
+            StoryEvent::Touched("x".into()),
+            StoryEvent::Strayed("y".into()),
+            StoryEvent::Touched("z".into()),
+        ] {
+            app.world.story(Some(c), e);
+        }
+        app.zoom = Zoom::Focus(w);
+        app.motion = Motion::Calm;
+        (app, w)
+    }
+
+    #[test]
+    fn enter_on_a_change_line_of_the_log_opens_the_change_at_that_file() {
+        let (mut app, w) = log_with_change();
+        let key_of = patch_key(TWO);
+        // The second file, folded: opened, unfolded, at its header.
+        let mut folds = Folds::default();
+        folds.set(1, true);
+        app.diff_folds = Some((w, key_of, folds));
+        app.reading_for(w);
+        app.reading.sel = Some(2);
+        assert_eq!(app.change_line(w), Some("y"));
+        app.on_key(key(KeyCode::Enter));
+        assert_eq!((app.zoom, app.diff_scroll), (Zoom::Diff(w), 5));
+        let pointed = Pointed {
+            worker: w,
+            patch: key_of,
+            file: 1,
+        };
+        assert_eq!(app.pointed, Some(pointed));
+        assert_eq!(app.pointed_in(w), Some(1));
+        assert!(!app.diff_folds_of(w).folded(1), "its lines are shown");
+        assert_eq!(flashed(&app), None);
+        // Its lines light from the next beat on.
+        let lit = (app.glows.iter()).find(|g| g.0 == GlowOn::Lines).unwrap();
+        assert_eq!(lit.1, Glow::Point);
+        // Reading on keeps the mark; `esc` goes back to the log, at the
+        // line it was opened from, and the mark goes with the change.
+        app.on_key(key(KeyCode::Char('j')));
+        assert_eq!((app.diff_scroll, app.pointed), (6, Some(pointed)));
+        app.on_key(key(KeyCode::Esc));
+        assert_eq!((app.zoom, app.reading.sel), (Zoom::Focus(w), Some(2)));
+        assert_eq!(app.pointed, None);
+        // The first file's line: the first header, not the patch's top.
+        app.reading.sel = Some(1);
+        assert_eq!(app.change_line(w), Some("x"));
+        app.on_key(key(KeyCode::Enter));
+        assert_eq!((app.zoom, app.diff_scroll), (Zoom::Diff(w), 1));
+        assert_eq!(app.pointed_in(w), Some(0));
+        // Another change of the worker's is not the one pointed at, nor
+        // is another worker's.
+        assert_eq!(app.pointed_in(w + 1), None);
+        app.world.changes[0].patch.push_str("+more\n");
+        assert_eq!(app.pointed_in(w), None);
+        // Opened as any change is, `esc` leaves to Home as before.
+        app.pointed = None;
+        app.on_key(key(KeyCode::Esc));
+        assert_eq!(app.zoom, Zoom::None);
+    }
+
+    #[test]
+    fn a_change_line_with_nothing_to_open_says_so_and_another_line_opens_the_raw_stream() {
+        let (mut app, w) = log_with_change();
+        let t = Lang::En.text();
+        let name = app.world.agents[w].name.clone();
+        app.reading_for(w);
+        // A file the change no longer has.
+        app.reading.sel = Some(3);
+        app.on_key(key(KeyCode::Enter));
+        assert_eq!(app.zoom, Zoom::Focus(w), "the log stays");
+        assert_eq!(
+            flashed(&app),
+            Some(fill(t.line_not_in_change, &["z", &name]))
+        );
+        assert_eq!(
+            flashed(&app).unwrap(),
+            format!("z is not in the change {name} shows now")
+        );
+        assert_eq!(app.pointed, None);
+        assert!(app.glows.iter().all(|g| g.0 != GlowOn::Lines));
+        // No change waiting.
+        app.world.changes.clear();
+        app.reading.sel = Some(1);
+        app.on_key(key(KeyCode::Enter));
+        assert_eq!(app.zoom, Zoom::Focus(w));
+        assert_eq!(
+            flashed(&app).unwrap(),
+            format!("{name} shows no change yet: x opens here once one waits")
+        );
+        assert_eq!(app.pointed, None);
+        // A line that is no change: the raw stream, as before; and from
+        // there `enter` opens nothing.
+        app.reading.sel = Some(0);
+        assert_eq!(app.change_line(w), None);
+        app.on_key(key(KeyCode::Enter));
+        assert_eq!(app.zoom, Zoom::Trace(w));
+        app.zoom = Zoom::Focus(w);
+        // The newest line is the one at hand when none was chosen, also
+        // for an agent not read yet.
+        app.reading = Reading::default();
+        assert_eq!(app.change_line(w), Some("z"));
+        app.reading.agent = Some(w);
+        assert_eq!(app.change_line(w), Some("z"));
+        // A conversation over the log, a card's screen: no line at hand.
+        app.card = Some(app.world.cards[0].id);
+        assert_eq!(app.change_line(w), None);
+        app.card = None;
+        assert_eq!(app.change_line(w), Some("z"));
+        // An agent without a card has no log line.
+        app.world.agents[w].card = None;
+        assert_eq!(app.change_line(w), None);
+    }
+
+    #[test]
+    fn the_demo_s_change_opens_from_the_log_line_of_a_file_its_worker_edited() {
+        let mut app = App::new(1, 3, 0, 7, Lang::En);
+        // Until a worker's change waits that has a file its log names.
+        let found = (0..4000).find_map(|_| {
+            app.step();
+            let w = &app.world;
+            w.changes.iter().find_map(|c| {
+                let story = &w.cards[w.agents[c.agent].card?].story;
+                let at = story.iter().position(|s| {
+                    matches!(&s.event, StoryEvent::Touched(f)
+                        if c.files.iter().any(|file| file.path == *f))
+                })?;
+                Some((c.agent, at))
+            })
+        });
+        let (id, at) = found.expect("the demo shows a change of a file its worker edited");
+        let file = match &app.world.cards[app.world.agents[id].card.unwrap()].story[at].event {
+            StoryEvent::Touched(f) => f.clone(),
+            other => panic!("{other:?}"),
+        };
+        app.zoom = Zoom::Focus(id);
+        app.reading_for(id);
+        app.reading.sel = Some(at);
+        app.on_key(key(KeyCode::Enter));
+        assert_eq!(app.zoom, Zoom::Diff(id), "{:?}", flashed(&app));
+        let patch = &app.world.change_of(id).unwrap().patch;
+        let head = patch.lines().nth(app.diff_scroll).unwrap();
+        assert_eq!(head, format!("diff --git a/{file} b/{file}"));
+        assert_eq!(app.pointed_in(id), ui::file_of(patch, app.diff_scroll));
+    }
 
     #[test]
     fn a_conversation_over_a_focus_keeps_its_keys_from_the_focus() {

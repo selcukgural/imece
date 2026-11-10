@@ -61,6 +61,8 @@ impl App {
         let shown = self.diff_shown(id);
         let step = |at: usize, by: usize, on: bool| shown.step(at, by, on);
         match k.code {
+            // Opened from the log's line, it goes back to the log.
+            KeyCode::Esc if self.pointed_in(id).is_some() => self.zoom = Zoom::Focus(id),
             KeyCode::Esc => {
                 self.zoom = Zoom::None;
                 self.pane = Pane::Inbox;

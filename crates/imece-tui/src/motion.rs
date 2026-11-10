@@ -110,6 +110,9 @@ pub const ARRIVE: Duration = Duration::from_millis(1800);
 /// a beat.
 pub const SETTLE_STEP: Duration = BEAT;
 pub const SETTLE: Duration = Duration::from_millis(900);
+/// A change's lines opened from the log's line about them stay lit this
+/// long, a step calmer each beat.
+pub const POINT: Duration = Duration::from_millis(1500);
 
 /// The first beat at or after `since`: a glow starts there, so its
 /// frames fall on the beat with the rest.
@@ -141,6 +144,9 @@ pub enum Glow {
     Arrive,
     /// A turn done, a session started: bright, then calmer, then its own.
     Settle,
+    /// The lines the person asked to be shown: soft, a step calmer each
+    /// beat, never reversed.
+    Point,
 }
 
 /// How a row lights at a moment of its glow.
@@ -149,6 +155,8 @@ pub enum Lit {
     Reversed,
     /// The settling step, 0 the brightest.
     Settle(u8),
+    /// The step of lines pointed at, 0 the brightest.
+    Point(u8),
 }
 
 impl Glow {
@@ -156,6 +164,7 @@ impl Glow {
         match self {
             Glow::Arrive => ARRIVE,
             Glow::Settle => SETTLE,
+            Glow::Point => POINT,
         }
     }
 
@@ -163,7 +172,7 @@ impl Glow {
     pub fn period(self) -> Duration {
         match self {
             Glow::Arrive => BLINK,
-            Glow::Settle => SETTLE_STEP,
+            Glow::Settle | Glow::Point => SETTLE_STEP,
         }
     }
 
@@ -177,6 +186,7 @@ impl Glow {
         match self {
             Glow::Arrive => at.is_multiple_of(2).then_some(Lit::Reversed),
             Glow::Settle => Some(Lit::Settle(u8::try_from(at).unwrap_or(u8::MAX))),
+            Glow::Point => Some(Lit::Point(u8::try_from(at).unwrap_or(u8::MAX))),
         }
     }
 
@@ -194,6 +204,9 @@ pub enum GlowOn {
     Agent(crate::model::AgentId),
     /// An item of TO DECIDE, by its index in the inbox.
     Item(usize),
+    /// The lines of the open change the log's line pointed at
+    /// (`App::pointed`).
+    Lines,
 }
 
 #[cfg(test)]
@@ -276,6 +289,18 @@ mod tests {
     }
 
     #[test]
+    fn lines_pointed_at_step_down_five_beats_and_never_blink() {
+        let p = Glow::Point;
+        let shown: Vec<_> = (0..6).map(|i| p.lit(ms(i * 300))).collect();
+        let step = |n| Some(Lit::Point(n));
+        assert_eq!(shown, [step(0), step(1), step(2), step(3), step(4), None]);
+        assert_eq!(p.lit(ms(1499)), step(4));
+        assert_eq!((p.lasts(), p.period()), (ms(1500), ms(300)));
+        assert_eq!(p.next(ms(1250)), Some(ms(250)));
+        assert_eq!(p.next(ms(1500)), None);
+    }
+
+    #[test]
     fn a_glow_asks_for_its_next_frame_until_its_end_and_not_after() {
         assert_eq!(Glow::Arrive.next(ms(0)), Some(ms(300)));
         assert_eq!(Glow::Arrive.next(ms(1700)), Some(ms(100)), "the end too");
@@ -294,7 +319,16 @@ mod tests {
         assert_eq!(on_beat(ms(301)), ms(600));
         assert_eq!(on_beat(ms(1000)), ms(1200));
         let beats = |d: Duration| d.as_millis().is_multiple_of(BEAT.as_millis());
-        for d in [BREATH, DOTS, SPIN_CALM, BLINK, ARRIVE, SETTLE_STEP, SETTLE] {
+        for d in [
+            BREATH,
+            DOTS,
+            SPIN_CALM,
+            BLINK,
+            ARRIVE,
+            SETTLE_STEP,
+            SETTLE,
+            POINT,
+        ] {
             assert!(beats(d), "{d:?}");
         }
         assert_eq!(BEAT.as_millis() % SPIN_FULL.as_millis(), 0);

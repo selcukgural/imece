@@ -66,7 +66,7 @@ Bir akorun ilk tuşu ikincisini beklerken satır ikinci tuşun ne olabileceğini
 | `gg`  `G`  `gd`  `gc`  `gw` | ilk / son satır · ana ekranda: karar bekleyen ilk satır · ilk değişiklik (`:changes`; bekleyen yoksa bir flaş söyler) · çalışan ilk satır |
 | `^d` `^u` `^f` `^b` | yarım sayfa / tam sayfa |
 | `^o` | olduğunuz yere geri: bir odak, bir ham akış, bir değişiklik, bir kart, üstünde olduğunuz satır (vim'in atlama listesi, elli yer; açık konuşma önce kapanır) |
-| `enter` | derine in: odak, sonra ham akış |
+| `enter` | derine in: odak, sonra ham akış; odağın bir `değiştirdi: DOSYA` satırında, değişiklik o dosyada ([değişiklikler](changes.md#from-a-line-of-the-log)) |
 | `tab`  `⇧tab` | bir işte (bir değişiklik, bir konuşma, bir odak): sekmelerinin sonrakisi / öncekisi, `diff · konuşma · log`; gösterecek bir şeyi olmayan sekme atlanır ([detay](changes.md#detay)) |
 | `K`  `:peek` | göz at: eldeki agent'ın odağı ekranın üstünde bir pencerede, ekran olduğu gibi kalır; içinde `j` `k` ÇALIŞAN'daki sonraki / önceki agent, `enter` odağın tamamı, `@` ona yaz, `esc` ya da `K` kapatır |
 | `t`  `:trace` | eldeki agent'ın ham akışı |
@@ -122,7 +122,7 @@ Bir akorun ilk tuşu ikincisini beklerken satır ikinci tuşun ne olabileceğini
 | `pgup` `pgdn`  `^d` `^u` `^f` `^b` | bir sayfa, yarım sayfa (eldeki kayıt yerinde kalır) |
 | `l` `h`  `→` `←` | odakta: eldeki kaydın tamamı · yine ilk sekiz satırına kes (`… +N · l hepsini gösterir` kaç satır daha olduğunu söyler) |
 | `za`  `zM`  `zR` | odakta: kaydı değiştir · hepsini kes · hepsinin tamamı |
-| `enter` `esc` | ham akış · geri |
+| `enter` `esc` | ham akış, ya da bir `değiştirdi: DOSYA` satırında değişiklik o dosyada · geri |
 | `a`  `e`  `A`  `r` | odakta ya da ham akışta, ajanı sizi beklerken: isteğinde (durumunun alıntıladığı), bir kez izin ver · bu tur ne isterse evet · bundan sonra hep evet · reddet; değişikliğinde, uygula · reddet. Asla sizi bekleyenlerde seçili olanı değil. Karar verilecek bir şey varken durum satırı `a` `r` `e` tuşlarını gösterir (`A` bu yardımdadır); yoksa `a` ve `r` bunu söyler, `A` arşivlerdir |
 
 Odağın `klasör` satırı ajanın nerede çalıştığını söyler: lider için çalışma kopyası, işçi, yardımcı ya da solo için worktree'si (`· ~/src/kule için worktree`), git yoksa klasörün kendisi. Altında, yazan bir ajanın `karalama` satırı karalama dizinini gösterir; notları ve günlükleri değişikliğine değil oraya gider. ÇALIŞAN'da bir projenin satırı da, açıkken, klasörüyle biter.

@@ -314,7 +314,7 @@ impl App {
     /// `on` lights with `glow` from `now`, in place of a glow it had.
     /// Its frames count from the first beat at or after `now`, with the
     /// rest of what moves.
-    fn light(&mut self, on: GlowOn, glow: Glow, now: Instant) {
+    pub(super) fn light(&mut self, on: GlowOn, glow: Glow, now: Instant) {
         let at = self.epoch + motion::on_beat(now.saturating_duration_since(self.epoch));
         self.glows.retain(|g| g.0 != on);
         self.glows.push((on, glow, at));

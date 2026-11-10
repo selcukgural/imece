@@ -83,7 +83,13 @@ The patch shows a file's path where git writes `diff --git`, and leaves out the 
 | `w` | wrap long lines under themselves (a minified file, a long string); again cuts them at the edge. The scroll still counts patch lines, so `j` moves a whole line however many rows it takes. On for every change until turned off; not kept between runs |
 | `R` | the second reading (`:review`), above the file list: its first six rows, or all of it ([changes](../concepts/changes.md#a-second-reading)) |
 | `v` | choose lines to copy (below) |
-| `esc` | back to Home, where the change's row is |
+| `esc` | back to Home, where the change's row is; back to the log when a line of it opened the change (below) |
+
+### From a line of the log
+
+The log of a worker (its focus) has a line for every file it changed, `Δ change  changed src/parser/manifest.rs`. `enter` on such a line opens the change at that file: the view starts at the file's header, not at the top of the whole change, the file is unfolded if it was folded, and the header says ` ← the log's line` so that you see at a glance which lines you asked for. For a moment the file's lines are lit, softly, in the theme's accent, a step calmer every 300 ms and gone after 1.5 s; nothing blinks. With `:motion off`, in a terminal that does not have the focus, and in a theme whose colours cannot be blended (`mono`, the terminal's own sixteen colours), nothing is lit and the words on the header mark the file. The words stay while you read that change; `esc` goes back to the log, at the line you came from.
+
+The log has one line per file, however many times the worker edited it, so what is lit is the file's whole part of the change. When no change of the worker's waits yet (it is still mid-turn, or the change was applied), the line says so: `claude-1 shows no change yet: src/a.rs opens here once one waits`. When the change no longer has the file (the edit was undone), it says `src/a.rs is not in the change claude-1 shows now`. On such a line the raw stream is `t`; on every other line `enter` opens it as before.
 
 Added and removed lines have their own colours; headers stand out. Every line goes through the cleaning everything drawn gets.
 

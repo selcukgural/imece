@@ -208,6 +208,13 @@ impl App {
         {
             self.diff_copy = None;
         }
+        // Lines pointed at from the log go with the change they are in.
+        if self
+            .pointed
+            .is_some_and(|p| self.zoom != Zoom::Diff(p.worker))
+        {
+            self.pointed = None;
+        }
         self.keep_reading();
         let back = std::mem::take(&mut self.went_back);
         if !back && self.place() != was {

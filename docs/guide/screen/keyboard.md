@@ -66,7 +66,7 @@ While the first key of a chord waits for its second, the row lists what the seco
 | `gg`  `G`  `gd`  `gc`  `gw` | first / last line · on Home: the first row to decide · the first change (`:changes`; none waiting: a flash says so) · the first at work |
 | `^d` `^u` `^f` `^b` | half a page / a page |
 | `^o` | back where you were: a focus, a raw stream, a change, a card, the row you were on (vim's jump list, fifty places; an open conversation closes first) |
-| `enter` | look deeper: focus, then the raw stream |
+| `enter` | look deeper: focus, then the raw stream; on a `changed FILE` line of the focus, the change at that file ([changes](changes.md#from-a-line-of-the-log)) |
 | `tab`  `⇧tab` | on a piece of work (a change, a conversation, a focus): the next / previous of its tabs, `diff · talk · log`; a tab with nothing to show is skipped ([the detail](changes.md#the-detail)) |
 | `K`  `:peek` | a peek: the focus of the agent at hand in a window over the screen, which stays as it was; in it `j` `k` the next / previous agent of AT WORK, `enter` its whole focus, `@` write to it, `esc` or `K` close |
 | `t`  `:trace` | the raw stream of the agent at hand |
@@ -122,7 +122,7 @@ While the first key of a chord waits for its second, the row lists what the seco
 | `pgup` `pgdn`  `^d` `^u` `^f` `^b` | a page, half a page (the entry at hand stays) |
 | `l` `h`  `→` `←` | in a focus: the entry at hand whole · cut to its first eight lines again (`… +N · l shows all` says how many more) |
 | `za`  `zM`  `zR` | in a focus: the entry toggled · all cut · all whole |
-| `enter` `esc` | the raw stream · back |
+| `enter` `esc` | the raw stream, or on a `changed FILE` line the change at that file · back |
 | `a`  `e`  `A`  `r` | in a focus or the raw stream, when its agent waits for you: on its ask (the one its status quotes), allow once · yes to all it asks this turn · yes from now on · refuse; on its change, apply · reject. Never what is selected in TO DECIDE. The status line shows `a` `r` `e` while there is something to decide (`A` is in this help); with nothing, `a` and `r` say so and `A` is the archives |
 
 The focus's `folder` line says where the agent works: the checkout for a leader, its worktree for a worker, a helper or a solo (`· worktree of ~/src/kule`), the folder itself without git. Under it, a writing agent's `scratch` line names its scratch directory, where its notes and logs go instead of its change. A project's line in AT WORK ends with its folder too, while it is open.

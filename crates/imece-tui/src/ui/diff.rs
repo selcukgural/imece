@@ -11,6 +11,7 @@ use ratatui::widgets::{Block, Paragraph};
 use super::*;
 use crate::app::{App, Copying, DiffNote, Folds};
 use crate::i18n::Text;
+use crate::motion::GlowOn;
 use crate::ui::words::card_ref;
 
 /// Line offsets of the file headers (`diff --git`) in `patch`, for
@@ -481,6 +482,16 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, id: AgentId) {
     let height = usize::from(inner.height);
     let wrap = app.diff_wrap.then_some(usize::from(inner.width));
     let shown = Shown::of(&c.patch, &app.diff_folds_of(id));
+    // The file the log's line opened the change at: marked on its
+    // header, its lines lit while the glow lasts.
+    let pointed = app.pointed_in(id).and_then(|n| {
+        let starts = file_starts(&c.patch);
+        Some(Pointing {
+            from: *starts.get(n)?,
+            to: (starts.get(n + 1).copied()).unwrap_or(usize::MAX),
+            lit: app.lit(GlowOn::Lines).map(lit_style),
+        })
+    });
     let lines = patch_rows(
         app.lang,
         &c.patch,
@@ -491,8 +502,19 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, id: AgentId) {
         copy,
         height,
         wrap,
+        pointed,
     );
     f.render_widget(Paragraph::new(lines), inner);
+}
+
+/// The lines of a patch the log's line pointed at (record 141): its
+/// file's, from the header at `from` up to, not with, line `to`; `lit`
+/// while they glow.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Pointing {
+    from: usize,
+    to: usize,
+    lit: Option<Style>,
 }
 
 /// The rows of `patch` from line `top` on, `height` of them, of the
@@ -501,6 +523,8 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, id: AgentId) {
 /// chosen hunk's `@@` line with `✓` after it, and a note under the line
 /// it is on, every line of it after `✎`. While lines are being chosen to
 /// copy, those are marked instead of the top one, the cursor's in bold.
+/// The file `pointed` at says so after its header and its lines are lit
+/// while its glow lasts, under the mark of the line at hand.
 #[allow(clippy::too_many_arguments)]
 fn patch_rows(
     lang: Lang,
@@ -512,6 +536,7 @@ fn patch_rows(
     copy: Option<Copying>,
     height: usize,
     wrap: Option<usize>,
+    pointed: Option<Pointing>,
 ) -> Vec<Line<'static>> {
     let t = lang.text();
     let mut rows = Vec::new();
@@ -535,6 +560,15 @@ fn patch_rows(
         }
         if chosen.contains(&i) {
             row.spans.push(Span::styled("  ✓", bold(pal().ok)));
+        }
+        if let Some(p) = pointed.filter(|p| p.from <= i && i < p.to) {
+            if i == p.from {
+                let said = format!("  {}", t.from_log);
+                row.spans.push(Span::styled(said, fg(pal().accent)));
+            }
+            if let Some(lit) = p.lit {
+                row = row.style(lit);
+            }
         }
         let marked = match copy {
             Some(c) => c.holds(i),
@@ -1084,6 +1118,7 @@ mod tests {
             None,
             10,
             None,
+            None,
         );
         assert_eq!(rows[0].spans[0].content, "x");
     }
@@ -1418,6 +1453,7 @@ mod tests {
             copy,
             height,
             wrap,
+            None,
         )
     }
 
@@ -1425,6 +1461,82 @@ mod tests {
     /// of four.
     const TWO: &str = "note\ndiff --git a/x b/x\nnew file mode 1\n@@ -0 +1 @@\n+one\n\
                        diff --git a/y b/y\nnew file mode 1\n@@ -0 +1 @@\n+two\n+three\n";
+
+    #[test]
+    fn the_file_the_log_pointed_at_says_so_and_its_lines_are_lit() {
+        let all = Shown::of(TWO, &Folds::default());
+        let lit = Style::new().bg(Color::Rgb(1, 2, 3));
+        // The second file, `y`: lines 5..10; the view's top is its header.
+        let point = |lit| Pointing {
+            from: 5,
+            to: 10,
+            lit,
+        };
+        let rows = |top, p| patch_rows(Lang::En, TWO, &all, top, &[], &[], None, 12, None, p);
+        let text = |r: &Line| {
+            r.spans
+                .iter()
+                .map(|s| s.content.as_ref())
+                .collect::<String>()
+        };
+        let got = rows(3, Some(point(Some(lit))));
+        let said: Vec<String> = got.iter().map(text).collect();
+        assert_eq!(
+            said,
+            [
+                "@@ -0 +1 @@",
+                "+one",
+                "y  ← the log's line",
+                "new file mode 1",
+                "@@ -0 +1 @@",
+                "+two",
+                "+three"
+            ]
+        );
+        assert_eq!(got[2].spans[1].style, fg(pal().accent));
+        let styles: Vec<Style> = got.iter().map(|r| r.style).collect();
+        // The line at hand keeps its mark; the file before is not lit.
+        assert_eq!(styles[0], changed());
+        assert_eq!(styles[1], Style::new(), "the line before the header");
+        assert_eq!(&styles[2..], [lit; 5], "the header and every line after it");
+        // At its header the mark of the line at hand is over the light.
+        let got = rows(5, Some(point(Some(lit))));
+        assert_eq!(got[0].style, changed());
+        assert_eq!(got[1].style, lit);
+        // The first file pointed at ends where the second begins.
+        let first = Pointing {
+            from: 1,
+            to: 5,
+            lit: Some(lit),
+        };
+        let got = rows(0, Some(first));
+        let styles: Vec<Style> = got.iter().map(|r| r.style).collect();
+        assert_eq!(styles[0], changed());
+        assert_eq!(&styles[1..5], [lit; 4]);
+        assert_eq!(&styles[5..], [Style::new(); 5], "the next file's header on");
+        assert_eq!(text(&got[1]), "x  ← the log's line");
+        assert_eq!(text(&got[5]), "y");
+        // The glow over (or nothing moving): the words alone.
+        let got = rows(3, Some(point(None)));
+        assert_eq!(text(&got[2]), "y  ← the log's line");
+        assert!(got[1..].iter().all(|r| r.style == Style::new()));
+        // Not pointed at: as ever; in Turkish.
+        let got = rows(3, None);
+        assert_eq!(text(&got[2]), "y");
+        let tr = patch_rows(
+            Lang::Tr,
+            TWO,
+            &all,
+            5,
+            &[],
+            &[],
+            None,
+            12,
+            None,
+            Some(point(None)),
+        );
+        assert_eq!(text(&tr[0]), "y  ← log'daki satır");
+    }
 
     #[test]
     fn a_folded_file_shows_its_header_only() {
@@ -1470,7 +1582,7 @@ mod tests {
     #[test]
     fn a_folded_header_says_how_many_lines_it_hides() {
         let all = Shown::of(TWO, &Folds::every(true));
-        let rows = patch_rows(Lang::En, TWO, &all, 1, &[], &[], None, 8, None);
+        let rows = patch_rows(Lang::En, TWO, &all, 1, &[], &[], None, 8, None, None);
         let text: Vec<String> = rows.iter().map(|r| r.to_string()).collect();
         assert_eq!(
             text,
@@ -1479,7 +1591,7 @@ mod tests {
         );
         let one = "diff --git a/x b/x\n+one\ndiff --git a/y b/y\n+two\n";
         let all = Shown::of(one, &Folds::every(true));
-        let rows = patch_rows(Lang::Tr, one, &all, 0, &[], &[], None, 8, None);
+        let rows = patch_rows(Lang::Tr, one, &all, 0, &[], &[], None, 8, None, None);
         assert_eq!(rows[0].to_string(), "x  ▸ 1 satır");
         assert_eq!(rows.len(), 2);
     }

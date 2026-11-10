@@ -601,6 +601,12 @@ impl App {
                 (Pane::Salon, Sel::Agent(id)) => Some(Zoom::Focus(id)),
                 (Pane::Salon, Sel::Project(_)) => None,
             },
+            // A line of the log that says a file changed opens the change
+            // at that file (record 141); the raw stream is `t`'s there.
+            Zoom::Focus(id) if self.change_line(id).is_some() => {
+                self.open_change_line(id);
+                None
+            }
             Zoom::Focus(id) | Zoom::Trace(id) => Some(Zoom::Trace(id)),
             Zoom::Diff(_) => None,
         };
