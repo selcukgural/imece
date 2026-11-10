@@ -105,10 +105,12 @@ imece her ajanı dört işarete karşı izler ve bunları size değil lidere sö
 
 | İşaret | Ne zaman | Günlük satırı |
 | --- | --- | --- |
-| stalled | bir işçinin kartı çalışılıyor, işçi 10 dk boşta ya da bir takım arkadaşını bekliyor | `claude-2 10 dk'dır #9 Para birimi desteği üzerinde boşta, done demedi` |
+| stalled | bir işçinin kartı çalışılıyor, işçi 10 dk boşta | `claude-2 10 dk'dır #9 Para birimi desteği üzerinde boşta, done demedi` |
 | silent | liderden başka bir ajan turunun ortasında, 10 dk iz satırı yok | `claude-2 10 dk'dır turunda hiçbir şey demedi; son: Bash dotnet test` |
 | free | kartı olmayan bir işçi 10 dk boşta | `claude-3 10 dk'dır kartsız boşta` |
 | looping | tek bir çağrı bir turda 3 kez başarısız | `claude-2 bu turda 3 kez başarısız oldu: run dotnet test` |
+
+Bir takım arkadaşının yanıtını 10 dakikadır bekleyen işçi bir uyarı değildir: bir `blocked` gibi liderinin çözeceği bir şeydir, satırı da `claude-3 yanıt vermedi "…" · lead ilgileniyor` der ([yanıt bekleyen işçi](../concepts/messages-and-board.md#yanıt-bekleyen-işçi)).
 
 Demo döngüyü gösterir: başarısız her dördüncü test koşusu art arda üç kez başarısız olur.
 

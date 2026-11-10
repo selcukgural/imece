@@ -326,6 +326,34 @@ fn told(how: &Landed, title: &str, checks: &[Attested]) -> Option<(String, bool)
     }
 }
 
+/// What worker `id`'s leader hears of Lonca sending its proposal back
+/// (`out`: its rounds are out, and the person decides on one more);
+/// nothing for a landing that sends nothing back.
+pub(crate) fn sent_back(w: &World, id: AgentId, how: &Landed, out: bool) -> Option<String> {
+    let name = &w.agents[id].name;
+    let on = w.agents[id].card.map_or(String::new(), |c| {
+        format!(" on #{} {}", c + 1, w.cards[c].title)
+    });
+    let why = match how {
+        Landed::Conflicted(symbols) => format!("it did not merge ({})", symbols.join(", ")),
+        Landed::Rejected(reasons) => reasons.join("; "),
+        _ => return None,
+    };
+    let why: String = why.chars().take(REASON_TOLD).collect();
+    let then = match how {
+        _ if out => format!("Its rounds are out: the person decides whether {name} gets one more."),
+        Landed::Rejected(reasons) if reasons.iter().any(|r| held_back(r)) => {
+            format!("{name} was told not to propose again and to tell you it is blocked.")
+        }
+        _ => format!(
+            "{name} was told and puts it right; nothing is yours to do unless it says blocked."
+        ),
+    };
+    Some(format!(
+        "Lonca sent {name}'s proposal{on} back: {why}. {then}"
+    ))
+}
+
 /// Whether Lonca refused for a reason a new proposal does not get past: a
 /// verification quota used up, or the repository frozen.
 fn held_back(reason: &str) -> bool {
@@ -1141,10 +1169,19 @@ impl Live {
         self.notes[id].push(words);
         // Its rounds out, it wakes once the person allows one more: the
         // item holds it (record 126, F9).
+        let out = act && w.rounds_out_of(id).is_some();
         if act && let Some(c) = w.rounds_out_of(id) {
             w.capped(Cap::Rounds, id, c);
         }
         self.lost[id] |= act && !w.agents[id].gone;
+        // Its leader hears it with its next prompt, and is not woken: the
+        // worker puts it right (record 146, part 3).
+        if let Some(leader) = w.told_of(id)
+            && let Some(said) = sent_back(w, id, how, out)
+        {
+            w.agents[leader].trace(w.tick, format!("told: {said}"));
+            self.notes[leader].push(said);
+        }
     }
 
     /// The person approves or rejects worker `id`'s proposal: the `lonca`
@@ -3607,6 +3644,43 @@ mod tests {
     }
 
     #[test]
+    fn the_leader_hears_why_a_proposal_came_back_and_who_acts_on_it() {
+        let mut w = crate::live::testing::team(1);
+        let said = |w: &World, how: Landed, out| sent_back(w, 1, &how, out);
+        for how in [
+            Landed::Queued,
+            Landed::Integrated("abc".into()),
+            Landed::Withdrawn,
+            Landed::Replaced,
+        ] {
+            assert_eq!(said(&w, how, false), None);
+        }
+        assert_eq!(
+            said(
+                &w,
+                Landed::Conflicted(vec!["a.rs".into(), "b.rs".into()]),
+                false
+            )
+            .unwrap(),
+            "Lonca sent claude-1's proposal back: it did not merge (a.rs, b.rs). claude-1 was \
+             told and puts it right; nothing is yours to do unless it says blocked."
+        );
+        with_card(&mut w, 1);
+        let frozen = Landed::Rejected(vec!["frozen:audit".into()]);
+        assert_eq!(
+            said(&w, frozen, false).unwrap(),
+            "Lonca sent claude-1's proposal on #1 fix it back: frozen:audit. claude-1 was told \
+             not to propose again and to tell you it is blocked."
+        );
+        let long = Landed::Rejected(vec!["x".repeat(REASON_TOLD + 10)]);
+        let got = said(&w, long, false).unwrap();
+        assert!(
+            got.contains(&format!("back: {}. ", "x".repeat(REASON_TOLD))),
+            "{got}"
+        );
+    }
+
+    #[test]
     fn a_change_back_its_last_time_waits_for_the_person_and_their_answer_wakes_or_fails() {
         use crate::model::{Column, InboxKind};
         let open = |w: &World| -> Vec<(InboxKind, usize, Option<usize>)> {
@@ -3618,6 +3692,17 @@ mod tests {
         let (w, live, _) = sent_back_by_lonca(1);
         assert!(open(&w).is_empty());
         assert!(live.lost[1] && !w.waits_on_person(1));
+        // Its leader hears it, and is not woken: the worker puts it right
+        // (record 146, part 3).
+        assert_eq!(
+            live.notes[0],
+            [
+                "Lonca sent claude-1's proposal on #1 fix it back: verification_failed:tests. \
+                 claude-1 was told and puts it right; nothing is yours to do unless it says \
+                 blocked."
+            ]
+        );
+        assert!(!live.lost[0]);
         // Its third: the person decides; its words wait, the item holds
         // the wake (record 126, F9).
         let (mut w, mut live, c) = sent_back_by_lonca(2);
@@ -3646,6 +3731,8 @@ mod tests {
         assert_eq!(
             live.notes[0],
             [
+                "Lonca sent claude-1's proposal on #1 fix it back: verification_failed:tests. Its \
+                 rounds are out: the person decides whether claude-1 gets one more.",
                 "The person failed #1 for good after its change came back 3 times: nobody hands \
               it again."
             ]

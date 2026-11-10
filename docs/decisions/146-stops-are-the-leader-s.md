@@ -234,6 +234,65 @@ head (`halt::is_again`) post no cards in the demo. The tests' person
 (`answer_all`) takes the first digit of these three stops; one seeded
 test took a new seed (1).
 
+## Part 3a, as built
+
+Part 3 went in two as well: 3a (this) is what one worker waits for;
+the cards that wait for what never comes (a card after a failed one, a
+posted card nobody takes, cards open and nobody working, a refused
+`hire`) are 3b.
+
+**An ask with no answer** (`What::Unanswered`). A worker's `ask` to a
+teammate is `Agent.awaits` (`blocked::Awaits`: whom, the number, the
+first line; memory only), set by the bus (`World::asks`, a worker's
+only; a leader's and a helper's are not followed). Any message of the
+teammate's to it ends the wait, whatever its type (`World::answered`,
+traced `answered by message N`), and so do its own `done` and its
+leaving (`World::awaits_over`); a newer ask takes the older's place.
+Between its turns it is now `Status::Asking { to, until: u64::MAX }`
+live, set where a good turn ends (`apply` of `TurnDone { ok: true }`):
+the row's `? → claude-3`, the lane's asking, and health's `Waiting`,
+which never fired live. That sign is now a stop, not a notice: once the
+worker on a card has waited `:health stall`, `look_health` opens a
+block through `World::stood` and journals no `Health`; with no leader
+that runs, the notice is said as before. The leader is told by
+`look_stops` (`stop_note`: whom it asked, the card, the question, and
+the ways on: answer it, tell it how to go on without, get the teammate
+to answer, hand the card, ask the person) and woken; record 143's three
+ends follow. The leader's waking word (`unblocked`), the person's word
+and the card going elsewhere (`block_over`) end the wait with the
+block; the teammate's answer at last ends both and is journaled as
+`claude-3 answered claude-2 after 12 min: …` (`Event::Unblocked` by the
+one asked). The row says `no answer from claude-3 "…" · lead is on it`
+(`unanswered_from`, a block drawn on an asking row too); let lie, `no
+answer to: … · lead did not solve it`. `What::of` takes four words.
+`stall off` says nothing, by the rule: it silences what goes to the
+leader, and this goes to the leader first.
+
+**A proposal Lonca sent back** (a merge it could not make, a
+refusal). The worker is told and woken as before; now its leader hears
+it too with its next prompt, and why, and is not woken
+(`live::lonca::sent_back`): `Lonca sent claude-2's proposal on #4 back:
+verification_failed:tests. claude-2 was told and puts it right; nothing
+is yours to do unless it says blocked.` One held back (a quota, a
+freeze) says the worker will say it is blocked; one whose rounds are out
+says the person decides.
+
+**A setup script that failed** (a non-zero end, or one that could not
+run). The worker started without it and heard nothing; now it hears
+with its next prompt that what the script sets up may be missing, with
+its last lines (`setup::failed_note`), and its leader hears that the
+worker was told (`failed_told`); neither is woken. The script is the
+person's, approved by its bytes: nobody is asked to mend it.
+
+**The demo**: every `UNANSWERED_EVERY` (4th) ask between workers gets
+no answer (`until` never comes; the world's `asks` and `answered` as
+live's), its leader takes the stop when health opens it and answers with
+`unanswered_way` (never asks the person about it); every `SETUP_FAILS`
+(3rd) run of the setup script fails (`npm ERR! network timeout`) and is
+traced to the worker and its leader in live's words; a proposal the
+demo's queue sends back is traced to the leader (`Sim::leader_hears`).
+Two seeded tests took new seeds (1 and 2).
+
 ## The points of the list
 
 - **Growth**: one `Option<Block>` per agent (record 143's), one `bool`
@@ -246,15 +305,22 @@ test took a new seed (1).
   and `look_halts` pass over the agents and the projects once a step;
   a frame reads `World.halts` only. 2b: `hung_since` is one look at the
   head per project a step.
+  3a: one `Option<Awaits>` per agent; the bus sets and clears it per
+  message, health reads it once per sign.
 - **Ten times the scale**: at 160 agents a leader may be told several
   stops in one prompt; `MAX_WOKEN` and the pot still bound its turns, and
-  a stop it lets lie still comes to the person.
+  a stop it lets lie still comes to the person. 3a: more asks only
+  mean more waits, each bound by its teammate's next word or the
+  stall's minutes.
 - **Migration**: no schema change. `Event::TurnFailed` is a new name in
   saved rows, and `Unblocked`/`StillBlocked` carry `what` with a default
   (`Said`), so older rows read as before; an older imece cannot read a
   store that holds the new event. Part 2: `Event::Halted` and
   `Event::Unhalted` are new names too, with the same rule; nothing else
   is saved. 2b: three new `Halt` names in those rows, the same rule.
+  3a: `What::Unanswered` is a new name in `Unblocked`/`StillBlocked`
+  rows, the same rule; `Status::Asking` is not saved (a start puts every
+  agent asleep).
 - **Failure**: the block and `revived` are memory only. After a restart
   a stopped worker is asleep with its session remembered, as before, and
   its leader is not told again; one that came to the person is an inbox
@@ -262,7 +328,15 @@ test took a new seed (1).
 
 ## Gaps
 
-- Part 3 and part 4 are not built.
+- Part 3b (cards that wait for what never comes) and part 4 are not
+  built.
+- Part 3a: a wait is memory only; after a start the asker does not
+  wait any more (its session remembers the ask). A wait without a card
+  is not told (health watches a card's worker). A teammate that left
+  with the ask unread is told to the asker's senders as before (`unread`),
+  and the asker's wait goes on until the stall. Lonca's send-back is a
+  note, no stop: a worker that does not put it right is found by
+  health's stall as any idle card.
 - Part 2b: the usage limit and a failed head are memory only; after a
   start a cut turn is not tried again by itself (the stop is gone with
   the run, the session remembered). A turn of another agent already

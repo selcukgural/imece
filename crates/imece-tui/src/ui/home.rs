@@ -623,7 +623,12 @@ fn item_tail(app: &App, i: usize) -> Tail {
             // (record 143): the row is the blocked work's.
             let asked = match w.asked_block(item.agent) {
                 Some((worker, b)) => fill(
-                    (b.what).of([t.row_block_asks, t.row_ended_asks, t.row_failed_asks]),
+                    (b.what).of([
+                        t.row_block_asks,
+                        t.row_ended_asks,
+                        t.row_failed_asks,
+                        t.row_unanswered_asks,
+                    ]),
                     &[
                         &w.agents[worker].name,
                         &w.agents[item.agent].name,
@@ -635,7 +640,12 @@ fn item_tail(app: &App, i: usize) -> Tail {
             return Tail::Asked(asked, options.unwrap_or_default());
         }
         InboxKind::Blocked => {
-            let words = (w.block_what(item.agent)).of([t.row_blocked, t.row_ended, t.row_failed]);
+            let words = (w.block_what(item.agent)).of([
+                t.row_blocked,
+                t.row_ended,
+                t.row_failed,
+                t.row_unanswered,
+            ]);
             let said = fill(words, &[&plain(&item.detail)]);
             match w.agents[item.agent]
                 .block
@@ -1318,7 +1328,12 @@ pub(crate) fn block_question_lines(
         lines.push(Line::from(Span::styled(label, dim())));
         said_lines(text, "  ", lines, room);
     };
-    let word = (b.what).of([t.blocked_word, t.ended_word, t.failed_word]);
+    let word = (b.what).of([
+        t.blocked_word,
+        t.ended_word,
+        t.failed_word,
+        t.unanswered_word,
+    ]);
     part(word.to_string(), &b.said);
     part(fill(t.block_tried, &[leader]), tried);
     part(t.block_asks.to_string(), q.text);
@@ -3301,6 +3316,45 @@ mod tests {
         let got = lines(&app, 140);
         assert!(got.iter().all(|l| !l.contains("is blocked")), "{got:?}");
         assert!(got.iter().any(|l| l.contains("Let it into live/mod.rs?")));
+    }
+
+    #[test]
+    fn an_ask_with_no_answer_says_whom_it_waits_on_and_who_has_it() {
+        let mut app = home(Lang::En);
+        let a = worker(&app);
+        let w = &mut app.world;
+        let lead = w.projects[w.agents[a].project].leader;
+        let other = (w.agents.iter())
+            .find(|o| o.id != a && o.id != lead && o.project == w.agents[a].project)
+            .map(|o| o.id)
+            .unwrap();
+        w.asks(a, other, 4, "Which port?");
+        w.agents[a].status = crate::model::Status::Asking {
+            to: other,
+            until: u64::MAX,
+        };
+        assert_eq!(
+            w.stood(a, crate::blocked::What::Unanswered, "Which port?"),
+            Some(lead)
+        );
+        let (leader, asked) = (clean(&w.agents[lead].name), clean(&w.agents[other].name));
+        let row = |app: &App| {
+            let got = lines(app, 160);
+            (got.iter().find(|l| l.contains("port")).cloned()).unwrap_or_else(|| panic!("{got:#?}"))
+        };
+        let said = format!("no answer from {asked} \"Which port?\" · {leader} is on it");
+        assert!(row(&app).contains(&said), "{}", row(&app));
+        app.lang = Lang::Tr;
+        let said = format!("{asked} yanıt vermedi \"Which port?\" · {leader} ilgileniyor");
+        assert!(row(&app).contains(&said), "{}", row(&app));
+        // Let lie, it is the person's: a row to decide.
+        app.lang = Lang::En;
+        app.world.blocks_unsolved(lead, true);
+        let said = format!("no answer to: Which port? · {leader} stopped");
+        assert!(row(&app).contains(&said), "{}", row(&app));
+        app.lang = Lang::Tr;
+        let said = format!("yanıtsız soru: Which port? · {leader} durdu");
+        assert!(row(&app).contains(&said), "{}", row(&app));
     }
 
     #[test]

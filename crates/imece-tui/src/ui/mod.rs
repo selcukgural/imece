@@ -460,7 +460,9 @@ pub(crate) fn glyph(a: &Agent) -> (&'static str, Color) {
         // Blocked between turns (record 143): its leader has it, in the
         // colour of what waits; the person has it, in the colour of
         // what is stuck.
-        Status::Idle | Status::Asleep | Status::Stopped if let Some(b) = &a.block => {
+        Status::Idle | Status::Asleep | Status::Stopped | Status::Asking { .. }
+            if let Some(b) = &a.block =>
+        {
             match b.stage {
                 Stage::Yours(_) => ("■", pal().bad),
                 Stage::Leader | Stage::Asked { .. } => ("■", pal().warn),
@@ -1482,7 +1484,20 @@ fn block_spans(
         Held::Yours => pal().bad,
         Held::Leader | Held::Asked => pal().warn,
     };
-    let word = (b.what).of([t.blocked_word, t.ended_word, t.failed_word]);
+    // Whom an ask with no answer waits on, when it still does.
+    let word = match (b.what, &a.awaits) {
+        (crate::blocked::What::Unanswered, Some(x)) => {
+            fill(t.unanswered_from, &[&clean(&w.agents[x.to].name)])
+        }
+        (what, _) => what
+            .of([
+                t.blocked_word,
+                t.ended_word,
+                t.failed_word,
+                t.unanswered_word,
+            ])
+            .to_string(),
+    };
     let mut spans = vec![Span::styled(word, bold(colour))];
     let first = b.said.lines().find(|l| !l.trim().is_empty());
     add_quote(&mut spans, first.unwrap_or_default(), fg(colour));
@@ -1502,7 +1517,9 @@ fn block_spans(
 fn doing_status(lang: Lang, w: &World, a: &Agent) -> Vec<Span<'static>> {
     let t = lang.text();
     match a.status {
-        Status::Idle | Status::Asleep | Status::Stopped if let Some(b) = &a.block => {
+        Status::Idle | Status::Asleep | Status::Stopped | Status::Asking { .. }
+            if let Some(b) = &a.block =>
+        {
             block_spans(t, w, a, w.held_of(b))
         }
         Status::Idle if let Some(it) = w.open_item(a.id, InboxKind::Reply) => {

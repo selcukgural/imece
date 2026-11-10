@@ -301,7 +301,16 @@ impl Live {
         if kind == MsgKind::Blocked && w.opens_block(from, to) {
             w.blocked(from, to, id, body);
         } else if kind == MsgKind::Done {
+            w.awaits_over(from);
             w.block_over(from);
+        }
+        // A worker's ask waits on its teammate's word, which ends it
+        // whatever it is (record 146, part 3).
+        if w.answered(to, from, body) {
+            w.agents[to].trace(t, format!("answered by message {id}"));
+        }
+        if kind == MsgKind::Ask && w.agents[from].role == Role::Worker {
+            w.asks(from, to, id, body);
         }
         let solves = (w.agents[to].block.as_ref()).is_some_and(|b| b.leader == from);
         if solves && kind.wakes() && w.unblocked(to, from, body) {

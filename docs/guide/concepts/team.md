@@ -76,7 +76,7 @@ A worker's row leads with its card (`#13 E-mail templates`), then the step of it
 
 imece looks at the team every few seconds and tells the leader what it would want to know, in the leader's next prompt:
 
-- **a stalled card**: its worker has sat idle without a `done`, waited on an answer, or said nothing in its turn for ten minutes;
+- **a stalled card**: its worker has sat idle without a `done`, or said nothing in its turn, for ten minutes (one that has waited that long on a teammate's answer is a stop its leader is to solve instead: [a worker that waits on an answer](messages-and-board.md#a-worker-that-waits-on-an-answer));
 - **an idle worker**: a worker with no card has sat idle for ten minutes;
 - **a loop**: one call (a tool on one target, `Bash cargo test`) failed three times in one turn.
 

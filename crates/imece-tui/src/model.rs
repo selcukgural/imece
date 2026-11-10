@@ -943,6 +943,9 @@ pub struct Agent {
     /// Its leader started it again after its session ended, and no turn
     /// of its has ended well since (record 146). Memory only.
     pub revived: bool,
+    /// It asked a teammate, who has not written back yet (record 146,
+    /// part 3). Memory only.
+    pub awaits: Option<crate::blocked::Awaits>,
     /// What of its spending is booked on the ledger, and where its next
     /// goes (record 133). Memory only.
     pub meter: crate::ledger::Meter,
@@ -1184,6 +1187,7 @@ impl Agent {
             watch: Default::default(),
             block: None,
             revived: false,
+            awaits: None,
             meter: Default::default(),
             gone: false,
         }
@@ -3763,6 +3767,7 @@ impl World {
         a.set_status(Status::Idle, t);
         a.gone = true;
         a.trace(t, "left");
+        self.awaits_over(id);
         self.block_over(id);
     }
 

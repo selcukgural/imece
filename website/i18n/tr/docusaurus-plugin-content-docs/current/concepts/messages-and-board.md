@@ -94,6 +94,18 @@ Oturumu biten (süreç çıktı, Claude Code başlayamadı, worktree'si ya da Lo
 
 İşçinin satırı, günlük ve bir duruşun satırı başarısız turu biten oturumdan ayırır: `claude-2: tur başarısız oldu: error_max_turns`, `oturum bitti` demek değildir.
 
+## Yanıt bekleyen işçi
+
+Bir takım arkadaşına `ask` gönderen işçi, turları arasında onun yanıtını bekler: satırı `? → claude-3` der. O takım arkadaşının ona yazdığı her ileti, türü ne olursa olsun, beklemeyi bitirir; işçinin kendi `done`'ı da bitirir. Daha yeni bir `ask` eskisinin yerini alır.
+
+Gelmeyen yanıt, karttaki işçi [`:health stall`](../reference/commands.md#health-stallidleloop-value)'ın izin verdiği kadar (varsayılan on dakika) beklediğinde, bir `blocked` gibi liderin çözeceği bir şeydir:
+
+- **Lideri duyar** ve bunun için uyandırılır: kime sorulduğunu, hangi kartta olduğunu, soruyu ve yolları (kendisi yanıtlamak, işçiye yanıtsız nasıl süreceğini söylemek, takım arkadaşını yanıtlatmak, kartı devretmek, size sormak). Satır ÇALIŞAN altında, dikkat renginde bir `■` ile kalır: `claude-3 yanıt vermedi "Which port does the stub use?" · lead ilgileniyor`.
+- **Biter**: liderin işçiye uyandıran sözüyle (yanıtsız sürmenin yolu), takım arkadaşının sonunda gelen yanıtıyla (`claude-3, claude-2 işçisine 12 dk sonra yanıt verdi: 8080, the stub's default`), sizin işçiye sözünüzle ya da kartının başkasına gitmesiyle.
+- **Soruldu ya da kendi hâline bırakıldı** bir `blocked`'daki gibi işler: kendi hâline bırakılırsa size `yanıtsız soru: Which port does the stub use? · lead çözmedi` olarak gelir.
+
+`stall off` iken hiçbir şey söylenmez: lidere söylenmez, size de bir şey gelmez. Liderin ve yardımcıların soruları bu yolla izlenmez.
+
 ## Sizi bekleyen ajanın postası da bekler
 
 Yalnız sizin çözebileceğiniz bir şeyi açık olan bir ajan, bir takım arkadaşı yazdı diye devam etmez: KARAR BEKLEYEN'deki bir sorusu, onayınızı bekleyen bir araç çağrısı, bir API hatası, bir kurulum betiği, hassas bir değişiklik ya da bir araştırma raporu. Postası kuyrukta kalır, tur başlatmaz ve ona pano kartı önerilmez. Gönderen `held as message 7; …` yanıtını alır; ajanın satırı ve `:why` kaç mesajın beklediğini söyler: `✉ 2 kuyrukta`.
