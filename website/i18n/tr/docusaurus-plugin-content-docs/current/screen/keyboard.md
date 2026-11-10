@@ -217,7 +217,7 @@ Canlıda `?` yardımı bunları listelemez, `:` menüsünün adlarını listelem
 | `:trace` / `:talk` | `t` / `v` |
 | `:mark` | `m` |
 | `:pause`, `:faster`, `:slower` | `space`, `+`, `-` (demo) |
-| `:budget` (`:b`), `:open` (`:o`), `:close` (`:c`), `:rename`, `:solo`, `:effort`, `:model`, `:forget` (`:f`), `:fork`, `:export`, `:commit`, `:copy`, `:pin`, `:archive`, `:restore`, `:awake`, `:notify`, `:motion`, `:away`, `:digest`, `:clear`, `:unclear`, `:unsettle`, `:keys`, `:why`, `:review`, `:checks`, `:plan`, `:health`, `:ledger`, `:ps`, `:tidy`, `:lonca`, `:sync`, `:news`, `:welcome` | tuşu yok: `:`'dan sonra yazılır |
+| `:budget` (`:b`), `:open` (`:o`), `:close` (`:c`), `:rename`, `:solo`, `:effort`, `:model`, `:forget` (`:f`), `:fork`, `:export`, `:commit`, `:copy`, `:pin`, `:archive`, `:restore`, `:awake`, `:notify`, `:motion`, `:away`, `:digest`, `:clear`, `:unclear`, `:unsettle`, `:keys`, `:why`, `:review`, `:checks`, `:plan`, `:closes`, `:health`, `:ledger`, `:ps`, `:tidy`, `:lonca`, `:sync`, `:news`, `:welcome` | tuşu yok: `:`'dan sonra yazılır |
 
 Her komutun ne aldığının tam listesi [komutlar başvurusunda](../reference/commands.md).
 

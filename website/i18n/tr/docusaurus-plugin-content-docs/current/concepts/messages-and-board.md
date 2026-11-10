@@ -125,6 +125,25 @@ Bir kartın denetimleri kart yapıldıktan sonra da değişebilir, iki elden; ik
 
 Karar satırı hemen buna uyar. imece kendi başına hiçbir denetim eklemez ya da düşürmez, politikada artık olmayanı bile: bunu siz ya da lider yaparsınız. Demonun lideri, Lonca'daki projenin hiçbir şey istemeyen bir kartını yeniden verirken ona `api` istetir. Demonun politikası `api` ve `e2e`'yi tanımlar; yedinci kartı ve ondan sonra her dokuzuncusu politikanın düşürdüğü `smoke`'u da ister ve değişikliğine evet, `:checks api` `smoke`'u kaldırana kadar reddedilir.
 
+## Kartın kapattığı issue
+
+İş çoğu zaman deponun bir issue'sundan gelir. Lider bunu kartta söyler: bir `assign`, bir `post` ya da bir plan kartında `closes: 58`, issue'nun numarası ve başka hiçbir şey (rakam; `#58`, başka bir depo ya da bir adres değil: `closes must be the number of an issue of this repository, digits only`). Kart başına bir issue; yeniden verilen kart kendisininkini korur (`a card handed again closes what it did; leave closes out`). Lider onu asla kapatmaz, bir işçiye de kapattırmaz: evetinizden sonra imece kapatır; böylece lider hiçbir yere yazmayan ajan olarak kalır ve buna bir model turu harcanmaz.
+
+Numara bir modelin sözüdür; bu yüzden imece issue'yu sizin `gh`'nizle bir kez okur (`gh issue view`) ve bulduğunu numaranın göründüğü her yerde gösterir: kartın ekranı (`kapatır #58 “A 529 from the API stops the worker” · açık`), plan penceresi (`#58 kapanır`), Home'da değişikliğin satırı (`· #58 kapanır`) ve değişikliğin kendisi, hükmün altında kendi satırında:
+
+```
+#58 kapanır “A 529 from the API stops the worker” · girdiğinde
+```
+
+Yanlış bir numara orada, evetinizden önce görünür: `#58 kapanır “…”: zaten kapalı · hiçbir şey kapanmayacak`, `#58 kapanır: bu sayı bir pull request · hiçbir şey kapanmayacak` (`gh issue` bir pull request'in numarasına da yanıt verir; imece yalnızca bir bakışın açık bir issue olarak bulduğunu kapatır), `#580 kapanır: bu depoda böyle bir issue yok · hiçbir şey kapanmayacak`. `gh` yoksa ya da oturumu kapalıysa numara yalnız durur. Başlık, issue'yu yazanın metnidir: bir ajanın metni gibi temizlenir ve hiçbir ajana söylenmez.
+
+Evetinizden sonra ne olacağı, değişikliğin nereye gittiğine bağlıdır:
+
+- **Lonca'da** issue, evette değil, değişiklik bütünleşince kapanır: birleştirme kuyruğunda kalan bir değişiklik hiçbir şey kapatmaz. [`:closes on`](../reference/commands.md#closes-onoff) ile (varsayılan) imece çalışma kopyasında `gh issue close 58` çalıştırır ve günlük `#58 “…” kapatıldı · #6 kartı girdi` der; lider bir sonraki isteminde bir not alır, kendi turunu almaz. `:closes off` ile [KARAR BEKLEYEN](../screen/waiting.md)'de bir `!` kalemi bekler: `a` kapatır, `r` temelli açık bırakır.
+- **Git yolunda** evetiniz değişikliği stage'de bırakır, commit'lemez; bu yüzden imece kendisi hiçbir şey kapatmaz: [`:commit`](../reference/commands.md#commit) iletisi `Closes #58` ile biter ve o commit varsayılan dala ulaşınca issue'yu GitHub kapatır. `:closes off` ile satır dışarıda kalır.
+
+Başarısız olan ya da geri çekilen bir kart için, değişikliği yalnızca kısmen uygulanmış bir kart için hiçbir şey kapanmaz. Kapatılamayan bir issue bir kez söylenir (`#58 kapatılamadı: gh oturumu açık değil · açık kalıyor`) ve yeniden denenmez; lider açık kaldığını duyar. `gh`, bir modelden gelen tek argüman olarak numarayı alır ve çalışma kopyasında çalışır; yani her zaman çalışma kopyasının kendi deposudur (`GH_REPO` aktarılmaz). Şimdilik yalnızca GitHub issue'ları. Demoda her üçüncü kart bir issue adlandırır; panosu uydurmadır (makineden hiçbir şey çıkmaz) ve her yedinci issue kapanmaz.
+
 ## Kartın denemeleri
 
 Bir kart işçisinin turlarını değil, değişikliğini izler. İşçinin `done`'ına kadar üzerinde çalışılır; değişikliği (`Δ`) KARAR BEKLEYEN'deyken incelemenizi bekler; değişikliği geri gönderdiğinizde (bir red, notlar, bir çakışma) yeniden çalışmaya döner ve işçiye yazdıklarınız o kartla devam eder, bir tur daha; değişikliği hâlâ beklerken yazdıklarınız da o kartı yeniden çalışmaya götürür (değişiklik, işçinin onu da içeren bir sonraki değişikliği yerine geçene dek bekler), kendine ait bir kart açmaz; değişiklik tamamen uygulandığında ya da `done` alınacak bir şey bırakmadığında biter. Lonca'da, onayınızdan sonra merge queue'da doğrulanıyor olur, trunk'a girince biter, kuyruk ya da bir inceleyen hayır derse yeniden çalışmaya döner.

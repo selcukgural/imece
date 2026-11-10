@@ -88,6 +88,7 @@ Sizi bekleyenler ana ekranın üstünde, KARAR BEKLEYEN altındadır: önce izin
 | `:yes` | `e`: bir ajanın isteklerine turu bitene dek evet |
 | `:allow npm run` | projenin ajanlarının sormadan çalıştıracağı bir program ve bir kelime; yalnız yazılınca liste |
 | `:plan on\|off` | lider ikinci bir işçiyi işe almadan önce planını size sunar (varsayılan açık) |
+| `:closes on\|off` | değişikliği giren kart, liderinin adlandırdığı issue'yu kapatır (varsayılan açık) |
 
 ## Kendi kabuğunuz
 
