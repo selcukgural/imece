@@ -43,6 +43,9 @@
   "home.install.copyLabel": { "message": "Kurulum komutunu kopyala" },
   "home.cta.firstrun": { "message": "İlk çalıştırma" },
   "home.cta.video": { "message": "Turları izle" },
+  "home.picture.alt": {
+    "message": "Liderden istersiniz; lider ve işçileri tek bir işin etrafında çalışır; yaptıkları bir değişiklik (Δ) olarak sizi bekler ve checkout'unuza ancak sizin evetinizle girer."
+  },
   "home.terminal.title": { "message": "Kodunuzun olduğu yerde başlatın" },
   "home.terminal.more": { "message": "Her bayrak şurada açıklanır:" },
   "home.terminal.link": { "message": "komut satırı başvurusu" },
