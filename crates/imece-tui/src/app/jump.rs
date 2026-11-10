@@ -109,6 +109,7 @@ impl App {
                     HomeRow::Project(q) => q == p,
                     HomeRow::Agent(id) => w.agents[id].project == p,
                     HomeRow::Item(i) => w.agents[w.inbox[i].agent].project == p,
+                    HomeRow::Stop(q, _) => q == p,
                 };
                 let heading = rows.iter().find(|r| r.1 == HomeRow::Project(p));
                 if let Some(row) = heading.or_else(|| rows.iter().find(|r| mine(r))) {

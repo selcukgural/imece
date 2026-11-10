@@ -240,6 +240,8 @@ pub enum Note {
     /// All the work this project's leader handed out is through and
     /// nothing of it waits for the person (record 145).
     Done(ProjectId),
+    /// Something stops this project's whole team (record 146).
+    Halt(ProjectId, crate::halt::Halt),
 }
 
 /// Which notes the person knows of (seen in the window, or rung) and

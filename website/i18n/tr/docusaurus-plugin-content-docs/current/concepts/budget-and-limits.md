@@ -11,7 +11,7 @@ Bütçe bütün ekip için tek bir kesedir: bütün ajanlar birlikte onu bitirin
 
 - `--budget USD` belirler; ilk seferinde 50 $. Bütçe **çalıştırmalar arasında saklanır**: `--budget`'sız bir başlangıç kalandan devam eder. Sonraki bir başlangıçta `--budget` yeniden belirler.
 - Her projenin her ajanının turları ondan çıkar; imece'nin kendi ücretli çağrıları da (`:commit`, `:review`). Ajan başına pay yoktur.
-- Bitince hiçbir ajan uyandıran mesaj almaz ve kart teklif edilmez; birini uyandıracak bir `send`, "the budget is spent" ile reddedilir.
+- Bitince hiçbir ajan uyandıran mesaj almaz ve kart teklif edilmez; birini uyandıracak bir `send`, "the budget is spent" ile reddedilir. Ona bekleyen bir şey varken bütçe, [ana ekranda](../screen/home.md#butun-ekip-durunca) bütün ekibin bir duruşudur: `■ DURDU shop-api · bütçe bitti · arkasında 3 iş bekliyor`, `1` $50 artır, `2` $20 artır, `3` burada kalsın seçenekleriyle. Artınca reddettiği iletinin sahibi sürmek için uyandırılır.
 - **Oturum başına sert tavan:** her Claude Code oturumu, başladığında bütçeden kalanı kendi `--max-budget-usd`'si olarak alır; tek başına kaçan bir oturum da onu geçemez. Bu bir pay değil, son duraktır.
 
 ### `:budget USD`

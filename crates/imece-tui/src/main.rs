@@ -14,6 +14,7 @@ mod complete;
 mod doctor;
 mod edit;
 mod editor;
+mod halt;
 mod health;
 mod i18n;
 mod input;
@@ -630,7 +631,7 @@ fn run(
             app.drawn(now);
         }
         // The ladder's top on the tab and in the title.
-        let waiting = app.world.open_decisions();
+        let waiting = app.world.to_decide();
         let ladder = app.progress();
         title.show(
             &mut std::io::stdout(),

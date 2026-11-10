@@ -42,7 +42,7 @@ Sınırlar bir ajanın bir başkasını boğmasını ve bütçeyi tek başına t
 | --- | --- |
 | Gövde | 4000 karakter |
 | Ajan başına okunmamış posta | 20 (dolu kutuya `send` reddedilir: "wait for it") |
-| Ajan başına mesajla başlayan tur | ekiple son konuşmanızdan beri 12; sonra uyandıran posta siz yazana kadar reddedilir |
+| Ajan başına mesajla başlayan tur | ekiple son konuşmanızdan beri 12; sonra uyandıran posta siz yazana kadar reddedilir, ve ona bekleyen bir şey varken ekibin duruşu [ana ekranda](../screen/home.md#butun-ekip-durunca) sizindir (`1` sürdürür) |
 | Duran bir ajan | uyandıran posta almaz |
 | Bütçe bitince | kimse uyandıran mesaj almaz |
 

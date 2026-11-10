@@ -36,7 +36,8 @@ The [header](salon.md#the-header) names the open projects; the one the list is n
 
 | Group | What is in it |
 | --- | --- |
-| TO DECIDE | counts each kind: `1 permission · 2 questions · 3 changes · 1 reply · 1 put off` |
+| TO DECIDE | counts each kind: `1 stopped · 1 permission · 2 questions · 3 changes · 1 reply · 1 put off` |
+| stopped | what stops a whole team, first of all: [when a whole team stops](#when-a-whole-team-stops) |
 | permissions | one key each: a command an agent asks to run, the worktree setup script, the repository's check. The row says what would run: `run .imece/check on its changes?` and then the script's commands (its lines that are not comments; `enter` shows every byte) |
 | questions | read and answer: an agent's question whole, with the answers it offers under it (`1`-`9` picks one, `/` writes your own: [questions](../concepts/approvals-and-questions.md#questions-)), a researcher's report, an API error, the leader's plan; a worker's block its leader asks you about (the row is the blocked work's: `claude-2 is blocked · lead asks: …`) or let lie (`blocked: … · lead did not solve it`): [a worker that is blocked](../concepts/messages-and-board.md#a-worker-that-is-blocked) |
 | changes | a diff to read: `✓ dotnet build · ✓ dotnet test · 2 files +4 −2 · 1 outside #51: Money.cs` — the [verdict](changes.md#what-is-above-the-patch) without its head: what was proved on its tree (the repository's check when it ran, then imece's runs, else `nothing ran`), the files and lines against the paths its card owns, what other waiting change it overlaps, what Lonca runs after your yes. The ready ones (proved clean, inside their paths, overlapping nothing, fitting, whole) come first; the group's line counts them, `2 ready to approve` |
@@ -68,6 +69,30 @@ All done: nothing waits for you either. The project's name in the header gets a 
 A card that failed or was withdrawn does not hold the line back, and is always counted on it, a failed one in red. The figures are the round's: the cards opened since the project last had none open, what their tries cost (the leader's own spending is not in it) and the time from the first card to the last one's end. A new card ends the state and, after all done, begins the next round. With several projects in view the line counts them together (`2 projects · 9 cards …`) and comes only when every team that has cards is finished; `[` `]` narrow to one. A line too long for the screen goes on under itself, whole. A solo has no such line: nobody hands it cards.
 
 Nothing is said while a card still waits on another whose change waits for your yes: that card has not begun, so the team is not through.
+
+## When a whole team stops
+
+Some stops are no leader's to solve: the pot is spent, the team took its 12 turns on each other's messages since you last spoke, Lonca does not answer, the leader's own session ended. Each comes straight to you as one stop of its project, on Home's first line and as a row first in TO DECIDE, with who waits behind it and imece's own choices as digits.
+
+```
+ ■ STOPPED  shop-api · the pot is spent · 3 wait behind it · 2 min
+
+ TO DECIDE 1 stopped · 1 change
+ stopped
+▸■      shop-api                  the pot is spent · $200.00 of $200.00 · 3 wait behind it
+                                  1  raise by $50.00   2  raise by $20.00   3  rest here
+```
+
+| Stop | When | Choices |
+| --- | --- | --- |
+| `the pot is spent` | the pot is spent and something waits on it: mail not delivered, a wake or a retry not taken, a message the bus refused | `1` raise it by $50, `2` by $20, `3` rest here (the row goes after everything else waiting, the line stays); `:budget USD` for another amount |
+| `the team took 12 turns on messages since you last spoke` | an agent took its 12 turns on its teammates' messages and something waits on it: a wake, a message the bus refused | `1` let it go on (12 more); writing to anyone of the team does the same |
+| `Lonca does not answer` | the project is on Lonca and its daemon does not answer, is signed out or the repository is frozen (the line says why) | `1` look again now, `2` open the [Lonca window](../concepts/projects.md#on-lonca) |
+| `lead's session ended` | the leader's session ended; its workers can not reach it | `1` start it again where it left off |
+
+The preview names who waits behind it and with what (`2 messages for it, not delivered`, `its retry after an API error`, `can not reach lead`) and what each choice does. `enter` opens what stopped (the Lonca window, else the leader's work), `s` lets it rest like `3`. The header marks the project with `■` and counts the stop in `! N to decide`; the tab shows stuck. In another window [`:notify`](../reference/commands.md#notify-offbelltextpush) says it once, loud: `imece · shop-api stopped: the pot is spent`. The journal says when a team stopped and when it goes on again (`shop-api: the team goes on after 4 min: the pot has room again`).
+
+imece lifts none of these by itself: it never raises the pot, lets the team go on or starts the leader unasked. A leader that stopped is the stop's row, not a stuck row among those at work.
 
 ## The leader's line
 

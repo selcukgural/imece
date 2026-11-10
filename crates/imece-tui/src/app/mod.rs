@@ -38,6 +38,7 @@ mod doctor;
 mod focus;
 mod frames;
 mod grace;
+mod halts;
 mod home;
 mod jump;
 mod ledger;
@@ -877,7 +878,7 @@ impl Digest {
             blocked: count(EntryKind::Blocked),
             assumptions: count(EntryKind::Assumption),
             talks: count(EntryKind::Talk),
-            waiting: w.open_decisions(),
+            waiting: w.to_decide(),
             highlights,
         })
     }
@@ -988,6 +989,9 @@ pub struct App {
     /// off: `W` comes to them after everything else. Kept for this run
     /// only.
     pub deferred: Vec<usize>,
+    /// The stops of whole teams the person let rest (record 146): after
+    /// everything else waiting while they hold. Memory only.
+    pub rested: Vec<(ProjectId, crate::halt::Halt)>,
     /// Home's row at hand and the project it is narrowed to.
     pub at_home: Home,
     /// The item `W` or `S` last opened, so the next `W` goes on after it
@@ -1329,6 +1333,7 @@ impl App {
             turning: BTreeSet::new(),
             inbox_sel: 0,
             deferred: Vec::new(),
+            rested: Vec::new(),
             waiting_at: None,
             diff_scroll: 0,
             reading: Reading::default(),
@@ -1463,6 +1468,7 @@ impl App {
         self.world.watch_spending();
         self.watch_turns();
         self.watch_lanes();
+        self.watch_rests();
         self.watch_glows(Instant::now());
         let asking = match &self.engine {
             Engine::Live(l) => l.asking(),

@@ -1702,6 +1702,7 @@ impl Store {
             journal: Vec::new(),
             inbox: Vec::new(),
             stops: Vec::new(),
+            halts: Default::default(),
             budget,
             estimated: false,
             max_researchers: 0,
@@ -2658,6 +2659,7 @@ mod tests {
                 },
             ],
             stops: Vec::new(),
+            halts: Default::default(),
             inbox: vec![
                 InboxItem {
                     kind: InboxKind::Reply,

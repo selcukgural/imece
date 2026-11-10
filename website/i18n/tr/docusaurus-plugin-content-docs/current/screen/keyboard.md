@@ -59,7 +59,7 @@ Bir akorun ilk tuşu ikincisini beklerken satır ikinci tuşun ne olabileceğini
 | --- | --- |
 | `#N`  `#word`  `n` `p` | numara ya da başlıkla bir kart: detayı (log sekmesi: durumu, kimlerin payı olduğu, hikâyesi); o ekranda `n` `p`: sonraki / önceki kart |
 | `&`  `:goto` | bir agent'a ya da projeye git: bir ad yazın, `1`-`9` listedeki n'inci, `!` yalnız sizi bekleyenleri tutar; `&#` kartlara döner |
-| `1`-`9` | Ana ekranda ya da bir sorunun detayında, elde yanıt sunan bir soru varken birini seçer ([sorular](../concepts/approvals-and-questions.md#sorular-)); rakamlar başka bir şey yapmaz. Bir zamanlar açtıkları görünümler artık adıyla açılan pencerelerdir: `:board`, `:code`, `:timeline` ([pano ve kod haritası](board-and-code-map.md), [zaman şeridi](timeline.md)); [`:home`](home.md) tek ekrandır, `:salon` onun ÇALIŞAN'ı |
+| `1`-`9` | Ana ekranda ya da bir sorunun detayında, elde yanıt sunan bir soru varken birini seçer ([sorular](../concepts/approvals-and-questions.md#sorular-)); elde bütün bir ekibin duruşu varken imece'nin ondaki seçeneklerinden birini ([bütün ekip durunca](home.md#butun-ekip-durunca)); rakamlar başka bir şey yapmaz (yardımdaki satırı: `W`  `S`  `1-9`). Bir zamanlar açtıkları görünümler artık adıyla açılan pencerelerdir: `:board`, `:code`, `:timeline` ([pano ve kod haritası](board-and-code-map.md), [zaman şeridi](timeline.md)); [`:home`](home.md) tek ekrandır, `:salon` onun ÇALIŞAN'ı |
 | `[`  `]` | zaman şeridinin penceresinde: bir sütun 5 sn · 30 sn · 1 dk |
 | `r` | panonun penceresinde: yalnız alınabilecek kartlar (beklediği bitmemiş kart yok), yine: hepsi ([pano](board-and-code-map.md#pano)) |
 | `↑` `↓`  `j` `k` | seç |

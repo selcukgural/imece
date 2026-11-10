@@ -547,6 +547,8 @@ impl App {
             KeyCode::Char(d @ '1'..='9') if self.option_at_hand(d).is_some() => {
                 self.answer_option(d);
             }
+            // On a stop of a whole team, one of imece's choices (record 146).
+            KeyCode::Char(d @ '1'..='9') if self.choice_at_hand(d).is_some() => self.choose(d),
             KeyCode::Char('T') => self.next_theme(),
             KeyCode::Char('L') => self.set_lang(self.lang.other()),
             // Live agents run in real time: nothing to pause or speed up.

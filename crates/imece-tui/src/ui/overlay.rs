@@ -1121,7 +1121,7 @@ const HELP_PLACES: [&[Scope]; 57] = {
         ALL,                        // 32 A H :recall
         &[Salon, Change, Timeline], // 33 [ ]
         ALL,                        // 34 :waiting gc
-        ALL,                        // 35 W S
+        ALL,                        // 35 W S 1-9
         &[Talk, Journal],           // 36 enter %
         &[Talk, Journal],           // 37 c y C Y
         &[Talk, Change, Choose],    // 38 v w b s

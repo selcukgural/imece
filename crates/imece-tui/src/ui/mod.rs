@@ -11,6 +11,7 @@ mod diff;
 pub(crate) mod export;
 mod focus;
 mod footer;
+pub(crate) mod halt;
 mod header;
 mod home;
 pub(crate) mod ledger;

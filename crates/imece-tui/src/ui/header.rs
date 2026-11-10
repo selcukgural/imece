@@ -23,6 +23,10 @@ pub(crate) fn projects_spans(app: &App) -> Vec<Span<'static>> {
         if app.world.finished(p.id).is_some_and(|f| f.all()) {
             spans.push(Span::styled(" ✓", fg(pal().ok)));
         }
+        // Something stops its whole team (record 146).
+        if (app.world.halts.stops.iter()).any(|s| s.project == p.id) {
+            spans.push(Span::styled(" ■", fg(pal().bad)));
+        }
         // Its solo writes straight in the folder: no Δ (record 73).
         if p.no_git {
             let t = app.lang.text();
@@ -93,11 +97,12 @@ pub(crate) fn header_parts(app: &App) -> Vec<HeadPart> {
         parts.push(part(project_spans, 8));
     }
     // A reply asks for nothing: counted apart, never as a decision.
+    // A stop of a whole team is the person's to decide too (record 146).
     let open = w.open_decisions();
-    if open > 0 {
+    if w.to_decide() > 0 {
         parts.push(part(
             vec![Span::styled(
-                fill(t.waiting_for_you, &[&open.to_string()]),
+                fill(t.waiting_for_you, &[&w.to_decide().to_string()]),
                 attention(),
             )],
             KEEP,

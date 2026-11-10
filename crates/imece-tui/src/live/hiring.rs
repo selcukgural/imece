@@ -102,6 +102,7 @@ impl Live {
         self.took.push(0);
         self.asked.push(false);
         self.woken.push(0);
+        self.held_sends.push([0; 2]);
         self.posted.push(0);
         self.cwds.push(None);
         self.running.push(run::Running::default());

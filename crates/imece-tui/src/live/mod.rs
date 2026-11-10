@@ -58,6 +58,7 @@ mod changes;
 pub mod demo;
 #[cfg(test)]
 mod end_to_end;
+mod halts;
 mod health;
 mod hiring;
 mod items;
@@ -378,9 +379,7 @@ const MAX_BODY: usize = 4000;
 /// Messages that may wait for one agent; more are refused until it reads.
 const MAX_MAIL: usize = 20;
 
-/// Turns an agent takes on its teammates' messages before the person has
-/// to speak again: agents can not keep each other busy forever.
-const MAX_WOKEN: u32 = 12;
+use crate::halt::MAX_WOKEN;
 
 /// The longest card title, in characters.
 const MAX_TITLE: usize = 120;
@@ -747,6 +746,10 @@ pub struct Live {
     asked: Vec<bool>,
     /// Turns each agent took on messages since the person last spoke.
     woken: Vec<u32>,
+    /// Each agent's waking messages the bus refused since the person last
+    /// spoke, for the pot spent and for the turns used up (record 146):
+    /// it waits behind that stop, and is woken once the stop is over.
+    held_sends: Vec<[u32; 2]>,
     /// The board's cards, by the card they made.
     posts: HashMap<CardId, Post>,
     /// Workers each open card was offered to, in order.
@@ -890,6 +893,7 @@ pub fn world(o: Options) -> Result<(World, Live), String> {
                 journal: Vec::new(),
                 inbox: Vec::new(),
                 stops: Vec::new(),
+                halts: Default::default(),
                 budget: DEFAULT_BUDGET,
                 estimated: false,
                 max_researchers: 0,
@@ -1137,6 +1141,7 @@ impl Live {
             took: Vec::new(),
             asked: Vec::new(),
             woken: Vec::new(),
+            held_sends: Vec::new(),
             posts: HashMap::new(),
             offered: HashMap::new(),
             posted: Vec::new(),
@@ -1556,6 +1561,9 @@ impl Live {
             }
         }
         self.offer(w);
+        self.after_halts(w);
+        let held = self.held_back(w);
+        w.look_halts(&held);
         moved || started || git || said || reviewed || tidied || set_up || store || heard || called
     }
 

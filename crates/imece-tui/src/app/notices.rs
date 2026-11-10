@@ -236,6 +236,9 @@ impl App {
             && self.away.over(now.saturating_duration_since(self.last_key));
         let away = self.blurred.is_some() || idle;
         let mut waiting = waiting;
+        // What stops a whole team rings as what waits does (record 146).
+        let halts = self.world.halts.stops.iter();
+        waiting.extend(halts.map(|s| Note::Halt(s.project, s.halt)));
         waiting.extend(self.rounds_done(away).into_iter().map(Note::Done));
         let due = self.notices.due(&waiting, away, now);
         for &n in &due {
@@ -252,13 +255,13 @@ impl App {
             _ => fill(t.notify_many, &[&due.len().to_string()]),
         };
         let agent = due.first().map(|&n| match n {
-            Note::Done(p) => self.world.projects[p].leader,
+            Note::Done(p) | Note::Halt(p, _) => self.world.projects[p].leader,
             Note::Stuck(id) => id,
             Note::Item(i) => self.world.inbox[i].agent,
         });
         // Louder for what is stuck or failed.
         let loud = due.iter().any(|&n| match n {
-            Note::Stuck(_) => true,
+            Note::Stuck(_) | Note::Halt(..) => true,
             Note::Done(_) => false,
             Note::Item(i) => matches!(
                 self.world.inbox[i].kind,
@@ -302,6 +305,12 @@ impl App {
             [Note::Stuck(a)] => self.go_agent(a),
             // Home says it on its first line.
             [Note::Done(_)] => self.go_home(),
+            // Its row, first on Home.
+            [Note::Halt(p, halt)] => {
+                self.go_home();
+                self.at_home.at = Some(HomeRow::Stop(p, halt));
+                self.home_settle();
+            }
             _ => self.next_waiting(false),
         }
     }

@@ -187,6 +187,37 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
         ),
         Event::Stopped { agent, why } => fill(t.ev_stopped, &[name(w, *agent), why]),
         Event::TurnFailed { agent, why } => fill(t.ev_turn_failed, &[name(w, *agent), why]),
+        Event::Halted {
+            leader,
+            halt,
+            behind,
+            why,
+        } => {
+            let p = w.agents[*leader].project;
+            let mut said = halt_words(lang, w, p, *halt);
+            if !why.is_empty() {
+                said.push_str(&format!(" ({})", one_line(why)));
+            }
+            if *behind > 0 {
+                said.push_str(&format!(" · {}", behind_words(lang, *behind)));
+            }
+            fill(t.ev_halted, &[&w.projects[p].name, &said])
+        }
+        Event::Unhalted {
+            leader,
+            halt,
+            ticks,
+        } => {
+            let p = w.agents[*leader].project;
+            fill(
+                t.ev_unhalted,
+                &[
+                    &w.projects[p].name,
+                    &ago(lang, ticks * SECONDS_PER_TICK),
+                    &lifted_words(lang, w, p, *halt),
+                ],
+            )
+        }
         Event::Interrupted { agent } => fill(t.ev_interrupted, &[name(w, *agent)]),
         Event::Retrying {
             agent,
@@ -984,7 +1015,7 @@ pub fn title(lang: Lang, waiting: usize, progress: Progress, done: Option<usize>
 pub fn farewell(lang: Lang, w: &World, (spent, unpriced): (u64, bool), demo: bool) -> String {
     let t = lang.text();
     let mut parts = vec!["⁙ imece".to_string()];
-    let waiting = w.open_decisions();
+    let waiting = w.to_decide();
     if waiting > 0 {
         parts.push(fill(t.bye_waiting, &[&waiting.to_string()]));
     }
@@ -1141,6 +1172,10 @@ pub fn notice(lang: Lang, w: &World, note: crate::notify::Note) -> String {
                 ),
             };
         }
+        crate::notify::Note::Halt(p, halt) => {
+            let name = crate::i18n::clean(&w.projects[p].name);
+            return fill(t.notice_halt, &[&name, &halt_words(lang, w, p, halt)]);
+        }
         crate::notify::Note::Stuck(id) => (t.notice_stuck, id),
         crate::notify::Note::Item(i) => {
             let item = &w.inbox[i];
@@ -1172,7 +1207,9 @@ pub fn notice(lang: Lang, w: &World, note: crate::notify::Note) -> String {
 pub fn pushed(lang: Lang, w: &World, note: crate::notify::Note) -> String {
     let agent = match note {
         // Its words name the project already.
-        crate::notify::Note::Done(_) => return notice(lang, w, note),
+        crate::notify::Note::Done(_) | crate::notify::Note::Halt(..) => {
+            return notice(lang, w, note);
+        }
         crate::notify::Note::Stuck(id) => id,
         crate::notify::Note::Item(i) => w.inbox[i].agent,
     };
@@ -1546,6 +1583,88 @@ pub fn behind(behind: Behind) -> Option<String> {
 /// The first digits of a commit, as a person reads it.
 pub fn short_commit(commit: &str) -> &str {
     commit.get(..7).unwrap_or(commit)
+}
+
+/// What stops project `p`'s team, in the person's words (record 146):
+/// `the pot is spent`, `lead's session ended`.
+pub fn halt_words(lang: Lang, w: &World, p: ProjectId, halt: crate::halt::Halt) -> String {
+    use crate::halt::Halt;
+    let t = lang.text();
+    match halt {
+        Halt::Pot => t.halt_pot.to_string(),
+        Halt::Woken => fill(t.halt_woken, &[&crate::halt::MAX_WOKEN.to_string()]),
+        Halt::Store => t.halt_store.to_string(),
+        Halt::Lead => fill(t.halt_lead, &[name(w, w.projects[p].leader)]),
+    }
+}
+
+/// What it is that a stop of `halt` is over.
+pub fn lifted_words(lang: Lang, w: &World, p: ProjectId, halt: crate::halt::Halt) -> String {
+    use crate::halt::Halt;
+    let t = lang.text();
+    match halt {
+        Halt::Pot => t.halt_lifted_pot.to_string(),
+        Halt::Woken => t.halt_lifted_woken.to_string(),
+        Halt::Store => t.halt_lifted_store.to_string(),
+        Halt::Lead => fill(t.halt_lifted_lead, &[name(w, w.projects[p].leader)]),
+    }
+}
+
+/// `3 wait behind it`.
+pub fn behind_words(lang: Lang, n: usize) -> String {
+    let t = lang.text();
+    match n {
+        1 => t.halt_behind_one.to_string(),
+        _ => fill(t.halt_behind, &[&n.to_string()]),
+    }
+}
+
+/// What one agent waits with behind a stop of `halt` in project `p`.
+pub fn waits_words(
+    lang: Lang,
+    w: &World,
+    p: ProjectId,
+    halt: crate::halt::Halt,
+    waits: crate::halt::Waits,
+) -> String {
+    use crate::halt::{Halt, Waits};
+    let t = lang.text();
+    match waits {
+        Waits::Mail(n) => counted(n, t.waits_mail),
+        Waits::Wake => t.waits_wake.to_string(),
+        Waits::Retry => t.waits_retry.to_string(),
+        Waits::Refused(n) => counted(n, t.waits_refused),
+        Waits::Report if halt == Halt::Store => t.waits_report_store.to_string(),
+        Waits::Report => fill(t.waits_report_lead, &[name(w, w.projects[p].leader)]),
+    }
+}
+
+/// A choice on a stop, as its digit names it: `raise by $50.00`.
+pub fn choice_words(lang: Lang, w: &World, p: ProjectId, c: crate::halt::Choice) -> String {
+    use crate::halt::Choice;
+    let t = lang.text();
+    match c {
+        Choice::Raise(by) => fill(t.choice_raise, &[&dollars(by)]),
+        Choice::Rest => t.choice_rest.to_string(),
+        Choice::GoOn => fill(t.choice_go_on, &[&crate::halt::MAX_WOKEN.to_string()]),
+        Choice::LookAgain => t.choice_look.to_string(),
+        Choice::Store => t.choice_store.to_string(),
+        Choice::StartLead => fill(t.choice_lead, &[name(w, w.projects[p].leader)]),
+    }
+}
+
+/// What a choice on a stop does, for the preview.
+pub fn does_words(lang: Lang, c: crate::halt::Choice) -> String {
+    use crate::halt::Choice;
+    let t = lang.text();
+    match c {
+        Choice::Raise(_) => t.does_raise.to_string(),
+        Choice::Rest => t.does_rest.to_string(),
+        Choice::GoOn => fill(t.does_go_on, &[&crate::halt::MAX_WOKEN.to_string()]),
+        Choice::LookAgain => t.does_look.to_string(),
+        Choice::Store => t.does_store.to_string(),
+        Choice::StartLead => t.does_lead.to_string(),
+    }
 }
 
 #[cfg(test)]

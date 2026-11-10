@@ -2092,6 +2092,20 @@ pub enum Event {
         agent: AgentId,
         why: String,
     },
+    /// Leader `leader`'s team stopped: `halt`, `behind` of it waiting
+    /// behind it, `why` in the words of what stopped (record 146).
+    Halted {
+        leader: AgentId,
+        halt: crate::halt::Halt,
+        behind: usize,
+        why: String,
+    },
+    /// Leader `leader`'s team goes on: `halt` is over after `ticks`.
+    Unhalted {
+        leader: AgentId,
+        halt: crate::halt::Halt,
+        ticks: u64,
+    },
     /// The person ended process `pid`, named `name`, under agent
     /// `agent`'s session (`:ps`, record 129).
     Killed {
@@ -2613,7 +2627,7 @@ impl Event {
             Event::Blocked { .. } | Event::Capped { .. } | Event::StillBlocked { .. } => {
                 EntryKind::Blocked
             }
-            Event::Unblocked { .. } => EntryKind::Assumption,
+            Event::Unblocked { .. } | Event::Unhalted { .. } => EntryKind::Assumption,
             Event::Health { sign, .. } if sign.wakes() => EntryKind::Blocked,
             Event::Health { .. } => EntryKind::Assumption,
             Event::ResearchOpened { .. }
@@ -2636,6 +2650,7 @@ impl Event {
             | Event::CardFailed { .. }
             | Event::Stopped { .. }
             | Event::TurnFailed { .. }
+            | Event::Halted { .. }
             | Event::Interrupted { .. }
             | Event::SuggestFailed { .. }
             | Event::ReviewFailed { .. }
@@ -2718,6 +2733,8 @@ impl Event {
             | Event::StoreSynced { leader, .. }
             | Event::StoreFailed { leader, .. }
             | Event::Budget { leader, .. }
+            | Event::Halted { leader, .. }
+            | Event::Unhalted { leader, .. }
             | Event::PotLow { leader, .. }
             | Event::Suggested { leader, .. }
             | Event::SuggestFailed { leader, .. }
@@ -3390,6 +3407,9 @@ pub struct World {
     /// leader has not been told yet (record 146): whoever drives the
     /// agents takes them. Memory only.
     pub stops: Vec<AgentId>,
+    /// What stops a whole team (record 146, part 2), kept by
+    /// `World::look_halts` from what the engine holds back. Memory only.
+    pub halts: crate::halt::Halts,
     /// What all agents together may spend, in ten-thousandths of a dollar;
     /// one pot, kept between runs.
     pub budget: u64,
@@ -4131,6 +4151,7 @@ impl World {
             journal,
             inbox: self.inbox.clone(),
             stops: Vec::new(),
+            halts: Default::default(),
             budget: self.budget,
             estimated: self.estimated,
             max_researchers: self.max_researchers,
@@ -6506,6 +6527,7 @@ mod tests {
             journal: Vec::new(),
             inbox: Vec::new(),
             stops: Vec::new(),
+            halts: Default::default(),
             budget: 10_000,
             estimated: false,
             max_researchers: 0,
