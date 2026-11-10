@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: A question
+    url: https://github.com/selcukgural/imece/discussions/new?category=q-a
+    about: How to do something with imece, or why it did what it did.
+  - name: An idea
+    url: https://github.com/selcukgural/imece/discussions/new?category=ideas
+    about: Tell what happened in a real session and where imece got in the way.
+  - name: A security problem
+    url: https://github.com/selcukgural/imece/security/advisories/new
+    about: Reported privately, never in an issue or a discussion.

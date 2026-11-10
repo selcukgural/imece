@@ -1,0 +1,32 @@
+body:
+  - type: markdown
+    attributes:
+      value: |
+        imece takes a new feature from a real session's friction, not from
+        a list of what other programs have. So the most useful idea starts
+        with what happened: what you were doing with your team of agents,
+        and where imece got in the way or left you guessing.
+  - type: textarea
+    id: session
+    attributes:
+      label: What were you doing?
+      description: The project's size, how many agents, what you asked the leader for.
+    validations:
+      required: true
+  - type: textarea
+    id: friction
+    attributes:
+      label: Where did it get in the way?
+      description: What you had to do by hand, what you could not see, what you decided without the facts.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would have helped?
+      description: Optional. A rough thought is fine; the friction matters more than the design.
+  - type: input
+    id: version
+    attributes:
+      label: imece version
+      description: "`imece --version`"

@@ -1,0 +1,22 @@
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A session worth telling: what a team of agents built, a key file,
+        a theme, a setup script, a way of working that paid off (or did
+        not). Take anything private out of screens and logs first.
+  - type: textarea
+    id: what
+    attributes:
+      label: What did you do?
+    validations:
+      required: true
+  - type: textarea
+    id: how
+    attributes:
+      label: How was it set up?
+      description: Agents, budget, the flags, files under `.imece/` or your config directory.
+  - type: textarea
+    id: learned
+    attributes:
+      label: What went well, and what did not?
