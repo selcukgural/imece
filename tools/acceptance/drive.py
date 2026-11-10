@@ -112,9 +112,17 @@ def start(name: str, size: str, command: list[str], env: dict[str, str], cwd: st
     args = ["new-session", "-d", "-s", name, "-x", cols, "-y", rows]
     if cwd:
         args += ["-c", cwd]
-    tmux(*args, line)
-    tmux("set-option", "-t", name, "remain-on-exit", "on")
-    tmux("set-option", "-t", name, "allow-passthrough", "on")
+    # One command to tmux: the options are set before the server sees the
+    # program end, so a program that ends at once (`--repo /`) still
+    # leaves its pane to be read.
+    tmux(
+        *args,
+        line,
+        ";",
+        "set-option", "-t", name, "remain-on-exit", "on",
+        ";",
+        "set-option", "-t", name, "allow-passthrough", "on",
+    )
     log(f"start {name} {size}: {shlex.join(command)}")
 
 
@@ -281,6 +289,12 @@ def play(acc: Path, path: Path) -> tuple[str, float, str]:
         leftovers(d)
 
 
+def is_tmux(name: str) -> bool:
+    """Whether a process named `name` is tmux: `tmux` on macOS, its server
+    `tmux: server` on Linux."""
+    return os.path.basename(name.strip()).startswith("tmux")
+
+
 def running_in(d: Path) -> list[str]:
     """The processes whose working directory is in `d`, as `pid name`."""
     found = []
@@ -294,7 +308,7 @@ def running_in(d: Path) -> list[str]:
                 name = (proc / "comm").read_text().strip()
             except OSError:
                 continue
-            if cwd == root or cwd.startswith(root + "/"):
+            if (cwd == root or cwd.startswith(root + "/")) and not is_tmux(name):
                 found.append(f"{proc.name} {name}")
         return found
     out = subprocess.run(["lsof", "-a", "-d", "cwd", "-Fpcn"], capture_output=True, text=True).stdout
@@ -306,7 +320,7 @@ def running_in(d: Path) -> list[str]:
             name = line[1:]
         elif line.startswith("n"):
             cwd = os.path.realpath(line[1:])
-            if cwd == root or cwd.startswith(root + "/"):
+            if (cwd == root or cwd.startswith(root + "/")) and not is_tmux(name):
                 found.append(f"{pid} {name}")
     return found
 
@@ -330,7 +344,7 @@ def leftovers(d: Path) -> None:
     found = subprocess.run(["pgrep", "-f", str(d)], capture_output=True, text=True)
     for pid in found.stdout.split():
         name = subprocess.run(["ps", "-o", "comm=", "-p", pid], capture_output=True, text=True)
-        if os.path.basename(name.stdout.strip()) != "tmux" and int(pid) != os.getpid():
+        if not is_tmux(name.stdout) and int(pid) != os.getpid():
             subprocess.run(["kill", pid], capture_output=True)
 
 

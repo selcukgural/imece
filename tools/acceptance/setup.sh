@@ -66,15 +66,19 @@ else
     (cd "$dir/rel" && shasum -a 256 "imece-$target.tar.gz" > SHA256SUMS)
 fi
 
-# The sample checkouts: one commit each, no hooks, no signing.
+# The sample checkouts: one commit each, an identity of their own (a
+# runner may have none, and the person's stays out of them), no hooks,
+# no signing, for every commit made in them during the run too.
 cp -R "$here/repos/shelf" "$here/repos/tally" "$here/repos/plain" "$dir/repos/"
 chmod 755 "$dir/repos/shelf/.imece/check" "$dir/repos/shelf/.imece/"*.sh
 for r in shelf tally; do
     git -C "$dir/repos/$r" init -q -b main
+    git -C "$dir/repos/$r" config user.name acceptance
+    git -C "$dir/repos/$r" config user.email acceptance@localhost
+    git -C "$dir/repos/$r" config commit.gpgsign false
+    git -C "$dir/repos/$r" config core.hooksPath /dev/null
     git -C "$dir/repos/$r" add -A
-    git -C "$dir/repos/$r" -c user.name=acceptance -c user.email=acceptance@localhost \
-        -c commit.gpgsign=false -c core.hooksPath=/dev/null \
-        commit -q -m "The sample as the acceptance run starts it"
+    git -C "$dir/repos/$r" commit -q -m "The sample as the acceptance run starts it"
 done
 printf 'SAMPLE_SETTING=not-a-secret\n' > "$dir/repos/shelf/.env"
 printf 'colour = blue\n' > "$dir/repos/shelf/local.cfg"

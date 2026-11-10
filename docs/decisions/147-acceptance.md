@@ -130,3 +130,10 @@ Findings of the first scripts: the spin above; and record 125's hold on
 a new item (the first key on the rest of a part applied chooses it) is
 what a person meets too, so the scripts say it in a comment where they
 press a key twice.
+
+CI's `acceptance-scripts` job (Linux and macOS) plays every script on
+every pull request: `cargo build`, `setup.sh --stand-in` in the runner's
+temporary directory, `drive.py run --jobs 4`; a failure's screens and
+`drive.log` are the job's artifact. So a script breaks in the pull
+request that breaks it, not on the day of a release, and the release
+run's scripted rows only confirm what CI saw on the candidate.
