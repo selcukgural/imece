@@ -26,6 +26,7 @@ use serde_json::{Value, json};
 
 use crate::claude::{EDIT_TOOLS, SHELL_TOOL, SUBAGENT_TOOLS, TASK_TOOLS, WEB_TOOLS};
 
+pub mod lead;
 pub mod work;
 pub use work::Habits;
 
@@ -478,6 +479,8 @@ pub struct Mind {
     pub me: BTreeMap<String, String>,
     /// The workers a leader hired.
     pub hired: Vec<String>,
+    /// The cards of a leader's plan the person has not answered.
+    pub planned: Vec<lead::Part>,
     /// The assigns a worker (or a helper) has worked on.
     pub worked: u64,
     /// The task a worker waits on, for the person's answer or its
@@ -523,6 +526,7 @@ impl Mind {
         json!({
             "me": self.me,
             "hired": self.hired,
+            "planned": self.planned.iter().map(lead::Part::to_json).collect::<Vec<_>>(),
             "worked": self.worked,
             "waiting": waiting,
             "turns": self.turns,
@@ -539,6 +543,9 @@ impl Mind {
                 .collect(),
             hired: (v["hired"].as_array().into_iter().flatten())
                 .filter_map(text)
+                .collect(),
+            planned: (v["planned"].as_array().into_iter().flatten())
+                .filter_map(lead::Part::from_json)
                 .collect(),
             worked: v["worked"].as_u64().unwrap_or(0),
             waiting: work::Waiting::from_json(&v["waiting"]),
@@ -570,8 +577,23 @@ impl Mind {
         }
     }
 
+    /// A leader's turn: the person's answer to its plan first (the cards
+    /// handed out at a yes, dropped at a no), then its mail read, else
+    /// the person's task given to its workers: cut into cards
+    /// ([`lead::parts`]) when its habits say so, whole to one worker
+    /// otherwise.
     fn lead(&mut self, hands: &mut impl Hands, prompt: &str) -> String {
-        if prompt.starts_with(MAIL) {
+        if !self.planned.is_empty() {
+            let planned = std::mem::take(&mut self.planned);
+            if prompt.contains(lead::PLAN_YES) {
+                return self.hand_out(hands, planned, false);
+            }
+            if prompt.contains(lead::PLAN_NO) {
+                return format!("I dropped my plan of {}.", lead::cards(planned.len()));
+            }
+            self.planned = planned;
+        }
+        if prompt.contains(MAIL) {
             let done = headed(prompt, "done");
             return if done.is_empty() {
                 "Read my mail; nothing to do.".into()
@@ -580,6 +602,13 @@ impl Mind {
             };
         }
         let task = task_of(prompt);
+        if task == lead::GO_ON {
+            return "Nothing new for me to do.".into();
+        }
+        let parts = lead::parts(&hands.files(), &task, hands.habits().cards);
+        if !parts.is_empty() {
+            return self.hand_out(hands, parts, true);
+        }
         let name = match self.hired.first() {
             Some(n) => n.clone(),
             None => match hands.call("hire", json!({})) {
@@ -1268,12 +1297,14 @@ mod tests {
     /// the session's do ([`work::numbered`], [`work::edited`]), a tool in
     /// `refuse` fails with its words.
     #[derive(Default)]
-    pub(super) struct Fake {
+    pub(in crate::stand_in) struct Fake {
         pub calls: Vec<(String, Value)>,
         /// The built-in tools used, with their input.
         pub used: Vec<(String, Value)>,
         pub said: Vec<String>,
         pub answers: BTreeMap<String, Result<String, String>>,
+        /// What the bus answers first, a call each, before `answers`.
+        pub first: Vec<(String, Result<String, String>)>,
         pub tools: Vec<String>,
         pub files: BTreeMap<String, String>,
         pub refuse: BTreeMap<String, String>,
@@ -1285,6 +1316,9 @@ mod tests {
     impl Hands for Fake {
         fn call(&mut self, tool: &str, args: Value) -> Result<String, String> {
             self.calls.push((tool.to_string(), args));
+            if let Some(at) = self.first.iter().position(|(t, _)| t == tool) {
+                return self.first.remove(at).1;
+            }
             self.answers
                 .get(tool)
                 .cloned()
@@ -1343,7 +1377,8 @@ mod tests {
         f
     }
 
-    const LEADER: &str = "name: lead\nrole: the leader\nproject: repo\nyou answer to: the person\n";
+    pub(super) const LEADER: &str =
+        "name: lead\nrole: the leader\nproject: repo\nyou answer to: the person\n";
     pub(super) const WORKER: &str =
         "name: claude-1\nrole: a worker\nproject: repo\nyou answer to: the leader lead\n";
 
@@ -1678,6 +1713,11 @@ mod tests {
         let mind = Mind {
             me: BTreeMap::from([("role".into(), "the leader".into())]),
             hired: vec!["claude-1".into(), "claude-2".into()],
+            planned: vec![lead::Part {
+                title: "a.rs: Round up".into(),
+                body: "a.rs: Round up\nwell".into(),
+                paths: vec!["a.rs".into(), "a_test.rs".into()],
+            }],
             worked: 3,
             waiting: Some(work::Waiting {
                 task: "Round up".into(),
@@ -2644,6 +2684,8 @@ mod tests {
             faults: 8,
             limit: 9,
             fill: 10,
+            cards: 11,
+            strays: 12,
             seed: 7,
         };
         let claude = install(&dir, &imece, &home, &habits).unwrap();
@@ -2658,11 +2700,11 @@ mod tests {
         // Its habits reach the stand-in.
         std::fs::write(
             &imece,
-            "#!/bin/sh\nprintf '%s|' \"$IMECE_STAND_IN_PAUSE_MS\" \"$IMECE_STAND_IN_ASKS\" \"$IMECE_STAND_IN_QUESTIONS\" \"$IMECE_STAND_IN_HELPERS\" \"$IMECE_STAND_IN_FAULTS\" \"$IMECE_STAND_IN_SEED\"\n",
+            "#!/bin/sh\nprintf '%s|' \"$IMECE_STAND_IN_PAUSE_MS\" \"$IMECE_STAND_IN_ASKS\" \"$IMECE_STAND_IN_QUESTIONS\" \"$IMECE_STAND_IN_HELPERS\" \"$IMECE_STAND_IN_FAULTS\" \"$IMECE_STAND_IN_CARDS\" \"$IMECE_STAND_IN_STRAYS\" \"$IMECE_STAND_IN_SEED\"\n",
         )
         .unwrap();
         let out = Command::new(&claude).output().unwrap();
-        assert_eq!(String::from_utf8_lossy(&out.stdout), "250|3|5|6|8|7|");
+        assert_eq!(String::from_utf8_lossy(&out.stdout), "250|3|5|6|8|11|12|7|");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
