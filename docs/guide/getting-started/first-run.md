@@ -130,7 +130,7 @@ A tier model your account does not have fails its first turn; imece then restart
  ● #1   accept a trailing comma   Make the change · 4 min
 ```
 
-The row is the task, not the agent. From left to right: the glyph (`●` working, `○` idle, `!` it needs you, `✓` done, `■` stuck: blocked or its session ended), its card and title, the step of its to-do list it is on (or what it does now), and since when. A worker that asks for your yes leaves AT WORK while it waits: its ask is a row of its own in TO DECIDE, under permissions (`run Bash: …?`), where `a` allows it and `r` refuses it (routine commands, the build, the tests, git's reading commands run on their own).
+The row is the task, not the agent. From left to right: the glyph (`●` working, `○` idle, `!` it needs you, `✓` done, `■` stuck: blocked or its session ended), its card and title, the step of its to-do list it is on (or what it does now), and since when. An idle worker says what became of its last work beside it (`idle · finished, applied`, `idle · no work yet`). A worker that asks for your yes leaves AT WORK while it waits: its ask is a row of its own in TO DECIDE, under permissions (`run Bash: …?`), where `a` allows it and `r` refuses it (routine commands, the build, the tests, git's reading commands run on their own).
 
 `enter` on the row opens the worker's work on its log tab: its card's story (intent, assumptions, decisions, talk, evidence, changes) and its to-do list; `t` opens the trace, the raw stream of its session. The head line names its card, project, the agent, its time and cost; `tab` goes to the next tab, `esc` goes back.
 

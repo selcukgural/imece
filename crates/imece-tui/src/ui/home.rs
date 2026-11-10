@@ -14,6 +14,7 @@ use ratatui::widgets::Paragraph;
 use super::*;
 use crate::app::{App, Heading, HomeGroup, HomeRow};
 use crate::i18n::Text;
+use crate::ledger::Last;
 
 /// From this wide the preview stands beside the list.
 pub(crate) const WIDE: u16 = 120;
@@ -162,9 +163,10 @@ fn decide_heading(app: &App, listed: &Listed) -> Line<'static> {
     Line::from(spans)
 }
 
-/// `AT WORK  12 · stuck 2 · idle 1 · 2 hidden (:unsettle)`: who works
-/// (the projects' headings not counted), how many of them are stuck or
-/// idle, and how many agents and projects `s` hid, when any are.
+/// `AT WORK  12 · stuck 2 · finished 1 · idle 1 · 2 hidden (:unsettle)`:
+/// who works (the projects' headings not counted), how many of them are
+/// stuck, how many of the idle finished their work and how many did not,
+/// and how many agents and projects `s` hid, when any are.
 fn work_heading(app: &App, listed: &Listed) -> Line<'static> {
     let t = app.lang.text();
     let mut spans = vec![Span::styled(format!(" {} ", t.home_work), bold(pal().ok))];
@@ -172,11 +174,18 @@ fn work_heading(app: &App, listed: &Listed) -> Line<'static> {
         .filter(|r| r.0.heading() == Heading::Work && r.0 != HomeGroup::Team)
         .count();
     let mut words = vec![agents.to_string()];
-    for (group, word) in [
-        (HomeGroup::Stuck, t.home_stuck_count),
-        (HomeGroup::Quiet, t.home_idle_count),
+    let quiet = listed.many(HomeGroup::Quiet);
+    let finished = (listed.rows.iter())
+        .filter(|r| match r {
+            (HomeGroup::Quiet, HomeRow::Agent(id)) => rest_of(&app.world, *id).finished(),
+            _ => false,
+        })
+        .count();
+    for (n, word) in [
+        (listed.many(HomeGroup::Stuck), t.home_stuck_count),
+        (finished, t.home_finished_count),
+        (quiet - finished, t.home_idle_count),
     ] {
-        let n = listed.many(group);
         if n > 0 {
             words.push(fill(word, &[&n.to_string()]));
         }
@@ -453,6 +462,43 @@ enum Tail {
     Asked(String, Vec<String>),
     Spans(Vec<Span<'static>>),
     Cut(String),
+    /// One line said in several ways, the longest first: the first that
+    /// fits is drawn, the last cut when none does.
+    Fits(Vec<Vec<Span<'static>>>),
+}
+
+impl Tail {
+    /// How wide a one-line tail is, said whole; none for words that wrap.
+    fn whole(&self) -> Option<usize> {
+        match self {
+            Tail::Cut(text) => Some(text.width()),
+            Tail::Fits(ways) => ways.first().map(|way| way.iter().map(Span::width).sum()),
+            Tail::Words(_) | Tail::Asked(..) | Tail::Spans(_) => None,
+        }
+    }
+}
+
+/// What became of the work an idle worker (or solo) last had; nothing is
+/// said of anyone else's: a helper's work is its worker's.
+fn rest_of(w: &World, id: AgentId) -> Last {
+    match w.agents[id].role {
+        Role::Worker | Role::Solo => w.last_work(id),
+        Role::Leader | Role::Helper | Role::Researcher => Last::Unsaid,
+    }
+}
+
+/// [`rest_of`] in words, in its colour: `finished, applied`, `#12
+/// failed`, `no work yet`; none when nothing is said.
+fn rest_span(lang: Lang, w: &World, id: AgentId) -> Option<Span<'static>> {
+    let t = lang.text();
+    Some(match rest_of(w, id) {
+        Last::Applied => Span::styled(t.rest_applied, fg(pal().ok)),
+        Last::Done => Span::styled(t.rest_done, fg(pal().ok)),
+        Last::Failed(c) => Span::styled(fill(t.rest_failed, &[&words::card_ref(c)]), fg(pal().bad)),
+        Last::Withdrawn(c) => Span::styled(fill(t.rest_withdrawn, &[&words::card_ref(c)]), dim()),
+        Last::Nothing => Span::styled(t.rest_nothing, dim()),
+        Last::Unsaid => return None,
+    })
 }
 
 /// What an item's row says: the whole ask, in the person's words, without
@@ -516,6 +562,9 @@ pub(crate) fn change_spans(lang: Lang, c: &Change, v: &Verdict) -> Vec<Span<'sta
 
 /// What an agent's row says: the step it is on, else its status, then
 /// how long, from a minute on; the row's own glyph is not said twice.
+/// An idle worker's row also says what became of its last work (`idle ·
+/// finished, applied · 6 min`); where that does not fit the time goes
+/// first, then `idle`.
 fn agent_tail(app: &App, id: AgentId, glyph: &str) -> Tail {
     let w = &app.world;
     let lang = app.lang;
@@ -537,8 +586,22 @@ fn agent_tail(app: &App, id: AgentId, glyph: &str) -> Tail {
         text = lang.text().home_idle.to_string();
     }
     let since = w.tick.saturating_sub(app.since(id)) * SECONDS_PER_TICK;
-    if since >= 60 {
-        text.push_str(&format!(" · {}", words::ago(lang, since)));
+    let ago = (since >= 60).then(|| format!(" · {}", words::ago(lang, since)));
+    let idle = a.status == Status::Idle && text == lang.text().idle;
+    if idle && let Some(rest) = rest_span(lang, w, id) {
+        let said = vec![Span::raw(format!("{text} · ")), rest.clone()];
+        let mut ways = Vec::new();
+        if let Some(ago) = ago {
+            let mut timed = said.clone();
+            timed.push(Span::raw(ago));
+            ways.push(timed);
+        }
+        ways.push(said);
+        ways.push(vec![rest]);
+        return Tail::Fits(ways);
+    }
+    if let Some(ago) = ago {
+        text.push_str(&ago);
     }
     Tail::Cut(text)
 }
@@ -598,7 +661,7 @@ fn title_room(
     column: usize,
     here: bool,
 ) -> usize {
-    let Tail::Cut(text) = tail else {
+    let Some(text) = tail.whole() else {
         return 0;
     };
     let before: usize = head.iter().map(Span::width).sum();
@@ -614,9 +677,9 @@ fn title_room(
         0
     };
     let said = if keys > 0 {
-        text.width().max(ASK_MIN) + keys + 2
+        text.max(ASK_MIN) + keys + 2
     } else {
-        text.width() + 1
+        text + 1
     };
     let free = width.saturating_sub(before + column + 2 + said);
     free.min(title.width().saturating_sub(column))
@@ -703,6 +766,7 @@ fn row_lines(
         let said = match &tail {
             Tail::Cut(text) => Some(vec![Span::raw(text.clone())]),
             Tail::Spans(spans) => Some(spans.clone()),
+            Tail::Fits(ways) => ways.first().cloned(),
             Tail::Words(_) | Tail::Asked(..) => None,
         };
         if let Some(said) = said {
@@ -789,6 +853,25 @@ fn row_lines(
         Tail::Cut(text) => {
             let mut line = head;
             line.push(Span::raw(fit(&text, first_room).trim_end().to_string()));
+            end_first(line, &mut lines);
+        }
+        Tail::Fits(ways) => {
+            let wide = |way: &Vec<Span<'static>>| way.iter().map(Span::width).sum::<usize>();
+            let way = (ways.iter().find(|way| wide(way) <= first_room))
+                .or(ways.last())
+                .cloned()
+                .unwrap_or_default();
+            let mut line = head;
+            let mut room = first_room;
+            for s in way {
+                let s = if s.width() > room {
+                    Span::styled(fit(&s.content, room).trim_end().to_string(), s.style)
+                } else {
+                    s
+                };
+                room -= s.width();
+                line.push(s);
+            }
             end_first(line, &mut lines);
         }
         Tail::Spans(spans) => {
@@ -2011,7 +2094,152 @@ mod tests {
         app.world.agents[a].status = Status::Idle;
         let got = lines(&app, 100);
         let row = got.iter().find(|l| l.contains("○ ")).unwrap();
-        assert!(row.contains("  idle · 1 min"), "{row}");
+        assert!(row.contains("  idle · no work yet · 1 min"), "{row}");
+    }
+
+    /// Agent `a`'s newest row in the ledger: a try at card 0 that ended
+    /// with `outcome`.
+    fn ended(app: &mut App, a: AgentId, outcome: crate::ledger::Outcome) {
+        app.world.agents[a].card = Some(0);
+        app.world.ledger.push(crate::ledger::Attempt {
+            agent: a,
+            card: Some(0),
+            attempt: 1,
+            outcome,
+            ..Default::default()
+        });
+    }
+
+    #[test]
+    fn an_idle_worker_s_row_says_what_became_of_its_last_work() {
+        use crate::ledger::Outcome;
+        let mut app = home(Lang::En);
+        let a = worker(&app);
+        app.at_home.scope = Some(app.world.agents[a].project);
+        app.world.cards[0].title = "Paging".into();
+        let spans = |app: &App| row_lines(app, HomeRow::Agent(a), 100, false, false)[0].clone();
+        let row = |app: &App| text(&spans(app));
+        let colour = |app: &App, words: &str| {
+            let line = spans(app);
+            let span = line.spans.iter().find(|s| s.content == words);
+            span.unwrap_or_else(|| panic!("{words}: {line:?}")).style
+        };
+        // Never given anything.
+        app.world.agents[a].card = None;
+        assert!(row(&app).ends_with("idle · no work yet"), "{}", row(&app));
+        assert_eq!(colour(&app, "no work yet"), dim());
+        // A card in hand, nothing ended: only idle.
+        app.world.agents[a].card = Some(0);
+        assert!(row(&app).ends_with("  idle"), "{}", row(&app));
+        ended(&mut app, a, Outcome::Open);
+        assert!(row(&app).ends_with("  idle"), "{}", row(&app));
+        for (outcome, said, style) in [
+            (Outcome::Applied, "finished, applied", fg(pal().ok)),
+            (Outcome::Done, "finished", fg(pal().ok)),
+            (Outcome::Failed, "#1 failed", fg(pal().bad)),
+            (Outcome::Withdrawn, "#1 withdrawn", dim()),
+        ] {
+            ended(&mut app, a, outcome);
+            let got = row(&app);
+            assert!(got.ends_with(&format!("  idle · {said}")), "{got}");
+            assert_eq!(colour(&app, said), style, "{said}");
+        }
+        // Handed on, or late: nothing is said.
+        for outcome in [Outcome::HandedOn, Outcome::Late] {
+            ended(&mut app, a, outcome);
+            assert!(row(&app).ends_with("  idle"), "{}", row(&app));
+        }
+        // How long comes last.
+        ended(&mut app, a, Outcome::Applied);
+        app.world.tick = 12;
+        app.world.agents[a].changed_at = 0;
+        let got = row(&app);
+        assert!(got.ends_with("idle · finished, applied · 1 min"), "{got}");
+        // At work again it says what it does, not what it finished.
+        app.world.agents[a].status = Status::Working;
+        assert!(!row(&app).contains("finished"), "{}", row(&app));
+        app.world.agents[a].status = Status::Idle;
+        // A helper's work is its worker's: nothing of its own is said.
+        app.world.agents[a].role = Role::Helper;
+        assert!(!row(&app).contains("finished"), "{}", row(&app));
+        app.world.agents[a].role = Role::Worker;
+        // A solo's is its own.
+        app.world.agents[a].role = Role::Solo;
+        assert!(row(&app).contains("finished, applied"), "{}", row(&app));
+        app.world.agents[a].role = Role::Worker;
+        app.lang = Lang::Tr;
+        let got = row(&app);
+        assert!(got.ends_with("boşta · bitirdi, uygulandı · 1 dk"), "{got}");
+    }
+
+    #[test]
+    fn a_finished_row_too_narrow_loses_the_time_then_idle_then_is_cut() {
+        use crate::ledger::Outcome;
+        let mut app = home(Lang::En);
+        let a = worker(&app);
+        app.at_home.scope = Some(app.world.agents[a].project);
+        app.world.cards[0].title = "Paging".into();
+        ended(&mut app, a, Outcome::Applied);
+        app.world.tick = 12;
+        app.world.agents[a].changed_at = 0;
+        // What the row says after its title, at each width from wide to
+        // narrow: each way once, in this order.
+        let mut said: Vec<String> = Vec::new();
+        for width in (30..=100).rev() {
+            let got = text(&row_lines(&app, HomeRow::Agent(a), width, false, false)[0]);
+            assert!(got.chars().count() <= width, "{width}: {got}");
+            let tail = got.split("Paging").nth(1).unwrap().trim().to_string();
+            if said.last() != Some(&tail) {
+                said.push(tail);
+            }
+        }
+        assert!(said.len() > 3, "{said:?}");
+        assert_eq!(
+            said[..3],
+            [
+                "idle · finished, applied · 1 min",
+                "idle · finished, applied",
+                "finished, applied"
+            ],
+            "{said:?}"
+        );
+        assert!(
+            said[3..]
+                .iter()
+                .all(|t| t.ends_with('…') && t.starts_with("finished")),
+            "then cut: {said:?}"
+        );
+        assert!(said.len() > 3, "{said:?}");
+        // The row at hand keeps its keys and still says it.
+        app.at_home.at = Some(HomeRow::Agent(a));
+        let got = text(&row_lines(&app, HomeRow::Agent(a), 100, false, true)[0]);
+        assert!(got.contains("idle · finished, applied · 1 min"), "{got}");
+        assert!(got.trim_end().ends_with("enter  open"), "{got}");
+        // Narrow (record 131): on the title's line when it fits.
+        let got = row_lines(&app, HomeRow::Agent(a), 60, true, false);
+        assert_eq!(got.len(), 1, "{got:?}");
+        assert!(text(&got[0]).ends_with("Paging  idle · finished, applied · 1 min"));
+    }
+
+    #[test]
+    fn at_work_counts_the_idle_who_finished_apart() {
+        use crate::ledger::Outcome;
+        let mut app = home(Lang::En);
+        let w = workers(&app);
+        app.world.agents[w[0]].status = Status::Working;
+        app.world.agents[w[1]].status = Status::Working;
+        ended(&mut app, w[2], Outcome::Applied);
+        assert_eq!(lines(&app, 100)[0], " AT WORK 4 · finished 1 · idle 1");
+        // A failed card is not finished work.
+        ended(&mut app, w[3], Outcome::Failed);
+        assert_eq!(lines(&app, 100)[0], " AT WORK 4 · finished 1 · idle 1");
+        ended(&mut app, w[3], Outcome::Done);
+        assert_eq!(lines(&app, 100)[0], " AT WORK 4 · finished 2");
+        // One at work finished nothing yet, whatever its last row says.
+        ended(&mut app, w[0], Outcome::Applied);
+        assert_eq!(lines(&app, 100)[0], " AT WORK 4 · finished 2");
+        app.lang = Lang::Tr;
+        assert!(lines(&app, 100)[0].ends_with("4 · bitiren 2"));
     }
 
     #[test]

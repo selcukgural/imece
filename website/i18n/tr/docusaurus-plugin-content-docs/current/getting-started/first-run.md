@@ -130,7 +130,7 @@ Hesabınızda olmayan bir katman modeli ilk turunda düşer; imece o işçiyi st
  ● #1   sondaki virgülü kabul et  Değişikliği yap · 4 dk
 ```
 
-Satır ajan değil, iştir. Soldan sağa: glif (`●` çalışıyor, `○` boşta, `!` sizi bekliyor, `✓` bitti, `■` takıldı: bloke ya da oturumu bitti), kartı ve başlığı, yapılacaklar listesinde bulunduğu adım (ya da şu an ne yaptığı) ve ne zamandır. Evetinizi isteyen bir işçi beklerken ÇALIŞAN'dan çıkar: isteği KARAR BEKLEYEN'de, izinler altında kendi satırıdır (`Bash: … çalışsın mı?`); orada `a` izin verir, `r` reddeder (rutin komutlar, derleme, testler, git'in okuma komutları kendiliğinden çalışır).
+Satır ajan değil, iştir. Soldan sağa: glif (`●` çalışıyor, `○` boşta, `!` sizi bekliyor, `✓` bitti, `■` takıldı: bloke ya da oturumu bitti), kartı ve başlığı, yapılacaklar listesinde bulunduğu adım (ya da şu an ne yaptığı) ve ne zamandır. Boştaki bir işçi, son işinin ne olduğunu da yanında söyler (`boşta · bitirdi, uygulandı`, `boşta · henüz iş yok`). Evetinizi isteyen bir işçi beklerken ÇALIŞAN'dan çıkar: isteği KARAR BEKLEYEN'de, izinler altında kendi satırıdır (`Bash: … çalışsın mı?`); orada `a` izin verir, `r` reddeder (rutin komutlar, derleme, testler, git'in okuma komutları kendiliğinden çalışır).
 
 Satırda `enter` işçinin işini log sekmesinde açar: kartının hikâyesi (niyet, varsayımlar, kararlar, konuşma, kanıt, değişiklikler) ve yapılacaklar listesi; `t` izi açar, oturumunun ham akışı. Baş satırı kartını, projesini, ajanı, süresini ve maliyetini söyler; `tab` sonraki sekmeye geçer, `esc` geri döner.
 

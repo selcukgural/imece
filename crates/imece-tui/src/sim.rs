@@ -5383,6 +5383,9 @@ mod tests {
         assert!(informs(&w).is_empty(), "nothing applied, nothing told");
         s.applied(&mut w, worker, true, &[]);
         assert_eq!(informs(&w), [idle], "not its own, not one stopped or gone");
+        // Its row on Home reads as live's: finished, applied (#451).
+        assert_eq!(w.last_work(worker), crate::ledger::Last::Applied);
+        assert_eq!(w.last_work(idle), crate::ledger::Last::Nothing);
     }
 
     #[test]
