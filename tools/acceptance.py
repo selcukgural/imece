@@ -222,18 +222,26 @@ def check(root: Path) -> Catalogue:
     for name in sorted(cat.commands_out):
         if name not in known_commands:
             wrong.append(f"Not covered: `:{name}` is not a command")
-    # A stand-in case is a scripted one: drive.py plays its scenario.
+    # A stand-in case is a scripted one: drive.py plays its scenario. A
+    # real case may have one too, under real/, which only `run --real`
+    # plays; a script is never in the other's place.
     scripted = {p.stem: p for p in sorted((root / SCENARIOS).glob("*.scn"))}
+    real = {p.stem: p for p in sorted((root / SCENARIOS / "real").glob("*.scn"))}
     for c in cat.cases:
         if c.tier == "stand-in" and c.id not in scripted:
             wrong.append(f"{c.id}: a stand-in case has its script {SCENARIOS}/{c.id}.scn")
-    for cid, path in scripted.items():
-        if cid not in seen:
-            wrong.append(f"{SCENARIOS}/{path.name}: no case {cid} in the catalogue")
-            continue
-        why = scenario_steps(path)
-        if why:
-            wrong.append(f"{SCENARIOS}/{path.name}: {why}")
+    for where, scripts in ((SCENARIOS, scripted), (SCENARIOS / "real", real)):
+        for cid, path in scripts.items():
+            if cid not in seen:
+                wrong.append(f"{where}/{path.name}: no case {cid} in the catalogue")
+                continue
+            is_real = seen[cid].tier == "real"
+            if is_real != (scripts is real):
+                place = f"{SCENARIOS}/real" if is_real else str(SCENARIOS)
+                wrong.append(f"{where}/{path.name}: a {seen[cid].tier} case's script goes in {place}")
+            why = scenario_steps(path)
+            if why:
+                wrong.append(f"{where}/{path.name}: {why}")
     if wrong:
         raise Refused("\n".join(wrong))
     return cat

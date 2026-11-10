@@ -1,0 +1,30 @@
+# TEAM-14 · The one-shot sessions: a second read of a change, and a commit
+# message for it (real Claude Code).
+start --budget 2
+see any key: close
+key Escape
+key /
+type Add a one-line docstring to Shelf.__len__ in shelf.py. One worker on the cheap tier.
+key Enter
+key Escape Escape
+allow 600 ready to approve || look first
+# The repository's check asks once the change is read; then it ran.
+allow 300 ✓ check
+key g d
+type :review
+key Enter
+# The note stands above the change's files.
+key Enter
+wait 240 ✎ review · || ✎ claude-review || review ·
+type :review
+key Enter
+see no review:
+key Escape
+key g d
+key a
+allow 120 ALL DONE
+type :commit
+key Enter
+wait 120 !git commit -m '
+gone Nothing for me to do here.
+key C-u Escape

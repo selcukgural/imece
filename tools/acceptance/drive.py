@@ -12,6 +12,10 @@ $ACC/drive.log with its time, so a run can be read back.
     drive.py size imece 60 20
     drive.py stop imece
     drive.py run [--jobs 4] [--report REPORT] [ID|FILE …]   # scripted cases
+    drive.py run --real [--jobs 3] [ID|FILE …]              # the real ones
+
+A TEXT to wait for may be several, ` || ` between them: any one will do
+(a real model may take either of two right ways).
 
 A tmux server of its own (`-L imece-acc`), so the person's tmux is never
 touched. The program starts with the variables an acceptance run sets
@@ -29,9 +33,15 @@ A scripted case is `tools/acceptance/scenarios/<ID>.scn`, a step a line
     key KEY …                    tmux key names
     see TEXT                     TEXT on the screen within 30 s
     wait SECONDS TEXT            TEXT on the screen within SECONDS
+    allow SECONDS TEXT           the same, saying yes to every ask meanwhile
+    until SECONDS COMMAND        `sh -c COMMAND` again until it exits 0, saying
+                                 yes to every ask meanwhile
+    asked-none TEXT              no ask `allow` said yes to held TEXT
     gone TEXT                    TEXT off the screen within 30 s
     size COLS ROWS               the screen resized
     sh COMMAND                   `sh -c COMMAND` in the case's directory; exit 0
+    bg COMMAND                   COMMAND in the background (a daemon), ended
+                                 with the case before what outlived it is looked for
     fails COMMAND                the same, and it must exit non-zero
     says TEXT                    the last sh's or fails' output holds TEXT
     write FILE TEXT              TEXT and a newline into FILE (the case's directory)
@@ -70,11 +80,15 @@ SERVER = "imece-acc"
 KEEP = ("ACC", "PATH", "HOME", "USER", "LOGNAME", "SHELL", "TMPDIR", "EDITOR", "VISUAL", "LANG")
 KEEP_PREFIX = ("XDG_", "LONCA_", "IMECE_", "CLAUDE_", "LC_", "ACC_")
 SCENARIOS = Path(__file__).resolve().parent / "scenarios"
+# The real cases' scripts: real Claude Code sessions, which cost.
+REAL = SCENARIOS / "real"
+# What asks the person: a permission or a script's yes.
+ASKS = ("run Bash:", "run .imece/")
 SEE_WAIT = 30.0
 LOOK_EVERY = 0.2
 KEY_GAP = 0.15
 ESCAPE_GAP = 0.5
-LEFT_WAIT = 5.0
+LEFT_WAIT = float(os.environ.get("ACC_LEFT_WAIT", "5"))
 
 _log_lock = threading.Lock()
 
@@ -144,18 +158,35 @@ def snap(name: str, ansi: bool = False) -> str:
     return tmux(*args).stdout
 
 
-def wait_for(name: str, text: str, timeout: float, present: bool = True) -> str:
-    """The screen once `text` is on it (or off it); Failed when not in time."""
+def wait_for(
+    name: str, text: str, timeout: float, present: bool = True, allow: list | None = None
+) -> str:
+    """The screen once `text` (one of its ` || ` parts) is on it, or off
+    it; Failed when not in time. With `allow`, every ask that shows
+    meanwhile is said yes to (`g d` `a`) and its line kept there."""
     deadline = time.monotonic() + timeout
+    parts = text.split(" || ")
     while True:
         seen = snap(name)
-        if (text in seen) == present:
+        if any(p in seen for p in parts) == present:
             log(f"wait {name}: {text!r} {'seen' if present else 'gone'}")
             return seen
         if time.monotonic() >= deadline:
             what = "not seen" if present else "still there"
             log(f"wait {name}: {text!r} {what} in {timeout:g} s")
             raise Failed(f"{text!r} {what} in {timeout:g} s")
+        if allow is not None and "permissions" in seen:
+            asked = [l.strip() for l in seen.splitlines() if any(a in l for a in ASKS)]
+            for line in asked:
+                if line not in allow:
+                    allow.append(line)
+            log(f"allow {name}: {asked}")
+            tmux("send-keys", "-t", exact(name), "g")
+            time.sleep(KEY_GAP)
+            tmux("send-keys", "-t", exact(name), "d")
+            time.sleep(KEY_GAP)
+            tmux("send-keys", "-t", exact(name), "a")
+            time.sleep(1.0)
         time.sleep(LOOK_EVERY)
 
 
@@ -166,7 +197,7 @@ class Step:
     rest: str
 
 
-VERBS = ("start", "env", "type", "key", "see", "wait", "gone", "size", "sh", "fails", "says", "write", "sleep", "stop")
+VERBS = ("start", "env", "bg", "allow", "until", "asked-none", "type", "key", "see", "wait", "gone", "size", "sh", "fails", "says", "write", "sleep", "stop")
 
 
 def parse(text: str) -> list[Step]:
@@ -178,10 +209,12 @@ def parse(text: str) -> list[Step]:
         verb, _, rest = line.partition(" ")
         if verb not in VERBS:
             raise Failed(f"line {n}: `{verb}` is not a step ({', '.join(VERBS)})")
-        if verb in ("type", "see", "gone", "sh", "fails", "says", "env") and not rest:
+        if verb in ("type", "see", "gone", "sh", "fails", "says", "env", "bg") and not rest:
             raise Failed(f"line {n}: `{verb}` needs its text")
-        if verb == "wait" and not re.fullmatch(r"[0-9.]+ \S.*", rest):
-            raise Failed(f"line {n}: `wait SECONDS TEXT`")
+        if verb in ("wait", "allow", "until") and not re.fullmatch(r"[0-9.]+ \S.*", rest):
+            raise Failed(f"line {n}: `{verb} SECONDS TEXT`")
+        if verb == "asked-none" and not rest:
+            raise Failed(f"line {n}: `asked-none` needs its text")
         steps.append(Step(n, verb, raw.strip()[len(verb) + 1 :]))
     return steps
 
@@ -219,11 +252,13 @@ def play(acc: Path, path: Path) -> tuple[str, float, str]:
     if (acc / "stand-in").exists():
         env["CLAUDE_CONFIG_DIR"] = str(d / "claude")
     out = ""
+    allowed: list[str] = []
+    background: list[subprocess.Popen] = []
     step = Step(0, "", "")
     try:
         for step in parse(path.read_text(encoding="utf-8")):
             v, rest = step.verb, step.rest
-            if v in ("type", "write", "see", "wait", "gone", "says", "env"):
+            if v in ("type", "write", "see", "wait", "gone", "says", "env", "allow", "bg", "until", "sh", "fails"):
                 # The case's own directory, wherever the run is.
                 rest = rest.replace("$ACC_CASE", str(d))
             if v == "start":
@@ -255,6 +290,40 @@ def play(acc: Path, path: Path) -> tuple[str, float, str]:
             elif v == "wait":
                 seconds, _, text = rest.partition(" ")
                 wait_for(name, text, float(seconds))
+            elif v == "allow":
+                seconds, _, text = rest.partition(" ")
+                wait_for(name, text, float(seconds), allow=allowed)
+            elif v == "bg":
+                log_file = open(d / f"bg-{len(background)}.log", "w")
+                background.append(
+                    subprocess.Popen(
+                        ["sh", "-c", f"exec {rest}"], cwd=d, env=env, stdout=log_file, stderr=log_file,
+                        start_new_session=True,
+                    )
+                )
+                log(f"bg {name}: {rest}")
+            elif v == "until":
+                seconds, _, command = rest.partition(" ")
+                deadline = time.monotonic() + float(seconds)
+                while True:
+                    done = subprocess.run(
+                        ["sh", "-c", command], cwd=d, env=env, capture_output=True, text=True, timeout=60
+                    )
+                    if done.returncode == 0:
+                        out = done.stdout + done.stderr
+                        log(f"until {name}: {command} → 0")
+                        break
+                    if time.monotonic() >= deadline:
+                        raise Failed(f"`{command}` did not succeed in {seconds} s")
+                    # Asks meanwhile get their yes, as `allow` gives them.
+                    try:
+                        wait_for(name, "\0never on a screen\0", 1.0, allow=allowed)
+                    except Failed:
+                        pass
+            elif v == "asked-none":
+                hit = [a for a in allowed if rest in a]
+                if hit:
+                    raise Failed(f"asked for a yes to {rest!r}: {hit}")
             elif v == "gone":
                 wait_for(name, rest, SEE_WAIT, present=False)
             elif v == "size":
@@ -281,13 +350,22 @@ def play(acc: Path, path: Path) -> tuple[str, float, str]:
                 time.sleep(float(rest))
             elif v == "stop":
                 tmux("kill-session", "-t", exact(name), check=False)
-        # Nothing of the case may outlive its terminal (record 86).
+        # What the case spent, as the header says it (a real case's cost).
+        spent = ""
+        try:
+            m = re.search(r"([≈<]*\$[0-9.]+|\?) of \$", snap(name))
+            spent = m.group(1) if m else ""
+        except Failed:
+            pass
+        # Nothing of the case may outlive its terminal (record 86); what
+        # the case started in the background is its own to end first.
         tmux("kill-session", "-t", exact(name), check=False)
+        end_background(background)
         left = outlived(d)
         if left:
             raise Failed(f"still running {LEFT_WAIT:g} s after its terminal went: {left}")
         took = time.monotonic() - began
-        return "pass", took, ""
+        return "pass", took, spent
     except (Failed, subprocess.TimeoutExpired, OSError) as why:
         took = time.monotonic() - began
         screen = ""
@@ -302,6 +380,7 @@ def play(acc: Path, path: Path) -> tuple[str, float, str]:
         return "fail", took, f"line {step.line}: {why}"
     finally:
         tmux("kill-session", "-t", exact(name), check=False)
+        end_background(background)
         # Nothing of the case is left running: imece quits when its
         # terminal goes; whatever outlived it goes now.
         time.sleep(0.5)
@@ -312,6 +391,21 @@ def is_tmux(name: str) -> bool:
     """Whether a process named `name` is tmux: `tmux` on macOS, its server
     `tmux: server` on Linux."""
     return os.path.basename(name.strip()).startswith("tmux")
+
+
+def end_background(procs: list) -> None:
+    """Ends what a case's `bg` steps started, and what they started."""
+    for proc in procs:
+        if proc.poll() is None:
+            try:
+                os.killpg(proc.pid, 15)
+                proc.wait(timeout=10)
+            except (ProcessLookupError, subprocess.TimeoutExpired):
+                try:
+                    os.killpg(proc.pid, 9)
+                except ProcessLookupError:
+                    pass
+    procs.clear()
 
 
 def running_in(d: Path) -> list[str]:
@@ -374,7 +468,8 @@ def fill_report(report: Path, results: dict[str, tuple[str, float, str]]) -> Non
         cells = [c.strip() for c in line.strip().strip("|").split("|")]
         if line.startswith("| ") and len(cells) == 4 and cells[0] in results:
             result, took, why = results[cells[0]]
-            note = f"scripted, {took:.0f} s" if result == "pass" else f"scripted: {why}"
+            spent = f", {why}" if why else ""
+            note = f"scripted, {took:.0f} s{spent}" if result == "pass" else f"scripted: {why}"
             lines[i] = f"| {cells[0]} | {result} | | {note.replace('|', '/')} |"
     report.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
@@ -384,10 +479,23 @@ def run(args: argparse.Namespace) -> int:
     if not os.environ.get("ACC") or not (acc / "repos").is_dir():
         print("drive: run needs $ACC, a world setup.sh made (. $ACC/env.sh)", file=sys.stderr)
         return 2
+    stand_in = (acc / "stand-in").exists()
+    if args.real == stand_in:
+        # Never a stand-in's script on Claude Code (it would spend for
+        # nothing), never a real one on the stand-in (it proves nothing).
+        want = "a world without --stand-in" if args.real else "setup.sh --stand-in's world"
+        print(f"drive: these cases run in {want}", file=sys.stderr)
+        return 2
+    global LEFT_WAIT
+    if args.real and "ACC_LEFT_WAIT" not in os.environ:
+        # Real Claude Code sessions take longer to be gone than the
+        # stand-in's (seen 5-15 s; record 147's findings).
+        LEFT_WAIT = 15.0
+    where = REAL if args.real else SCENARIOS
     if args.cases:
-        paths = [Path(c) if c.endswith(".scn") else SCENARIOS / f"{c}.scn" for c in args.cases]
+        paths = [Path(c) if c.endswith(".scn") else where / f"{c}.scn" for c in args.cases]
     else:
-        paths = sorted(SCENARIOS.glob("*.scn"))
+        paths = sorted(where.glob("*.scn"))
     for p in paths:
         if not p.is_file():
             print(f"drive: no scripted case {p}", file=sys.stderr)
@@ -403,6 +511,13 @@ def run(args: argparse.Namespace) -> int:
     with ThreadPoolExecutor(max_workers=max(1, args.jobs)) as pool:
         list(pool.map(one, paths))
     failed = sorted(c for c, r in results.items() if r[0] == "fail")
+    dollars = [
+        float(m.group(1))
+        for r in results.values()
+        if r[0] == "pass" and (m := re.search(r"\$([0-9.]+)", r[2]))
+    ]
+    if dollars:
+        print(f"drive: what the passed cases' headers say they spent: ${sum(dollars):.2f}")
     print(
         f"drive: {len(results) - len(failed)} of {len(results)} passed in "
         f"{time.monotonic() - began:.0f} s" + (f"; failed: {', '.join(failed)}" if failed else "")
@@ -440,6 +555,7 @@ def main(argv: list[str]) -> int:
     rn = sub.add_parser("run")
     rn.add_argument("--jobs", type=int, default=1)
     rn.add_argument("--report", type=Path)
+    rn.add_argument("--real", action="store_true", help="the real cases' scripts, on Claude Code")
     rn.add_argument("cases", nargs="*")
     # The program's own words come after `--`, untouched by the parser.
     command: list[str] = []

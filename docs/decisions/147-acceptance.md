@@ -167,3 +167,47 @@ What the new scripts found:
   `.imece/check`) says `nothing ran`.
 - A solo's change is titled by its reply (`Changed shelf.py.`), not by
   the person's words.
+
+## The real cases scripted (2026-11-11)
+
+With the person's yes to about $5 of trial runs, 12 of the 15 real cases
+became scripts under `scenarios/real/`, played by `drive.py run --real`
+on Claude Code itself: TEAM-1, TEAM-2, TEAM-10, TEAM-11, TEAM-14, ASK-7,
+CARD-3 and LONCA-1 to 5. INST-5, TEAM-13 and EYE-1 stay by hand, and a
+scripted real case keeps a "By hand" line for what its script does not do.
+
+- A model takes its own way: the steps `allow SECONDS TEXT` (wait, saying
+  yes to every ask meanwhile and keeping what was asked), `until SECONDS
+  COMMAND` (a shell command until it succeeds, asks said yes to),
+  `asked-none TEXT` (no ask held TEXT: the tests ran without one), and
+  `A || B` in what is waited for (either right end). A script waits for
+  imece's words, never the model's: a leader that repeats an address is
+  not the server answering.
+- `bg COMMAND` starts a case's own daemon, ended with the case before
+  what outlived it is looked for: each Lonca case runs on a daemon and
+  identities of its own and they run side by side.
+- `run --real` refuses a stand-in's world and plain `run` a real one.
+  Real sessions take longer to go: the runner waits 15 s, not 5, for what
+  outlived a real case (`ACC_LEFT_WAIT`). A passed case's row says what
+  its header said it spent.
+
+Measured: a few cents a case, the 12 together about $0.50 and ten
+minutes at 4 jobs. The whole catalogue now runs as 49 scripts on the
+stand-in (about 95 s), 12 on Claude Code (about 10 min) and three cases
+and the "By hand" lines by hand.
+
+What the real scripts found:
+- A server a worker starts with `nohup … &` leaves its session: `:ps`
+  does not list it, imece's quit does not end it, and the next start's
+  look for what an earlier run left does not find it (its command line
+  names no worktree).
+- A session of real Claude Code sometimes outlives imece's quit when the
+  terminal closes: ASK-7's worker (`claude`) still ran 15 s after imece
+  itself was gone, where record 02 kills a session within 1.5 s. Once in
+  four runs; ASK-7 fails on it until it is mended.
+- A Lonca session file of another daemon (a reinstall) makes the import
+  go through and the team stop at once as signed out; the stop offers
+  "look again", not `:lonca login`.
+- On Lonca a change says `needs your yes: nobody watched this session's
+  tools, approvals=1`: Lonca's words, which a person may not follow.
+

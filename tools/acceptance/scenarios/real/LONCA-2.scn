@@ -1,0 +1,31 @@
+# LONCA-2 · Workers in Lonca workspaces: a proposal before done, the window says it waits.
+# A Lonca daemon of the case's own, so cases run side by side.
+env LONCA_HOME $ACC_CASE/lonca
+# Its own identities too: the run's key, no session of another daemon's.
+env LONCA_HUMANS $ACC_CASE/humans
+sh mkdir -p lonca humans && cp "$ACC"/humans/*.key humans/ && cp "$ACC"/humans/default humans/ 2>/dev/null; true
+bg lonca daemon --home $ACC_CASE/lonca --no-notify --no-proxy
+until 30 test -S lonca/lonca.sock
+start --budget 2
+see any key: close
+key Escape
+type :lonca import lonca-two
+key Enter
+see IMPORT INTO LONCA
+key a
+wait 120 lonca lonca-two 
+key /
+type Add a function count_authors() to shelf.py's Shelf returning how many authors there are, with a test. One worker on the cheap tier.
+key Enter
+key Escape Escape
+allow 900 ready to approve || look first
+# Its change is its pending proposal on Lonca.
+type :lonca
+key Enter
+see WAITING FOR A HUMAN · 1
+see Δ shown
+key Escape
+key g d
+key Enter
+see nothing runs after your yes
+see needs your yes

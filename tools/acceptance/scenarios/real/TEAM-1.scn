@@ -1,0 +1,26 @@
+# TEAM-1 · The leader alone answers from what it reads, in the person's
+# own words, and writes nothing (real Claude Code; --agents 0).
+write config/imece/instructions.md Always end a reply with the word "selvi".
+start --agents 0 --budget 1
+see WELCOME TO IMECE
+# Claude Code itself: its version, signed in.
+see (Claude Code) · signed in
+key Escape
+key /
+type What does this repository do, and how are its tests run? Two sentences.
+key Enter
+# The chat above the line counts its messages: the answer is the second.
+allow 240 lead ⇄ you · 2/2
+see selvi
+see unittest
+key Escape Escape
+key /
+type Edit shelf.py yourself and add a comment line saying hello.
+key Enter
+allow 240 lead ⇄ you · 4/4
+key Escape Escape
+# The leader writes nothing: the checkout is as it was.
+sh test -z "$(git -C repos/shelf status --porcelain)"
+key J
+key J
+see confine standard:

@@ -40,6 +40,22 @@ class DriveTest(unittest.TestCase):
             [(3, "start", "--size 60x20"), (4, "wait", "5 TO DECIDE"), (5, "key", "g d")],
         )
 
+    def test_the_real_cases_steps_parse(self):
+        steps = drive.parse(
+            "bg lonca daemon --home x\nallow 600 ready || look first\n"
+            "until 30 test -S x\nasked-none unittest\nenv A b\n"
+        )
+        self.assertEqual([s.verb for s in steps], ["bg", "allow", "until", "asked-none", "env"])
+        for text, why in [
+            ("allow soon x\n", "`allow SECONDS TEXT`"),
+            ("until x\n", "`until SECONDS TEXT`"),
+            ("asked-none\n", "`asked-none` needs its text"),
+            ("bg\n", "`bg` needs its text"),
+        ]:
+            with self.assertRaises(drive.Failed) as got:
+                drive.parse(text)
+            self.assertIn(why, str(got.exception))
+
     def test_a_wrong_step_is_refused_with_its_line(self):
         for text, why in [
             ("start\nlook it\n", "line 2: `look` is not a step"),

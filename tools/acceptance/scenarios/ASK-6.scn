@@ -10,5 +10,6 @@ see left-behind
 key d
 see teardown
 key a
-see removed
+# The removal runs on its own: the list is empty once it is done.
+wait 60 none: every worktree under imece's state has its agent
 sh test ! -d state/imece/worktrees/shelf-0badc0de/left-behind
