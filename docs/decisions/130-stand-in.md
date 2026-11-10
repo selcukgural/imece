@@ -439,3 +439,21 @@ Next: informs to the person, the commit and review one-shots; then
 Lonca's fake daemon, then `Engine::Sim` goes.
 
 Under `--replay-user-messages` (every session since record 135) it echoes each prompt as it takes it, `"isReplay": true`, before the turn's work; its commands (`/clear`) are not echoed, as Claude Code's are not.
+
+## The person's cues (2026-11-10)
+
+A scripted acceptance case (record 147) must make a thing happen when it
+wants it, not one assign in so many. `stand_in::work::Cues::of` reads
+words in brackets in the person's words, which the leader hands on with
+the task: `[ask]` runs a command that is no routine (the kind's ask),
+`[question]` asks the person with answers, `[helper]` hires a helper for
+the tests, `[stray]` changes a file the card does not own, `[cards N]`
+cuts the task into N cards (2 at least), `[fault]` and `[account]` fail
+the turn the person's words start at Claude's API (passing, or the
+account's; mail never fails by a cue, so a worker's assign goes through).
+A cue acts whatever the habits say, so the scripted world runs with no
+habit at all (`tools/acceptance/setup.sh --stand-in`: a pause of 150 ms,
+nothing by chance). A Python kind joined the others (`.py`: `python3 -m
+unittest`, which imece's runners make routine in a checkout with
+Python's tests (record 136); its ask `python3 -m pip --version`), for the
+acceptance run's sample `shelf`.

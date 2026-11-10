@@ -1,0 +1,18 @@
+# DEMO-2 · The demo on the real Live, through the stand-in: nothing spent,
+# nothing left behind.
+start --bare --demo-live --agents 3
+see Nothing needs you and nobody is at work.
+key /
+type Round prices half up
+key Enter
+key Escape Escape
+wait 60 plans 3 cards for
+see TO DECIDE
+see changes
+key g d
+key a
+wait 60 AT WORK
+key q
+key q
+see Pane is dead (status 0
+sh sleep 1; ! ls -d "${TMPDIR:-/tmp}"/imece-demo-* 2>/dev/null

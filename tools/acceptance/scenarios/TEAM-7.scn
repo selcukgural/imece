@@ -1,0 +1,23 @@
+# TEAM-7 · A worker that finished says so; the team finished, then all done.
+start
+see any key: close
+key Escape
+key /
+type find() should ignore case in shelf.py
+key Enter
+see claude-1 said done.
+key Escape Escape
+see run .imece/worktree-setup.sh
+key g d
+key a
+see run .imece/check on its
+key g d
+key a
+see TEAM FINISHED
+see 1 waits for you
+key g d
+key a
+see ALL DONE
+see 1 landed
+see idle · finished, applied
+see AT WORK 1 · finished 1

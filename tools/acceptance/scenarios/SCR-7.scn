@@ -1,0 +1,24 @@
+# SCR-7 · Help where you are, all of it, its filter; the : menu; Turkish.
+start
+see any key: close
+key Escape
+key ?
+see HELP
+key ?
+see HELP
+key /
+type undo
+see undo
+key Escape Escape
+gone HELP
+type :
+see · 1 of
+key Tab
+key C-u Escape
+key L
+see Sizi bekleyen yok, çalışan da yok.
+key ?
+see YARDIM
+key Escape
+key L
+see Nothing needs you

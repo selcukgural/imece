@@ -1,0 +1,21 @@
+# INST-4 · The first start ever: welcome, news, the mark, the farewell.
+start
+see WELCOME TO IMECE
+see Claude Code on this machine:
+see signed in
+see any key: close · :welcome shows this again
+key Escape
+gone WELCOME TO IMECE
+see Nothing needs you and nobody is at work.
+type :news
+key Enter
+see WHAT'S NEW
+key Escape
+type :welcome
+key Enter
+see WELCOME TO IMECE
+key Escape
+key q
+see quit imece?
+key q
+see Pane is dead (status 0

@@ -1,0 +1,28 @@
+# INST-2 · The command line refuses in words (no screen, no agent).
+sh imece --version
+says imece 0.
+sh imece -h 2>&1; test $? -eq 2
+says usage: imece [--repo DIR]
+sh imece --agents 2>&1; test $? -eq 2
+says --agents needs a value
+says usage: imece
+sh imece --agents 17 2>&1; test $? -eq 2
+says --agents: a leader hires at most 16
+sh imece --helpers 9 2>&1; test $? -eq 2
+says --helpers: 9 is not in 0-8
+sh imece --budget abc 2>&1; test $? -eq 2
+says --budget: abc is not dollars like 5 or 2.50
+sh imece --confine loose 2>&1; test $? -eq 2
+says --confine: "loose" is not standard, strict or open
+sh imece --lang de 2>&1; test $? -eq 2
+says --lang: "de" is not en or tr
+sh imece --projects 2 2>&1; test $? -eq 2
+says --projects is for --demo
+sh imece --model "x y" 2>&1; test $? -eq 2
+says --model: "x y" is not a model name
+sh imece --tier huge=opus 2>&1; test $? -eq 2
+says --tier: "huge" is not cheap, standard or strong
+# A start that fails after the flags: exit 1, its reason, the terminal as it was.
+start --repo /
+see Pane is dead (status 1
+see or run git init && git commit --allow-empty -m init first

@@ -1,0 +1,36 @@
+# SESS-2 · Forget a session, with a grace to undo; then at once.
+start
+see any key: close
+key Escape
+key /
+type mend shelf.py
+key Enter
+see claude-1 said done.
+key Escape Escape
+see run .imece/worktree-setup.sh
+key g d
+key a
+see run .imece/check on its
+key g d
+key a
+see 1 ready to approve
+type :forget @claude-1
+key Enter
+see u keeps it · U now
+key u
+gone u keeps it
+type :forget @claude-1
+key Enter
+see u keeps it · U now
+key U
+gone u keeps it
+key J
+see you made claude-1 forget its session
+# --fresh at a start forgets every agent's session: the leader's too.
+key Escape
+stop
+start --fresh
+see WHERE YOU LEFT OFF
+key Escape
+key J
+see you made lead forget its session

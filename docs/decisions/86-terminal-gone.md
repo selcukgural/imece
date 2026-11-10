@@ -76,3 +76,18 @@ terminal gone before crossterm's own loop reads again and finds half an
 escape sequence; only then does crossterm's loop spin. It is a
 microsecond after a key, never while imece sits waiting, which is when
 terminals are closed.
+
+## The `!cmd`'s key, too (2026-11-10)
+
+The acceptance run's scripted cases (record 147) found imece at full CPU,
+deaf to SIGTERM, five minutes after its tmux pane had closed: the pane
+went while imece waited for "any key: back to the screen" after a
+`!cmd` (record 68). `shell::wait_for_key`, which the editor's failure
+screen (record 95) shares, read with crossterm's `event::read`, the loop
+that spins on a terminal gone. It now waits as the main loop does
+(`key_pressed` over `input::Guard` and `input::wait`, a look every
+`KEY_WAIT` 250 ms): a press, the terminal gone or a signal (`EINTR`)
+ends it, and the main loop then quits as on its own screen. The case
+`SESS-8` closes the terminal at exactly that wait, and the runner fails
+any case that leaves a process working in its directory five seconds
+after its terminal went.

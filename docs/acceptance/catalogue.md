@@ -107,18 +107,17 @@ install adds no second PATH line.
 
 - records: 02, 05, 28
 - commands: —
-- tier: real
+- tier: stand-in
 
-Steps:
-1. `imece --version`, `imece -h`, `imece --agents`, `imece --agents 17`,
-   `imece --helpers 9`, `imece --budget abc`, `imece --confine loose`,
-   `imece --lang de`, `imece --projects 2`, `imece --model "x y"`,
-   `imece --tier huge=opus`, `imece --repo /`.
+Steps: `scenarios/INST-2.scn`: `imece --version`, `-h`, `--agents`,
+`--agents 17`, `--helpers 9`, `--budget abc`, `--confine loose`,
+`--lang de`, `--projects 2`, `--model "x y"`, `--tier huge=opus`, then
+a screen started with `--repo /`.
 
-Expect: `--version` exits 0 with `imece <version>`; `-h` and each wrong
-flag exit 2 with the words of `docs/guide/reference/cli.md` (a missing
-value and a demo flag given live followed by the usage); `--repo /` exits 1
-with `imece: …` and the terminal as it was.
+Expect: `--version` says `imece <version>`; `-h` and each wrong flag exit
+2 with the words of `docs/guide/reference/cli.md` (a missing value
+followed by the usage); `--repo /` exits 1 and says how to make the
+folder a checkout.
 
 ### INST-3 · imece doctor, outside and inside the screen
 
@@ -136,25 +135,26 @@ Expect: one line per category with `[✓]`, `[!]` or `[✗]`, a fix under each
 that is not right, the count of categories with issues last; exit 0 with
 only notes and warnings; without `claude` the Claude Code category is `[✗]`
 and the exit 1; `--json` names stay English under `--lang tr`; the window
-shows the same report for the project at hand.
+shows the same report for the project at hand. A first start of
+`imece-acc` with an empty state: the welcome names Claude Code's real
+version and the account signed in.
 
-### INST-4 · The first start ever: welcome, mark, news, farewell
+
+
+### INST-4 · The first start ever: welcome, news, the way out
 
 - records: 75, 101
 - commands: :welcome, :news
-- tier: real
+- tier: stand-in
 
-Steps:
-1. With an empty `$XDG_STATE_HOME` start imece on `shelf`.
-2. Read the welcome window; `esc`. Then `:news`, `esc`; `:welcome`, `esc`.
-3. Quit with `q q`.
+Steps: `scenarios/INST-4.scn`: a start with an empty state, the welcome,
+`esc`, `:news`, `:welcome`, `q q`.
 
-Expect: the welcome window opens by itself with imece's mark, the version,
-Claude Code's version and who is signed in, how to sign in, the keys; the
-mark's dots come one a beat, whole after a key; Home's free rows show the
-mark while no worker exists; `:news` names this version; after the quit
-the shell's title is back and one farewell line says what waits, what
-sleeps, what this run spent and `resume: imece`.
+Expect: the welcome opens by itself with imece's mark, Claude Code's
+version and that it is signed in, and `any key: close · :welcome shows
+this again`; an empty Home says nobody is at work; `:news` opens WHAT'S
+NEW; `q` asks and `q` again quits with exit 0. The farewell's words and
+the mark's dots one a beat are EYE-1's.
 
 ### INST-5 · The tab: title, icon, progress
 
@@ -197,7 +197,7 @@ gives such work to a worker; the journal says the session's confine level.
 
 ### TEAM-2 · The first task: a cheap worker in its worktree
 
-- records: 05, 10, 36, 61, 62, 63, 64, 85, 97, 105, 136, 135
+- records: 05, 10, 20, 36, 61, 62, 63, 64, 85, 97, 105, 136, 135
 - commands: —
 - tier: real
 - after: TEAM-1
@@ -216,30 +216,25 @@ the task, not `claude-N`, on Home; its worktree is under
 bar, `⎇ branch +N −M`; `python3 -m unittest` runs without an ask (the run
 tool or a routine command); the message mid-turn is taken into the turn
 under way: one turn, the row goes idle when it ends, the `done` reaches the
-leader.
+leader. Quit and start again: the journal says the leader and the worker
+go on in the sessions they had (`--resume` on real Claude Code), and the
+pot reads what it did, not `+?`.
 
 ### TEAM-3 · The change waits, with its verdict, evidence and cost
 
-- records: 11, 54, 55, 106, 112, 113, 124, 125, 137
-- commands: :changes, :review
-- tier: real
-- after: TEAM-2
+- records: 11, 54, 55, 112, 113, 124, 125, 137
+- commands: :changes
+- tier: stand-in
 
-Steps:
-1. Home: the change in TO DECIDE. `gc` (`:changes`), `enter`.
-2. The first `.imece/check` of the run asks: `enter` on it, read its
-   bytes, `a`.
-3. In the diff: `w`, `h l`, `zM zR`, `J`/`K` or `[ ]` between files.
-4. `:review`; when its note comes, `R`; `:review` again on the same change.
+Steps: `scenarios/TEAM-3.scn`: a task to the leader, the setup script's
+and the check's asks said yes to, `:changes`, `enter`, `w`, `esc`.
 
-Expect: the change's row and the diff's first line are one verdict
-(`ready` or `look first` with why); the worker's why with its bullets kept;
-the files above the patch by kind (source, tests); `cost · $… · N min` on
-the row and above the diff; the check runs once approved and its result
-is above the runs (`✓ check exit 0`); `key=lambda` in `shelf.py` is shown
-as it is, not as `[***]`; `:review` puts a tool-less session's note above
-the files (`R` shows it whole), a second `:review` of the same change is
-refused in words, never a gate.
+Expect: Home's change row and the preview say one verdict (`✓ ready to
+approve · ✓ check · 2 files`, `1 ready to approve`), the cost (`$0.12`);
+the diff view has the files by kind (`source +1 −0 (1) · tests +1 −0
+(1)`), the worker's why and its test run, the patch; `esc` is back on
+Home with the change still waiting. That `key=lambda` in `shelf.py` is
+shown as it is, never `[***]`, is SCR-14's.
 
 ### TEAM-4 · Notes on lines, a quoted hunk, the change sent back
 
@@ -264,22 +259,19 @@ answer brings a new change.
 
 - records: 13, 50, 56, 66, 68
 - commands: :commit, :output, :history
-- tier: real
-- after: TEAM-4
+- tier: stand-in
 
-Steps:
-1. In the new change: `x` on one hunk, `a`.
-2. The rest comes back as a new change: `a`.
-3. `:commit`; read the suggested line; enter.
-4. `!git log --oneline -3`; then `O`; then `esc`.
-5. `↑` on an empty line, `^r` and `log`; `:history git`.
+Steps: `scenarios/TEAM-5.scn`: a change; `x` on a hunk, `a`; the rest,
+`a`; `:commit`, enter; `/` `!git log --oneline -3`; `O`; `/` `↑`; `^r`
+`log`.
 
-Expect: only the chosen hunk is staged in the checkout, the rest waits as
-its own Δ; after the second `a` all is staged; `:commit` puts
-`!git commit -m '…'` on the line (cheap tier, once a day per staged tree
-free after the first) and the commit is made; the `!` line's lead shows as
-a badge; the journal has the command, its exit code and time; `O` opens
-`@<agent>` with the output quoted; `↑` and `^r` bring back the lines sent.
+Expect: only the chosen hunk is staged, the rest waits as its own change
+(the first key on it chooses it: record 125's hold on a new item); then
+all is staged and ALL DONE; `:commit`'s line runs on imece's own pty and
+says `[imece] exit 0 · … any key`, the commit is in the checkout; the
+`!` line's output comes back with `O` as `I ran `git log --oneline -3``;
+`↑` and `^r` bring back the lines sent. The message's words are
+TEAM-14's.
 
 ### TEAM-6 · A clash with the person's own edit is sent back
 
@@ -302,17 +294,15 @@ change applies.
 
 - records: 35, 98, 140, 145
 - commands: —
-- tier: real
-- after: TEAM-6
+- tier: stand-in
 
-Steps:
-1. Apply what waits until nothing does; look at Home and the header.
+Steps: `scenarios/TEAM-7.scn`: a task, its asks said yes to, the change
+applied.
 
-Expect: the worker's row says `idle · finished, applied`; the AT WORK
-heading counts `finished 1`; while something of the round waited Home
-said `◐ TEAM FINISHED … N wait for you`; once nothing waits `ALL DONE` with
-the round's cards, cost and time; the header keeps what is to decide and
-the pot whole; a done the person has not opened shows `✓` until opened.
+Expect: while the change waits Home says `◐ TEAM FINISHED … 1 waits for
+you`; once applied `ALL DONE` with `1 landed`, the worker's row
+`idle · finished, applied` and the AT WORK heading `AT WORK 1 · finished
+1`.
 
 ### TEAM-8 · A worker's helper
 
@@ -328,6 +318,24 @@ Steps:
 Expect: the helper's row stands under its worker (`└`); it works in the
 worker's worktree, says `done` to its worker and leaves; the worker's
 change holds the test.
+
+### TEAM-14 · The one-shot sessions: a commit message and a second read
+
+- records: 56, 106
+- commands: :commit, :review
+- tier: real
+- after: TEAM-3
+
+Steps:
+1. A change waiting: `:review`; when its note comes, `R`; `:review` again
+   on the same change.
+2. Apply it; `:commit`.
+
+Expect: `:review` puts a tool-less session's note above the files (`R`
+whole), a second `:review` of the same change is refused in words, never
+a gate; `:commit` puts `!git commit -m '…'` on the line with a message
+that says what the staged change does (cheap tier), and the same staged
+tree asked again costs nothing; both are in the pot.
 
 ### TEAM-9 · Fork a worker to try another way
 
@@ -418,23 +426,21 @@ says where it stands; the setting is kept per project.
 
 ## Asks and questions
 
-### ASK-1 · A permission ask, a yes, a no and a standing yes
+### ASK-1 · A permission ask, a no and a standing yes
 
-- records: 30, 45, 89
+- records: 30, 89
 - commands: :allow
-- tier: real
+- tier: stand-in
 
-Steps:
-1. To the leader: `a worker should serve the folder with python3 -m
-   http.server 8765 --bind 127.0.0.1 in the background, then say done`.
-2. The ask `⚑` in TO DECIDE: `r` the first time; the worker asks again:
-   `A`.
-3. `:allow`; a second worker asked for the same command.
+Steps: `scenarios/ASK-1.scn` (the stand-in's `[ask]` cue runs a command
+that is no routine): `r` on the first ask; the next task, `A`; `:allow`;
+a third task.
 
-Expect: the ask names the command whole; `r` tells the worker no, and it
-says so; `A` says yes for the project to `python3 -m`'s rule (or the line
-alone, as `:allow` lists it) and the next same command passes without an
-ask; the worker's row shows `http://127.0.0.1:8765` as a link that opens.
+Expect: the ask names the command (`run Bash: python3 -m pip …`) and the
+status line offers `a  allow once   r  refuse   e  yes this turn`; `r`
+tells the worker no (its why says `did not run: The person refused
+this`); `A` says `yes from now on to python3 -m pip …`, `:allow` lists
+it, and the third time nothing asks.
 
 ### ASK-2 · A yes for the rest of a turn
 
@@ -455,17 +461,15 @@ the next turn asks again. `:yes @<worker>` does the same.
 
 - records: 27, 125
 - commands: —
-- tier: real
+- tier: stand-in
 
-Steps:
-1. To the leader: `ask me, with options, whether find() should match the
-   year too; then do what I answer`.
-2. On Home: `2`. Next time: `/` and write an answer of your own.
+Steps: `scenarios/ASK-3.scn` (the `[question]` cue): the question's row,
+`gd`, `2`, the check's ask said yes to.
 
-Expect: the question's row lists its answers with their digits; the
-preview shows it whole with `so far:`; a digit answers at once and the
-row goes (a yes moves down: the next row is at hand); a written answer
-reaches the asker as written.
+Expect: the row lists the answers with their digits (`1  yes, a line`,
+`2  no, it is internal`); the preview reads it whole with `so far:`; the
+digit answers at once and the row goes; the worker's change says `The
+person said: no, it is internal`.
 
 ### ASK-4 · A focus decides its agent's ask, and says where it works
 
@@ -517,43 +521,50 @@ in that worktree (`.setup-ran` there); `:tidy` lists the orphaned worktree,
 says whether it holds work, the teardown runs before its removal; a start
 says the count of orphans in a flash.
 
-## Sessions and what is kept
+### ASK-7 · A worker's local server: its link and its process
 
-### SESS-1 · The quit question, the farewell and where you left off
-
-- records: 19, 20, 24, 25, 34
-- commands: :pending, :quit
+- records: 45
+- commands: —
 - tier: real
 
 Steps:
-1. With one agent mid-turn and a change not reviewed: `q`; then `s`
-   (`:pending`); `esc`.
-2. `:quit` and answer yes.
-3. Start imece again on `shelf`.
+1. To the leader: `a worker should serve the folder with python3 -m
+   http.server 8765 --bind 127.0.0.1 in the background, then say done`;
+   say yes to its ask.
 
-Expect: the quit question counts the agents mid-turn and the changes not
-reviewed; `q s` lists them; the farewell says what waits; at the next
-start WHERE YOU LEFT OFF lists what happened and what waits; the leader
-and workers resume their sessions (`--resume`; the journal says so, a
-fresh one says why); the pot, cards, journal and marks are as left, the
-pot not `+?`.
+Expect: the worker's row shows `http://127.0.0.1:8765` as a link that
+opens in the browser; the server is a process of its session (SESS-7
+ends it).
+
+## Sessions and what is kept
+
+### SESS-1 · The quit question, where you left off, the sessions resumed
+
+- records: 19, 20, 24, 25, 34
+- commands: :pending, :quit
+- tier: stand-in
+
+Steps: `scenarios/SESS-1.scn`: a change waiting; `q`, `s`, `esc`;
+`:quit`, `q`; a start again; a line to the leader; `J`.
+
+Expect: the quit question counts `changes not reviewed: 1`, `s` names the
+worker; the quit is exit 0; the next start shows WHERE YOU LEFT OFF (`every
+agent sleeps until spoken to`, `! 1 to decide:`); the leader's next turn
+`goes on in the session it had, with all it knew`.
 
 ### SESS-2 · Forget a session, with a grace to undo
 
 - records: 23, 78
 - commands: :forget, :undo, :now
-- tier: real
-- after: SESS-1
+- tier: stand-in
 
-Steps:
-1. On a worker: `:forget`; within ten seconds `u`.
-2. Again `:forget`, then `U`.
-3. Quit; start with `--fresh`.
+Steps: `scenarios/SESS-2.scn`: `:forget @claude-1`, `u`; again, `U`; `J`;
+a start with `--fresh`, `J`.
 
-Expect: the bottom line counts down `◷ … in N s · u keeps it · U now`;
-`u` keeps it; `U` forgets at once and its next turn is a new session told
-where it left off; `--fresh` does it for every agent with a journal line
-each and their transcripts removed.
+Expect: the bottom line counts down `… u keeps it · U now`; `u` keeps
+the session; `U` forgets it at once and the journal says `you made
+claude-1 forget its session`; a start with `--fresh` forgets every
+agent's, the leader's too (`you made lead forget its session`).
 
 ### SESS-3 · Archive, browse, view and restore
 
@@ -625,10 +636,10 @@ known, never `$0` for an unknown; the card's log tab lists its attempts.
 - records: 129
 - commands: :ps
 - tier: real
-- after: ASK-1
+- after: ASK-7
 
 Steps:
-1. `:ps` while ASK-1's server runs; `d` on the `python3` line, `y`.
+1. `:ps` while ASK-7's server runs; `d` on the `python3` line, `y`.
 2. `kill -9` imece's own process; start imece again; `:ps`.
 
 Expect: each session's processes with cpu and memory, read again every few
@@ -640,14 +651,15 @@ under `LEFT FROM AN EARLIER RUN` and `a y` ends them all.
 
 - records: 86
 - commands: —
-- tier: real
+- tier: stand-in
 
-Steps:
-1. A worker mid-turn; `drive.py stop imece` (the pane's terminal goes).
-2. `pgrep -fl 'imece|claude'` after five seconds.
+Steps: `scenarios/SESS-8.scn`: a task done, then `/` `!true`, and the
+terminal closed while imece waits for a key after it.
 
-Expect: imece quits as on `:quit`: sessions stopped, the bus's sockets
-gone, nothing of the run left running; the next start resumes them.
+Expect: imece quits as on `:quit`: nothing that worked in the case's
+directory is running five seconds later (the runner checks this after
+every scripted case). Until 2026-11-10 imece spun at full CPU here, deaf
+to SIGTERM.
 
 ## Solo
 
@@ -989,34 +1001,30 @@ and steps through agents; `^o` walks back the places left.
 
 - records: 40, 41, 125
 - commands: :help, :lang
-- tier: real
+- tier: stand-in
 
-Steps:
-1. `?` on Home, on a change, in a window; `?` again; `/` and `ileri` and
-   `undo`; `esc`.
-2. `:` alone; `tab` through; `:q` style short names (`:b`, `:t`).
-3. `L` (`:lang tr`); walk Home, a change, the journal, the help; `L`.
+Steps: `scenarios/SCR-7.scn`: `?`, `?` again, `/` `undo`, `esc`; `:` and
+`tab`; `L`, `?`, `esc`, `L`.
 
-Expect: `?` shows the keys of where you are, `?` again all; the filter
-folds case and Turkish letters; the `:` menu shows values and `$` on what
-costs, `‹ N` / `+N more ›`; in Turkish no English word is left on any of
-those screens and nothing is cut that was whole in English.
+Expect: `?` opens the help of where you are, `?` again all of it, the
+filter keeps what matches; the `:` menu counts `· 1 of …`; `L` turns
+Home and the help Turkish (`Sizi bekleyen yok, çalışan da yok.`,
+`YARDIM`) and back. That no English word is left and nothing is cut is
+EYE-1's.
 
 ### SCR-8 · A narrow screen
 
 - records: 131
 - commands: —
-- tier: real
-- after: SCR-1
+- tier: stand-in
 
-Steps:
-1. With something to decide: `drive.py size imece 100 40`, `60 20`,
-   `48 18`, `39 11`, back to `120 40`.
+Steps: `scenarios/SCR-8.scn`: a question waiting; the screen at 100×40,
+60×20, 48×18, 39×11, then 120×40.
 
-Expect: at 100×40 nothing is cut that decides; under 80 columns Home's
-entries stack; the status line keeps `esc` and `?` last; the header keeps
-what to decide and the pot; under 40×12 one line says the size and the
-floor and only `ctrl-c` acts; growing back draws at once.
+Expect: the question and its answers stay on the screen at every size
+down to 48×18; under 40×12 one line says the size and no key acts
+(`a` there decides nothing: the question is still there at 120×40).
+How each size reads is EYE-1's.
 
 ### SCR-9 · Themes
 
@@ -1114,6 +1122,25 @@ Expect: the token's value is hidden on every screen that shows it (trace,
 log, ask, journal); `max_tokens=5` and `key=lambda` are shown as they are
 in the diff.
 
+### EYE-1 · What only an eye can judge
+
+- records: 75, 101, 131
+- commands: :lang
+- tier: real
+- after: SCR-14
+
+Steps:
+1. Over the real run's screens: Home, a change, a question, the help,
+   the journal, at 120×40 and at 60×20, in English and with `L` in
+   Turkish.
+2. The first start's welcome (its mark's dots one a beat) and the
+   farewell line after `q q`.
+
+Expect: in Turkish no English word is left and nothing is cut that was
+whole in English; at 60×20 every row that decides reads whole; the mark
+comes dot by dot and is whole after a key; the farewell says what waits,
+what sleeps, what this run spent and `resume: imece`.
+
 ## The demo
 
 ### DEMO-1 · The demo shows every screen, on fake agents
@@ -1140,14 +1167,12 @@ has its demo counterpart; the demo quits at once on `q q` and on SIGTERM.
 - commands: —
 - tier: stand-in
 
-Steps:
-1. `imece --demo-live --agents 3`; five minutes; answer the asks it makes.
-2. Quit; `pgrep -fl imece`.
+Steps: `scenarios/DEMO-2.scn`: `imece --demo-live --agents 3`, a task to
+the leader, `gd` `a` on its plan, `q q`.
 
-Expect: the leader hires workers that work through to-do lists, edits and
-tests, every third asks a yes; their changes wait in TO DECIDE and apply;
-nothing is spent; the demo's directory is gone after the quit and nothing
-is left running.
+Expect: the leader plans the cards and its first worker's change waits in
+TO DECIDE; at the yes more workers are AT WORK; the quit is exit 0 and the
+demo's directory is gone.
 
 ## Not covered
 

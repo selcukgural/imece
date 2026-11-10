@@ -53,14 +53,52 @@ Expect: what is seen, in the screen's own words where they matter.
 ```
 
 - **auto**: a command whose exit code decides. **demo**: `imece --demo`.
-  **stand-in**: `imece --demo-live`, the real `Live` on the stand-in, free.
-  **real**: Claude Code and, for the Lonca cases, a Lonca daemon; it costs.
+  **stand-in**: a script (`tools/acceptance/scenarios/<ID>.scn`) that
+  `drive.py run` plays on the real `Live` with imece's stand-in for Claude
+  Code: free, in seconds, nobody at the keys. **real**: Claude Code and,
+  for the Lonca cases, a Lonca daemon; it costs, and someone drives it.
+- A case is `stand-in` unless what it shows needs a real model (how Claude
+  Code takes a prompt, what it writes, how it resumes, Lonca's
+  workspaces) or an eye (`EYE-1`). A new feature's case starts as a script
+  where it can.
 - A case id is never used again: a case that goes is listed under
   "Retired" with why. Renumbering is not done; a new case takes the next
   free number of its area.
 - A case is written for someone who has the screen in front of them: keys
   and commands as typed, what to look for as the screen words it. A case
   that only an eye can judge (colours, the tab's icon) says so.
+
+## Scripted cases
+
+```sh
+tools/acceptance/setup.sh --stand-in /tmp/imece-acc-s
+. /tmp/imece-acc-s/env.sh
+tools/acceptance/drive.py run --jobs 4                       # every script
+tools/acceptance/drive.py run TEAM-5 ASK-1                   # some
+tools/acceptance/drive.py run --jobs 4 --report docs/acceptance/runs/vX.Y.Z.md
+```
+
+- A script is a step a line: `start [--size CxR] [--bare] [ARG …]`, `type
+  TEXT`, `key KEY …` (tmux names: `Escape`, `Enter`, `C-u`, `Up`), `see
+  TEXT`, `wait SECONDS TEXT`, `gone TEXT`, `size COLS ROWS`, `sh COMMAND`,
+  `fails COMMAND`, `says TEXT`, `write FILE TEXT`, `sleep SECONDS`, `stop`
+  (`drive.py`'s docstring has them whole). `#` starts a comment; say in
+  one why a key is pressed that a reader would not expect.
+- The stand-in does what the person's words cue: `[ask]` a command that
+  asks first, `[question]` a question with answers, `[helper]` a helper,
+  `[stray]` a file outside its card, `[cards N]` a plan of N cards,
+  `[fault]` / `[account]` a failed turn (record 130). Nothing happens by
+  chance in this world.
+- Wait for words, never for time: `see` waits up to 30 s. A flash goes
+  in a few seconds and another may take its place, so what must be
+  proved is looked for where it stays (the journal `J`, a row, a file
+  with `sh`). Decide on the first thing to decide with `gd`; `W` opens it.
+- Each case runs in `$ACC/s/<ID>` with its own state and copy of the
+  checkouts; `--jobs` runs several at once. At its end its terminal goes,
+  and anything still working in its directory five seconds later fails
+  it. A failure's screen is in `$ACC/out/<ID>.txt`, every key in
+  `$ACC/drive.log`.
+- The 13 scripts took 25-45 s at 4-6 jobs on a laptop at load 40.
 
 ## The run's world
 
@@ -104,7 +142,9 @@ tools/acceptance/drive.py snap imece
 2. `tools/acceptance.py new` writes `runs/vX.Y.Z.md` with one `todo` row per
    case and the candidate's commit. Fill in the head: Claude Code's version,
    Lonca's, the terminal and its size.
-3. Take the cases in order. Each row: `pass`; `fail` with what was seen;
+3. The scripted cases first, in a stand-in world (above) with `--report`:
+   their rows are written by the run. Then the `auto` cases, then the
+   `real` ones in a world of their own (below), in order. Each row: `pass`; `fail` with what was seen;
    `skip` only where the case has `skip-if`, with why. What rubbed but did
    not fail goes under "Findings" as the field entries do; a field entry
    for the run goes in `docs/field/` the same day.

@@ -203,6 +203,50 @@ impl Habits {
     }
 }
 
+/// What the person's words ask of the stand-ins, whatever their habits
+/// say: the acceptance scripts' way to make a case happen when they want
+/// it (`docs/acceptance`), not one assign in so many. A cue is a word in
+/// brackets anywhere in the task: `[ask]` runs a command that asks first,
+/// `[question]` asks the person, `[helper]` hires a helper for the tests,
+/// `[stray]` changes a file the card does not own, `[fault]` and
+/// `[account]` fail the leader's turn at Claude's API (one imece tries
+/// again, one that is the account's), `[cards N]` cuts the task into N
+/// cards (2 to [`super::lead::CARDS_MOST`]).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Cues {
+    pub ask: bool,
+    pub question: bool,
+    pub helper: bool,
+    pub stray: bool,
+    pub fault: Option<crate::Fault>,
+    pub cards: Option<u64>,
+}
+
+impl Cues {
+    pub fn of(text: &str) -> Cues {
+        let has = |cue: &str| text.contains(cue);
+        let fault = if has("[account]") {
+            Some(crate::Fault::Account)
+        } else if has("[fault]") {
+            Some(crate::Fault::Passing)
+        } else {
+            None
+        };
+        let cards = text.split("[cards ").nth(1).and_then(|rest| {
+            let (n, _) = rest.split_once(']')?;
+            n.trim().parse::<u64>().ok().filter(|n| *n >= 2)
+        });
+        Cues {
+            ask: has("[ask]"),
+            question: has("[question]"),
+            helper: has("[helper]"),
+            stray: has("[stray]"),
+            fault,
+            cards,
+        }
+    }
+}
+
 /// The question the assign `roll` stands for asks about file `path`, and
 /// the answers it offers.
 pub fn question(path: &str, roll: u64) -> (String, &'static [&'static str]) {
@@ -353,6 +397,13 @@ const KINDS: &[(&[&str], Kind)] = &[
         Kind {
             test: Some("cargo test"),
             asks: &["cargo add serde --features derive"],
+        },
+    ),
+    (
+        &["py"],
+        Kind {
+            test: Some("python3 -m unittest"),
+            asks: &["python3 -m pip --version"],
         },
     ),
 ];
@@ -736,7 +787,7 @@ impl Mind {
             return format!("I could not read {main}: {why}");
         }
         list.mark(hands, 0, "completed");
-        if habits.questions_now(roll) {
+        if habits.questions_now(roll) || Cues::of(&task).question {
             let (q, options) = question(main, roll);
             let ask = json!({ "to": "you", "type": "ask", "body": q, "options": options });
             if hands.call("send", ask).is_ok() {
@@ -789,7 +840,7 @@ impl Mind {
         list.mark(hands, 1, "completed");
         list.begin(hands, 2);
         if let Some(t) = test
-            && hands.habits().helps_now(roll)
+            && (hands.habits().helps_now(roll) || Cues::of(task).helper)
             && let Some(helper) = hire_for(hands, t, main, task)
         {
             self.waiting = Some(Waiting {
@@ -857,8 +908,9 @@ impl Mind {
         let lead = self.lead_of();
         let roll = self.roll_now(hands);
         let habits = *hands.habits();
+        let cues = Cues::of(task);
         let files = hands.files();
-        if habits.strays_now(roll)
+        if (habits.strays_now(roll) || cues.stray)
             && let Some(other) = outside(&files, &owned_of(task), roll)
             && append(hands, other, plain(task)).is_ok()
         {
@@ -871,7 +923,7 @@ impl Mind {
         list.begin(hands, 3);
         if hands.has(crate::claude::SHELL_TOOL) {
             let kind = kind_of(&changed[0]);
-            let asked = (habits.asks_now(roll) && !kind.asks.is_empty())
+            let asked = ((habits.asks_now(roll) || cues.ask) && !kind.asks.is_empty())
                 .then(|| kind.asks[((roll >> 8) % kind.asks.len() as u64) as usize]);
             notes.extend(run(hands, asked.into_iter().chain(kind.test), task));
         }
@@ -1165,7 +1217,8 @@ mod tests {
     fn the_commands_that_ask_are_no_routine_and_the_tests_are() {
         // Each kind's asks are a shell's line or a program the demo does
         // not run (`TEST_PROGRAMS`), so imece asks the person; its tests
-        // are one program it runs.
+        // are one program it runs, or for Python the runner imece reads
+        // from the checkout (record 136: `python3 -m unittest`).
         for (_, k) in KINDS.iter().chain([&(&[][..], OTHER)]) {
             for a in k.asks {
                 let program = a.split(' ').next().unwrap();
@@ -1179,7 +1232,9 @@ mod tests {
             if let Some(t) = k.test {
                 let argv = crate::run::split(t).unwrap();
                 assert!(
-                    TEST_PROGRAMS.contains(&argv[0].as_str()) || argv[0] == "cargo",
+                    TEST_PROGRAMS.contains(&argv[0].as_str())
+                        || argv[0] == "cargo"
+                        || t == "python3 -m unittest",
                     "{t}"
                 );
             }
@@ -1599,6 +1654,72 @@ mod tests {
         m.turn(&mut f, &assign("Again"));
         assert_eq!(f.calls[0].1["options"], json!([]));
         assert!(m.waiting.is_some());
+    }
+
+    #[test]
+    fn the_person_s_cues_say_what_a_task_does_whatever_the_habits() {
+        assert_eq!(Cues::of("Mend it"), Cues::default());
+        assert_eq!(
+            Cues::of("Mend it [ask] [question] [helper] [stray] [cards 3]"),
+            Cues {
+                ask: true,
+                question: true,
+                helper: true,
+                stray: true,
+                fault: None,
+                cards: Some(3),
+            }
+        );
+        assert_eq!(Cues::of("x [fault]").fault, Some(crate::Fault::Passing));
+        assert_eq!(
+            Cues::of("x [account] [fault]").fault,
+            Some(crate::Fault::Account)
+        );
+        // Cards are two at least, a number in the brackets.
+        assert_eq!(Cues::of("x [cards 1]").cards, None);
+        assert_eq!(Cues::of("x [cards two]").cards, None);
+        assert_eq!(Cues::of("x [cards 2").cards, None);
+        assert_eq!(Cues::of("x [cards 2]").cards, Some(2));
+        // A word not in brackets is no cue.
+        assert_eq!(Cues::of("ask a question of the helper"), Cues::default());
+
+        let money = &[
+            ("src/money.go", "package money\n"),
+            ("src/money_test.go", ""),
+        ];
+        // `[ask]`: a command that asks first, then the tests.
+        let mut f = worker(money);
+        Mind::default().turn(&mut f, &assign("Money in cents [ask]"));
+        let ran: Vec<String> = (used(&f).into_iter())
+            .filter(|(t, _)| t == "Bash")
+            .map(|(_, c)| c)
+            .collect();
+        assert_eq!(ran.len(), 2, "{ran:?}");
+        assert!(kind_of("a.go").asks.contains(&ran[0].as_str()), "{ran:?}");
+        assert_eq!(ran[1], "go test ./...");
+        // `[question]`: the person is asked and the worker waits.
+        let mut f = worker(money);
+        let mut m = Mind::default();
+        m.turn(&mut f, &assign("Money in cents [question]"));
+        assert_eq!(f.calls[1].1["to"], "you");
+        assert!(m.waiting.is_some());
+        // `[helper]`: a helper is hired for the tests.
+        let mut f = worker(money);
+        f.answers.insert("hire".into(), Ok(HIRED.into()));
+        let said = Mind::default().turn(&mut f, &assign("Money in cents [helper]"));
+        assert!(
+            said.contains("writes the tests in src/money_test.go"),
+            "{said}"
+        );
+        // None of it without the cue.
+        let mut f = worker(money);
+        Mind::default().turn(&mut f, &assign("Money in cents"));
+        assert!(f.calls.iter().all(|(c, _)| c != "hire"));
+        assert_eq!(f.calls[1].1["type"], "done");
+        // A Python file's tests are `python3 -m unittest`.
+        let mut f = worker(&[("shelf.py", "x = 1\n"), ("test_shelf.py", "")]);
+        Mind::default().turn(&mut f, &assign("Mend shelf.py"));
+        assert!(used(&f).contains(&("Bash".into(), "python3 -m unittest".into())));
     }
 
     #[test]
@@ -2240,6 +2361,14 @@ mod tests {
                 ("Edit", "src/beta.rs"),
                 ("Bash", "cargo test"),
             ])
+        );
+        // `[stray]` does it with no habit.
+        let mut f = worker(&files);
+        let cued = task.replacen("Mend beta.rs", "Mend beta.rs [stray]", 1);
+        let said = Mind::default().turn(&mut f, &assign(&cued));
+        assert_eq!(
+            said,
+            "Done: changed src/alpha.rs, src/alpha_test.rs, src/beta.rs."
         );
         // A card that owns nothing has no outside; an edit refused is
         // not said.

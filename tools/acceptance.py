@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import importlib.util
 import re
 import subprocess
 import sys
@@ -34,6 +35,7 @@ CATALOGUE = Path("docs/acceptance/catalogue.md")
 RUNS = Path("docs/acceptance/runs")
 DECISIONS = Path("docs/decisions")
 COMPLETE = Path("crates/imece-tui/src/complete.rs")
+SCENARIOS = Path("tools/acceptance/scenarios")
 CARGO = Path("Cargo.toml")
 
 TIERS = ("auto", "demo", "stand-in", "real")
@@ -220,9 +222,34 @@ def check(root: Path) -> Catalogue:
     for name in sorted(cat.commands_out):
         if name not in known_commands:
             wrong.append(f"Not covered: `:{name}` is not a command")
+    # A stand-in case is a scripted one: drive.py plays its scenario.
+    scripted = {p.stem: p for p in sorted((root / SCENARIOS).glob("*.scn"))}
+    for c in cat.cases:
+        if c.tier == "stand-in" and c.id not in scripted:
+            wrong.append(f"{c.id}: a stand-in case has its script {SCENARIOS}/{c.id}.scn")
+    for cid, path in scripted.items():
+        if cid not in seen:
+            wrong.append(f"{SCENARIOS}/{path.name}: no case {cid} in the catalogue")
+            continue
+        why = scenario_steps(path)
+        if why:
+            wrong.append(f"{SCENARIOS}/{path.name}: {why}")
     if wrong:
         raise Refused("\n".join(wrong))
     return cat
+
+
+def scenario_steps(path: Path) -> str:
+    """Why scripted case `path` does not parse as drive.py plays it; empty
+    when it does."""
+    spec = importlib.util.spec_from_file_location("drive", Path(__file__).parent / "acceptance" / "drive.py")
+    drive = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(drive)
+    try:
+        drive.parse(path.read_text(encoding="utf-8"))
+    except drive.Failed as why:
+        return str(why)
+    return ""
 
 
 def version(root: Path) -> str:

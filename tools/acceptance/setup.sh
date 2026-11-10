@@ -8,13 +8,23 @@
 #   tools/acceptance/setup.sh /tmp/imece-acc
 #   . /tmp/imece-acc/env.sh
 #
+# With --stand-in the world's `claude` is imece's stand-in (record 130):
+# no model is asked and nothing is spent, and the person's words steer it
+# (`[ask]`, `[question]`, … : stand_in::work::Cues), for the scripted
+# cases `drive.py run` plays.
+#
 # DIR must not exist yet, and must not be under a scratchpad directory of
 # Claude Code's on macOS (a binary there may hang at exec): /tmp/… is fine.
 # IMECE_ACC_BIN=path takes an imece already built instead of building one.
 
 set -eu
 
-dir=${1:?usage: tools/acceptance/setup.sh DIR}
+stand_in=no
+if [ "${1:-}" = --stand-in ]; then
+    stand_in=yes
+    shift
+fi
+dir=${1:?usage: tools/acceptance/setup.sh [--stand-in] DIR}
 here=$(cd "$(dirname "$0")" && pwd)
 root=$(cd "$here/../.." && pwd)
 
@@ -94,12 +104,27 @@ EOF
 
 # The run's imece: the standard tier sonnet, the cheap haiku, a pot that
 # stops a run gone wrong. Any flag given goes after these and wins.
+# ACC_REPOS: a scripted case's own copy of the checkouts (drive.py run).
 cat > "$dir/bin/imece-acc" <<EOF
 #!/bin/sh
-cd '$dir/repos/shelf' || exit 1
+cd "\${ACC_REPOS:-$dir/repos}/shelf" || exit 1
 exec '$dir/bin/imece' --model sonnet --tier cheap=haiku --budget 15 "\$@"
 EOF
 chmod 755 "$dir/bin/imece-acc"
+
+if [ "$stand_in" = yes ]; then
+    # imece clears its children's environment but for CLAUDE_CONFIG_DIR,
+    # so the stand-in's habits are in its script: no habit at all (only
+    # the cues act), a short pause between steps.
+    mkdir -p "$dir/claude"
+    cat > "$dir/bin/claude" <<EOF
+#!/bin/sh
+CLAUDE_CONFIG_DIR="\${CLAUDE_CONFIG_DIR:-$dir/claude}" IMECE_STAND_IN_PAUSE_MS=150 IMECE_STAND_IN_SEED=7 exec '$dir/bin/imece' stand-in "\$@"
+EOF
+    chmod 755 "$dir/bin/claude"
+    printf "export CLAUDE_CONFIG_DIR='%s/claude'\n" "$dir" >> "$dir/env.sh"
+    : > "$dir/stand-in"
+fi
 
 printf 'setup: ready in %s (imece %s); now: . %s/env.sh\n' \
     "$dir" "$("$dir/bin/imece" --version | sed 's/^imece //')" "$dir"

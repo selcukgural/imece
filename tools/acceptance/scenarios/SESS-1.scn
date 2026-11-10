@@ -1,0 +1,39 @@
+# SESS-1 · The quit question, where you left off, the sessions resumed.
+start
+see any key: close
+key Escape
+key /
+type find() should ignore case in shelf.py
+key Enter
+see claude-1 said done.
+key Escape Escape
+see run .imece/worktree-setup.sh
+key g d
+key a
+see run .imece/check on its
+key g d
+key a
+see 1 ready to approve
+key q
+see changes not reviewed: 1
+key s
+see claude-1
+key Escape
+type :quit
+key Enter
+see quit imece?
+key q
+see Pane is dead (status 0
+stop
+start
+see WHERE YOU LEFT OFF
+see every agent sleeps until spoken to
+see ! 1 to decide:
+key Escape
+gone WHERE YOU LEFT OFF
+key /
+type what now?
+key Enter
+key Escape Escape
+key J
+see goes on in the session it had, with all it knew

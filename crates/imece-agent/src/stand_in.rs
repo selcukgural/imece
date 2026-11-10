@@ -605,7 +605,8 @@ impl Mind {
         if task == lead::GO_ON {
             return "Nothing new for me to do.".into();
         }
-        let parts = lead::parts(&hands.files(), &task, hands.habits().cards);
+        let cards = (work::Cues::of(&task).cards).unwrap_or(hands.habits().cards);
+        let parts = lead::parts(&hands.files(), &task, cards);
         if !parts.is_empty() {
             return self.hand_out(hands, parts, true);
         }
@@ -1243,8 +1244,13 @@ pub fn session(
         mind.turns += 1;
         // A turn fails at Claude's API before any work; the one after a
         // failure goes through, so imece's tries are never used up.
+        // The person's `[fault]` or `[account]` fails the turn their words
+        // start; mail never does, so a worker's assign goes through.
+        let cued = (!prompt.contains(MAIL))
+            .then(|| work::Cues::of(&prompt).fault)
+            .flatten();
         if mind.failed.is_none()
-            && let Some(fault) = habits.fault_now(roll)
+            && let Some(fault) = habits.fault_now(roll).or(cued)
         {
             stream.failure(fault, &session, || std::thread::sleep(habits.pause));
             mind.failed = Some(Failed {
@@ -2582,6 +2588,34 @@ mod tests {
             ends(&parsed(&String::from_utf8(out).unwrap(), &a)),
             [(true, "Nothing for me to do here.".to_string(), TURN_COST)]
         );
+        // Without the habit, the person's cue fails the turn their words
+        // start, and only that one; mail with the cue does not fail.
+        let cued = |prompts: &[&str]| {
+            let input: String = (prompts.iter())
+                .map(|p| crate::claude::prompt_line(p) + "\n")
+                .collect();
+            let mut out = Vec::new();
+            run(
+                &a,
+                Path::new("/work"),
+                None,
+                &Habits::default(),
+                input.as_bytes(),
+                &mut out,
+            );
+            parsed(&String::from_utf8(out).unwrap(), &a)
+        };
+        let events = cued(&["one [fault]", "carry on"]);
+        assert!(events.contains(&Event::Failed(Fault::Passing)));
+        assert_eq!(
+            ends(&events).iter().map(|e| e.0).collect::<Vec<_>>(),
+            [false, true]
+        );
+        let events = cued(&["one [account]"]);
+        assert!(events.contains(&Event::Failed(Fault::Account)));
+        let mail = format!("{MAIL}:\n\n[assign 3] from lead:\nmend it [fault]\n");
+        let events = cued(&[mail.as_str()]);
+        assert!(!events.iter().any(|e| matches!(e, Event::Failed(_))));
         let _ = std::fs::remove_dir_all(&home);
     }
 

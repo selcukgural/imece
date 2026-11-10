@@ -150,6 +150,21 @@ class CheckTest(unittest.TestCase):
         world(self.root, CASES.replace("- after: TEAM-1", "- after: TEAM-3"))
         self.assertIn("after `TEAM-3`", refusal(self.root))
 
+    def test_a_stand_in_case_has_its_script_and_a_script_its_case(self):
+        world(self.root, CASES.replace("- tier: real\n- skip-if", "- tier: stand-in\n- skip-if"))
+        self.assertIn("TEAM-2: a stand-in case has its script", refusal(self.root))
+        scripts = self.root / acc.SCENARIOS
+        scripts.mkdir(parents=True)
+        (scripts / "TEAM-2.scn").write_text("start\nsee words\n")
+        self.assertEqual(refusal(self.root), "")
+        # A step drive.py does not know.
+        (scripts / "TEAM-2.scn").write_text("start\nlook words\n")
+        self.assertIn("TEAM-2.scn: line 2: `look` is not a step", refusal(self.root))
+        (scripts / "TEAM-2.scn").write_text("start\n")
+        # A script with no case.
+        (scripts / "TEAM-8.scn").write_text("start\n")
+        self.assertIn("TEAM-8.scn: no case TEAM-8", refusal(self.root))
+
     def test_a_heading_not_of_a_case_is_refused(self):
         world(self.root, CASES.replace("### TEAM-1 · The", "### TEAM-1 The"))
         self.assertIn("a case heading is", refusal(self.root))

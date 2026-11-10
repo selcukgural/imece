@@ -88,3 +88,45 @@ tests asking for a yes at every run, `key=lambda` hidden as a secret in a
   words on the screen could become scripts later.
 - The terminal-specific cases (the tab's icon, notices by terminal) run on
   the terminal at hand; the others are skipped with why.
+
+## Scripted cases on the stand-in (2026-11-10)
+
+The person found a few hours per release too long. Most of the time went
+to keys typed one by one by whoever ran the cases, and to real model
+turns where nothing of the model was looked at. So a case whose point is
+imece's own screen and plumbing is a script, played on the stand-in
+(record 130) as fast as the machine goes:
+
+- **Tier `stand-in`** means scripted: `tools/acceptance/scenarios/<ID>.scn`,
+  a step a line (`start`, `type`, `key`, `see`, `wait`, `gone`, `size`,
+  `sh`, `fails`, `says`, `write`, `sleep`, `stop`: `drive.py`'s
+  docstring). `check` refuses a stand-in case without its script, a
+  script without its case and a step `drive.py` does not know.
+- **The world** is `setup.sh --stand-in DIR`: its `claude` is imece's
+  stand-in with no habit, steered by the person's cues (`[ask]`,
+  `[question]`, … in the task's words).
+- **`drive.py run [--jobs N] [--report REPORT]`** plays them, each in a
+  directory of its own (state, config, Claude Code home, a copy of the
+  checkouts), so they run side by side; a failure leaves its screen in
+  `$ACC/out/<ID>.txt`; `--report` writes each row (`pass`, `scripted,
+  12 s`). At a case's end its terminal goes, and a process still working
+  in its directory five seconds later fails the case: that is how the
+  first scripts found `!cmd`'s spin (record 86).
+- **What a script can not judge** is a case of its own (`EYE-1`: the
+  Turkish screens whole, the narrow ones read, the mark's dots, the
+  farewell), and what only a real session shows stays `real`: the message
+  taken mid-turn, the test runners, resume on Claude Code itself, Lonca's
+  workspaces, the one-shot sessions' words (`TEAM-14`), a worker's local
+  server (`ASK-7`).
+
+Measured (2026-11-10, a laptop at load 40): the 13 scripted cases in 25 to
+45 s at 4 to 6 jobs, 60 s one at a time; a person's or an agent's hand
+took some 3 hours for the whole catalogue. Keys are sent one at a time
+(150 ms apart, 500 ms after an Escape: an Escape and the next key in one
+read are alt and that key), and a script waits for words on the screen,
+never for time, except for what it can not see (`sleep`).
+
+Findings of the first scripts: the spin above; and record 125's hold on
+a new item (the first key on the rest of a part applied chooses it) is
+what a person meets too, so the scripts say it in a comment where they
+press a key twice.
