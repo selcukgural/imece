@@ -48,6 +48,27 @@ Satır işin kendisidir: `!` (ya da ajanın işareti), birden çok proje açıkk
 
 Liste ancak eldeki satır ekrandan çıkacaksa kayar: altında bir satırla göründüğü sürece KARAR BEKLEYEN ve grup satırları, üstüne yeni satırlar gelse bile görünür kalır. Listede hiçbir şey yokken liste bunu bir kez, tüm genişlikte söyler ve durum satırı `/ lidere yaz` önerir; hiçbir projenin işçisi yokken (değişikliği bekleyen boştaki bir işçi bile yokken) boş satırlarda imece'nin işareti durur.
 
+## İş bitince {#is-bitince}
+
+Liderin dağıttığı her kart sonuçlanınca ana ekran bunu ilk satırında söyler; satır satır okuyup sizin çıkarmanız gerekmez. İki adımdır.
+
+```
+ ◐ EKİP BİTİRDİ  shop-api · 5 kart · 3 tamamlandı · 2 karar sizi bekliyor · $4.12 · 30 dk
+```
+
+Ekip bitirdi: bekleyen ya da üzerinde çalışılan kart yok, projeden kimse tur ortasında değil, kalan iş sizin ve satırda sayılı (okunacak bir değişiklik, bir soru, denemesi biten bir kart). KARAR BEKLEYEN hemen altındadır.
+
+```
+ ✓ HEPSİ BİTTİ  shop-api · 5 kart · 4 tamamlandı · ✕ 1 başarısız · $4.12 · 38 dk
+ Ekibe de size de kalan iş yok. / lidere sıradakini söyler.
+```
+
+Hepsi bitti: sizi bekleyen de yok. Başlıkta projenin adının yanına `✓` gelir; açık projelerin hepsi bu durumdaysa terminalin başlığı `✓ imece · hepsi bitti` olur (bir kart başarısızsa `· 1 başarısız`). Başka bir penceredeyken [`:notify`](../reference/commands.md#notify-offbelltextpush) bunu tur başına bir kez söyler: `imece · shop-api: işin hepsi bitti, 4 / 5 tamamlandı, 1 başarısız`.
+
+Başarısız olan ya da geri çekilen bir kart satırı engellemez ve her zaman satırda sayılır, başarısız olan kırmızıyla. Rakamlar turundur: projenin en son açık kartı kalmadığı andan sonra açılan kartlar, onların denemelerinin tuttuğu para (liderin kendi harcaması içinde değildir) ve ilk karttan sonuncunun bitişine kadar geçen süre. Yeni bir kart durumu bitirir ve, hepsi bittikten sonra, sıradaki turu başlatır. Birden çok proje görünürken satır onları birlikte sayar (`2 proje · 9 kart …`) ve ancak kartı olan her ekip bitirdiğinde gelir; `[` `]` tek projeye daraltır. Ekrana sığmayan satır kesilmez, altına devam eder. Bir solonun böyle bir satırı yoktur: ona kart dağıtan yoktur.
+
+Değişikliği evetinizi bekleyen bir karta bağlı bir kart hâlâ bekliyorsa bir şey söylenmez: o kart başlamamıştır, yani ekip bitirmemiştir.
+
 ## Liderin satırı
 
 Liderin çalışanlar arasında satırı yoktur; bu yüzden eldeki projenin liderinin listenin altında, hep aynı yerde kendi satırı durur: işareti ve adı, tur ortasındayken o an ne yaptığı, değilse size son sözünün ilk satırı ve ne kadar önce söylendiği (ilk sözünden önce `henüz bir şey söylenmedi`), sağda da ona yazan tuş. `/` [onunla konuşmanızı](conversations.md#bir-agentla-kendi-konuşmanız) altında yazı satırıyla açar. Kimin lideri olduğunu eldeki satır belirler; bir solonun böyle bir satırı yoktur (kendi satırı vardır), kaldırılmış bir projenin de. Sözleri defterin en yeni 2.000 satırında aranır.

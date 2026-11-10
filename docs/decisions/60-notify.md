@@ -45,3 +45,6 @@ Since record 83 (notice styles) `text` is sent the way the terminal
 shows it best, by its own name (XTVERSION): kitty's OSC 99 (a title,
 urgency, sound, and a click that opens what it was about), Ghostty's OSC
 777, OSC 9 through tmux's passthrough, else OSC 9 as above.
+
+Since record 145 (all done) a round of a project that is all done rings
+too, once (`Note::Done`), in words that name the project.

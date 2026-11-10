@@ -15,6 +15,7 @@ mod header;
 mod home;
 pub(crate) mod ledger;
 pub(crate) mod overlay;
+pub(crate) mod round;
 pub(crate) mod salon;
 pub(crate) mod story;
 pub(crate) mod timeline;

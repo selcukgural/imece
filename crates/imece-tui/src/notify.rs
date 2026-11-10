@@ -23,7 +23,7 @@ use std::time::{Duration, Instant};
 
 use ratatui::crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
 
-use crate::model::AgentId;
+use crate::model::{AgentId, ProjectId};
 use crate::screen::{Who, in_tmux};
 
 /// How long something must still be waiting before it is said: a change
@@ -237,6 +237,9 @@ pub enum Note {
     Item(usize),
     /// This agent is blocked, or its session stopped.
     Stuck(AgentId),
+    /// All the work this project's leader handed out is through and
+    /// nothing of it waits for the person (record 145).
+    Done(ProjectId),
 }
 
 /// Which notes the person knows of (seen in the window, or rung) and

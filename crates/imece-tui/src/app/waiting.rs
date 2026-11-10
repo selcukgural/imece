@@ -856,13 +856,13 @@ mod tests {
         app.world.agents[a].status = Status::Working;
         assert_eq!(app.progress(), Progress::Working);
         // The title starts with its glyph.
-        let title = |w, p| ui::words::title(Lang::En, w, p);
+        let title = |w, p| ui::words::title(Lang::En, w, p, None);
         assert_eq!(title(0, Progress::Calm), "⁙ imece");
         assert_eq!(title(0, Progress::Working), "● imece");
         assert_eq!(title(2, Progress::Waiting), "! imece · 2 to decide");
         assert_eq!(title(1, Progress::Stuck), "■ imece · 1 to decide");
         assert_eq!(
-            ui::words::title(Lang::Tr, 3, Progress::Waiting),
+            ui::words::title(Lang::Tr, 3, Progress::Waiting, None),
             "! imece · 3 karar bekliyor"
         );
     }
