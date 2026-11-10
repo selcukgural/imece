@@ -40,6 +40,19 @@ pub const WINDOW: u64 = 200_000;
 pub const CONTEXT_START: u64 = 2_000;
 pub const CONTEXT_TURN: u64 = 1_500;
 
+/// The fill past which a session compacts its context on its own, as
+/// Claude Code's do near their limit; a compacted context holds what a
+/// new one does.
+pub const AUTO_COMPACT: u64 = WINDOW * 9 / 10;
+
+/// What `/compact` answers.
+pub const COMPACTED: &str = "Compacted the conversation.";
+
+/// The file under the stand-in's home that holds what its sessions spent,
+/// a line a turn (`SECONDS MILLIONTHS`): the plan's usage windows are one
+/// account's, so every session of a run fills the same ones.
+pub const USAGE_FILE: &str = "stand-in-usage";
+
 /// What a turn costs, in millionths of a dollar, and what each tool call
 /// adds to it.
 pub const TURN_COST: u64 = 10_000;
@@ -648,6 +661,8 @@ struct Stream<W: Write> {
     /// The tasks its task tools made.
     tasks: u64,
     model: String,
+    /// The tokens a message adds to the context.
+    message: u64,
 }
 
 impl<W: Write> Stream<W> {
@@ -655,8 +670,41 @@ impl<W: Write> Stream<W> {
         let _ = writeln!(self.out, "{v}").and_then(|()| self.out.flush());
     }
 
+    /// The context holds `tokens` more; past [`AUTO_COMPACT`] the
+    /// session compacts it on its own.
+    fn grow(&mut self, tokens: u64) {
+        self.context += tokens;
+        if self.context > AUTO_COMPACT {
+            self.compact("auto");
+        }
+    }
+
+    /// The context compacted, as Claude Code 2.1.322 says it: a boundary
+    /// line with what set it off and the tokens held before.
+    fn compact(&mut self, trigger: &str) {
+        self.line(&json!({
+            "type": "system",
+            "subtype": "compact_boundary",
+            "compact_metadata": { "trigger": trigger, "pre_tokens": self.context },
+        }));
+        self.context = CONTEXT_START;
+    }
+
+    /// A turn's end that spent `cost` more: with a home and a limit, the
+    /// spending is added to the home's and the plan's windows are said,
+    /// as Claude Code's `rate_limit_event`; then the result.
+    fn done(&mut self, text: &str, cost: u64, used: Option<(&Path, u64, u64)>) {
+        if let Some((home, now, per)) = used.filter(|u| u.2 > 0) {
+            spend(home, now, cost);
+            let said = limits(home, now, per);
+            self.line(&said);
+        }
+        self.spent += cost;
+        self.result(text);
+    }
+
     fn assistant(&mut self, content: Value) {
-        self.context += CONTEXT_TURN / 10;
+        self.grow(self.message);
         let usage = json!({
             "input_tokens": self.context,
             "cache_creation_input_tokens": 0,
@@ -692,9 +740,8 @@ impl<W: Write> Stream<W> {
         }));
     }
 
-    /// The turn's end, `cost` more spent on it.
-    fn result(&mut self, text: &str, cost: u64) {
-        self.spent += cost;
+    /// The turn's end.
+    fn result(&mut self, text: &str) {
         let usd = self.spent as f64 / 1_000_000.0;
         self.line(&json!({
             "type": "result",
@@ -991,6 +1038,53 @@ impl Kept {
     }
 }
 
+/// Adds `cost` millionths of a dollar, spent at `now` (seconds since
+/// 1970), to what the sessions under `home` spent. What can not be
+/// written is not counted.
+pub fn spend(home: &Path, now: u64, cost: u64) {
+    let file = home.join(USAGE_FILE);
+    let wrote = (std::fs::OpenOptions::new().create(true).append(true))
+        .open(&file)
+        .and_then(|mut f| f.write_all(format!("{now} {cost}\n").as_bytes()));
+    if let Err(e) = wrote {
+        eprintln!("imece stand-in: {}: {e}", file.display());
+    }
+}
+
+/// The plan's usage windows at `now`, as Claude Code's `rate_limit_event`
+/// says them: what the sessions under `home` spent in the five hours and
+/// in the week `now` is in (each starts again, empty, at the next whole
+/// one of the clock), a percent for every `per` millionths of a dollar
+/// in five hours and for four times that in the week, never over a
+/// hundred.
+pub fn limits(home: &Path, now: u64, per: u64) -> Value {
+    let text = std::fs::read_to_string(home.join(USAGE_FILE)).unwrap_or_default();
+    let spent: Vec<(u64, u64)> = (text.lines())
+        .filter_map(|l| {
+            let (at, cost) = l.split_once(' ')?;
+            Some((at.parse().ok()?, cost.parse().ok()?))
+        })
+        .collect();
+    let window = |minutes: u32, per: u64| {
+        let length = u64::from(minutes) * 60;
+        let number = now / length;
+        let used = (spent.iter())
+            .filter(|(at, _)| at / length == number)
+            .fold(0u64, |sum, (_, cost)| sum.saturating_add(*cost));
+        json!({
+            "utilization": (used / per.max(1)).min(100) as f64 / 100.0,
+            "resetsAt": (number + 1) * length,
+        })
+    };
+    json!({
+        "type": "rate_limit_event",
+        "rate_limit_info": { "status": "allowed", "unifiedWindows": {
+            "five_hour": window(crate::FIVE_HOURS, per),
+            "seven_day": window(crate::WEEK, per.saturating_mul(4)),
+        }},
+    })
+}
+
 /// The last of what session `id`'s transcript under `home` kept, in
 /// whichever directory it ran (a fork goes on from another's).
 pub fn kept(home: &Path, id: &str) -> Option<Kept> {
@@ -1025,9 +1119,7 @@ fn keep(home: &Path, cwd: &Path, id: &str, k: &Kept) {
     }
 }
 
-/// A session: its servers started in `cwd`, `init`, then a turn per
-/// prompt until stdin ends; its transcript under `home`, and a
-/// `--resume` going on from the one there (one not found: afresh).
+/// A session by the machine's clock: see [`session`].
 pub fn run(
     a: &Args,
     cwd: &Path,
@@ -1035,6 +1127,26 @@ pub fn run(
     habits: &Habits,
     input: impl BufRead,
     out: impl Write,
+) {
+    let now = || {
+        (std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH))
+            .map_or(0, |d| d.as_secs())
+    };
+    session(a, cwd, home, habits, input, out, &now);
+}
+
+/// A session: its servers started in `cwd`, `init`, then a turn per
+/// prompt until stdin ends; its transcript under `home`, and a
+/// `--resume` going on from the one there (one not found: afresh). `now`
+/// says the seconds since 1970, for the plan's usage windows.
+pub fn session(
+    a: &Args,
+    cwd: &Path,
+    home: Option<&Path>,
+    habits: &Habits,
+    input: impl BufRead,
+    out: impl Write,
+    now: &dyn Fn() -> u64,
 ) {
     let mut servers: Vec<(String, Server)> = (a.servers.iter())
         .map(|(n, c, args)| (n.clone(), Server::start(c, args, cwd)))
@@ -1051,7 +1163,9 @@ pub fn run(
         calls: 0,
         tasks: 0,
         model: a.model.clone().unwrap_or_else(|| "stand-in".into()),
+        message: habits.message(),
     };
+    let used = || home.map(|h| (h, now(), habits.limit));
     let tools = a.built_in();
     stream.line(&init(a, &session, &servers));
     let mut mind = was.mind;
@@ -1078,7 +1192,16 @@ pub fn run(
             (stream.spent, stream.context) = (0, CONTEXT_START);
             mind = Mind::default();
             stream.line(&init(a, &session, &servers));
-            stream.result("", 0);
+            stream.result("");
+            kept_now(&session, &mind, &stream);
+            continue;
+        }
+        if prompt.trim() == "/compact" {
+            // The conversation goes on from its summary, which a model
+            // wrote: a turn's cost, and the mind as it was.
+            stream.compact("manual");
+            stream.assistant(json!([{ "type": "text", "text": COMPACTED }]));
+            stream.done(COMPACTED, TURN_COST, used());
             kept_now(&session, &mind, &stream);
             continue;
         }
@@ -1103,6 +1226,7 @@ pub fn run(
             continue;
         }
         let failed = mind.failed.take();
+        let before = stream.spent;
         let prompts = failed
             .as_ref()
             .map_or(vec![prompt.as_str()], |f| f.then(&prompt));
@@ -1118,10 +1242,15 @@ pub fn run(
             .map(|p| mind.turn(&mut hands, p))
             .collect();
         let text = texts.join("\n\n");
-        // Claude Code's last message is the turn's text, then its result.
+        // Claude Code's last message is the turn's text, then its result:
+        // the message says the context with what the turn left in it.
+        hands.stream.grow(10 * habits.message());
         hands.say(&text);
-        stream.context += CONTEXT_TURN;
-        stream.result(&text, TURN_COST);
+        // What the turn's calls spent is in the session's total already;
+        // the windows take the whole turn.
+        let calls = stream.spent - before;
+        stream.spent = before;
+        stream.done(&text, calls + TURN_COST, used());
         kept_now(&session, &mind, &stream);
     }
 }
@@ -1806,7 +1935,7 @@ mod tests {
             .filter(|e| matches!(e, crate::Event::Started { .. }))
             .count();
         assert_eq!(started, 2, "the first init and the one /clear brings");
-        let said = CONTEXT_START + CONTEXT_TURN / 10;
+        let said = CONTEXT_START + CONTEXT_TURN + CONTEXT_TURN / 10;
         let context: Vec<&crate::Event> = (events.iter())
             .filter(|e| matches!(e, crate::Event::Context { .. }))
             .collect();
@@ -1862,11 +1991,22 @@ mod tests {
             &mut out,
         );
         let events = parsed(&String::from_utf8(out).unwrap(), &a);
-        let said = CONTEXT_START + CONTEXT_TURN / 10;
-        assert!(events.contains(&crate::Event::Context {
-            used: said + CONTEXT_TURN + CONTEXT_TURN / 10,
-            size: Some(WINDOW)
-        }));
+        // Each turn leaves its own tokens and its last message's.
+        let turn = CONTEXT_TURN + CONTEXT_TURN / 10;
+        let context: Vec<u64> = (events.iter())
+            .filter_map(|e| match e {
+                crate::Event::Context {
+                    used,
+                    size: Some(_),
+                } => Some(*used),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            context,
+            [CONTEXT_START + turn, CONTEXT_START + 2 * turn],
+            "the first by its result's window, the second by its message"
+        );
         let costs: Vec<u64> = (events.iter())
             .filter_map(|e| match e {
                 crate::Event::TurnDone { cost, .. } => Some(*cost),
@@ -1886,6 +2026,280 @@ mod tests {
             ("stand-in".to_string(), TURN_COST - TURN_COST / 8),
         ];
         assert_eq!(grew, [turn.clone(), turn]);
+    }
+
+    #[test]
+    fn a_context_past_nine_tenths_compacts_on_its_own_and_says_so() {
+        let mut s = stream();
+        s.context = AUTO_COMPACT - 10;
+        s.grow(10);
+        assert_eq!(s.context, AUTO_COMPACT, "at nine tenths: not yet");
+        assert!(s.out.is_empty());
+        s.grow(1);
+        assert_eq!(s.context, CONTEXT_START, "what a new one holds");
+        let line = String::from_utf8(std::mem::take(&mut s.out)).unwrap();
+        let v: Value = serde_json::from_str(line.trim()).unwrap();
+        assert_eq!(
+            v,
+            json!({ "type": "system", "subtype": "compact_boundary",
+                "compact_metadata": { "trigger": "auto", "pre_tokens": AUTO_COMPACT + 1 } })
+        );
+        // A message adds the session's tokens, and may be the one over.
+        s.message = 700;
+        s.context = AUTO_COMPACT - 700;
+        s.assistant(json!([]));
+        assert_eq!(s.context, AUTO_COMPACT);
+        s.assistant(json!([]));
+        assert_eq!(s.context, CONTEXT_START);
+        let text = String::from_utf8(s.out).unwrap();
+        let kinds: Vec<String> = (text.lines())
+            .map(|l| serde_json::from_str::<Value>(l).unwrap())
+            .map(|v| v["subtype"].as_str().unwrap_or("message").to_string())
+            .collect();
+        assert_eq!(kinds, ["message", "compact_boundary", "message"]);
+        let said: Value = serde_json::from_str(text.lines().last().unwrap()).unwrap();
+        assert_eq!(
+            said["message"]["usage"]["input_tokens"], CONTEXT_START,
+            "the message after says the compacted context"
+        );
+    }
+
+    /// The lines a session under `home` (none: without one) writes for
+    /// `prompts` with `habits`, at `now` on the clock.
+    fn lines_at(
+        home: Option<&Path>,
+        habits: &Habits,
+        now: u64,
+        a: &Args,
+        prompts: &[&str],
+    ) -> Vec<Value> {
+        let input: String = (prompts.iter())
+            .map(|p| crate::claude::prompt_line(p) + "\n")
+            .collect();
+        let mut out = Vec::new();
+        let cwd = Path::new("/work");
+        session(a, cwd, home, habits, input.as_bytes(), &mut out, &|| now);
+        (String::from_utf8(out).unwrap().lines())
+            .map(|l| serde_json::from_str(l).unwrap())
+            .collect()
+    }
+
+    #[test]
+    fn a_session_s_messages_fill_its_context_as_its_habits_say_until_it_compacts() {
+        let habits = Habits {
+            fill: 9_000,
+            ..Habits::default()
+        };
+        // A turn's message and ten more for the turn: 99,000 a turn.
+        let a = Args {
+            permission_mode: "acceptEdits".into(),
+            ..Args::default()
+        };
+        let lines = lines_at(None, &habits, 0, &a, &["one", "two", "three"]);
+        let text: String = lines.iter().map(|l| format!("{l}\n")).collect();
+        let events = parsed(&text, &a);
+        let seen: Vec<String> = (events.iter())
+            .filter_map(|e| match e {
+                crate::Event::Context {
+                    used,
+                    size: Some(_),
+                } => Some(used.to_string()),
+                crate::Event::Note(n) => Some(n.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            seen,
+            [
+                (CONTEXT_START + 99_000).to_string(),
+                format!(
+                    "context compacted by the session: it held {} tokens",
+                    CONTEXT_START + 99_000 + 90_000
+                ),
+                (CONTEXT_START + 9_000).to_string(),
+                (CONTEXT_START + 9_000 + 99_000).to_string(),
+            ],
+            "the second turn's own tokens take it over nine tenths"
+        );
+    }
+
+    #[test]
+    fn compact_empties_the_context_at_a_turn_s_cost_and_keeps_the_mind() {
+        let home = std::env::temp_dir().join(format!("imece-stand-in-cmp-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        let none = Habits::default();
+        let lines = lines_at(
+            Some(&home),
+            &none,
+            0,
+            &Args {
+                replay: true,
+                ..Args::default()
+            },
+            &["one", "/compact", "two"],
+        );
+        let session = lines[0]["session_id"].as_str().unwrap().to_string();
+        let at = (lines.iter())
+            .position(|l| l["subtype"] == "compact_boundary")
+            .expect("a boundary");
+        let turn = CONTEXT_TURN + CONTEXT_TURN / 10;
+        assert_eq!(
+            lines[at]["compact_metadata"],
+            json!({ "trigger": "manual", "pre_tokens": CONTEXT_START + turn })
+        );
+        // Its own command is not echoed; its answer is a message that
+        // says the context now, then a result a turn dearer.
+        assert_ne!(lines[at - 1]["isReplay"], true);
+        assert_eq!(lines[at - 1]["type"], "result");
+        assert_eq!(lines[at + 1]["message"]["content"][0]["text"], COMPACTED);
+        assert_eq!(
+            lines[at + 1]["message"]["usage"]["input_tokens"],
+            CONTEXT_START + CONTEXT_TURN / 10
+        );
+        assert_eq!(lines[at + 2]["type"], "result");
+        assert_eq!(lines[at + 2]["result"], COMPACTED);
+        assert_eq!(
+            lines[at + 2]["total_cost_usd"],
+            2.0 * TURN_COST as f64 / 1e6
+        );
+        assert_eq!(
+            lines
+                .iter()
+                .filter(|l| l["type"] == "system" && l["subtype"] == "init")
+                .count(),
+            1
+        );
+        // The same session goes on: two turns in its mind, not three, and
+        // what the command left in its transcript.
+        let k = kept(&home, &session).unwrap();
+        assert_eq!(k.mind.turns, 2);
+        assert_eq!(k.spent, 3 * TURN_COST);
+        assert_eq!(k.context, CONTEXT_START + CONTEXT_TURN / 10 + turn);
+        assert!(
+            !lines.iter().any(|l| l["type"] == "rate_limit_event"),
+            "no limit: no window said"
+        );
+        assert!(!home.join(USAGE_FILE).exists(), "and nothing counted");
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn the_windows_are_what_was_spent_in_them_a_percent_for_every_part() {
+        let home = std::env::temp_dir().join(format!("imece-stand-in-use-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        std::fs::create_dir_all(&home).unwrap();
+        let (five, week) = (5 * 3600, 7 * 24 * 3600);
+        let windows = |now: u64, per: u64| {
+            let v = limits(&home, now, per);
+            assert_eq!(v["type"], "rate_limit_event");
+            assert_eq!(v["rate_limit_info"]["status"], "allowed");
+            let w = &v["rate_limit_info"]["unifiedWindows"];
+            let of = |k: &str| {
+                (
+                    (w[k]["utilization"].as_f64().unwrap() * 100.0).round() as u64,
+                    w[k]["resetsAt"].as_u64().unwrap(),
+                )
+            };
+            assert_eq!(w.as_object().unwrap().len(), 2);
+            (of("five_hour"), of("seven_day"))
+        };
+        // Nothing spent, no file: empty windows that end at the next
+        // whole one of the clock.
+        let now = 10 * week + 3 * five + 7;
+        assert_eq!(
+            windows(now, 100),
+            ((0, 10 * week + 4 * five), (0, 11 * week))
+        );
+        // 1,234 in this five hours: 12 whole percent at 100 each, 3 of
+        // the week at four times that.
+        spend(&home, now - 7, 1_000);
+        spend(&home, now, 234);
+        assert_eq!(windows(now, 100).0.0, 12);
+        assert_eq!(windows(now, 100).1.0, 3);
+        assert_eq!(windows(now, 1_234).0.0, 1);
+        assert_eq!(windows(now, 1_235).0.0, 0);
+        // The five hours before count in the week alone, the week before
+        // in neither; the window's last second is its own.
+        spend(&home, now - 8, 400);
+        spend(&home, 10 * week - 1, 50_000);
+        assert_eq!(
+            windows(now, 100),
+            ((12, 10 * week + 4 * five), (4, 11 * week))
+        );
+        assert_eq!(windows(10 * week + 4 * five - 1, 100).0.0, 12);
+        assert_eq!(
+            windows(10 * week + 4 * five, 100).0,
+            (0, 10 * week + 5 * five)
+        );
+        // Never over a hundred; lines that are not a spending are passed over.
+        let file = home.join(USAGE_FILE);
+        let text = std::fs::read_to_string(&file).unwrap();
+        assert!(
+            text.starts_with(&format!("{} 1000\n{now} 234\n", now - 7)),
+            "{text}"
+        );
+        std::fs::write(&file, format!("{text}x\n{now}\n{now} y\n{now} 3\n")).unwrap();
+        assert_eq!(windows(now, 100).0.0, 12);
+        assert_eq!(windows(now, 1).0.0, 100);
+        assert_eq!(windows(now, 0).0.0, 100, "no part: as one");
+        spend(&home, now, u64::MAX);
+        assert_eq!(
+            windows(now, u64::MAX),
+            ((1, 10 * week + 4 * five), (1, 11 * week))
+        );
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn every_session_of_a_home_fills_the_same_windows_with_its_whole_turns() {
+        let home = std::env::temp_dir().join(format!("imece-stand-in-lim-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        std::fs::create_dir_all(&home).unwrap();
+        let habits = Habits {
+            limit: TURN_COST / 4,
+            ..Habits::default()
+        };
+        let now = 1_000_000;
+        let a = Args {
+            permission_mode: "acceptEdits".into(),
+            ..Args::default()
+        };
+        let said = |lines: &[Value]| -> Vec<(u64, u64)> {
+            let text: String = lines.iter().map(|l| format!("{l}\n")).collect();
+            (parsed(&text, &a).iter())
+                .filter_map(|e| match e {
+                    crate::Event::Limits(l) => Some((u64::from(l[0].used), u64::from(l[1].used))),
+                    _ => None,
+                })
+                .collect()
+        };
+        // A turn is four parts: 4 percent of five hours, 1 of the week,
+        // said before each result; `/clear` spends nothing and says none,
+        // `/compact` is a turn's.
+        let one = lines_at(
+            Some(&home),
+            &habits,
+            now,
+            &a,
+            &["one", "/clear", "/compact"],
+        );
+        assert_eq!(said(&one), [(4, 1), (8, 2)]);
+        let kinds: Vec<&str> = one.iter().map(|l| l["type"].as_str().unwrap()).collect();
+        let at = kinds.iter().position(|k| *k == "rate_limit_event").unwrap();
+        assert_eq!(kinds[at + 1], "result");
+        // Another session of the same home goes on from there.
+        let two = lines_at(Some(&home), &habits, now + 1, &a, &["one"]);
+        assert_eq!(said(&two), [(12, 3)]);
+        assert_eq!(
+            std::fs::read_to_string(home.join(USAGE_FILE)).unwrap(),
+            format!(
+                "{now} {TURN_COST}\n{now} {TURN_COST}\n{} {TURN_COST}\n",
+                now + 1
+            )
+        );
+        // Without a home nothing is counted or said.
+        assert!(said(&lines_at(None, &habits, now, &a, &["one"])).is_empty());
+        let _ = std::fs::remove_dir_all(&home);
     }
 
     #[test]
@@ -2154,6 +2568,7 @@ mod tests {
             calls: 0,
             tasks: 0,
             model: "m".into(),
+            message: CONTEXT_TURN / 10,
         }
     }
 
@@ -2227,6 +2642,8 @@ mod tests {
             questions: 5,
             helpers: 6,
             faults: 8,
+            limit: 9,
+            fill: 10,
             seed: 7,
         };
         let claude = install(&dir, &imece, &home, &habits).unwrap();

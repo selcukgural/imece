@@ -43,6 +43,8 @@ pub const SEED_VAR: &str = "IMECE_STAND_IN_SEED";
 pub const QUESTIONS_VAR: &str = "IMECE_STAND_IN_QUESTIONS";
 pub const HELPERS_VAR: &str = "IMECE_STAND_IN_HELPERS";
 pub const FAULTS_VAR: &str = "IMECE_STAND_IN_FAULTS";
+pub const LIMIT_VAR: &str = "IMECE_STAND_IN_LIMIT";
+pub const FILL_VAR: &str = "IMECE_STAND_IN_FILL";
 
 /// Of the turns that fail at Claude's API, one in this many is the
 /// account's (it waits for the person); the rest pass (imece tries them
@@ -84,8 +86,12 @@ pub const WROTE_TESTS: &str = "Wrote the tests in ";
 /// `asks`, never at 0), how often it asks the person a question (one
 /// assign in `questions`, never at 0), how often it hires a helper for
 /// the tests (one assign in `helpers`, never at 0), how often a turn of
-/// any session fails at Claude's API (one in `faults`, never at 0), and
-/// the seed of its choices.
+/// any session fails at Claude's API (one in `faults`, never at 0), what
+/// of the sessions' spending is a percent of the plan's five-hour window
+/// (`limit` millionths of a dollar, four times that for the week's; at 0
+/// no window is said), the tokens each message adds to a session's
+/// context (`fill`; at 0 a tenth of [`super::CONTEXT_TURN`]), and the seed
+/// of its choices.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Habits {
     pub pause: Duration,
@@ -93,6 +99,8 @@ pub struct Habits {
     pub questions: u64,
     pub helpers: u64,
     pub faults: u64,
+    pub limit: u64,
+    pub fill: u64,
     pub seed: u64,
 }
 
@@ -111,6 +119,8 @@ impl Habits {
             questions: n(QUESTIONS_VAR),
             helpers: n(HELPERS_VAR),
             faults: n(FAULTS_VAR),
+            limit: n(LIMIT_VAR),
+            fill: n(FILL_VAR),
             seed: n(SEED_VAR),
         }
     }
@@ -119,14 +129,25 @@ impl Habits {
     pub fn vars(&self) -> String {
         format!(
             "{PAUSE_VAR}={} {ASKS_VAR}={} {QUESTIONS_VAR}={} {HELPERS_VAR}={} {FAULTS_VAR}={} \
-             {SEED_VAR}={}",
+             {LIMIT_VAR}={} {FILL_VAR}={} {SEED_VAR}={}",
             self.pause.as_millis(),
             self.asks,
             self.questions,
             self.helpers,
             self.faults,
+            self.limit,
+            self.fill,
             self.seed
         )
+    }
+
+    /// The tokens a message adds to a session's context.
+    pub fn message(&self) -> u64 {
+        if self.fill == 0 {
+            super::CONTEXT_TURN / 10
+        } else {
+            self.fill
+        }
     }
 
     /// Whether the assign `roll` stands for runs a command that asks
@@ -856,20 +877,22 @@ mod tests {
 
     #[test]
     fn habits_come_from_their_variables_and_go_back_to_them() {
-        let vars = |[pause, asks, questions, helpers, faults, seed]: [&str; 6]| {
-            let [pause, asks, questions, helpers, faults, seed] =
-                [pause, asks, questions, helpers, faults, seed].map(String::from);
+        let vars = |[pause, asks, questions, helpers, faults, limit, fill, seed]: [&str; 8]| {
+            let [pause, asks, questions, helpers, faults, limit, fill, seed] =
+                [pause, asks, questions, helpers, faults, limit, fill, seed].map(String::from);
             Habits::of(move |k| match k {
                 PAUSE_VAR => Some(pause.clone()),
                 ASKS_VAR => Some(asks.clone()),
                 QUESTIONS_VAR => Some(questions.clone()),
                 HELPERS_VAR => Some(helpers.clone()),
                 FAULTS_VAR => Some(faults.clone()),
+                LIMIT_VAR => Some(limit.clone()),
+                FILL_VAR => Some(fill.clone()),
                 SEED_VAR => Some(seed.clone()),
                 _ => None,
             })
         };
-        let h = vars([" 1500 ", "3", "4", "5", "6", "42"]);
+        let h = vars([" 1500 ", "3", "4", "5", "6", "7", "8", "42"]);
         assert_eq!(
             h,
             Habits {
@@ -878,26 +901,29 @@ mod tests {
                 questions: 4,
                 helpers: 5,
                 faults: 6,
+                limit: 7,
+                fill: 8,
                 seed: 42
             }
         );
         assert_eq!(
             h.vars(),
             "IMECE_STAND_IN_PAUSE_MS=1500 IMECE_STAND_IN_ASKS=3 IMECE_STAND_IN_QUESTIONS=4 \
-             IMECE_STAND_IN_HELPERS=5 IMECE_STAND_IN_FAULTS=6 IMECE_STAND_IN_SEED=42"
+             IMECE_STAND_IN_HELPERS=5 IMECE_STAND_IN_FAULTS=6 IMECE_STAND_IN_LIMIT=7 \
+             IMECE_STAND_IN_FILL=8 IMECE_STAND_IN_SEED=42"
         );
         assert_eq!(Habits::of(|_| None), Habits::default());
         assert_eq!(
-            vars(["x", "-1", "y", "z", "f", ""]),
+            vars(["x", "-1", "y", "z", "f", "l", "c", ""]),
             Habits::default(),
             "not numbers: 0"
         );
         assert_eq!(
-            vars(["10000", "0", "0", "0", "0", "0"]).pause,
+            vars(["10000", "0", "0", "0", "0", "0", "0", "0"]).pause,
             Duration::from_millis(10_000)
         );
         assert_eq!(
-            vars(["10001", "0", "0", "0", "0", "0"]).pause,
+            vars(["10001", "0", "0", "0", "0", "0", "0", "0"]).pause,
             Duration::from_millis(PAUSE_MOST),
             "at most"
         );

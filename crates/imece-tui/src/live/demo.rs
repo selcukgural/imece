@@ -22,12 +22,18 @@ const HELPERS: usize = 2;
 /// the person's yes first, one in how many asks the person a question,
 /// and one in how many hires a helper for its tests; one turn in how many
 /// of any session fails at Claude's API (record 79: tried again, or the
-/// person's when it is the account's).
+/// person's when it is the account's); what of the sessions' spending is
+/// a percent of the plan's five-hour window, in millionths of a dollar
+/// (a cent, so a dollar fills it; the week's takes four), and the tokens
+/// a message adds to a session's context (a worker's second assign
+/// compacts it).
 const PAUSE: u64 = 1_500;
 const ASKS: u64 = 3;
 const QUESTIONS: u64 = 4;
 const HIRES: u64 = 3;
 const FAULTS: u64 = 8;
+const LIMIT: u64 = 10_000;
+const FILL: u64 = 3_000;
 
 /// How the demo's stand-ins work, their choices seeded by `seed`.
 fn habits(seed: u64) -> Habits {
@@ -37,6 +43,8 @@ fn habits(seed: u64) -> Habits {
         questions: QUESTIONS,
         helpers: HIRES,
         faults: FAULTS,
+        limit: LIMIT,
+        fill: FILL,
         seed,
     }
 }
@@ -297,6 +305,8 @@ mod tests {
                 questions: 4,
                 helpers: 3,
                 faults: 8,
+                limit: 10_000,
+                fill: 3_000,
                 seed: 9
             }
         );

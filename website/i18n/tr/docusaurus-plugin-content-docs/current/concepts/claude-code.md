@@ -39,7 +39,7 @@ Bir oturum, ajan başına bir, uzun ömürlü bir `claude -p` akışıdır (stre
 
 Claude Code `rate_limit_event` gönderir. imece hesap için uzunluk başına (beş saat, bir hafta) bir pencere tutar ve `:budget` notu keseden sonra dolmaya en yakın pencereyi gösterir: `claude 5 sa: %48 kaldı`; %90 kullanımdan itibaren başlıkta da durur, `claude 5 sa: %10 kaldı, 1 sa 59 dk sonra yenilenir`, dikkat renginde. Bir aboneliğin limiti ekibi bütçeden önce durdurabilir; imece bir turu kendisi durdurmaz, Claude Code'un reddini gösterir. Pencereler çalıştırmalar arasında saklanmaz; bir oturum ilk turunda yeniden söyler.
 
-Her agent'ın bağlam penceresi de bildirilir: her mesaj isteğin token'larını (o ana kadarki bağlam), sonuç modelin penceresini taşır. Agent'ın kartının ekranındaki satırı %70'ten itibaren `◔ %72` gösterir, log sekmesi de rakamı; iz doluluğu onda birlik adımlarla not eder. Oturumla birlikte gider.
+Her agent'ın bağlam penceresi de bildirilir: her mesaj isteğin token'larını (o ana kadarki bağlam), sonuç modelin penceresini taşır. Agent'ın kartının ekranındaki satırı %70'ten itibaren `◔ %72` gösterir, log sekmesi de rakamı; iz doluluğu onda birlik adımlarla not eder, Claude Code bir sıkıştırma bildirdiğinde onu da (`context compacted by the session: it held 181000 tokens`, sizin `/compact` komutunuzdan sonra `by the session` olmadan). Oturumla birlikte gider.
 
 ## Diğer kodlama ajanları
 
