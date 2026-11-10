@@ -1199,6 +1199,9 @@ pub struct App {
     /// (`:notify`), and what rang already.
     pub notify: Notify,
     notices: notify::Notices,
+    /// The rounds whose end the person knows of (record 145): project
+    /// and the round's first card. Memory only.
+    rounds_told: Vec<(ProjectId, CardId)>,
     /// The notifications sent, newest last, each with its number and what
     /// it was about, so kitty's report of a click opens that
     /// ([`App::clicked`]); the last [`NOTICED`]. The number the next one
@@ -1414,6 +1417,7 @@ impl App {
             awake: crate::awake::Awake::new(false, crate::awake::command(std::process::id())),
             notify: Notify::Off,
             notices: notify::Notices::default(),
+            rounds_told: Vec::new(),
             noticed: Vec::new(),
             notice_count: 0,
             push: None,

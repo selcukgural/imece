@@ -948,12 +948,20 @@ pub fn pot_spent(lang: Lang, w: &World) -> String {
 /// The terminal's title: what a tab in the background shows, `waiting`
 /// being the count of open items to decide (the header's, replies left
 /// out).
-pub fn title(lang: Lang, waiting: usize, progress: Progress) -> String {
-    let words = if waiting == 0 {
-        "imece".to_string()
-    } else {
-        fill(lang.text().title_waiting, &[&waiting.to_string()])
+pub fn title(lang: Lang, waiting: usize, progress: Progress, done: Option<usize>) -> String {
+    let t = lang.text();
+    // All the work handed out is through (record 145), `done` of its
+    // cards failed: said only when nothing else is.
+    let done = done.filter(|_| waiting == 0 && progress == Progress::Calm);
+    let words = match (waiting, done) {
+        (0, Some(0)) => t.title_done.to_string(),
+        (0, Some(failed)) => fill(t.title_done_failed, &[&failed.to_string()]),
+        (0, None) => "imece".to_string(),
+        _ => fill(t.title_waiting, &[&waiting.to_string()]),
     };
+    if done.is_some() {
+        return format!("✓ {words}");
+    }
     // The ladder's top first, in the glyphs of the header's fleet and the
     // rows, so a tab in the background says it; calm, imece's mark
     // (record 101: five dots, as the mark's hands).
@@ -1118,6 +1126,18 @@ pub(crate) fn one_line(text: &str) -> String {
 pub fn notice(lang: Lang, w: &World, note: crate::notify::Note) -> String {
     let t = lang.text();
     let (text, agent) = match note {
+        crate::notify::Note::Done(p) => {
+            let r = w.finished(p).map(|f| f.round()).unwrap_or_default();
+            let name = crate::i18n::clean(&w.projects[p].name);
+            let (landed, cards) = (r.landed.to_string(), r.cards.to_string());
+            return match r.failed {
+                0 => fill(t.notice_done, &[&name, &landed, &cards]),
+                n => fill(
+                    t.notice_done_failed,
+                    &[&name, &landed, &cards, &n.to_string()],
+                ),
+            };
+        }
         crate::notify::Note::Stuck(id) => (t.notice_stuck, id),
         crate::notify::Note::Item(i) => {
             let item = &w.inbox[i];
@@ -1145,6 +1165,8 @@ pub fn notice(lang: Lang, w: &World, note: crate::notify::Note) -> String {
 /// and the project, nothing an agent wrote.
 pub fn pushed(lang: Lang, w: &World, note: crate::notify::Note) -> String {
     let agent = match note {
+        // Its words name the project already.
+        crate::notify::Note::Done(_) => return notice(lang, w, note),
         crate::notify::Note::Stuck(id) => id,
         crate::notify::Note::Item(i) => w.inbox[i].agent,
     };
@@ -1602,16 +1624,42 @@ mod tests {
     }
 
     #[test]
-    fn the_title_names_imece_and_counts_what_waits_in_both_languages() {
-        assert_eq!(title(Lang::En, 0, Progress::Calm), "⁙ imece");
-        assert_eq!(title(Lang::Tr, 0, Progress::Calm), "⁙ imece");
-        assert_eq!(title(Lang::En, 1, Progress::Calm), "⁙ imece · 1 to decide");
+    fn the_title_says_all_done_only_when_nothing_else_is_to_say() {
+        let en = |waiting, p, done| title(Lang::En, waiting, p, done);
+        assert_eq!(en(0, Progress::Calm, Some(0)), "✓ imece · all done");
         assert_eq!(
-            title(Lang::En, 12, Progress::Calm),
+            en(0, Progress::Calm, Some(2)),
+            "✓ imece · all done · 2 failed"
+        );
+        assert_eq!(
+            title(Lang::Tr, 0, Progress::Calm, Some(0)),
+            "✓ imece · hepsi bitti"
+        );
+        assert_eq!(
+            title(Lang::Tr, 0, Progress::Calm, Some(1)),
+            "✓ imece · hepsi bitti · 1 başarısız"
+        );
+        // Something waits, or somebody is at work or stuck: that first.
+        assert_eq!(en(1, Progress::Calm, Some(0)), "⁙ imece · 1 to decide");
+        assert_eq!(en(0, Progress::Working, Some(0)), "● imece");
+        assert_eq!(en(0, Progress::Stuck, Some(0)), "■ imece");
+        assert_eq!(en(2, Progress::Waiting, Some(1)), "! imece · 2 to decide");
+    }
+
+    #[test]
+    fn the_title_names_imece_and_counts_what_waits_in_both_languages() {
+        assert_eq!(title(Lang::En, 0, Progress::Calm, None), "⁙ imece");
+        assert_eq!(title(Lang::Tr, 0, Progress::Calm, None), "⁙ imece");
+        assert_eq!(
+            title(Lang::En, 1, Progress::Calm, None),
+            "⁙ imece · 1 to decide"
+        );
+        assert_eq!(
+            title(Lang::En, 12, Progress::Calm, None),
             "⁙ imece · 12 to decide"
         );
         assert_eq!(
-            title(Lang::Tr, 3, Progress::Calm),
+            title(Lang::Tr, 3, Progress::Calm, None),
             "⁙ imece · 3 karar bekliyor"
         );
     }

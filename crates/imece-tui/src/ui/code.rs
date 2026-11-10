@@ -336,12 +336,29 @@ mod tests {
             .collect()
     }
 
+    /// The kinds of cells on the map's rows.
+    fn kinds(rows: &[String]) -> std::collections::BTreeSet<char> {
+        (rows.iter())
+            .filter(|r| !r.contains(" being edited ·"))
+            .flat_map(|r| {
+                let chars: Vec<char> = r.chars().collect();
+                cell_starts(r).into_iter().map(move |i| chars[i])
+            })
+            .collect()
+    }
+
+    /// The demo at the first tick its map has a file held by several.
+    /// Left alone, a round of the demo's (record 145) comes to rest with
+    /// nothing held, so the tick is looked for, not counted.
     fn demo() -> App {
         let mut app = App::new(2, 12, 4, 2, Lang::En);
         for _ in 0..300 {
             app.step();
+            if render(&app, 160, 50).iter().any(|r| r.contains('⇆')) {
+                return app;
+            }
         }
-        app
+        panic!("the demo's map never had a file held by several");
     }
 
     /// Where the lease cells start on a row: the status glyphs.
@@ -531,17 +548,17 @@ mod tests {
 
     #[test]
     fn the_legend_words_exactly_the_glyphs_on_the_map() {
-        let app = demo();
+        let mut app = demo();
+        // Two kinds of cells: one of the holders' sessions stopped.
+        let here = app.current_project();
+        let holder = (app.world.cards.iter())
+            .filter(|c| c.project == here && c.holds_leases() && !c.symbols.is_empty())
+            .find_map(|c| c.owner)
+            .expect("the demo has a lease held");
+        app.world.agents[holder].status = Status::Stopped;
         let rows = render(&app, 160, 50);
         let t = app.lang.text();
-        let on_map: std::collections::BTreeSet<char> = rows
-            .iter()
-            .filter(|r| !r.contains(" being edited ·"))
-            .flat_map(|r| {
-                let chars: Vec<char> = r.chars().collect();
-                cell_starts(r).into_iter().map(move |i| chars[i])
-            })
-            .collect();
+        let on_map = kinds(&rows);
         assert!(on_map.len() >= 2, "{on_map:?}");
         let legend = rows.iter().find(|r| r.contains(" being edited ·")).unwrap();
         for (k, g) in GLYPHS.iter().enumerate() {

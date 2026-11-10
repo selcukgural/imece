@@ -416,11 +416,22 @@ fn list_drawn(app: &App, width: usize, stacked: bool, at: Option<HomeRow>) -> Dr
         }
         at_lines = at_lines.map(|(from, to)| (from + 1, to + 1));
     }
-    if listed.rows.is_empty() {
+    // What is finished in view is said first (record 145), and when
+    // nothing is listed under it, it has said that nothing is left.
+    let done = round::banner(app, width);
+    if listed.rows.is_empty() && !round::in_home(app).is_some_and(|f| f.all()) {
         // Whole: wrapped to the width, never cut.
         for row in overlay::wrap_words(t.home_nothing, width.saturating_sub(1).max(1)) {
             lines.push(Line::from(Span::styled(format!(" {row}"), dim())));
         }
+    }
+    if !done.is_empty() {
+        let by = done.len();
+        for spot in &mut spots {
+            spot.0 += by;
+        }
+        at_lines = at_lines.map(|(from, to)| (from + by, to + by));
+        lines.splice(0..0, done);
     }
     Drawn {
         lines,
@@ -1503,6 +1514,143 @@ mod tests {
             }
         }
         panic!("the demo never asked about its check");
+    }
+
+    /// Home with every card of both projects done at tick 90, but the
+    /// first project's second, which failed; now is tick 500.
+    fn all_done(lang: Lang) -> App {
+        let mut app = home(lang);
+        for c in &mut app.world.cards {
+            c.column = Column::Done;
+            c.finished = 90;
+        }
+        app.world.cards[1].column = Column::Failed;
+        app.world.tick = 500;
+        app
+    }
+
+    fn rows(app: &App, width: u16) -> Vec<String> {
+        (render(app, width, 14).lines())
+            .map(|r| r.trim_end().to_string())
+            .collect()
+    }
+
+    #[test]
+    fn all_the_work_done_is_home_s_first_line_with_what_is_next_under_it() {
+        let mut app = all_done(Lang::En);
+        app.at_home.scope = Some(0);
+        let got = rows(&app, 100);
+        assert!(got[0].contains("shop-api ✓ · mobile-app ✓"), "{}", got[0]);
+        assert_eq!(
+            got[1],
+            " ✓ ALL DONE  shop-api · 3 cards · 2 landed · ✕ 1 failed · 7 min"
+        );
+        assert_eq!(
+            got[2],
+            " Nothing is left for the team or for you. / tells the lead what is next."
+        );
+        assert_eq!(got[3], "");
+        assert_eq!(got[4], " AT WORK 2 · idle 2");
+        // The row at hand is still the one under the cursor.
+        assert!(got[5].starts_with("▸○"), "{}", got[5]);
+        // Every project in view: counted together.
+        app.at_home.scope = None;
+        let got = rows(&app, 100);
+        let line = (got.iter()).find(|r| r.contains("ALL DONE")).unwrap();
+        assert_eq!(
+            line,
+            " ✓ ALL DONE  2 projects · 6 cards · 5 landed · ✕ 1 failed · 7 min"
+        );
+        let mut app = all_done(Lang::Tr);
+        app.at_home.scope = Some(0);
+        let got = rows(&app, 100);
+        assert!(
+            got[1].starts_with(" ✓ HEPSİ BİTTİ  shop-api · 3 kart · 2 tamamlandı · ✕ 1 başarısız"),
+            "{}",
+            got[1]
+        );
+        assert_eq!(
+            got[2],
+            " Ekibe de size de kalan iş yok. / lidere sıradakini söyler."
+        );
+    }
+
+    #[test]
+    fn a_change_waiting_makes_it_the_team_finished_and_counts_what_waits() {
+        let mut app = all_done(Lang::En);
+        app.at_home.scope = Some(0);
+        app.world.cards[0].column = Column::Review;
+        app.world.cards[2].column = Column::Review;
+        let got = rows(&app, 100);
+        assert!(got[0].contains("shop-api · mobile-app ✓"), "{}", got[0]);
+        assert_eq!(
+            got[1],
+            " ◐ TEAM FINISHED  shop-api · 3 cards · ✕ 1 failed · 2 wait for you · 41 min"
+        );
+        assert_eq!(got[2], "", "what is next is the person's: nothing under it");
+        // One project all done and one whose team finished: the team's.
+        app.at_home.scope = None;
+        let got = rows(&app, 100);
+        assert!(
+            (got.iter())
+                .any(|r| r.starts_with(" ◐ TEAM FINISHED  2 projects · 6 cards · 3 landed")),
+            "{got:#?}"
+        );
+        // Too narrow for one line: the figures go on under the word,
+        // whole.
+        let got = rows(&app, 50);
+        let at = (got.iter())
+            .position(|r| r.contains("TEAM FINISHED"))
+            .unwrap();
+        assert_eq!(got[at], " ◐ TEAM FINISHED  2 projects · 6 cards · 3 landed");
+        assert_eq!(got[at + 1], "   ✕ 1 failed · 2 wait for you · 41 min");
+        // One card and one waiting are said in the singular.
+        app.at_home.scope = Some(0);
+        app.world.cards.retain(|c| c.project != 0 || c.id == 0);
+        let got = rows(&app, 100);
+        assert_eq!(
+            got[1],
+            " ◐ TEAM FINISHED  shop-api · 1 card · 1 waits for you · 41 min"
+        );
+    }
+
+    #[test]
+    fn while_a_card_is_open_or_somebody_works_home_says_nothing_of_it() {
+        let mut app = all_done(Lang::En);
+        app.at_home.scope = Some(0);
+        app.world.cards[2].column = Column::Working;
+        let got = rows(&app, 100);
+        assert_eq!(got[1], " AT WORK 2 · idle 2");
+        assert!(!got[0].contains("shop-api ✓"), "{}", got[0]);
+        app.world.cards[2].column = Column::Done;
+        let lead = app.world.projects[0].leader;
+        app.world.agents[lead].status = Status::Working;
+        assert!(rows(&app, 100)[1].starts_with(" AT WORK"));
+        // The other project is still all done; both in view say nothing.
+        app.at_home.scope = None;
+        assert!(!render(&app, 100, 14).contains("ALL DONE"));
+        app.at_home.scope = Some(1);
+        assert!(
+            rows(&app, 100)
+                .iter()
+                .any(|r| r.contains("✓ ALL DONE  mobile-app"))
+        );
+    }
+
+    #[test]
+    fn the_round_s_cost_is_on_the_line_when_its_cards_cost() {
+        let mut app = all_done(Lang::En);
+        app.at_home.scope = Some(0);
+        app.world.ledger.push(crate::ledger::Attempt {
+            project: 0,
+            card: Some(0),
+            cost: 41_200,
+            ..Default::default()
+        });
+        assert_eq!(
+            rows(&app, 100)[1],
+            " ✓ ALL DONE  shop-api · 3 cards · 2 landed · ✕ 1 failed · $4.12 · 7 min"
+        );
     }
 
     #[test]

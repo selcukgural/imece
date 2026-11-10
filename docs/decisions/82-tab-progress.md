@@ -74,3 +74,7 @@ bar is sent plainly: tmux 3.8 shows it again to Ghostty and iTerm2, which
 it knows by their XTVERSION (`terminal-features` `progressbar`; probed on
 a pty answering as each), and drops it for kitty and WezTerm, as an older
 tmux drops any OSC it does not know.
+
+Since record 145 (all done) the title reads `✓ imece · all done` when
+every open project's round is all done, nothing waits and the ladder is
+calm; the bar stays cleared, as for calm.

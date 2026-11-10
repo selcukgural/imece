@@ -177,6 +177,37 @@ impl App {
     /// terminal had no focus and is still there [`notify::AFTER`] later,
     /// once each; several at once as a count. Nothing while `:notify` is
     /// off, in the window, or for what was on screen before leaving.
+    /// The open projects whose round is all done (record 145) and not
+    /// told yet: a round is told once, whatever its leader does after,
+    /// until a card opens the next. One the person had on screen (not
+    /// `away`) counts as told.
+    fn rounds_done(&mut self, away: bool) -> Vec<ProjectId> {
+        let w = &self.world;
+        (self.rounds_told).retain(|&(p, from)| w.round_from(p) == Some(from));
+        let mut done = Vec::new();
+        for q in w.open_projects() {
+            let Some(r) = w.finished(q.id).filter(|f| f.all()).map(|f| f.round()) else {
+                continue;
+            };
+            let key = (q.id, r.from);
+            if self.rounds_told.contains(&key) {
+                continue;
+            }
+            match away {
+                true => done.push(q.id),
+                false => self.rounds_told.push(key),
+            }
+        }
+        done
+    }
+
+    /// How many cards failed in the open projects' rounds when all of
+    /// them are done (record 145), for the tab's title; none otherwise.
+    pub fn all_done(&self) -> Option<usize> {
+        let f = self.world.finished_all()?;
+        f.all().then_some(f.round().failed)
+    }
+
     pub fn notices(&mut self, now: Instant) -> Option<notify::Word> {
         if self.notify == Notify::Off {
             return None;
@@ -203,9 +234,16 @@ impl App {
         // push also counts the keys' quiet, as long as `:away` says.
         let idle = self.notify == Notify::Push
             && self.away.over(now.saturating_duration_since(self.last_key));
-        let due = self
-            .notices
-            .due(&waiting, self.blurred.is_some() || idle, now);
+        let away = self.blurred.is_some() || idle;
+        let mut waiting = waiting;
+        waiting.extend(self.rounds_done(away).into_iter().map(Note::Done));
+        let due = self.notices.due(&waiting, away, now);
+        for &n in &due {
+            if let Note::Done(p) = n {
+                let from = self.world.round_from(p);
+                self.rounds_told.extend(from.map(|from| (p, from)));
+            }
+        }
         let t = self.lang.text();
         let body = match due[..] {
             [] => return None,
@@ -214,12 +252,14 @@ impl App {
             _ => fill(t.notify_many, &[&due.len().to_string()]),
         };
         let agent = due.first().map(|&n| match n {
+            Note::Done(p) => self.world.projects[p].leader,
             Note::Stuck(id) => id,
             Note::Item(i) => self.world.inbox[i].agent,
         });
         // Louder for what is stuck or failed.
         let loud = due.iter().any(|&n| match n {
             Note::Stuck(_) => true,
+            Note::Done(_) => false,
             Note::Item(i) => matches!(
                 self.world.inbox[i].kind,
                 InboxKind::Fault | InboxKind::Blocked
@@ -260,6 +300,8 @@ impl App {
         match notes[..] {
             [Note::Item(i)] if open(i) => self.open_waiting(i),
             [Note::Stuck(a)] => self.go_agent(a),
+            // Home says it on its first line.
+            [Note::Done(_)] => self.go_home(),
             _ => self.next_waiting(false),
         }
     }
@@ -683,6 +725,78 @@ mod tests {
         assert_eq!(app.selected, Sel::Agent(2), "forgotten");
         app.clicked(101 + NOTICED as u64);
         assert_eq!(app.selected, Sel::Agent(1));
+    }
+
+    #[test]
+    fn all_the_work_done_rings_once_a_round_and_not_what_was_on_screen() {
+        let mut app = waiting(&[]);
+        let t0 = Instant::now();
+        let at = |s: u64| t0 + Duration::from_secs(s);
+        for a in &mut app.world.agents {
+            a.status = Status::Idle;
+            a.starting = false;
+        }
+        for c in &mut app.world.cards {
+            c.column = Column::Done;
+            c.finished = 5;
+        }
+        app.command("notify text");
+        assert_eq!(app.all_done(), Some(0));
+        // On screen while the person is here: known, never said.
+        assert_eq!(app.notices(at(0)), None);
+        app.focus(false, at(1));
+        assert_eq!(app.notices(at(2)), None);
+        assert_eq!(app.notices(at(20)), None, "seen before leaving");
+        // The next round's card comes, and fails, while away.
+        let first = app.world.cards.len();
+        let c = crate::live::testing::with_card(&mut app.world, 1);
+        app.world.cards[c].started = 50;
+        assert_eq!(app.all_done(), None);
+        assert_eq!(app.notices(at(30)), None, "at work");
+        app.world.cards[c].column = Column::Failed;
+        app.world.cards[c].finished = 60;
+        assert_eq!(app.world.round_from(0), Some(first));
+        assert_eq!(app.all_done(), Some(1));
+        assert_eq!(app.notices(at(40)), None, "under the wait");
+        let word = app.notices(at(46)).unwrap();
+        let name = app.world.projects[0].name.clone();
+        assert_eq!(
+            word.body,
+            format!("imece · {name}: all the work is done, 0 of 1 landed, 1 failed")
+        );
+        assert!(!word.loud);
+        assert_eq!(word.agent, Some(app.world.projects[0].leader));
+        assert_eq!(app.notices(at(60)), None, "once");
+        // The leader takes a turn and hands out nothing: the same round.
+        let lead = app.world.projects[0].leader;
+        app.world.agents[lead].status = Status::Working;
+        assert_eq!(app.notices(at(70)), None);
+        app.world.agents[lead].status = Status::Idle;
+        assert_eq!(app.notices(at(71)), None);
+        assert_eq!(app.notices(at(90)), None, "a round is said once");
+        // A click on it closes what is open: Home says the rest.
+        app.help = true;
+        app.clicked(word.id);
+        assert!(!app.help);
+        // A round with nothing failed, said as a push would say it: the
+        // project is named once.
+        let d = crate::live::testing::with_card(&mut app.world, 1);
+        app.world.cards[d].started = 70;
+        app.world.cards[d].column = Column::Done;
+        app.world.cards[d].finished = 80;
+        let w = &app.world;
+        let said = format!("imece · {name}: all the work is done, 1 of 1 landed");
+        assert_eq!(ui::words::notice(Lang::En, w, Note::Done(0)), said);
+        assert_eq!(ui::words::pushed(Lang::En, w, Note::Done(0)), said);
+        assert_eq!(
+            ui::words::notice(Lang::Tr, w, Note::Done(0)),
+            format!("imece · {name}: işin hepsi bitti, 1 / 1 tamamlandı")
+        );
+        // Seen in the window: this round is not said either.
+        app.focus(true, at(100));
+        assert_eq!(app.notices(at(101)), None);
+        app.focus(false, at(102));
+        assert_eq!(app.notices(at(120)), None);
     }
 
     #[test]

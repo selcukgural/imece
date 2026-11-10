@@ -18,6 +18,11 @@ pub(crate) fn projects_spans(app: &App) -> Vec<Span<'static>> {
             Style::new()
         };
         spans.push(Span::styled(clean(&p.name), style));
+        // Every card it handed out is through and nothing waits (record
+        // 145).
+        if app.world.finished(p.id).is_some_and(|f| f.all()) {
+            spans.push(Span::styled(" ✓", fg(pal().ok)));
+        }
         // Its solo writes straight in the folder: no Δ (record 73).
         if p.no_git {
             let t = app.lang.text();

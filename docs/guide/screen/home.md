@@ -48,6 +48,27 @@ A row is the piece of work: `!` (or the agent's glyph), its project when several
 
 The list scrolls only when the row at hand would leave the screen: while it shows with a line under it, TO DECIDE and the group lines stay in view, even when new rows come above it. With nothing listed the list says so once, across the whole width, and the status line offers `/ write to the lead`; while no project has a worker, not even an idle one with a change waiting, imece's mark stands in the free rows.
 
+## When the work is done
+
+When every card the leader handed out is through, Home says so on its first line, so you do not work it out row by row. It comes in two steps.
+
+```
+ ◐ TEAM FINISHED  shop-api · 5 cards · 3 landed · 2 wait for you · $4.12 · 30 min
+```
+
+The team finished: no card waits or is at work, nobody of the project is in a turn, and what is left is yours, counted on the line (a change to read, a question, a card out of tries). TO DECIDE is right under it.
+
+```
+ ✓ ALL DONE  shop-api · 5 cards · 4 landed · ✕ 1 failed · $4.12 · 38 min
+ Nothing is left for the team or for you. / tells the lead what is next.
+```
+
+All done: nothing waits for you either. The project's name in the header gets a `✓`, and when every open project is there the terminal's title reads `✓ imece · all done` (`· 1 failed` when a card failed). In another window, [`:notify`](../reference/commands.md#notify-offbelltextpush) says it once per round: `imece · shop-api: all the work is done, 4 of 5 landed, 1 failed`.
+
+A card that failed or was withdrawn does not hold the line back, and is always counted on it, a failed one in red. The figures are the round's: the cards opened since the project last had none open, what their tries cost (the leader's own spending is not in it) and the time from the first card to the last one's end. A new card ends the state and, after all done, begins the next round. With several projects in view the line counts them together (`2 projects · 9 cards …`) and comes only when every team that has cards is finished; `[` `]` narrow to one. A line too long for the screen goes on under itself, whole. A solo has no such line: nobody hands it cards.
+
+Nothing is said while a card still waits on another whose change waits for your yes: that card has not begun, so the team is not through.
+
 ## The leader's line
 
 A leader has no row among those at work, so the leader of the project at hand has a line of its own under the list, always in the same place: its glyph and name, what it does right now while it is mid-turn, else the first line of its newest words to you and how long ago (`nothing said yet` before its first), and at the right the key that writes to it. `/` opens [your conversation with it](conversations.md#your-conversation-with-an-agent) with the line to write on under it. The row at hand decides whose leader it is; a solo has no such line (it has a row), nor has a project put away. Its words are looked for in the journal's newest 2,000 lines.

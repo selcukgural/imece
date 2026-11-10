@@ -326,6 +326,11 @@ const AFTER_ONE_IN: u64 = 3;
 /// Every this many ticks the leader withdraws the newest card nobody
 /// took (record 126).
 const WITHDRAW_EVERY: u64 = 300;
+/// The cards a demo leader hands out by itself in a round (record 145),
+/// and the ticks it rests once all of them are done before the next
+/// round: long enough to read that all is done.
+const ROUND_CARDS: usize = 12;
+const ROUND_REST: u64 = 24;
 /// What a demo worker whose change failed its tests in the queue is told.
 const FIX_TESTS: &str = "fix the failing test and propose again";
 
@@ -3560,6 +3565,25 @@ impl Sim {
         true
     }
 
+    /// Whether the leader of `project` posts more cards by itself now: it
+    /// hands out work in rounds (record 145), [`ROUND_CARDS`] cards, then
+    /// none until every one of them is through and nothing waits for the
+    /// person, so the demo comes to say that the team finished and that
+    /// all is done as a live team's does; the next round begins
+    /// [`ROUND_REST`] ticks after that. What the person asks for is
+    /// posted whenever they ask.
+    fn hands_out(w: &World, project: ProjectId) -> bool {
+        let Some(from) = w.round_from(project) else {
+            return true;
+        };
+        let mine = || (w.cards.iter()).filter(|c| c.project == project && c.id >= from);
+        if mine().count() < ROUND_CARDS {
+            return true;
+        }
+        let ended = mine().map(|c| c.finished).max().unwrap_or(0);
+        w.finished(project).is_some_and(|f| f.all()) && w.tick >= ended + ROUND_REST
+    }
+
     fn leader(&mut self, w: &mut World, project: ProjectId) {
         let t = w.tick;
         let leader = w.projects[project].leader;
@@ -3608,7 +3632,7 @@ impl Sim {
             .iter()
             .filter(|c| c.project == project && c.column == Column::Waiting && c.owner.is_none())
             .count();
-        if waiting < free && self.rng.one_in(3) {
+        if waiting < free && Self::hands_out(w, project) && self.rng.one_in(3) {
             let title = (*self.rng.pick(self.content.titles)).to_string();
             // Now and then it needs the newest card not through first
             // (record 126, F10).
@@ -3627,10 +3651,17 @@ impl Sim {
 
         // A card that failed goes to another worker once, and so may one
         // that ran long, as a live leader hands them (record 126).
-        if let Some(agent) = workers.iter().copied().find(|&a| Self::free(w, a))
-            && let Some(card) = self.card_to_hand(w, project, agent)
-        {
-            self.take(w, agent, card, Taken::Handed);
+        // The first free worker that may take one: the one that failed it
+        // may be the only one free ahead of the others (record 145: with
+        // a round's end in sight nobody is kept busy by new cards).
+        let hands: Vec<AgentId> = (workers.iter().copied())
+            .filter(|&a| Self::free(w, a))
+            .collect();
+        for agent in hands {
+            if let Some(card) = self.card_to_hand(w, project, agent) {
+                self.take(w, agent, card, Taken::Handed);
+                break;
+            }
         }
         // A card held for a worker goes once what it waited on is done
         // and the worker is free, as live's held assign (record 126, F10).
@@ -4978,6 +5009,51 @@ mod tests {
     use super::*;
     use crate::health::Sign;
 
+    #[test]
+    fn the_demo_s_leader_hands_out_a_round_and_waits_for_it_to_be_all_done() {
+        use crate::round::Finished;
+        let (mut w, mut s) = world(1, 2, 0, 7, Lang::En);
+        let cards = |w: &World| w.cards.iter().filter(|c| c.project == 0).count();
+        // The person answers while a card is still to be done (one may
+        // wait on a change's yes), then leaves the last changes: the
+        // round's cards come, then no more, and the team comes to rest
+        // with what waits for the person.
+        let mut team = None;
+        for _ in 0..6_000 {
+            s.step(&mut w);
+            let open = [Column::Waiting, Column::Working, Column::Verifying];
+            if cards(&w) < ROUND_CARDS || w.cards.iter().any(|c| open.contains(&c.column)) {
+                answer_all(&mut w, &mut s);
+            }
+            wake_stopped(&mut w, &mut s);
+            assert!(cards(&w) <= ROUND_CARDS, "tick {}", w.tick);
+            if let Some(Finished::Team(r)) = w.finished(0) {
+                team = Some(r);
+                break;
+            }
+        }
+        let r = team.expect("the demo's team never finished its round");
+        assert_eq!(r.cards, ROUND_CARDS);
+        assert!(r.waits > 0);
+        // The person says yes to everything: all done, and said for
+        // `ROUND_REST` ticks before the next round's first card.
+        let mut all = None;
+        for _ in 0..6_000 {
+            answer_all(&mut w, &mut s);
+            wake_stopped(&mut w, &mut s);
+            s.step(&mut w);
+            match (w.finished(0), all) {
+                (Some(Finished::All(_)), None) => all = Some(w.tick),
+                (_, Some(_)) if cards(&w) > ROUND_CARDS => break,
+                _ => {}
+            }
+        }
+        let all = all.expect("the demo's round was never all done");
+        assert!(cards(&w) > ROUND_CARDS, "no second round");
+        assert!(w.tick >= all + ROUND_REST - 1, "{} {all}", w.tick);
+        assert_eq!(w.round_from(0), Some(ROUND_CARDS), "a new round");
+    }
+
     /// The person answers everything that waits for them: changes are
     /// applied, asks allowed, questions answered, answers read, reports
     /// approved.
@@ -5011,6 +5087,21 @@ mod tests {
                 }
                 InboxKind::Reply => w.close_replies(a),
                 InboxKind::Sensitive | InboxKind::Research => w.approve(i),
+            }
+        }
+    }
+
+    /// The person tells every worker whose session stopped to go on, as
+    /// they do on seeing it stuck: with a round's end in sight (record
+    /// 145) nothing else moves its card.
+    fn wake_stopped(w: &mut World, s: &mut Sim) {
+        let stopped: Vec<AgentId> = (w.agents.iter())
+            .filter(|a| a.status == Status::Stopped && !a.gone)
+            .map(|a| a.id)
+            .collect();
+        for a in stopped {
+            if s.told(w, a, "go on").is_ok() {
+                w.said(a, "go on");
             }
         }
     }
@@ -5079,6 +5170,7 @@ mod tests {
             s.step(w);
             if answer {
                 answer_all(w, s);
+                wake_stopped(w, s);
             }
         }
     }
@@ -5245,7 +5337,7 @@ mod tests {
         // Seeded: the same every time (the seed is one that shows both).
         let (mut w, mut s) = world(1, 3, 0, 0, Lang::En);
         let (mut alone, mut shared) = (None, None);
-        for tick in 0..1500 {
+        for tick in 0..6000 {
             s.step(&mut w);
             for c in &w.changes {
                 let v = w.verdict(c.agent).unwrap();
@@ -5262,6 +5354,7 @@ mod tests {
             }
             if tick % 40 == 39 {
                 answer_all(&mut w, &mut s);
+                wake_stopped(&mut w, &mut s);
             }
         }
         assert!(alone.is_some(), "no two changes waiting apart");
@@ -5314,7 +5407,7 @@ mod tests {
     fn a_long_run_shows_what_live_shows_and_nothing_live_does_not() {
         let (mut w, mut s) = world(2, 6, 2, 7, Lang::En);
         let mut unheard_seen = false;
-        for tick in 0..4000 {
+        for tick in 0..8000 {
             s.step(&mut w);
             answer_all(&mut w, &mut s);
             for id in 0..w.agents.len() {
@@ -9069,7 +9162,7 @@ diff --git a/b.rs b/b.rs
         // late done is rare by nature, one in a few thousand ticks).
         let (mut w, mut s) = world(1, 4, 0, 1, Lang::En);
         let (mut failed, mut handed, mut late, mut capped) = (0, 0, 0, 0);
-        for _ in 0..4000 {
+        for _ in 0..16_000 {
             let n = w.journal.len();
             run(&mut w, &mut s, 1, true);
             for e in &w.journal[n..] {
@@ -10293,9 +10386,10 @@ diff --git a/b.rs b/b.rs
     fn the_demo_s_cards_wait_on_others_and_a_held_assign_goes_once_they_are_done() {
         let (mut w, mut s) = world(1, 3, 0, 4, Lang::En);
         let mut began_early = Vec::new();
-        for _ in 0..1500 {
+        for _ in 0..6000 {
             s.step(&mut w);
             answer_all(&mut w, &mut s);
+            wake_stopped(&mut w, &mut s);
             // Nothing waiting on a card not done has begun.
             for c in &w.cards {
                 if !matches!(c.column, Column::Waiting | Column::Withdrawn) && !w.ready(c.id) {

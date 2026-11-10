@@ -30,6 +30,7 @@ mod procs;
 mod push;
 mod recall;
 mod rng;
+mod round;
 mod runners;
 mod schemes;
 mod screen;
@@ -633,7 +634,7 @@ fn run(
         let ladder = app.progress();
         title.show(
             &mut std::io::stdout(),
-            &ui::words::title(app.lang, waiting, ladder),
+            &ui::words::title(app.lang, waiting, ladder, app.all_done()),
         )?;
         tab.show(&mut std::io::stdout(), ladder)?;
         // Woken for the next tick, or sooner for the next frame of what
