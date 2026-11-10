@@ -1,0 +1,51 @@
+# PROJ-1 · A second project, pinned, renamed, narrowed to, closed with a grace.
+start
+see any key: close
+key Escape
+type :open $ACC_CASE/repos/tally
+key Enter
+see opened tally at
+key /
+type count words in tally.js
+key Enter
+key Escape Escape
+# npm test needs no yes (record 136): the change comes with no ask.
+wait 60 count words in tall
+gone permissions
+see AT WORK
+key ]
+see Nothing needs you and nobody is at work.
+key [
+see tally
+# Applied, its worker is finished: s hides it, :unsettle brings it back.
+key g d
+key a
+see finished, applied
+key G
+key s
+see hidden until it needs you
+type :unsettle
+key Enter
+see 1 back in the team
+type :fold
+key Enter
+type :unfold
+key Enter
+type :pin tally
+key Enter
+see tally is pinned to the top of the team
+type :rename counter
+key Enter
+see shelf · counter
+type :close
+key Enter
+see u keeps it open · U now
+key u
+see counter stays open
+type :close
+key Enter
+key U
+gone shelf · counter
+type :open $ACC_CASE/repos/tally counter
+key Enter
+see shelf · counter

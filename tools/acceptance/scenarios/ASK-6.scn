@@ -1,0 +1,14 @@
+# ASK-6 · :tidy lists a worktree no agent owns; its teardown runs before it goes.
+sh mkdir -p state/imece/worktrees && git -C repos/shelf worktree add -q "$ACC_CASE/state/imece/worktrees/shelf-0badc0de/left-behind" -b left
+start
+see any key: close
+key Escape
+type :tidy
+key Enter
+see WORKTREES NO AGENT OWNS
+see left-behind
+key d
+see teardown
+key a
+see removed
+sh test ! -d state/imece/worktrees/shelf-0badc0de/left-behind

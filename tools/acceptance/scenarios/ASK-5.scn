@@ -1,0 +1,31 @@
+# ASK-5 · How much a session may do: standard says so, open says so, strict works with file tools.
+start
+see any key: close
+key Escape
+key J
+key J
+see confine standard: workers get Claude Code's shell and web
+key Escape
+stop
+start --confine open
+see WHERE YOU LEFT OFF
+key Escape
+key J
+key J
+see confine open: agents run with your own Claude Code setup
+key Escape
+stop
+start --confine strict
+see WHERE YOU LEFT OFF
+key Escape
+key /
+type mend shelf.py
+key Enter
+key Escape Escape
+see run .imece/worktree-setup.sh
+key g d
+key a
+see run .imece/check on its
+key g d
+key a
+see 1 ready to approve

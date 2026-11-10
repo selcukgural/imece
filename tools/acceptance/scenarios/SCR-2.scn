@@ -1,0 +1,37 @@
+# SCR-2 · The detail: diff, talk and log; a change line of the log opens the change at it.
+start
+see any key: close
+key Escape
+key /
+type mend shelf.py
+key Enter
+key Escape Escape
+see run .imece/worktree-setup.sh
+key g d
+key a
+see run .imece/check on its
+key g d
+key a
+see 1 ready to approve
+key g d
+key Enter
+see diff · talk · log
+key Tab
+see CONVERSATION
+key Tab
+see FOCUS · claude-1
+key BTab
+see CONVERSATION
+key Tab
+see changed shelf.py
+# The log's entries from the newest: three up is `changed shelf.py`;
+# enter opens the change at that file.
+key k k k
+key Enter
+see shelf.py  ← the log's line
+key Escape
+see FOCUS · claude-1
+key Escape
+key t
+see claude-1
+key Escape

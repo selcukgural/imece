@@ -1,0 +1,15 @@
+# SCR-11 · A key file of the person's own: refused whole, taken, read again.
+write config/imece/keys gt = G
+sh printf 'nonsense here\n' >> config/imece/keys
+start
+see any key: close
+key Escape
+type :keys
+key Enter
+see line 2
+sh printf 'gt = G\n' > config/imece/keys
+type :keys
+key Enter
+see keys taken (1)
+key ?
+see gt

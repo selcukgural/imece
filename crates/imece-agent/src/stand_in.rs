@@ -573,6 +573,7 @@ impl Mind {
             "the leader" => self.lead(hands, prompt),
             "a worker" => self.work(hands, prompt),
             "a helper" => self.help(hands, prompt),
+            "a solo session the person drives" => self.solo(hands, prompt),
             _ => "Nothing for me to do here.".into(),
         }
     }
@@ -1387,6 +1388,8 @@ mod tests {
         "name: lead\nrole: the leader\nproject: repo\nyou answer to: the person\n";
     pub(super) const WORKER: &str =
         "name: claude-1\nrole: a worker\nproject: repo\nyou answer to: the leader lead\n";
+    pub(super) const SOLO: &str = "name: solo\nrole: a solo session the person drives\nproject: \
+        repo\nyou answer to: the person (send to: you)\n";
 
     #[test]
     fn its_command_line_is_read_as_claude_code_s() {

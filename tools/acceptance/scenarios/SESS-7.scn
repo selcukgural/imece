@@ -1,0 +1,27 @@
+# SESS-7 · The agents' processes: each session listed; the session itself is not ended from here.
+start
+see any key: close
+key Escape
+key /
+type mend shelf.py
+key Enter
+key Escape Escape
+see run .imece/worktree-setup.sh
+key g d
+key a
+see run .imece/check on its
+key g d
+key a
+see 1 ready to approve
+type :ps
+key Enter
+see PROCESSES
+see claude-1
+key j
+key d
+see y ends it, any other key keeps it
+key y
+# Refused, whichever it was (the session or imece's relay): nothing ended.
+sleep 4
+see PROCESSES · 4
+key Escape

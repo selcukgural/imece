@@ -1,0 +1,15 @@
+# CARD-2 · A card owns its paths; a write outside them is noted on the change ([stray]).
+start
+see any key: close
+key Escape
+key /
+type lend books in shelf.py [cards 2] [stray]
+key Enter
+key Escape Escape
+see run .imece/worktree-setup.sh
+key g d
+key a
+see run .imece/check on its
+key g d
+key a
+wait 60 outside #

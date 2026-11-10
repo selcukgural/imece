@@ -944,6 +944,46 @@ impl Mind {
         }
     }
 
+    /// A solo's turn (record 59): the person's words are its task, done at
+    /// once: the file they name best changed and its tests run (none such:
+    /// a note of it written), what it did the turn's text. It answers to
+    /// the person alone; imece shows its change at every turn that
+    /// answers.
+    pub(super) fn solo(&mut self, hands: &mut impl Hands, prompt: &str) -> String {
+        let Some(task) = heard(prompt) else {
+            return "Nothing for me to do here.".into();
+        };
+        if task == super::lead::GO_ON {
+            return "Nothing new for me to do.".into();
+        }
+        self.worked += 1;
+        let me = self.me.get("name").cloned().unwrap_or_default();
+        let roll = roll(hands.habits().seed, &me, self.worked);
+        let files = hands.files();
+        hands.pause();
+        let Some((main, _)) = chosen(&files, &task, roll) else {
+            let path = format!("{OUT_DIR}/{me}.md");
+            let text = format!("# {}\n\n{}\n", first_line(&task), plain(&task));
+            return match hands.tool("Write", json!({ "file_path": path, "content": text })) {
+                Ok(_) => format!("Wrote {path}."),
+                Err(why) => format!("I could not write {path}: {why}"),
+            };
+        };
+        if let Err(why) = append(hands, main, plain(&task)) {
+            return format!("I could not change {main}: {why}");
+        }
+        let ran = if hands.has(crate::claude::SHELL_TOOL) {
+            run(hands, kind_of(main).test, &task)
+        } else {
+            Vec::new()
+        };
+        let mut said = format!("Changed {main}.");
+        for r in ran {
+            said.push_str(&format!("\n{r}"));
+        }
+        said
+    }
+
     /// A helper's turn: the tests its worker's assign names written in
     /// their file, run, and its worker told with `done` (imece lets it
     /// go then).
@@ -1720,6 +1760,48 @@ mod tests {
         let mut f = worker(&[("shelf.py", "x = 1\n"), ("test_shelf.py", "")]);
         Mind::default().turn(&mut f, &assign("Mend shelf.py"));
         assert!(used(&f).contains(&("Bash".into(), "python3 -m unittest".into())));
+    }
+
+    #[test]
+    fn a_solo_does_the_person_s_words_at_once_and_says_what_it_did() {
+        use super::super::tests::SOLO;
+        let mut f = fake(SOLO);
+        f.tools = strings(ALL);
+        f.files.insert("shelf.py".into(), "x = 1\n".into());
+        let mut m = Mind::default();
+        let said = m.turn(&mut f, "From imece: x\n\nadd a docstring to shelf.py");
+        assert_eq!(
+            said,
+            "Changed shelf.py.\npython3 -m unittest: All 12 tests passed."
+        );
+        assert_eq!(
+            f.files["shelf.py"],
+            "x = 1\n# add a docstring to shelf.py\n"
+        );
+        assert_eq!(m.worked, 1);
+        // It tells nobody: no done, no send at all.
+        assert!(f.calls.iter().all(|(c, _)| c != "send"), "{:?}", f.calls);
+        // Mail alone, or imece's wake, is no task.
+        let mut f = fake(SOLO);
+        assert_eq!(
+            Mind::default().turn(&mut f, &assign("not for a solo")),
+            "Nothing for me to do here."
+        );
+        let mut f = fake(SOLO);
+        let wake = format!("From imece: x\n\n{}", super::super::lead::GO_ON);
+        assert_eq!(
+            Mind::default().turn(&mut f, &wake),
+            "Nothing new for me to do."
+        );
+        // A folder with no code: a note written instead.
+        let mut f = fake(SOLO);
+        f.tools = strings(ALL);
+        f.files.insert("notes.txt".into(), "n\n".into());
+        let said = Mind::default().turn(&mut f, "add a line to notes.txt");
+        assert!(
+            said.starts_with("Changed notes.txt") || said.starts_with("Wrote "),
+            "{said}"
+        );
     }
 
     #[test]

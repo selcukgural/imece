@@ -78,12 +78,14 @@ tools/acceptance/drive.py run TEAM-5 ASK-1                   # some
 tools/acceptance/drive.py run --jobs 4 --report docs/acceptance/runs/vX.Y.Z.md
 ```
 
-- A script is a step a line: `start [--size CxR] [--bare] [ARG …]`, `type
+- A script is a step a line: `start [--size CxR] [--bare] [ARG …]`, `env
+  NAME VALUE` (for what starts next), `type
   TEXT`, `key KEY …` (tmux names: `Escape`, `Enter`, `C-u`, `Up`), `see
   TEXT`, `wait SECONDS TEXT`, `gone TEXT`, `size COLS ROWS`, `sh COMMAND`,
   `fails COMMAND`, `says TEXT`, `write FILE TEXT`, `sleep SECONDS`, `stop`
   (`drive.py`'s docstring has them whole). `#` starts a comment; say in
-  one why a key is pressed that a reader would not expect.
+  one why a key is pressed that a reader would not expect. `$ACC_CASE` is
+  the case's directory, `$ACC_SOURCE` the checkout the tools come from.
 - The stand-in does what the person's words cue: `[ask]` a command that
   asks first, `[question]` a question with answers, `[helper]` a helper,
   `[stray]` a file outside its card, `[cards N]` a plan of N cards,
@@ -98,7 +100,8 @@ tools/acceptance/drive.py run --jobs 4 --report docs/acceptance/runs/vX.Y.Z.md
   and anything still working in its directory five seconds later fails
   it. A failure's screen is in `$ACC/out/<ID>.txt`, every key in
   `$ACC/drive.log`.
-- The 13 scripts took 25-45 s at 4-6 jobs on a laptop at load 40.
+- The 49 scripts (48 stand-in cases and the demo's) take about 95 s at 6
+  jobs, most of it TEAM-12's minute of waiting; 15 cases stay real.
 - CI runs every script on every pull request, on Linux and macOS (the
   `acceptance-scripts` job); a failure keeps `out/` and `drive.log` as
   the job's artifact. A change that breaks a script is fixed in the same

@@ -1,0 +1,40 @@
+# SCR-5 · The journal, the story, a mark, clearing, recall, why.
+start
+see any key: close
+key Escape
+key /
+type mend shelf.py
+key Enter
+key Escape Escape
+see run .imece/worktree-setup.sh
+key g d
+key a
+see run .imece/check on its
+key g d
+key a
+see 1 ready to approve
+key J
+see STORY · J journal
+key J
+see JOURNAL
+key m
+see marked
+key Escape
+key '
+see JOURNAL
+key Escape
+type :clear journal
+key Enter
+see clearing the journal off the screen in
+key U
+see journal lines off the screen
+type :unclear
+key Enter
+see back on the screen
+key H
+type mend
+see mend shelf.py
+key Escape Escape
+type :why @claude-1
+key Enter
+see claude-1:

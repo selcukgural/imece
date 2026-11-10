@@ -1,0 +1,10 @@
+# SCR-13 · Keep the machine awake while an agent is mid-turn, and let it sleep again.
+start
+see any key: close
+key Escape
+type :awake
+key Enter
+see the machine stays awake while an agent is mid-turn
+type :awake
+key Enter
+see the machine may sleep again

@@ -2374,8 +2374,9 @@ mod tests {
             Event::Sent { from: 1, to: 0, .. }
         ));
         // The leader's socket does not even offer claim; it alone offers
-        // hire. Every socket offers approve, which Claude Code asks through.
-        let list = |n: usize| {
+        // hire. Every socket offers approve, which Claude Code asks through
+        // under this level (standard); strict's offer none (below).
+        let list = |live: &Live, n: usize| {
             let path = live.bus.as_ref().unwrap().servers[n].path().to_path_buf();
             let mut sock = UnixStream::connect(path).unwrap();
             sock.set_read_timeout(Some(Duration::from_secs(10)))
@@ -2392,19 +2393,34 @@ mod tests {
                 .collect::<Vec<_>>()
         };
         assert_eq!(
-            list(0),
+            list(&live, 0),
             [
                 "send", "post", "board", "run", "whoami", "plan", "hire", "withdraw", "approve"
             ]
         );
         assert_eq!(
-            list(2),
+            list(&live, 2),
             [
                 "send", "post", "board", "run", "whoami", "claim", "hire", "approve"
             ]
         );
         drop(live);
         assert!(!dir.exists());
+        // Strict asks nothing: no socket offers approve, so a session's
+        // tools are what imece asked for and it is not stopped at its start.
+        let mut live = idle_live(3);
+        live.confine = Confine::Strict;
+        live.open_bus(&w, "/opt/imece".into()).unwrap();
+        assert_eq!(
+            list(&live, 0),
+            [
+                "send", "post", "board", "run", "whoami", "plan", "hire", "withdraw"
+            ]
+        );
+        assert_eq!(
+            list(&live, 2),
+            ["send", "post", "board", "run", "whoami", "claim", "hire"]
+        );
     }
 
     #[test]

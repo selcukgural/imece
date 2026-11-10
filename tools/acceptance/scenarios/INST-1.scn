@@ -1,0 +1,10 @@
+# INST-1 · The one-line install into an empty home, from what a release would put up.
+sh mkdir home && env -i HOME="$ACC_CASE/home" PATH=/usr/bin:/bin SHELL=/bin/bash IMECE_DOWNLOAD_URL="file://$ACC/rel" sh "$ACC_SOURCE/website/static/install.sh" 2>&1
+says installed imece 0.
+# bash's file: .bash_profile on macOS (login shells), .bashrc elsewhere.
+sh cat home/.bashrc home/.bash_profile 2>/dev/null | grep -c '# imece'
+says 1
+sh home/.local/bin/imece --version
+says imece 0.
+# A second install adds no second PATH line.
+sh env -i HOME="$ACC_CASE/home" PATH=/usr/bin:/bin SHELL=/bin/bash IMECE_DOWNLOAD_URL="file://$ACC/rel" sh "$ACC_SOURCE/website/static/install.sh" >/dev/null 2>&1 && test "$(cat home/.bashrc home/.bash_profile 2>/dev/null | grep -c '# imece')" -eq 1

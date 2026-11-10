@@ -1,0 +1,12 @@
+# SESS-4 · An account fault waits for the person at once, no tries (the [account] cue).
+start
+see any key: close
+key Escape
+key /
+type what is here? [account]
+key Enter
+key Escape Escape
+wait 30 API error, write to it once mended
+see Credit balance is
+# The account's: no try again.
+gone ↻

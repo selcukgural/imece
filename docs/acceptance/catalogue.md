@@ -90,18 +90,11 @@ missing, a change after the run's commit) refuse.
 
 - records: 69
 - commands: —
-- tier: real
+- tier: stand-in
 
-Steps:
-1. Pack the candidate as release.yml does (`imece-<target>.tar.gz` with
-   `imece` and `LICENSE`, `SHA256SUMS`) into a directory `rel/`.
-2. `env -i HOME=$ACC/home0 PATH=/usr/bin:/bin SHELL=/bin/zsh
-   IMECE_DOWNLOAD_URL=file://$ACC/rel sh website/static/install.sh`.
-3. A new `zsh -l` with that `HOME`: `imece --version`.
+Steps: `scenarios/INST-1.scn`: `install.sh` with `IMECE_DOWNLOAD_URL=file://$ACC/rel` (what a release would put up, packed by `setup.sh`) into an empty `HOME`, twice.
 
-Expect: installed in `~/.local/bin`, one `# imece` PATH line in `.zshrc`;
-the new shell finds it and it says `imece <candidate version>`; a second
-install adds no second PATH line.
+Expect: `installed imece <version>`; one `# imece` PATH line in bash's file (`.bash_profile` on macOS, `.bashrc` elsewhere); the installed binary says its version; a second install adds no second line.
 
 ### INST-2 · The command line refuses in words
 
@@ -123,23 +116,11 @@ folder a checkout.
 
 - records: 138
 - commands: :doctor
-- tier: real
+- tier: stand-in
 
-Steps:
-1. `imece doctor --repo $ACC/repos/shelf`, then `--verbose`, `--json`,
-   `--lang tr`.
-2. `PATH` without `claude`: `imece doctor`.
-3. In the screen: `:doctor`, `esc`.
+Steps: `scenarios/INST-3.scn`: `imece doctor` plain, `--verbose`, `--json`, `--lang tr --json`; then with no `claude` on PATH; then `:doctor` on the screen.
 
-Expect: one line per category with `[✓]`, `[!]` or `[✗]`, a fix under each
-that is not right, the count of categories with issues last; exit 0 with
-only notes and warnings; without `claude` the Claude Code category is `[✗]`
-and the exit 1; `--json` names stay English under `--lang tr`; the window
-shows the same report for the project at hand. A first start of
-`imece-acc` with an empty state: the welcome names Claude Code's real
-version and the account signed in.
-
-
+Expect: `[✓]` categories and exit 0; `--json` names (`claude.login`) stay English under `--lang tr`; without Claude Code a `[✗]` and exit 1; the window shows the report.
 
 ### INST-4 · The first start ever: welcome, news, the way out
 
@@ -236,24 +217,15 @@ the diff view has the files by kind (`source +1 −0 (1) · tests +1 −0
 Home with the change still waiting. That `key=lambda` in `shelf.py` is
 shown as it is, never `[***]`, is SCR-14's.
 
-### TEAM-4 · Notes on lines, a quoted hunk, the change sent back
+### TEAM-4 · A note on a change's line, sent with n
 
 - records: 47, 49
 - commands: —
-- tier: real
-- after: TEAM-3
+- tier: stand-in
 
-Steps:
-1. In the change: move to a line, `c`, write a note, enter; another on a
-   second file.
-2. `>` on a hunk: the line opens with `@<worker>` and the hunk quoted; add
-   `why this?` and send.
-3. Back in the change: `n`.
+Steps: `scenarios/TEAM-4.scn`: a change waiting; in the diff `]`, `j j`, `c`, a note, enter; `n`; `J J`.
 
-Expect: the notes show under their lines and `✎ 2` in the title; the
-quoted message reaches the worker with `file:line`; `n` sends both notes in
-one message and the change goes back (gone from TO DECIDE); the worker's
-answer brings a new change.
+Expect: the note goes on the hunk line at the top (`note on test_shelf.py:…`), `note kept (1 on this change)`; `n` sends it and the change goes back: nothing of it left to decide, the journal says `sent back: claude-1`. (`>` quoting a hunk to the worker is SCR-3's line, not scripted.)
 
 ### TEAM-5 · Part applied, then the rest; commit from imece's own shell
 
@@ -277,18 +249,11 @@ TEAM-14's.
 
 - records: 108
 - commands: —
-- tier: real
-- after: TEAM-5
+- tier: stand-in
 
-Steps:
-1. Ask the leader for a small change to `shelf.py`'s `listing`.
-2. Before applying, edit the same lines in the checkout yourself, commit.
-3. `a` on the change; then `b`.
+Steps: `scenarios/TEAM-6.scn`: a change waiting; a commit of the person's own on the same lines (`sh`); `gd`, `a`; the journal; the change opened; `b`.
 
-Expect: the apply is refused and says which file and hunk clash, a red
-line above the change, `b  send back` in the footer; `b` sends the clash
-to the worker in one message and the change goes back; the worker's next
-change applies.
+Expect: the apply is refused (`did not apply: conflicts with the checkout in shelf.py`), the change says `✗ does not fit your checkout at … · b sends it back`, the footer `b  send the clash back`; `b` sends it and the change goes.
 
 ### TEAM-7 · Finished rows and the team finished
 
@@ -308,16 +273,11 @@ you`; once applied `ALL DONE` with `1 landed`, the worker's row
 
 - records: 09
 - commands: —
-- tier: real
-- after: TEAM-7
+- tier: stand-in
 
-Steps:
-1. Start imece with `--helpers 1`; ask the leader: `add a remove() test;
-   the worker should have a helper write the test`.
+Steps: `scenarios/TEAM-8.scn`: `--helpers 1`, a task with `[helper]`.
 
-Expect: the helper's row stands under its worker (`└`); it works in the
-worker's worktree, says `done` to its worker and leaves; the worker's
-change holds the test.
+Expect: the helper `claude-1.1` stands under its worker (`└`), writes the tests and leaves; the worker's change waits with them.
 
 ### TEAM-14 · The one-shot sessions: a commit message and a second read
 
@@ -341,17 +301,11 @@ tree asked again costs nothing; both are in the pot.
 
 - records: 94
 - commands: :fork
-- tier: real
-- after: TEAM-8
+- tier: stand-in
 
-Steps:
-1. On the worker's row (between turns): `:fork`.
-2. Write to the fork: `try the same with a generator`.
+Steps: `scenarios/TEAM-9.scn`: a task done; `:fork @claude-1`; `J`; `:fork @lead`.
 
-Expect: a new worker named as `hire` names, on the worker's model, its
-worktree at the worker's HEAD with the worker's change carried; its
-session is a fork (it knows what the worker did); the journal says
-`forked`; `:fork` on the leader or mid-turn is refused in words.
+Expect: a new worker `claude-2` with the line opened `@claude-2 `; the journal says forked; a fork of the leader is refused in words.
 
 ### TEAM-10 · Mail, reply numbers and mail held while waiting on you
 
@@ -393,18 +347,11 @@ reaches the worker and it goes on; nothing about it is silent.
 
 - records: 128
 - commands: :health
-- tier: real
-- after: TEAM-11
+- tier: stand-in
 
-Steps:
-1. `:health`, then `:health idle 1m`.
-2. Leave a worker with no card idle for over a minute.
-3. `:health idle 10m`.
+Steps: `scenarios/TEAM-12.scn`: a change applied; `:health`; `:health idle 1m`; a minute and more with the worker idle and no card; `J`.
 
-Expect: bare `:health` says `stall 10m idle 10m loop 3`; after a minute
-the journal has the health line and the leader hears of the idle worker
-in its next prompt (not woken for `Free`); the values are kept for the
-next start.
+Expect: bare `:health` says `stall 10m · idle 10m · loop 3`; after the minute the journal says `claude-1 has been idle 1 min with no card` and that its leader hears of it.
 
 ### TEAM-13 · The issue a card closes
 
@@ -446,16 +393,11 @@ it, and the third time nothing asks.
 
 - records: 104
 - commands: :yes
-- tier: real
-- after: ASK-1
+- tier: stand-in
 
-Steps:
-1. Give a worker a task with three different non-routine commands.
-2. On its first ask: `e`.
+Steps: `scenarios/ASK-2.scn`: a task with `[ask]`; on its ask `gd`, `e`; `J`.
 
-Expect: `✓ turn` first on its status; its later asks in that turn go on
-unasked (traced, counted); the journal says how many when the turn ends;
-the next turn asks again. `:yes @<worker>` does the same.
+Expect: the journal says `you say yes to everything claude-1 asks until its turn ends`; the ask goes on.
 
 ### ASK-3 · A question with answers
 
@@ -475,51 +417,31 @@ person said: no, it is internal`.
 
 - records: 103
 - commands: —
-- tier: real
-- after: ASK-1
+- tier: stand-in
 
-Steps:
-1. While a worker's ask waits, open its focus (`enter` on its row, the log
-   tab); `a`.
-2. On a focus with nothing waiting: `a`.
+Steps: `scenarios/ASK-4.scn`: a task with `[ask]`; `:goto claude-1`, `enter` (its focus); `a`.
 
-Expect: the footer starts with the ask's keys; `a` decides that agent's
-oldest ask, not the one at hand on Home; nothing waiting flashes
-`focus_no_ask`'s words; the focus has a `folder` line (`~/…/worktrees/…
-· worktree of shelf`).
+Expect: the focus says `folder … · worktree of …`; `a` there decides that agent's ask and it is gone from TO DECIDE.
 
-### ASK-5 · How much a session may do: strict and open
+### ASK-5 · How much a session may do: standard, open, strict
 
 - records: 26, 28
 - commands: —
-- tier: real
+- tier: stand-in
 
-Steps:
-1. `imece --confine strict` on `shelf`; give a worker a task with a test
-   run.
-2. Quit; `imece --confine open`; the same.
+Steps: `scenarios/ASK-5.scn`: a start (standard), `J J`; a start with `--confine open`, `J J`; a start with `--confine strict` and a task to the end.
 
-Expect: strict: the worker has file tools only and tests through the run
-tool, no shell; the journal says strict. Open: the person's own Claude
-Code setup is loaded (their `~/.claude` settings and MCP servers; the
-journal says so at every start); the leader writes in neither.
+Expect: the journal says `confine standard: workers get Claude Code's shell and web …` and `confine open: agents run with your own Claude Code setup …`; under strict the sessions run (no tool of imece's they were not given: record 30) and the change waits. Until 2026-11-11 every strict session was stopped at its start.
 
-### ASK-6 · The worktree's setup and teardown scripts
+### ASK-6 · The teardown script and :tidy
 
 - records: 92, 96
 - commands: :tidy
-- tier: real
+- tier: stand-in
 
-Steps:
-1. `shelf` has `.imece/worktree-setup.sh`; a worker is hired.
-2. The `▶` ask: `enter`, read the bytes, `a`.
-3. Later, with a worktree no agent owns (an agent gone): `:tidy`, `d` on
-   it; the teardown script's ask: `a`.
+Steps: `scenarios/ASK-6.scn`: a worktree no agent owns made under the state with `git worktree add`; `:tidy`; `d`; the teardown's ask `a`.
 
-Expect: the worker starts without the script until the yes, then it runs
-in that worktree (`.setup-ran` there); `:tidy` lists the orphaned worktree,
-says whether it holds work, the teardown runs before its removal; a start
-says the count of orphans in a flash.
+Expect: `WORKTREES NO AGENT OWNS` lists it; `d` asks for the teardown script first, `a` runs it, the worktree is `removed` and gone from the disk. (The setup script's ask and run are in every scripted case.)
 
 ### ASK-7 · A worker's local server: its link and its process
 
@@ -570,82 +492,51 @@ agent's, the leader's too (`you made lead forget its session`).
 
 - records: 80
 - commands: :archive, :archives, :restore
-- tier: real
-- after: SESS-2
+- tier: stand-in
 
-Steps:
-1. `:archive lending try`; wait out the grace.
-2. `A`: the browser; `enter` on the archive; move around; `a` on something;
-   `esc`.
-3. `:restore lending try`.
+Steps: `scenarios/SESS-3.scn`: a task done; `:archive lending try`, `U`; `A`, `enter` on it, `a`, `esc`; `:restore lending try`; `J`.
 
-Expect: a fresh project of the same name takes its place; the view is
-read-only (`ARCHIVE · shelf “lending try” …` banner, a refused key flashes
-`read_only`'s words, `ctrl-c` would quit); `:restore` brings it back
-asleep, its agents told, the fresh project archived or closed as record 80
-says.
+Expect: the browser lists `lending try`; its view says `ARCHIVE · shelf “lending try”` and a key that would act says read-only; the journal says `you brought back shelf “lending try”`.
 
-### SESS-4 · An account that is signed out
+### SESS-4 · An account that cannot pay waits for the person
 
 - records: 79
 - commands: —
-- tier: real
+- tier: stand-in
 
-Steps:
-1. `CLAUDE_CONFIG_DIR=$ACC/nobody imece` on `shelf` (an empty directory).
-2. Write to the leader.
+Steps: `scenarios/SESS-4.scn`: a task with `[account]` (the leader's turn fails at Claude's API as the account's).
 
-Expect: the welcome says Claude Code is not signed in and how to; the
-leader's turn fails as the account's fault: a `✕` item in TO DECIDE at
-once, no `↻` retries; writing to it after signing in closes it.
+Expect: TO DECIDE at once: `API error, write to it once mended: Credit balance is …`; no `↻` try again. (Claude Code signed out is its own words of the same: the doctor's case, INST-3.)
 
-### SESS-5 · The pot and the usage windows
+### SESS-5 · The pot runs out and comes back
 
 - records: 02, 48
 - commands: :budget
-- tier: real
+- tier: stand-in
 
-Steps:
-1. `:budget 0.05` while a worker works; then ask the leader to hire.
-2. `:budget 15`.
+Steps: `scenarios/SESS-5.scn`: `:budget 0.05`; a task; `:budget 15`.
 
-Expect: the header shows the pot loud when low; when spent no new turn
-starts and `hire` is refused in words, a team stop says so on Home with
-choices; `:budget` raises it and the work goes on; the usage window of the
-plan (`5h`, `7d`) shows in the header once a session said it, loud from
-90 %.
+Expect: the team stops (`STOPPED` atop Home, its choices as digits) when the pot is spent; `:budget 15` says `of $15.00`. (The plan's usage windows come from real sessions: TEAM-2's header.)
 
 ### SESS-6 · The cost ledger
 
 - records: 132, 133, 134
 - commands: :ledger
-- tier: real
-- after: TEAM-7
+- tier: stand-in
 
-Steps:
-1. `:ledger`; scroll it; `esc`.
-2. Open a card's log tab.
+Steps: `scenarios/SESS-6.scn`: a change waiting; `:ledger`; apply it; `:ledger`.
 
-Expect: per project `applied $… · wasted $… · at work $… · lead $…`; one
-row per attempt with card and try, worker, model, what became of it; each
-model's part; figures marked `≈` or `at least` where a price was not
-known, never `$0` for an unknown; the card's log tab lists its attempts.
+Expect: `LEDGER · 1 attempt`, per project `applied $0.00 · wasted $0.00 · at work …`, the row `#1 try 1  claude-1`, `by model:`; after the apply `applied $0.12`.
 
-### SESS-7 · The agents' processes, and those an earlier run left
+### SESS-7 · The agents' processes
 
 - records: 129
 - commands: :ps
-- tier: real
-- after: ASK-7
+- tier: stand-in
 
-Steps:
-1. `:ps` while ASK-7's server runs; `d` on the `python3` line, `y`.
-2. `kill -9` imece's own process; start imece again; `:ps`.
+Steps: `scenarios/SESS-7.scn`: a change waiting; `:ps`; `j`, `d`, `y`.
 
-Expect: each session's processes with cpu and memory, read again every few
-seconds; `d y` ends the server, never the session or the relay; after the
-kill the next start flashes what an earlier run left, the window lists it
-under `LEFT FROM AN EARLIER RUN` and `a y` ends them all.
+Expect: `PROCESSES` lists each session with what runs under it; `d` asks (`y ends it, any other key keeps it`); the session and imece's relay are refused after the `y`, nothing ended (`PROCESSES · 4` still). What an earlier run left is SESS-8's runner check and the real run's.
 
 ### SESS-8 · The terminal goes away
 
@@ -667,69 +558,43 @@ to SIGTERM.
 
 - records: 59
 - commands: :solo, :effort, :model
-- tier: real
+- tier: stand-in
 
-Steps:
-1. `:solo`: the pick screen; choose `haiku`, then `low`.
-2. Write to it: `add a docstring to Shelf.add`.
-3. `:effort medium`; `:model sonnet`; write again.
-4. Quit; `imece --solo claude:haiku@low` on `shelf`.
+Steps: `scenarios/SOLO-1.scn`: `:solo`: the pick (haiku, its own effort); a task to the solo, its asks; `:effort medium`; `J`.
 
-Expect: the solo works in its own worktree `solo-shelf` and every turn
-that answers shows its Δ; `:effort` and `:model` end the session and
-resume it on the new choice (journal `Chose`); the same `--solo` choice
-the next morning goes on with the same solo; a different choice opens
-`-2` beside it.
+Expect: the solo `solo-shelf-2` works in its own worktree and its change waits (`ready to approve`, `Changed shelf.py.`); `:effort medium` ends its session and resumes it on the new choice, the journal says so.
 
 ### SOLO-2 · A solo in a folder without git
 
 - records: 73
 - commands: —
-- tier: real
+- tier: stand-in
 
-Steps:
-1. `:solo $ACC/repos/plain haiku`.
-2. Write: `add a line to notes.txt`.
-3. `:commit`; `:open $ACC/repos/plain`.
+Steps: `scenarios/SOLO-2.scn`: `:solo $ACC_CASE/repos/plain claude:haiku`; a task; `:commit`; `:open` the folder as a team.
 
-Expect: the header says `⌀ no git`; the solo writes in the folder itself,
-no Δ; `:commit` is refused; a team on the folder is refused in words.
+Expect: the header says `⌀ no git`; the solo writes in the folder itself (`Changed notes.txt.`, the line in the file); `:commit` and a team there are refused, each saying git.
 
 ## Projects
 
-### PROJ-1 · A second project, pinned, renamed, closed with a grace
+### PROJ-1 · A second project: narrowed, settled, pinned, renamed, closed
 
 - records: 18, 43, 78
 - commands: :open, :pin, :rename, :close, :settle, :unsettle, :fold, :unfold
-- tier: real
+- tier: stand-in
 
-Steps:
-1. `:open $ACC/repos/tally`; ask its leader for a small change; let its
-   worker run `npm test`.
-2. Home: `[ ]` narrows to a project and back; `h l za zM zR`, `:fold`,
-   `:unfold` on the projects.
-3. `:pin tally`; `:rename counter`; `s` on a row, `:unsettle`.
-4. `:close`, `u`; `:close`, wait the grace.
+Steps: `scenarios/PROJ-1.scn`: `:open` tally, a task (its `npm test` asks nothing); `]` `[`; apply, `G`, `s`, `:unsettle`, `:fold`, `:unfold`; `:pin tally`; `:rename counter`; `:close`, `u`; `:close`, `U`; `:open` again.
 
-Expect: two leaders, Home's AT WORK headed by project; `npm test` needs no
-ask (record 136); the pin puts `▴ counter` first and is kept; `s` hides the
-row and the heading counts it; `:close` counts down and `u` keeps it; a
-closed project's sessions sleep and come back with `:open`.
+Expect: `opened tally at …`; the change comes with no permission asked; `]` narrows Home to shelf, `[` to tally; `s` says `hidden until it needs you`, `:unsettle` `1 back in the team`; `tally is pinned to the top of the team`; the header says `shelf · counter`; `:close` counts down `u keeps it open · U now`, `u` keeps it (`counter stays open`), `U` closes it at once and `:open` brings it back.
 
 ### PROJ-2 · Ignored files copied into a worktree
 
 - records: 57
 - commands: :copy
-- tier: real
+- tier: stand-in
 
-Steps:
-1. `shelf` has an ignored `.env` and a `.worktreeinclude` naming
-   `local.cfg`; `:copy .env`; `:copy`.
-2. A worker is hired; look in its worktree.
+Steps: `scenarios/PROJ-2.scn`: `:copy .env`; `:copy`; a task; the journal as it is (`J J`); the worktree on the disk.
 
-Expect: `:copy` lists `.env` and says a `.worktreeinclude` is there; the
-worktree has both files, copied (never a link); the journal says what was
-copied and what skipped.
+Expect: `.env is copied into shelf's worktrees …`, the list `copied into shelf's worktrees: .env`; the journal says `copied .env into claude-1's worktree` and `copied local.cfg …` (the `.worktreeinclude`); the file is there, not a link.
 
 ## Cards, the board and the plan
 
@@ -737,32 +602,21 @@ copied and what skipped.
 
 - records: 114
 - commands: :plan
-- tier: real
+- tier: stand-in
 
-Steps:
-1. `:plan on`; to the leader: `plan lending: a Loan model, then lend and
-   return commands; one card each, the second after the first`.
-2. `▤` in TO DECIDE: `enter`, read; `r` with a word; the next plan: `a`.
+Steps: `scenarios/CARD-1.scn`: `:plan on`; a task with `[cards 2]`; the asks; the plan's row `enter`; `a`.
 
-Expect: before the yes the leader's `hire` past the first worker is
-refused; the plan window wraps long lines, lists each card with its paths,
-`after 1 above` and the cost; `r` tells the leader no and why; `a` lets the
-cards out; the board shows the second card `⧗ after #1`.
+Expect: the first card goes to a worker, the rest waits in a plan (`plans 1 card for $0.05`); its window says `the leader hires a second worker only once you say yes`, each card's paths (`owns cli.py`); `a` lets it out and a second worker's change `#2` waits beside the first.
 
 ### CARD-2 · Paths a card owns, and a write outside them
 
 - records: 114
 - commands: —
-- tier: real
-- after: CARD-1
+- tier: stand-in
 
-Steps:
-1. To the leader: `assign a worker the paths shelf.py only: make
-   listing() sort by author; it must also touch cli.py`.
+Steps: `scenarios/CARD-2.scn`: a task with `[cards 2] [stray]`; the asks.
 
-Expect: the assign carries `owns shelf.py`; the worker's write to `cli.py`
-is noted once (`Strayed`, in its next prompt), and the Δ header says
-`1 outside #N: cli.py`.
+Expect: a change says `outside #…`: its worker wrote a file its card does not own.
 
 ### CARD-3 · Attempts, a failed card, what waits on it, withdraw
 
@@ -785,18 +639,11 @@ says `✕ #X withdrawn` and never begins.
 
 - records: 04, 17, 32, 100, 125
 - commands: :board, :code, :timeline
-- tier: real
-- after: CARD-3
+- tier: stand-in
 
-Steps:
-1. `#N` on the line: a card's screen (the log tab of its owner); `n p`.
-2. `:board`, `r` (ready only), `esc`; `:code`, `esc`; `:timeline`, `[ ]`,
-   `j k`, `enter`, `esc`.
+Steps: `scenarios/CARD-4.scn`: a change waiting; `:board`, `r`, `q`; `:code`, `esc`; `:timeline`, `]`, `esc`; `/` `#1`.
 
-Expect: each is a `:` window that `esc` and `q` close and that takes every
-key; the board shows columns with `→ name`, `⧗`, `✕`, ` · try N`; the code
-map one row per file with the leases' glyphs and a legend (no leases off
-Lonca: says so); the timeline one lane per agent with its scale.
+Expect: the board `BOARD · cards: 1 · r ready only`, `TO REVIEW (1)`; the code map off Lonca says `nothing to show of who edits what`; the timeline `a column is 5 s`, `]` makes it 30 s; `#1` opens the card's screen in its owner's detail. Each window closes with `esc` or `q`.
 
 ## Lonca
 
@@ -892,110 +739,61 @@ the work goes on.
 
 - records: 33, 38, 124, 125
 - commands: :home, :next, :defer, :waiting, :salon
-- tier: real
-- after: ASK-3
+- tier: stand-in
 
-Steps:
-1. With a permission, a question and a change waiting: look at Home.
-2. `W` (`:next`), `S` (`:defer`), `gd`, `gw`, `:waiting`, `:salon`,
-   `:home`; `g` and wait.
+Steps: `scenarios/SCR-1.scn`: a task with `[cards 2] [question]`; `g` (and wait), `d`; `S`; `:waiting`, `:salon`, `:home`; `W`.
 
-Expect: TO DECIDE grouped permissions, questions, changes, later; each row
-says the whole ask with the task's name; the row at hand ends with two
-keys; the status line at most three keys; `g` shows which-key; `W` opens
-the next in that order from anywhere, `S` puts one off to later;
-`:salon` lands on AT WORK.
+Expect: TO DECIDE groups `permissions` (`one key each`) and `questions`; `g` shows its second keys (`to decide`, `at work`); `S` puts the item off (`1 put off`) and opens the next; `:salon` is the team, `W` opens the next to decide in its detail.
 
-### SCR-2 · The detail: diff, talk and log tabs, reading the log
+### SCR-2 · The detail: diff, talk and log tabs
 
 - records: 29, 102, 141
 - commands: :trace
-- tier: real
-- after: TEAM-3
+- tier: stand-in
 
-Steps:
-1. `enter` on a worker: `tab` and `⇧tab` through its tabs.
-2. On the log: `j k gg G`, `PgUp PgDn`, `l` on a cut entry, `h`, `zM zR`.
-3. `enter` on a `changed shelf.py` line.
-4. `t` (`:trace`): the raw stream; `esc`.
+Steps: `scenarios/SCR-2.scn`: a change waiting, opened; `tab`, `tab`, `⇧tab`, `tab`; three up the log and `enter`; `esc`; `t`.
 
-Expect: one head line over the tabs; the log's entries cut to their rows
-with `… +N · l shows all`; Markdown tables fit their room; `enter` on a
-change line opens the diff at that file, lit for a moment, `← the log's
-line` in its header, `esc` back to that log line; the raw stream scrolls.
+Expect: `diff · talk · log`; the log lists `changed shelf.py`; `enter` on it opens the change at that file with `← the log's line` in its header, `esc` back to the log; `t` the raw stream.
 
 ### SCR-3 · Writing: the conversation above the line
 
 - records: 12, 37, 39, 67, 95, 144
 - commands: :edit
-- tier: real
+- tier: stand-in
 
-Steps:
-1. `/`: the leader's chat above the line; write two lines (`shift-enter` or
-   `\` enter), `^a ^e ^w ^u ^k ^y`, `alt-b alt-f`; send.
-2. `@` + first letters of a worker, `tab`; write `see shel` + `tab`.
-3. `^x ^e` (with `EDITOR=vi`): write, `:wq`.
-4. `:edit some text`.
+Steps: `scenarios/SCR-3.scn`: `/`, `first line\` enter `second`, `^w`; `esc`; `@claude` `tab`; `see shel` `tab`; `^x ^e` with `VISUAL` a script; `:edit some words`.
 
-Expect: the line stays open in a chat after a message went; `@name`
-brings that agent's conversation above while the line names it; names,
-commands and files complete (`shelf.py`); the editor's text comes back on
-the line, never sent by itself; a failure to start the editor is said
-until a key.
+Expect: the line takes two lines and `^w` deletes the last word; names and files complete (`@claude-1`, `shelf.py`); the editor's text comes back on the line, never sent by itself.
 
-### SCR-4 · A conversation: turns, folds, copy, notes, export
+### SCR-4 · A conversation: turns, folds, choosing, export
 
 - records: 42, 44, 70, 71
 - commands: :talk, :export
-- tier: real
-- after: TEAM-10
+- tier: stand-in
 
-Steps:
-1. `v` on a worker (`:talk`); `[ ]`; `za`, `zM`, `zR`.
-2. `v` (choose), `j`, `w`, `y`; paste somewhere.
-3. Choosing: `c`, a note; `n`.
-4. `:export $ACC/out/talk.md`; again to the same path.
+Steps: `scenarios/SCR-4.scn`: a change waiting; `:talk @lead`; `[ ]`, `zM zR`; `v`, `j`, `esc`; `:export $ACC_CASE/talk.md` twice.
 
-Expect: turns jump, folds show `▸ N lines`; `y` copies the chosen lines as
-drawn (through `clean`); notes on words go as one message per agent; the
-export is Markdown with days on every time, cleaned; a second export over
-it is refused.
+Expect: the conversation with the leader; `v` chooses lines (`COPY ·`), `esc` leaves; `written to …` and the file holds the conversation; the second export over it is refused (`could not write`). Notes on words (`c`, `n` while choosing) are not scripted.
 
-### SCR-5 · The journal, the story, marks, clearing, recall, why
+### SCR-5 · The journal, the story, a mark, clearing, recall, why
 
 - records: 14, 46, 87, 90, 93, 99
 - commands: :journal, :story, :mark, :clear, :unclear, :recall, :why
-- tier: real
-- after: TEAM-7
+- tier: stand-in
 
-Steps:
-1. `J` (`:journal`); `j k g G`; `m` on a line; `esc`; `'`.
-2. `:story` (by card, then as it is).
-3. `:clear journal`, wait; `:unclear journal`.
-4. `H` (`:recall`) `lambda`; `enter` on a hit.
-5. `:why` on a worker.
+Steps: `scenarios/SCR-5.scn`: a change waiting; `J`, `J`, `m`, `esc`, `'`; `:clear journal`, `U`; `:unclear`; `H` `mend`; `:why @claude-1`.
 
-Expect: the journal window pages; `'` opens at the mark; the story groups
-by card with `✓ done` / `Δ waits for you` headers; `:clear` hides (marked
-lines stay) and `:unclear` brings back; recall finds every project's and
-archive's lines and `enter` goes there; `:why` flashes `name: rung · since
-HH:MM · …`.
+Expect: `STORY · J journal`, then `JOURNAL`; `marked`, `'` opens at it; `:clear` counts down and takes the lines off (`journal lines off the screen`), `:unclear` brings them back; recall finds `mend shelf.py`; `:why` says `claude-1: …`.
 
-### SCR-6 · Jump, peek, settle and back
+### SCR-6 · Jump, peek and back
 
 - records: 51, 65, 72
 - commands: :goto, :peek
-- tier: real
-- after: PROJ-1
+- tier: stand-in
 
-Steps:
-1. `&`, a digit; `&!`; `:goto counter`.
-2. `K` (`:peek`), `j k`, `esc`.
-3. `^o` several times.
+Steps: `scenarios/SCR-6.scn`: a change waiting; `&`, `esc`; `:goto claude-1`; `K`, `esc`; `^o`.
 
-Expect: the jump line lists agents by what needs you with notes; a digit
-goes at once and unfolds what hides it; the peek shows a focus over Home
-and steps through agents; `^o` walks back the places left.
+Expect: the jump line lists the agents; `:goto` goes to the worker; `K` shows its focus over Home (`FOCUS · claude-1`); `^o` goes back to where you were.
 
 ### SCR-7 · Help, the `:` menu, Turkish
 
@@ -1030,103 +828,68 @@ How each size reads is EYE-1's.
 
 - records: 15
 - commands: :theme
-- tier: real
+- tier: stand-in
 
-Steps:
-1. `T` several times; `:theme nord` (write it slowly: it previews);
-   `:theme $ACC/config/mine.theme` (a Ghostty file); `:theme mono`.
-2. Quit, start again.
+Steps: `scenarios/SCR-9.scn`: `:theme nord`; `:theme` a Ghostty colour file; `:theme zzzz`; `:theme mono`.
 
-Expect: each theme draws the whole screen in its colours; mono has no
-colour and the `!` badge reversed; the last choice is kept; a wrong name
-says the list.
+Expect: each is said (`theme: nord`, the file's name, `theme: mono`); a name that is none says it is `not one of` the list. How each draws, and that the choice is kept for the next start, is EYE-1's.
 
-### SCR-10 · Motion, the cursor, drawing less when away
+### SCR-10 · Motion off, calm, full
 
 - records: 77, 81, 84, 85
 - commands: :motion
-- tier: real
+- tier: stand-in
 
-Steps:
-1. `:motion full`, `calm`, `off` while a worker works.
-2. Write on the line; open a window; look at the terminal's cursor.
-3. Focus another window for a minute (`tools/measure.py --blurred` on the
-   demo for numbers).
+Steps: `scenarios/SCR-10.scn`: `:motion off`, `calm`, `full`.
 
-Expect: calm: a working row's glyph breathes, starting rows count dots, a
-row that comes to wait blinks three times; full adds the header's spinner;
-off moves nothing; the terminal's own cursor stands where you type and is
-hidden where nothing is typed; blurred nothing moves and imece draws at
-most once a second.
+Expect: each says what it does (`nothing moves on the screen`, `calm motion: a working row breathes …`, `full motion …`). The breath, the blinks, the cursor and drawing less in another window are EYE-1's.
 
 ### SCR-11 · A key file of your own
 
 - records: 76
 - commands: :keys
-- tier: real
+- tier: stand-in
 
-Steps:
-1. Write `$XDG_CONFIG_HOME/imece/keys`: `gt = G`, `[journal]`, `x = gg`,
-   and one wrong line.
-2. `:keys`; remove the wrong line; `:keys`; `?`.
+Steps: `scenarios/SCR-11.scn`: a key file with a wrong line; `:keys`; the file mended; `:keys`; `?`.
 
-Expect: the wrong file is refused whole with why and the last good keys
-stay; the fixed one is taken (`taken N`); `gt` acts as `G`; `?` lists the
-file's keys first; a change to the file is read again by itself within two
-seconds.
+Expect: the wrong file is refused whole, by its line (`line 2: …`); the mended one is `keys taken (1)`; `?` lists `gt`.
 
-### SCR-12 · Back after being away, and words in another window
+### SCR-12 · Away, the digest, how you are told
 
 - records: 52, 60, 83, 91
 - commands: :away, :digest, :notify
-- tier: real
+- tier: stand-in
 
-Steps:
-1. `:away 1m`; focus another window for over a minute while a worker
-   works; come back.
-2. `:digest`.
-3. `:notify bell`; away, an ask comes. `:notify text`; again.
-4. `:notify push` with a `push` file for a throwaway ntfy topic.
+Steps: `scenarios/SCR-12.scn`: `:away 1m`, `:away off`, `:digest`, `:notify bell`, `text`, `off`.
 
-Expect: back in the window the digest of what happened opens at once (not
-over writing); bell rings once, text sends one notice in imece's words
-with the agent's name (through tmux's passthrough inside tmux); a click on
-a kitty notice opens the item; push sends to the topic once with the
-project, or says once why it failed.
+Expect: each says what it does (`back after …`, `what happened never shows by itself`, `nothing new since you last left`, `the bell rings when something waits …`, `a desktop note when something waits …`, `no word in another window`). A word or a ring in another window, a click on it, and a push are EYE-1's.
 
 ### SCR-13 · Keep the machine awake mid-turn
 
 - records: 53
 - commands: :awake
-- tier: real
+- tier: stand-in
 
-Steps:
-1. `:awake` while a worker works: `pgrep -fl caffeinate`
-   (`systemd-inhibit` on Linux); when nothing works, again.
+Steps: `scenarios/SCR-13.scn`: `:awake`, `:awake`.
 
-Expect: one `caffeinate -i -w <imece>` child while an agent is mid-turn,
-gone when none is and at quit; `:awake` again turns it off; not kept for
-the next start.
+Expect: `the machine stays awake while an agent is mid-turn`, then `the machine may sleep again`. The `caffeinate` child while a turn runs is EYE-1's.
 
 ### SCR-14 · A secret-looking token is hidden, code is not
 
 - records: 137
 - commands: —
-- tier: real
+- tier: stand-in
 
-Steps:
-1. To the leader: `have a worker print the line GITHUB_TOKEN=ghp_<36
-   letters> with echo, and add max_tokens=5 to a test`.
+Steps: `scenarios/SCR-14.scn`: a task whose words hold `GITHUB_TOKEN=ghp_…` and `max_tokens=5`, which the stand-in writes into `shelf.py`; the change opened.
 
-Expect: the token's value is hidden on every screen that shows it (trace,
-log, ask, journal); `max_tokens=5` and `key=lambda` are shown as they are
-in the diff.
+Expect: the diff shows `max_tokens=5` as it is and never the token's value, which is in the file on the disk all the same.
 
 ### EYE-1 · What only an eye can judge
 
-- records: 75, 101, 131
+- records: 15, 53, 75, 77, 81, 83, 84, 85, 91, 101, 131
 - commands: :lang
 - tier: real
+- skip-if: the push part, with no throwaway ntfy topic at hand
 - after: SCR-14
 
 Steps:
@@ -1135,31 +898,33 @@ Steps:
    Turkish.
 2. The first start's welcome (its mark's dots one a beat) and the
    farewell line after `q q`.
+3. While a worker works: `:motion calm` and `full` (the breath, the
+   spinner), the terminal's cursor where you type, `T` through the
+   themes and a restart (the last one kept), `:awake` (`pgrep -fl
+   caffeinate`), another window focused for a minute with `:notify text`
+   and `:away 1m` (the note, its click, the digest on return), the
+   activity bar on a working row; `:notify push` to a throwaway topic.
 
 Expect: in Turkish no English word is left and nothing is cut that was
 whole in English; at 60×20 every row that decides reads whole; the mark
 comes dot by dot and is whole after a key; the farewell says what waits,
-what sleeps, what this run spent and `resume: imece`.
+what sleeps, what this run spent and `resume: imece`; a working row
+breathes, nothing moves with motion off or in another window; each theme
+draws the whole screen; one `caffeinate` child while a turn runs and none
+after; one note in another window, its click opens the item; the push
+comes once.
 
 ## The demo
 
-### DEMO-1 · The demo shows every screen, on fake agents
+### DEMO-1 · The demo shows the screen on fake agents
 
 - records: 01, 31
 - commands: :pause, :faster, :slower
 - tier: demo
 
-Steps:
-1. `imece --demo`; two minutes; `space` (`:pause`), `+ -` (`:faster`,
-   `:slower`).
-2. Every screen: Home, a change (`a`, `r`, `x`), a question (digits), an
-   ask (`a`, `A`, `e`), a plan, the windows, the journal, researchers'
-   rows.
-3. `imece --demo --projects 1 --agents 3` at 100×40; `imece --demo --lang
-   tr`; quit each.
+Steps: `scenarios/DEMO-1.scn`: `imece --demo --projects 1 --agents 3`; `space`, `+`, `-`; `q q`; `imece --demo --lang tr`, `q q`.
 
-Expect: nothing is started or spent; every screen of the real cases above
-has its demo counterpart; the demo quits at once on `q q` and on SIGTERM.
+Expect: shop-api's team AT WORK; it quits with exit 0; in Turkish it says `ana ekran`. Nothing is started or spent.
 
 ### DEMO-2 · The demo on the real Live, through the stand-in
 

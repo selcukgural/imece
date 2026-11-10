@@ -1,0 +1,19 @@
+# TEAM-9 · Fork a worker to try another way.
+start
+see any key: close
+key Escape
+key /
+type mend shelf.py
+key Enter
+see claude-1 said done.
+key Escape Escape
+type :fork @claude-1
+key Enter
+see @claude-2
+key C-u Escape Escape
+key J
+see fork
+key Escape
+type :fork @lead
+key Enter
+see lead

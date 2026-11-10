@@ -1,0 +1,40 @@
+# CARD-4 · A card's screen, the board, the code map and the timeline.
+start
+see any key: close
+key Escape
+key /
+type mend shelf.py
+key Enter
+key Escape Escape
+see run .imece/worktree-setup.sh
+key g d
+key a
+see run .imece/check on its
+key g d
+key a
+see 1 ready to approve
+type :board
+key Enter
+see BOARD · cards: 1 · r ready only
+see TO REVIEW (1)
+key r
+key q
+gone BOARD
+type :code
+key Enter
+see CODE MAP · shelf
+see nothing to show of who edits what
+key Escape
+type :timeline
+key Enter
+see TIMELINE · a column is 5 s
+key ]
+see a column is 30 s
+key Escape
+gone TIMELINE
+key /
+type #1
+key Enter
+see #1 mend shelf.py
+see diff · talk · log
+key Escape

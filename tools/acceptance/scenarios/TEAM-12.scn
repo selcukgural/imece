@@ -1,0 +1,24 @@
+# TEAM-12 · Health: an idle worker with no card is told to its leader after the minute asked.
+start
+see any key: close
+key Escape
+key /
+type mend shelf.py
+key Enter
+key Escape Escape
+see run .imece/worktree-setup.sh
+key g d
+key a
+see run .imece/check on its
+key g d
+key a
+see 1 ready to approve
+type :health
+key Enter
+see health notices to the leader: stall 10m · idle 10m · loop 3
+key a
+see ALL DONE
+type :health idle 1m
+key Enter
+key J
+wait 100 has been idle 1 min with no card

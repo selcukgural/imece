@@ -1,0 +1,22 @@
+# SCR-12 · Back after being away, the digest, and how you are told in another window.
+start
+see any key: close
+key Escape
+type :away 1m
+key Enter
+see back after
+type :away off
+key Enter
+see what happened never shows by itself
+type :digest
+key Enter
+see nothing new since you last left
+type :notify bell
+key Enter
+see the bell rings when something waits
+type :notify text
+key Enter
+see a desktop note when something waits
+type :notify off
+key Enter
+see no word in another window

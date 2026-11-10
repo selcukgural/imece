@@ -1,0 +1,13 @@
+# SCR-10 · Motion off, calm, full.
+start
+see any key: close
+key Escape
+type :motion off
+key Enter
+see nothing moves on the screen
+type :motion calm
+key Enter
+see calm motion: a working row breathes
+type :motion full
+key Enter
+see full motion

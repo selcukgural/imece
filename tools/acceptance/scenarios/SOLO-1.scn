@@ -1,0 +1,28 @@
+# SOLO-1 · A solo beside the team, its model and effort.
+start
+see any key: close
+key Escape
+type :solo
+key Enter
+see haiku
+# The pick: haiku (the fifth), then Claude Code's own effort.
+key j j j j Enter
+see How deep should it think?
+key Enter
+see solo-shelf-2
+key /
+type add a docstring to shelf.py
+key Enter
+key Escape Escape
+# Two projects narrow the rows: the asks are seen by their count.
+wait 30 2 permissions
+key g d
+key a
+key g d
+key a
+wait 60 ready to approve
+see Changed shelf.py.
+type :effort medium
+key Enter
+key J
+see medium

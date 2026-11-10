@@ -1,0 +1,27 @@
+# SESS-3 · Archive, browse, view read-only, restore.
+start
+see any key: close
+key Escape
+key /
+type mend shelf.py
+key Enter
+see claude-1 said done.
+key Escape Escape
+type :archive lending try
+key Enter
+see u keeps it
+key U
+gone u keeps it
+key A
+see lending try
+key Enter
+see ARCHIVE · shelf “lending try”
+key a
+see read-only
+key Escape
+gone ARCHIVE · shelf
+key Escape
+type :restore lending try
+key Enter
+key J
+see you brought back shelf “lending try”
