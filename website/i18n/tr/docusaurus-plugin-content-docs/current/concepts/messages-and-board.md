@@ -83,6 +83,17 @@ Devam edemeyen işçi liderine `blocked` gönderir. Lider önce kendisi çözmey
 
 İşçinin lideri olmayan bir takım arkadaşına gönderilen `blocked`, bir yardımcının işçisine gönderdiği ve `you`'ya gönderilen `blocked` eskisi gibi sıradan mesajlardır. Liderin hâlâ elinde olan bir takılma çalıştırmalar arasında saklanmaz (takılan kart için [sağlık bildirimi](team.md#sağlık-bildirimleri) o işçiyi yeniden bulur); size gelen saklanır.
 
+## Duran işçi
+
+Oturumu biten (süreç çıktı, Claude Code başlayamadı, worktree'si ya da Lonca oturumu kurulamadı) ya da turu, imece'nin yeniden denemediği bir nedenle başarısız olan (tur sınırı, API hatası olmayan bir hata) işçi, bir `blocked` gibi liderinin çözeceği iştir. İşçiyi durduran hiçbir şey sessiz kalmaz.
+
+- **Lideri hemen duyar** ve bunun için uyandırılır: ne olduğunu, hangi kartta olduğunu ve neler yapabileceğini. İşçinin satırı ÇALIŞAN altında, dikkat renginde bir `■` ile kalır: `oturum bitti "exited with code 1: out of memory" · lead ilgileniyor` ya da `tur başarısız "error_max_turns" · lead ilgileniyor`. Sıra henüz sizde değildir: hiçbir şey çalmaz.
+- **Yeniden başlatıldı.** Liderin, oturumu biten işçiye gönderdiği uyandıran mesaj onu bir kez, kaldığı yerden yeniden başlatır (oturumu sürdürülür, nerede durduğu söylenir); günlük `lead, claude-2 oturumunu 1 dk sonra yeniden başlattı: …` der. Bir turu iyi bitmeden yeniden duran işçi ikinci kez başlatılmaz: lider kartını başka bir işçiye verir ya da size sorar. Başarısız olan tur da aynı yolla biter (`lead, claude-2 işçisini 1 dk sonra yeniden yürüttü: …`); oturumu hiç durmamıştır.
+- **Soruldu ya da kendi hâline bırakıldı** bir `blocked`'daki gibi işler: liderin sorusu duran işin satırıdır (`claude-2 durdu · lead soruyor: Kartı başka bir işçiye mi verelim?`), liderin bıraktığı duruş size `oturum bitti: … · lead çözmedi` (ya da `tur başarısız: …`) olarak gelir; işçiye yazdığınız söz onu başlatır.
+- **Baştan sizin olanlar**: imece'nin, istenenle çalışmadığı için (araçlar, izin kipi, kancalar) kendisinin durdurduğu oturum, bir liderin ya da solonun kendi duruşu, ve lideri de durmuş bir işçininki. Bunlar eskisi gibi kırmızı `■ oturum bitti: …` satırları olarak kalır ve takılanlara sayılır.
+
+İşçinin satırı, günlük ve bir duruşun satırı başarısız turu biten oturumdan ayırır: `claude-2: tur başarısız oldu: error_max_turns`, `oturum bitti` demek değildir.
+
 ## Sizi bekleyen ajanın postası da bekler
 
 Yalnız sizin çözebileceğiniz bir şeyi açık olan bir ajan, bir takım arkadaşı yazdı diye devam etmez: KARAR BEKLEYEN'deki bir sorusu, onayınızı bekleyen bir araç çağrısı, bir API hatası, bir kurulum betiği, hassas bir değişiklik ya da bir araştırma raporu. Postası kuyrukta kalır, tur başlatmaz ve ona pano kartı önerilmez. Gönderen `held as message 7; …` yanıtını alır; ajanın satırı ve `:why` kaç mesajın beklediğini söyler: `✉ 2 kuyrukta`.

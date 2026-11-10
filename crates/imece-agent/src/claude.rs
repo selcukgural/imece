@@ -1324,6 +1324,11 @@ pub struct Session {
     child: Child,
 }
 
+/// How the words of a session imece itself stopped begin: it did not run
+/// with what was asked, or said what imece could not read. Such a stop is
+/// the person's alone to look at.
+pub const CHECK_STOPPED: &str = "stopped: the session ";
+
 impl Session {
     /// Starts the session. `on` gets its events on a reader thread; the
     /// last one is always [`Event::Stopped`].
@@ -1365,7 +1370,7 @@ impl Session {
                 }
                 Err(why) => {
                     stopped = true;
-                    on(Event::Stopped(format!("stopped: the session {why}")));
+                    on(Event::Stopped(format!("{CHECK_STOPPED}{why}")));
                     false
                 }
             },

@@ -4,6 +4,11 @@
 //! lie: its turn ended with no answer to the worker, or the block grew
 //! older than `:health stall` allows. Nothing here interprets a body: a
 //! block is the `blocked` envelope, and what ends it is an envelope too.
+//!
+//! A worker whose session ended, or whose turn failed with nothing imece
+//! tries again, is its leader's to solve the same way (record 146): the
+//! block is imece's then ([`What`]), with a number of its own, and the
+//! leader's word to a worker whose session ended starts it again, once.
 
 use serde::{Deserialize, Serialize};
 
@@ -34,6 +39,19 @@ pub struct Block {
     /// A turn of the leader's has taken the message.
     pub read: bool,
     pub stage: Stage,
+    pub what: What,
+}
+
+/// What a block is of.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum What {
+    /// The worker said it is blocked.
+    #[default]
+    Said,
+    /// Its session ended (record 146).
+    Ended,
+    /// Its turn failed and its session lives (record 146).
+    Failed,
 }
 
 /// Where a block stands.
@@ -81,6 +99,18 @@ fn minutes_in(ticks: u64) -> u16 {
     (ticks * SECONDS_PER_TICK / 60).min(u64::from(u16::MAX)) as u16
 }
 
+impl What {
+    /// The one of `words` (for a block said, a session ended, a turn
+    /// failed) that is this.
+    pub fn of<T: Copy>(self, words: [T; 3]) -> T {
+        match self {
+            What::Said => words[0],
+            What::Ended => words[1],
+            What::Failed => words[2],
+        }
+    }
+}
+
 impl World {
     /// Worker `id` told `leader` it is blocked, in message `msg`: the
     /// block is the leader's now. An older one of its goes, with what
@@ -95,7 +125,59 @@ impl World {
             at: self.tick,
             read: false,
             stage: Stage::Leader,
+            what: What::Said,
         });
+    }
+
+    /// Worker `id`'s session ended, or its turn failed (`what`), `why` in
+    /// the session's words: its leader's to solve, when it has one that
+    /// runs. The leader, when the block is its now; else the stop is the
+    /// person's as it ever was. Live tells the leader ([`World::stops`]).
+    pub fn stood(&mut self, id: AgentId, what: What, why: &str) -> Option<AgentId> {
+        let a = &self.agents[id];
+        let leader = self.projects[a.project].leader;
+        let l = &self.agents[leader];
+        if a.role != Role::Worker
+            || a.gone
+            || leader == id
+            || l.gone
+            || matches!(l.status, crate::model::Status::Stopped)
+            || self.put_away(id)
+        {
+            return None;
+        }
+        self.close_blocked(id);
+        let msg = self.number();
+        self.agents[id].block = Some(Block {
+            msg,
+            said: why.to_string(),
+            card: self.agents[id].card,
+            leader,
+            at: self.tick,
+            read: false,
+            stage: Stage::Leader,
+            what,
+        });
+        self.stops.push(id);
+        Some(leader)
+    }
+
+    /// Leader `leader`'s next prompt takes what imece told it: the stops
+    /// of its workers are its to solve from here.
+    pub fn stops_read(&mut self, leader: AgentId) {
+        for a in &mut self.agents {
+            if let Some(b) = a.block.as_mut().filter(|b| b.leader == leader) {
+                b.read |= b.what != What::Said;
+            }
+        }
+    }
+
+    /// Whether `by`'s word may start worker `id`, whose session ended,
+    /// again: its leader's, once for a stop (a worker that stops again
+    /// before a turn of its ended well is not started a second time).
+    pub fn may_revive(&self, id: AgentId, by: AgentId) -> bool {
+        let a = &self.agents[id];
+        !a.revived && (a.block.as_ref()).is_some_and(|b| b.leader == by && b.what == What::Ended)
     }
 
     /// Whether a `blocked` from `from` to `to` opens a block: a worker's,
@@ -127,11 +209,14 @@ impl World {
             return false;
         };
         self.close_blocked(id);
+        // Started again by its leader: not a second time for this stop.
+        self.agents[id].revived |= b.what == What::Ended;
         self.note(Event::Unblocked {
             agent: id,
             by,
             text: text.lines().next().unwrap_or_default().to_string(),
             minutes: minutes_in(self.tick.saturating_sub(b.at)),
+            what: b.what,
         });
         true
     }
@@ -145,6 +230,13 @@ impl World {
             .map(|a| a.id)
             .collect();
         for id in over {
+            // A worker whose session ended and whose card went elsewhere
+            // waits for nothing: it sleeps until someone writes to it.
+            let ended = (self.agents[id].block.as_ref()).is_some_and(|b| b.what == What::Ended);
+            if ended && self.agents[id].status == crate::model::Status::Stopped {
+                let t = self.tick;
+                self.agents[id].set_status(crate::model::Status::Asleep, t);
+            }
             self.block_over(id);
         }
     }
@@ -232,6 +324,15 @@ impl World {
             .find(|(_, b)| b.leader == id && matches!(b.stage, Stage::Asked { .. }))
     }
 
+    /// What worker `id`'s open block is of; a `blocked` it said when it
+    /// has none in memory (an item kept from an earlier run).
+    pub fn block_what(&self, id: AgentId) -> What {
+        self.agents[id]
+            .block
+            .as_ref()
+            .map_or(What::Said, |b| b.what)
+    }
+
     /// Who has worker `id`'s block, for its row: none when it has none.
     pub fn block_held(&self, id: AgentId) -> Option<Held> {
         self.agents[id].block.as_ref().map(|b| self.held_of(b))
@@ -262,7 +363,7 @@ impl World {
             return;
         };
         b.stage = Stage::Yours(why);
-        let (leader, card) = (b.leader, b.card);
+        let (leader, card, what) = (b.leader, b.card, b.what);
         let first = (b.said.lines())
             .find(|l| !l.trim().is_empty())
             .unwrap_or_default()
@@ -282,6 +383,7 @@ impl World {
             leader,
             why,
             text: first,
+            what,
         });
     }
 
@@ -406,6 +508,7 @@ mod tests {
                 leader: 0,
                 why: Unsolved::TurnEnded,
                 text: "No clock to fake.".into(),
+                what: What::Said,
             }
         );
         // Once the person's, a turn's end brings it no second time.
@@ -445,6 +548,7 @@ mod tests {
                 by: 0,
                 text: "World::at is there.".into(),
                 minutes: 3,
+                what: What::Said,
             }
         );
     }

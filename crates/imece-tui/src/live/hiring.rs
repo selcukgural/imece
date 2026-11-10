@@ -1402,7 +1402,7 @@ mod tests {
         assert!(
             !w.journal
                 .iter()
-                .any(|j| matches!(j.event, Event::Stopped { .. }))
+                .any(|j| matches!(j.event, Event::Stopped { .. } | Event::TurnFailed { .. }))
         );
         // Once is enough: the standard model failing is a failure.
         live.tx.send((1, 1, failed(0))).unwrap();
@@ -1411,7 +1411,7 @@ mod tests {
         assert_eq!(w.agents[1].status, Status::Idle);
         assert!(matches!(
             &w.journal.last().unwrap().event,
-            Event::Stopped { agent: 1, .. }
+            Event::TurnFailed { agent: 1, .. }
         ));
     }
 
@@ -1452,7 +1452,7 @@ mod tests {
             assert!(live.turned[1]);
             assert!(matches!(
                 &w.journal.last().unwrap().event,
-                Event::Stopped { agent: 1, .. }
+                Event::TurnFailed { agent: 1, .. }
             ));
             assert!(file.is_file(), "no fallback, the session stays remembered");
             assert_eq!(

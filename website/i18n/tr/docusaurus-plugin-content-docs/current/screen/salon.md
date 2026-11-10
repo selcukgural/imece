@@ -102,7 +102,7 @@ Her agent tek bir basamakta durur, en yüksekten: takıldı (bloke ya da oturumu
 | `●` | iş başında: tur ortasında, oturumu kalkıyor (durumu `başlıyor…`), bir takım arkadaşına soruyor (`? → claude-2`), araştırıyor |
 | `○` | boşta ya da önceki çalıştırmadan beri uyuyor (ona yazmak uyandırır) |
 | `✓` | bitti, bakılmadı: bir turu bitirdi, o zamandan beri açmadınız |
-| `■` | takıldı: bloke (durumu `BLOKE`) ya da oturumu bitti (`■ durdu`; ona yazmak yeni bir oturum başlatır); bir proje başlığında takılan agent sayısı da. Dikkat renginde: liderine takıldığını söyleyen işçi, lider ilgilenirken (`takıldı "…" · lead ilgileniyor`; takılanlara sayılmaz: [takılan işçi](../concepts/messages-and-board.md#takılan-işçi)) |
+| `■` | takıldı: bloke (durumu `BLOKE`) ya da oturumu bitti (`■ durdu`; ona yazmak yeni bir oturum başlatır); bir proje başlığında takılan agent sayısı da. Dikkat renginde: liderine takıldığını söyleyen işçi, lider ilgilenirken (`takıldı "…" · lead ilgileniyor`; takılanlara sayılmaz: [takılan işçi](../concepts/messages-and-board.md#takılan-işçi)), ve oturumu biten ya da turu başarısız olan işçi, lideri ilgilenirken (`oturum bitti "…" · lead ilgileniyor`: [duran işçi](../concepts/messages-and-board.md#duran-işçi)) |
 | `⇄` | bir konuşma satırı |
 | `▾` `▸` | bir proje, açık ya da katlı |
 | `▴` | sabitlenmiş proje |

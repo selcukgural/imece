@@ -47,8 +47,9 @@ takes, and a worker's done ends its turn.
 Mail addressed to no one is never dropped: a helper that leaves
 (`Live::release`) with mail it never read tells each sender still on the
 team which message went unread (`Live::unread`), with its next prompt.
-Mail to a name not on the team was already refused to its sender; mail to
-a stopped agent waits for its next session; a closed project's agents all
+Mail to a name not on the team was already refused to its sender; mail
+queued before an agent stopped waits for its next session, and a new send
+to a stopped agent is refused but for its leader's (record 146); a closed project's agents all
 go together, so nobody is left to tell.
 
 `:health [stall|idle|loop VALUE]` (`Knob`, `Health::with`): minutes or

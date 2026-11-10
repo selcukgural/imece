@@ -83,6 +83,17 @@ A worker that cannot go on sends its leader `blocked`. The leader tries to solve
 
 A `blocked` to a teammate that is not the worker's leader, a helper's to its worker and a `blocked` to `you` are plain messages, as before. A block the leader still had is not kept between runs (the [health notice](team.md#health-notices) for a stalled card finds that worker again); one that came to you is.
 
+## A worker that stopped
+
+A worker whose session ended (the process exited, Claude Code could not start, its worktree or Lonca session could not be made) or whose turn failed with nothing imece tries again (out of turns, an error that is no API fault) is its leader's to solve the same way as a `blocked`. Nothing that stops a worker stays silent.
+
+- **Its leader hears it at once**, and is woken for it: what happened, on which card, and what it may do. The worker's row stays under AT WORK, `■` in the attention colour: `session ended "exited with code 1: out of memory" · lead is on it`, or `turn failed "error_max_turns" · lead is on it`. It is not your turn yet: nothing rings.
+- **Started again.** The leader's waking message to a worker whose session ended starts it again, once, where it left off (its session resumed, told where it stopped); the journal says `lead started claude-2 again after 1 min: Start again; run the tests one file at a time`. A worker that stops again before a turn of its ends well is not started a second time: the leader hands its card to another worker or asks you. A turn that failed is ended the same way (`lead got claude-2 going again after 1 min: …`); its session never stopped.
+- **Asked or let lie** go as for a `blocked`: the leader's question is the stopped work's row (`claude-2 stopped · lead asks: Give its card to another worker?`), and a stop the leader let lie comes to you as `session ended: … · lead did not solve it` (or `turn failed: …`), where your word to the worker starts it.
+- **Yours from the start**: a session imece itself stopped because it did not run with what was asked (the tools, the permission mode, the hooks), a leader's or a solo's own stop, and a worker's whose leader is stopped too. Those stay red `■ session ended: …` rows, counted as stuck, as before.
+
+A worker's row, the journal and a stop's item say a turn that failed apart from a session that ended: `claude-2: turn failed: error_max_turns` is not `session ended`.
+
 ## Mail waits with an agent that waits on you
 
 An agent with something open that only you can settle does not go on because a teammate wrote: a question of its in TO DECIDE, a tool call waiting for your yes, an API error, a setup script, a sensitive change or a research report. Its mail stays queued and starts no turn, and no board card is offered to it. The sender hears `held as message 7; …`, and the agent's row and `:why` say how many messages wait: `✉ 2 queued`.

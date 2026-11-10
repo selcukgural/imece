@@ -889,6 +889,7 @@ pub fn world(o: Options) -> Result<(World, Live), String> {
                 cards: Vec::new(),
                 journal: Vec::new(),
                 inbox: Vec::new(),
+                stops: Vec::new(),
                 budget: DEFAULT_BUDGET,
                 estimated: false,
                 max_researchers: 0,
@@ -1403,6 +1404,10 @@ impl Live {
             };
             if stopped {
                 self.end(w, id);
+                // Whoever starts it again (the person, or its leader:
+                // record 146) goes on with the session it had, told
+                // where it left off.
+                self.remembered[id] = true;
                 // What it was to solve is the person's now (record 143).
                 self.unsolved(w, id, true);
             }
@@ -1528,6 +1533,7 @@ impl Live {
         self.post_office(w);
         self.look_health(w);
         self.look_blocks(w);
+        self.look_stops(w);
         for id in 0..self.lost.len() {
             let a = &w.agents[id];
             if self.lost[id]

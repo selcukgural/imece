@@ -128,6 +128,10 @@ yet: it comes with the stand-in's next behaviours (record 130).
 
 ## Gaps
 
+- Record 146 puts a worker's stop (its session ended, a turn failed with
+  nothing to retry) on the same block, `What::Ended`/`Failed`, with the
+  leader's word able to start a stopped worker once.
+
 - The leader may answer a block badly and so end it: imece does not
   judge an answer, by the rule that only the envelope drives. A worker
   still stuck says `blocked` again.

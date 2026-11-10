@@ -175,6 +175,7 @@ pub fn apply(w: &mut World, id: AgentId, e: AgentEvent, before: u64) {
             a.set_status(Status::Idle, t);
             if ok {
                 a.tries = 0;
+                a.revived = false;
                 a.talk = Some(Talk {
                     with: Party::Person,
                     mine: true,
@@ -197,6 +198,12 @@ pub fn apply(w: &mut World, id: AgentId, e: AgentEvent, before: u64) {
             a.topic = why.lines().next().unwrap_or_default().to_string();
             a.set_status(Status::Stopped, t);
             w.story(card, StoryEvent::Stopped(why.clone()));
+            // Its leader's to solve (record 146), unless imece stopped it
+            // for not running with what was asked: the person's alone.
+            if !why.starts_with(imece_agent::claude::CHECK_STOPPED) {
+                let first = why.lines().next().unwrap_or_default().to_string();
+                w.stood(id, crate::blocked::What::Ended, &first);
+            }
             w.note(Event::Stopped { agent: id, why });
         }
     }
@@ -494,6 +501,8 @@ impl Live {
             }
             Err(why) => {
                 self.end(w, id);
+                // Whoever starts it again tells it where it left off.
+                self.remembered[id] = true;
                 return apply(w, id, AgentEvent::Stopped(why), self.spent_before[id]);
             }
         };
@@ -645,6 +654,9 @@ impl Live {
             self.notes[id].insert(0, briefing);
         }
         let text = self.with_notes(id, text);
+        // What imece told it of its workers' stops is its to solve from
+        // this prompt on (record 146).
+        w.stops_read(id);
         match &mut self.slots[id] {
             Slot::None => {
                 self.start(w, id, held);
@@ -2141,7 +2153,7 @@ mod tests {
         assert!(
             w.journal
                 .iter()
-                .any(|e| matches!(&e.event, Event::Stopped { .. }))
+                .any(|e| matches!(&e.event, Event::TurnFailed { .. }))
         );
 
         // A finished turn clears the mark, so a later raise renews again.
