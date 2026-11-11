@@ -158,8 +158,8 @@ class CheckTest(unittest.TestCase):
         (scripts / "TEAM-2.scn").write_text("start\nsee words\n")
         self.assertEqual(refusal(self.root), "")
         # A step drive.py does not know.
-        (scripts / "TEAM-2.scn").write_text("start\nlook words\n")
-        self.assertIn("TEAM-2.scn: line 2: `look` is not a step", refusal(self.root))
+        (scripts / "TEAM-2.scn").write_text("start\npeek words\n")
+        self.assertIn("TEAM-2.scn: line 2: `peek` is not a step", refusal(self.root))
         (scripts / "TEAM-2.scn").write_text("start\n")
         # A script with no case.
         (scripts / "TEAM-8.scn").write_text("start\n")

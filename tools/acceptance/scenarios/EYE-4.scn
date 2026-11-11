@@ -1,0 +1,62 @@
+# EYE-4 · What reaches the person away from the screen: the machine kept
+# awake while a turn runs; one note in another window, its click opening
+# the item; the digest on return; a push, once. As kitty 0.40, whose notes
+# (OSC 99) report a click back (record 83).
+# A push server of the case's own (ntfy's shape, on loopback).
+bg python3 -I $ACC_SOURCE/tools/acceptance/eye.py serve $ACC_CASE/push.port $ACC_CASE/push.log
+until 10 test -s push.port
+sh mkdir -p config/imece && printf 'server = http://127.0.0.1:%s\ntopic = acc-topic-2026-1\n' "$(cat push.port)" > config/imece/push
+start --as 'kitty(0.40.0)'
+see any key: close
+key Escape
+type :awake
+key Enter
+type :notify text
+key Enter
+type :away 1m
+key Enter
+key /
+type mend shelf.py [slow 12]
+key Enter
+key Escape Escape
+see run .imece/worktree-setup.sh
+key g d
+key a
+see Read the code around it
+# A turn runs: one keeper of the machine's sleep, imece's child (macOS:
+# caffeinate; elsewhere systemd-inhibit, which a CI runner may lack).
+until 10 [ "$(uname)" != Darwin ] || python3 -I $ACC_SOURCE/tools/acceptance/eye.py child $ACC_CASE caffeinate
+# Another window: what comes to wait is told, after five seconds, and
+# each thing once: once all has come, no note more.
+focus out
+sent \e]99;i=imece-1:
+see TEAM FINISHED
+sh sleep 7; python3 -I $ACC_SOURCE/tools/acceptance/eye.py notes screen.bytes > notes-1.txt
+sh sleep 7; python3 -I $ACC_SOURCE/tools/acceptance/eye.py notes screen.bytes | diff - notes-1.txt
+# Away a minute: back in the window, the digest of what happened.
+sleep 55
+focus in
+see WHILE YOU WERE AWAY
+key Escape
+# kitty's report of the note's click opens the item it told of.
+input \e]99;i=imece-1;\e\\
+see CHECK · claude-1
+key Escape
+# Nothing runs a turn now: nothing holds the machine awake.
+until 30 [ "$(uname)" != Darwin ] || python3 -I $ACC_SOURCE/tools/acceptance/eye.py nochild $ACC_CASE caffeinate
+# A push, while away: what comes to wait, to the server, each thing once.
+type :notify push
+key Enter
+key g d
+key a
+focus out
+key /
+type mend cli.py
+key Enter
+key Escape Escape
+until 30 test -s push.log
+sh cat push.log
+says POST /acc-topic-2026-1 'imece · claude-1 finished: change ready · shelf'
+# Each thing once: none twice, and none more once all has come.
+sh sleep 7; cp push.log push-1.log; sleep 7; diff push.log push-1.log && test -z "$(sort push.log | uniq -d)"
+focus in

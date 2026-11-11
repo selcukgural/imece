@@ -1,0 +1,35 @@
+# TEAM-15 · A worker at work, as the person sees it: its row on Home says
+# its step; its log says its status, its to-do list, where its worktree
+# stands, its context and what it did lately; the header says the plan's
+# usage window once a session said it. A `claude` of the case's own gives
+# the stand-in a usage limit and a context that fills fast.
+sh mkdir -p bin && printf '#!/bin/sh\nIMECE_STAND_IN_LIMIT=1000 IMECE_STAND_IN_FILL=21000 exec "%s/bin/claude" "$@"\n' "$ACC" > bin/claude && chmod 755 bin/claude
+env PATH $ACC_CASE/bin:$PATH
+start
+see any key: close
+key Escape
+key /
+type mend shelf.py [slow 15]
+key Enter
+key Escape Escape
+see run .imece/worktree-setup.sh
+key g d
+key a
+# Its row: the step in progress (record 97).
+see #1   mend shelf.py [slow 15]  Read the code around it
+key G
+key Enter
+see FOCUS · claude-1
+see status ▸ Read the code around it
+see TO DO 0/5
+see origin clean
+see context:  1 || context:  9 || context:  8 || context:  7 || context:  6 || context:  5 || context:  4 || context:  3 || context:  2
+see trace lines in 2 min:
+key Escape
+# The worker's turn over: the plan's window on the header (record 48),
+# as its session said it.
+see run .imece/check on its
+key g d
+key a
+see 1 ready to approve
+see claude 5h:

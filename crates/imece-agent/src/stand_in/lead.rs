@@ -39,7 +39,11 @@ pub struct Part {
 
 impl Part {
     pub fn to_json(&self) -> Value {
-        json!({ "title": self.title, "body": self.body, "paths": self.paths })
+        let mut card = json!({ "title": self.title, "body": self.body, "paths": self.paths });
+        if let Some(n) = closes_of(&self.body) {
+            card["closes"] = json!(n);
+        }
+        card
     }
 
     /// What a transcript kept; none without a title or a task.
@@ -165,9 +169,12 @@ impl Mind {
                     }
                 },
             };
-            let assign = json!({
+            let mut assign = json!({
                 "to": who, "type": "assign", "body": part.body, "paths": part.paths,
             });
+            if let Some(n) = closes_of(&part.body) {
+                assign["closes"] = json!(n);
+            }
             match hands.call("send", assign) {
                 Ok(_) => {
                     hands.say(&format!("I gave {who} {}.", part.paths.join(" and ")));
@@ -199,6 +206,14 @@ impl Mind {
     }
 }
 
+/// The issue a card answers, as the person's cue `[closes N]` names it
+/// (record 142): the leader passes it on as the card's `closes`.
+pub(super) fn closes_of(task: &str) -> Option<u64> {
+    let rest = task.split("[closes ").nth(1)?;
+    let (n, _) = rest.split_once(']')?;
+    n.trim().parse().ok().filter(|&n| n > 0)
+}
+
 /// The cards `left` posted on the board.
 fn post(hands: &mut impl Hands, left: &[Part], handed: &mut Handed) {
     for part in left {
@@ -213,6 +228,36 @@ fn post(hands: &mut impl Hands, left: &[Part], handed: &mut Handed) {
 mod tests {
     use super::super::tests::{LEADER, fake, strings};
     use super::*;
+
+    #[test]
+    fn the_person_s_cue_names_the_issue_a_card_closes() {
+        assert_eq!(closes_of("mend it [closes 58]"), Some(58));
+        assert_eq!(closes_of("[closes  7 ] mend"), Some(7));
+        assert_eq!(closes_of("mend it"), None);
+        assert_eq!(closes_of("mend [closes 0]"), None);
+        assert_eq!(closes_of("mend [closes x]"), None);
+        assert_eq!(closes_of("mend [closes 5"), None);
+        let part = |body: &str| Part {
+            title: "t".into(),
+            body: body.into(),
+            paths: vec![],
+        };
+        assert_eq!(part("a [closes 3]").to_json()["closes"], 3);
+        assert_eq!(part("a").to_json().get("closes"), None);
+    }
+
+    #[test]
+    fn a_card_handed_out_carries_the_issue_the_person_named() {
+        let mut f = fake(LEADER);
+        files(&mut f, REPO);
+        f.first = vec![("hire".into(), joined("claude-1"))];
+        Mind::default().turn(&mut f, "From imece: x\n\nRound up [closes 9]");
+        let sent = (f.calls.iter())
+            .find(|(tool, _)| tool == "send")
+            .expect("an assign");
+        assert_eq!(sent.1["closes"], 9);
+        assert_eq!(sent.1["type"], "assign");
+    }
 
     fn files(f: &mut super::super::tests::Fake, names: &[&str]) {
         for n in names {

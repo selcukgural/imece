@@ -22,6 +22,19 @@ allow 900 ready to approve || look first
 key g d
 key a
 allow 300 ↓1
+# A commit of the person's own first: trunk and the branch went apart, and
+# :sync moves nothing of theirs (record 118).
+sh git -C repos/shelf -c user.name=acc -c user.email=acc@localhost commit -q --allow-empty -m mine
+type :sync
+key Enter
+key J
+key J
+see has commits of its own
+key Escape
+sh git -C repos/shelf log -1 --format=%s
+says mine
+# Without it, :sync brings trunk's commit.
+sh git -C repos/shelf reset -q --hard HEAD~1
 type :sync
 key Enter
 gone ↓1

@@ -1,0 +1,41 @@
+# EYE-5 · imece's mark and its last words: on the first start the mark
+# comes a dot a beat and is whole after a key (record 101); after `q q`
+# the terminal holds only one line: what waits, what sleeps, what this run
+# spent and how to go on.
+start --as 'kitty(0.40.0)'
+see any key: close
+look mark-1.txt
+sleep 0.15
+look mark-2.txt
+sleep 0.15
+look mark-3.txt
+sleep 0.15
+look mark-4.txt
+sleep 0.15
+look mark-5.txt
+sh python3 -I $ACC_SOURCE/tools/acceptance/eye.py dots mark-1.txt mark-2.txt mark-3.txt mark-4.txt mark-5.txt
+# A key: the window goes, and Home's mark (no worker yet) is whole at once.
+key Escape
+see Nothing needs you
+look mark-6.txt
+sleep 0.3
+look mark-7.txt
+sh python3 -I $ACC_SOURCE/tools/acceptance/eye.py same imece mark-6.txt mark-7.txt
+# Work that waits, and a session that sleeps after the quit.
+key /
+type mend shelf.py
+key Enter
+key Escape Escape
+see run .imece/worktree-setup.sh
+key g d
+key a
+see run .imece/check on its
+key q
+see quit imece?
+key q
+see Pane is dead
+sh python3 -I $ACC_SOURCE/tools/acceptance/eye.py quit screen.bytes
+says to decide
+says agents asleep
+says spent this run
+says resume: imece

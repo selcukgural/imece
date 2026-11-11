@@ -137,23 +137,27 @@ this again`; an empty Home says nobody is at work; `:news` opens WHAT'S
 NEW; `q` asks and `q` again quits with exit 0. The farewell's words and
 the mark's dots one a beat are EYE-1's.
 
-### INST-5 · The tab: title, icon, progress
+### INST-5 · The tab: title, progress, icon, and nothing left at the quit
 
 - records: 16, 82, 101
 - commands: —
-- tier: real
-- skip-if: the run's terminal is not iTerm2, kitty, Ghostty or Konsole (say which)
+- tier: stand-in
 
-Steps:
-1. Run imece in the terminal itself (not tmux), give a worker a task.
-2. Look at the tab while it works, while an ask waits, when it is calm.
-3. Quit; scroll the terminal's scrollback up.
+Steps: `scenarios/INST-5.scn`: imece through `relay.py`, which keeps every
+byte it writes to the terminal and answers its question for the
+terminal's name: as iTerm2 3.6.6, a worker given a task with an ask, the
+ask, the change, `:quit` `q`; then twice as Konsole 24.08, the second time
+with `IMECE_TAB_ICON=off`.
 
-Expect: the calm title is `⁙ imece`; it starts `● ` while working, `! `
-while something waits; the tab's progress bar follows (where the terminal
-has one); iTerm2 shows imece's icon (`IMECE_NO_ICON=1` keeps it off); after
-the quit no screen of imece's is left in the scrollback and the progress
-bar is cleared.
+Expect: the title is `⁙ imece` when calm, `! imece · 1 to decide` while
+something waits, `● imece` while it works, and the tab's progress follows
+(`OSC 9;4`: 0, 4;100, 3); no icon by name outside Konsole; after the quit
+the main screen holds only imece's last words (`resume: imece`), the
+progress is cleared and the title given back (`eye.py quit`). Konsole gets
+imece's icon by name (`OSC 32;imece`) while imece has the screen and its
+own back after; `IMECE_TAB_ICON=off` sends none. iTerm2's icon is its own
+table's, which `install.sh` writes: AUTO-2's `test-install` proves it, and
+that `IMECE_NO_ICON=1` writes nothing.
 
 ## The team on the git path
 
@@ -177,7 +181,7 @@ Expect: the welcome names Claude Code's real version, signed in; the answer come
 
 Steps: `scenarios/real/TEAM-2.scn`: a task to the leader for one cheap worker; the worker's start; `@claude-1 …` while it works; its change; a stop and a start; a question to the leader; `J J`.
 
-By hand, in the same run: the row while it works (`▸` the step, `≡ N/M`, `⎇ branch +N −M`, the context fill), the header's usage window once a session said it.
+Elsewhere: the row and log while it works, and the header's usage window, are TEAM-15's (stand-in).
 
 Expect: `claude-1` is hired and works in a worktree with its scratch beside it; the message mid-turn is taken into the turn under way (the change comes, the row rests); no ask was for `unittest` (record 136); after the restart the journal says the session `goes on in the session it had`.
 
@@ -270,6 +274,22 @@ Steps: `scenarios/real/TEAM-14.scn`: a cheap worker's docstring change; its chec
 
 Expect: a tool-less session's note stands above the change's files (`✎ review · …`); a second `:review` is refused (`no review: …`); `:commit` puts `!git commit -m '…'` on the line with a message of the model's, not the stand-in's words.
 
+### TEAM-15 · A worker at work, as the person sees it
+
+- records: 48, 63, 64, 85, 97
+- commands: —
+- tier: stand-in
+
+Steps: `scenarios/TEAM-15.scn`: a `claude` of the case's own that gives
+the stand-in a usage limit and a context that fills fast; a worker held at
+its first step (`[slow 15]`); Home; its log; its change.
+
+Expect: its row on Home says the step in progress (`Read the code around
+it`); its log says `status ▸ Read the code around it`, `TO DO 0/5`, `origin
+clean`, its context in tokens and its activity; once its turn is over the
+header has the plan's window (`claude 5h: …`). The row's `◔ N%`, `≡ N/M`
+and `⎇ … +N −M` on a card's screen are the screen's tests (`ui/tests/rows.rs`).
+
 ### TEAM-9 · Fork a worker to try another way
 
 - records: 94
@@ -289,7 +309,7 @@ Expect: a new worker `claude-2` with the line opened `@claude-2 `; the journal s
 
 Steps: `scenarios/real/TEAM-10.scn`: a cheap worker told to run `python3 -c 'print(6*7)'`; its ask left open; the leader asked to send it an inform; `J J`; its focus; the yes.
 
-By hand, in the same run: `v` on the worker and `%` on an answer (reply numbers, `↩`).
+Elsewhere: choosing lines with `v` is SCR-4's; a reply's `↩` and `%` there and back are the screen's test `a_reply_shows_what_it_answers_and_percent_goes_there_and_back` (`ui/tests/talk.rs`).
 
 Expect: the leader's `[inform]` is in the journal while the ask waits, and the worker's focus says the message is `queued`; after the yes the worker goes on and the round ends.
 
@@ -317,20 +337,23 @@ Expect: bare `:health` says `stall 10m · idle 10m · loop 3`; after the minute 
 ### TEAM-13 · The issue a card closes
 
 - records: 142
-- commands: :closes
-- tier: real
-- skip-if: no throwaway GitHub repository and `gh` signed in for it (say which)
-- after: TEAM-12
+- commands: :closes, :commit
+- tier: stand-in
 
-Steps:
-1. A throwaway repository with `shelf` pushed and an open issue N; imece on
-   its checkout.
-2. To the leader: `fix issue #N: <its words>`.
-3. Apply the change, `:commit`. Then `:closes off`, `:closes`.
+Steps: `scenarios/TEAM-13.scn`: a `gh` of the case's own that answers for
+issue 7 and keeps its calls; `mend shelf.py [closes 7]` (the stand-in's
+leader names it on the card); the change; `a`; `:commit` run; `:closes
+off`; `mend cli.py [closes 8]`; its change; `a`; `:commit` run; a restart;
+`:closes`.
 
-Expect: the card names `closes N`; the commit message ends `Closes #N`;
-with `:closes off` the next commit has no `Closes` line and bare `:closes`
-says where it stands; the setting is kept per project.
+Expect: the change says `closes #7` with the issue's title read with `gh`
+(`find ignores case`) and `:commit's message will say so`; on the git path
+nothing is closed by imece (no `gh issue close`): the commit's message ends
+`Closes #7`. With `:closes off` the next change says `nothing closes it:
+:closes is off` and its commit has no `Closes` line; after the restart
+bare `:closes` still says `closing issues is off for shelf`. Closing on
+Lonca (`gh issue close` when the change is integrated) is the screen's and
+the engine's tests (`live::items`).
 
 ## Asks and questions
 
@@ -585,11 +608,9 @@ Expect: a change says `outside #…`: its worker wrote a file its card does not 
 - tier: real
 - after: CARD-2
 
-Steps: `scenarios/real/CARD-3.scn`: a cheap worker on a card `Import books` told to say done with outcome failed; the leader asked to assign it again (a plan's yes if it hires); then to withdraw it; `:board`.
+Steps: `scenarios/real/CARD-3.scn`: a cheap worker on a card `Import books` told to say done with outcome failed, and a second card `Shelve books` posted after it (`after`); the leader asked to assign the first again (a plan's yes if it hires); then to withdraw it; `:board`.
 
-By hand, in the same run: a card after it (`after`) waits and is told `✕ #1 withdrawn`.
-
-Expect: the card says `#1 failed` (no change); the journal says the card's `try 2`; after the withdrawal the journal says the leader `withdrew` it, Home `1 withdrawn`, and the board shows it marked `–` with its try.
+Expect: the card says `#1 failed` (no change); the journal says the card's `try 2`; after the withdrawal the card after it never begins and its row says it `waits on #1 which was withdrawn` (the leader may ask the person what becomes of it), and the board shows #1 marked `–` with its try and the card after it `✕ #1 withdrawn`.
 
 ### CARD-4 · A card's screen, the board, the code map and the timeline
 
@@ -616,15 +637,13 @@ Expect: a session file another daemon left (written first) does not count: the i
 ### LONCA-2 · A worker in a workspace: its proposal is the Δ
 
 - records: 119, 123
-- commands: —
+- commands: :code
 - tier: real
 - after: LONCA-1
 
-Steps: `scenarios/real/LONCA-2.scn`: its own daemon; an import; a cheap worker's change; `:lonca`; the change opened.
+Steps: `scenarios/real/LONCA-2.scn`: its own daemon; an import; a cheap worker's change; `:lonca`; the change opened; `:code`.
 
-By hand, in the same run: `:code` while a worker holds a lease (its file, `· name` for others).
-
-Expect: the window says `WAITING FOR A HUMAN · 1` and `Δ shown`; the change says `nothing runs after your yes` and, from Lonca, why it needs the person (`needs your yes: Lonca does not watch this agent's tools, so a person reads each change · proposal N`, no `approvals=1`).
+Expect: the window says `WAITING FOR A HUMAN · 1` and `Δ shown`; the change says `nothing runs after your yes` and, from Lonca, why it needs the person (`needs your yes: Lonca does not watch this agent's tools, so a person reads each change · proposal N`, no `approvals=1`); the code map shows the file the proposal pins and `claude-1` holding it.
 
 ### LONCA-3 · The Δ on Lonca: the yes lands it on trunk
 
@@ -633,11 +652,9 @@ Expect: the window says `WAITING FOR A HUMAN · 1` and `Δ shown`; the change sa
 - tier: real
 - after: LONCA-2
 
-Steps: `scenarios/real/LONCA-3.scn`: its own daemon; an import; a cheap worker's change; its verdict; `gd` `a`; `J J`.
+Steps: `scenarios/real/LONCA-3.scn`: its own daemon; an import; a cheap worker's change; its verdict; `gd` `a`; `J J`; then `[verification]` set with `lonca policy set` (`test = "python3 -m unittest"` and a named check `api` in its `checks`); a second change; `:checks api` on it; `r` with a reason; the worker's next proposal approved from a shell (`lonca approve`) while it waits.
 
-By hand, in the same run: `r` on another proposal, its reason written (the worker hears it); `[verification]` set with `lonca policy set` and the verdict naming it; `:checks NAMES` on a change; with nobody at work, another proposal approved from a shell (`lonca approve SEQ`): the journal says `on trunk as …` within a couple of seconds, not half a minute.
-
-Expect: the verdict says what runs after the yes (`nothing runs after your yes`, or Lonca's checks by name); the yes lands it: the journal says `on trunk as …`.
+Expect: the verdict says what runs after the yes (`nothing runs after your yes`, then, with the policy's check, `after your yes Lonca runs: test`); the yes lands it: the journal says `on trunk as …`; `:checks api` says the yes `also asks Lonca for api` (a name of Lonca's own, as `test`, is refused); `r` opens the line to the worker (`to claude-1: @claude-1`), whose words are the reason too and the journal says `proposal refused: …`; a yes from a shell shows within 12 s (`WAITING FOR A HUMAN · 0`), as Lonca tells imece at once (record 148).
 
 ### LONCA-4 · Behind trunk, and :sync
 
@@ -646,11 +663,9 @@ Expect: the verdict says what runs after the yes (`nothing runs after your yes`,
 - tier: real
 - after: LONCA-3
 
-Steps: `scenarios/real/LONCA-4.scn`: its own daemon; an import; a cheap worker's change, approved; `:sync`.
+Steps: `scenarios/real/LONCA-4.scn`: its own daemon; an import; a cheap worker's change, approved; a commit of the person's own; `:sync`; the commit taken back; `:sync`.
 
-By hand, in the same run: a commit of your own in the checkout first: `:sync` says the branch and trunk went apart and changes nothing of yours.
-
-Expect: the header says `↓1` once it landed; `:sync` takes it away and the checkout's log has the landed commit.
+Expect: the header says `↓1` once it landed; with a commit of the person's own `:sync` says the checkout `has commits of its own` and moves nothing (the commit stays); without it `:sync` takes `↓1` away and the checkout's log has the landed commit.
 
 ### LONCA-5 · The daemon goes away and comes back
 
@@ -659,11 +674,9 @@ Expect: the header says `↓1` once it landed; `:sync` takes it away and the che
 - tier: real
 - after: LONCA-4
 
-Steps: `scenarios/real/LONCA-5.scn`: its own daemon; an import; the daemon ended (`pkill`); started again; `J J`.
+Steps: `scenarios/real/LONCA-5.scn`: its own daemon; an import; the daemon ended (`pkill`); a hire asked of the leader; the leader's log; the daemon started again; `J J`.
 
-By hand, in the same run: a hire asked for while it is gone is refused in words.
-
-Expect: the header says `no lonca` while it is gone and `lonca lonca-five` again after; the journal says the repository `can not be read` and then `answers again`.
+Expect: the header says `no lonca` while it is gone and `lonca lonca-five` again after; the hire is refused in imece's words (`nobody is hired now: …`); the journal says the repository `can not be read` and then `answers again`.
 
 ## The screen
 
@@ -816,35 +829,83 @@ Steps: `scenarios/SCR-14.scn`: a task whose words hold `GITHUB_TOKEN=ghp_…` an
 
 Expect: the diff shows `max_tokens=5` as it is and never the token's value, which is in the file on the disk all the same.
 
-### EYE-1 · What only an eye can judge
+### EYE-1 · The screens in both languages and on a small terminal
 
-- records: 15, 53, 75, 77, 81, 83, 84, 85, 91, 101, 131
+- records: 131
 - commands: :lang
-- tier: real
-- skip-if: the push part, with no throwaway ntfy topic at hand
-- after: SCR-14
+- tier: stand-in
 
-Steps:
-1. Over the real run's screens: Home, a change, a question, the help,
-   the journal, at 120×40 and at 60×20, in English and with `L` in
-   Turkish.
-2. The first start's welcome (its mark's dots one a beat) and the
-   farewell line after `q q`.
-3. While a worker works: `:motion calm` and `full` (the breath, the
-   spinner), the terminal's cursor where you type, `T` through the
-   themes and a restart (the last one kept), `:awake` (`pgrep -fl
-   caffeinate`), another window focused for a minute with `:notify text`
-   and `:away 1m` (the note, its click, the digest on return), the
-   activity bar on a working row; `:notify push` to a throwaway topic.
+Steps: `scenarios/EYE-1.scn`: a change and a question waiting; Home, the
+question, the change, the help and the journal each looked at in English
+and in Turkish (`L`, then `:lang`); then at 60×20.
 
-Expect: in Turkish no English word is left and nothing is cut that was
-whole in English; at 60×20 every row that decides reads whole; the mark
-comes dot by dot and is whole after a key; the farewell says what waits,
-what sleeps, what this run spent and `resume: imece`; a working row
-breathes, nothing moves with motion off or in another window; each theme
-draws the whole screen; one `caffeinate` child while a turn runs and none
-after; one note in another window, its click opens the item; the push
-comes once.
+Expect: in Turkish no English text of imece's is left (`eye.py english`:
+no piece of `i18n.rs`'s English that the Turkish does not share) and no
+row is cut (`…`) that was whole in English (`eye.py cut`); at 60×20 every
+row of TO DECIDE reads whole, in both (`eye.py whole`).
+
+### EYE-2 · What moves, and the cursor
+
+- records: 77, 81, 84, 85
+- commands: :motion
+- tier: stand-in
+
+Steps: `scenarios/EYE-2.scn`: a worker held at its first step
+(`[slow 40]`); looks a beat apart with `:motion calm`, `full` and `off`,
+and in another window (`focus out`); the worker's log; `/`, a text,
+`ctrl-a`.
+
+Expect: calm, the working row breathes (its colours change, its words do
+not); full, the header's spinner turns; off, and in another window,
+nothing moves; the worker's log has its activity line (`trace lines in 2
+min`); the terminal's cursor stands after the text written, and after
+`› to lead:` at `ctrl-a`.
+
+### EYE-3 · The themes
+
+- records: 15
+- commands: :theme
+- tier: stand-in
+
+Steps: `scenarios/EYE-3.scn`: a change waiting; `T` through every theme
+and round to the first; `:theme nord`; `:quit`; a start.
+
+Expect: each theme is said (`theme: NAME`) and draws the screen; each
+base16 scheme paints every cell in a background of its own (`eye.py
+themed`); the next start draws with the theme chosen last.
+
+### EYE-4 · Away from the screen: awake, notes, the digest, a push
+
+- records: 52, 53, 60, 83, 91
+- commands: :awake, :notify, :away
+- tier: stand-in
+
+Steps: `scenarios/EYE-4.scn`: a push server of the case's own on loopback
+and a `push` file for it; imece as kitty 0.40 (`relay.py`); `:awake`,
+`:notify text`, `:away 1m`; a worker held at work (`[slow 12]`); another
+window for a minute; back; kitty's click report; `:notify push`; another
+window and a new task.
+
+Expect: on macOS one `caffeinate` child of imece while the turn runs and
+none after; in another window a note (`OSC 99`, `i=imece-1`) for what came
+to wait, each once (no note more once all has come); back after the
+minute, `WHILE YOU WERE AWAY`; the click report opens the item it told of;
+away again, a push to the server (`claude-1 finished: change ready ·
+shelf`), each thing once.
+
+### EYE-5 · The mark and the last words
+
+- records: 75, 101
+- commands: :quit
+- tier: stand-in
+
+Steps: `scenarios/EYE-5.scn`: a first start, looked at a beat apart; a
+key; a task with its asks left waiting; `q q`.
+
+Expect: the welcome's mark comes cell by cell (`eye.py dots`) and Home's
+is whole and still after a key; after the quit the terminal holds one line:
+`⁙ imece · N to decide · N agents asleep · $… spent this run · resume:
+imece`.
 
 ## The demo
 

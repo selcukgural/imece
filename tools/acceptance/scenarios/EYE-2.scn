@@ -1,0 +1,73 @@
+# EYE-2 · What moves: a working row breathes and shows what it did lately;
+# nothing moves with motion off or in another window; the terminal's
+# cursor is where the person types.
+start
+see any key: close
+key Escape
+key /
+type mend shelf.py [slow 40]
+key Enter
+key Escape Escape
+see run .imece/worktree-setup.sh
+key g d
+key a
+# The worker at its first step for 40 s: its row on Home is at work.
+see Read the code around it
+# Calm motion (the default): its glyph breathes, a beat dim and a beat not
+# (record 84). Looks 0.25 s apart: one of them falls on another beat.
+look calm-1.txt
+sleep 0.25
+look calm-2.txt
+sleep 0.25
+look calm-3.txt
+sleep 0.25
+look calm-4.txt
+sh python3 -I $ACC_SOURCE/tools/acceptance/eye.py moved '#1   mend shelf.py' calm-1.txt calm-2.txt calm-3.txt calm-4.txt
+# Full motion: the header's spinner turns too.
+type :motion full
+key Enter
+see full motion: spinners too
+look full-1.txt
+sleep 0.15
+look full-2.txt
+sleep 0.15
+look full-3.txt
+sh python3 -I $ACC_SOURCE/tools/acceptance/eye.py turns '1 to read' full-1.txt full-2.txt full-3.txt
+# What it did lately: the activity line on its log (record 85), a column
+# of the bar for each tick.
+key G
+key Enter
+see activity:
+see trace lines in 2 min:
+key Escape
+# Motion off: nothing breathes.
+type :motion off
+key Enter
+see nothing moves on the screen
+look off-1.txt
+sleep 0.35
+look off-2.txt
+sleep 0.35
+look off-3.txt
+sh python3 -I $ACC_SOURCE/tools/acceptance/eye.py same '#1   mend shelf.py' off-1.txt off-2.txt off-3.txt
+# Calm again, in another window: nothing moves there either.
+type :motion calm
+key Enter
+see calm motion: a working row breathes
+focus out
+sleep 1
+look away-1.txt
+sleep 0.35
+look away-2.txt
+sleep 0.35
+look away-3.txt
+sh python3 -I $ACC_SOURCE/tools/acceptance/eye.py same '#1   mend shelf.py' away-1.txt away-2.txt away-3.txt
+focus in
+# The cursor sits right after what is typed, the terminal's own.
+key /
+type the cursor is here
+cursor the cursor is here
+# ctrl-a: the start of the line, after its prompt.
+key C-a
+cursor › to lead:
+key Escape
