@@ -129,20 +129,51 @@ impl App {
         }
     }
 
-    /// The card the piece of work is about: the one an open item of the
-    /// agent's came on (a change stays with the card it was made for),
-    /// else the agent's.
+    /// The card the piece of work is about: on the diff the change's (it
+    /// stays with the card it was made for), on the other tabs the
+    /// question's the frame shows under the head, else the card of any
+    /// open item of the agent's, else the agent's. The oldest item's card
+    /// won before, so a question on #2 was headed with #1's change
+    /// (#486).
     pub fn detail_card(&self, id: AgentId) -> Option<CardId> {
+        self.card_on(id, self.tab_of(id))
+    }
+
+    /// The tab agent `id`'s detail is open at; the log when it is not.
+    fn tab_of(&self, id: AgentId) -> Tab {
+        match self.detail() {
+            Some((at, tab)) if at == id => tab,
+            _ => Tab::Log,
+        }
+    }
+
+    /// `detail_card` at `tab`, for a head drawn at a tab of its own.
+    pub fn card_on(&self, id: AgentId, tab: Tab) -> Option<CardId> {
         let w = &self.world;
         // A card's own screen is about that card.
         if let Some(c) = self.card {
             return Some(c);
         }
-        (w.open_inbox().into_iter())
-            .map(|i| &w.inbox[i])
-            .filter(|it| it.agent == id)
-            .find_map(|it| it.card)
+        let shown = match tab {
+            Tab::Diff => InboxKind::Change,
+            Tab::Talk | Tab::Log => InboxKind::Question,
+        };
+        (w.open_item(id, shown).and_then(|it| it.card))
+            .or_else(|| {
+                (w.open_inbox().into_iter())
+                    .map(|i| &w.inbox[i])
+                    .filter(|it| it.agent == id)
+                    .find_map(|it| it.card)
+            })
             .or(w.agents[id].card)
+    }
+
+    /// The card agent `id`'s open question came on, when it is not the
+    /// one the detail's head names: a question over another card's diff
+    /// says whose it is (#486).
+    pub fn question_elsewhere(&self, id: AgentId) -> Option<CardId> {
+        let c = (self.world.open_item(id, InboxKind::Question)).and_then(|it| it.card)?;
+        (self.detail_card(id) != Some(c)).then_some(c)
     }
 }
 
@@ -349,6 +380,38 @@ mod tests {
         assert_eq!(app.detail_card(one), Some(0), "a closed item says nothing");
         app.world.agents[one].card = None;
         assert_eq!(app.detail_card(one), None);
+    }
+
+    #[test]
+    fn the_head_names_the_card_of_what_was_opened_not_the_oldest_item_s() {
+        // #486: a change on #1 waits, then a question on #2 comes.
+        let mut app = team();
+        let (one, _) = workers(&app);
+        app.world.change_ready(change(one));
+        let i = app.world.inbox.len() - 1;
+        app.world.inbox[i].card = Some(0);
+        app.world
+            .asked_you(one, "May I change what cli.py returns?");
+        let i = app.world.inbox.len() - 1;
+        app.world.inbox[i].card = Some(1);
+        app.world.agents[one].card = Some(1);
+        for tab in [Tab::Log, Tab::Talk] {
+            app.open_tab(one, tab);
+            assert_eq!(app.detail_card(one), Some(1), "{tab:?}: the question's");
+            assert_eq!(app.question_elsewhere(one), None, "{tab:?}");
+        }
+        app.open_tab(one, Tab::Diff);
+        assert_eq!(app.detail_card(one), Some(0), "the change's");
+        assert_eq!(app.question_elsewhere(one), Some(1), "over #1's diff");
+        assert_eq!(
+            app.card_on(one, Tab::Log),
+            Some(1),
+            "a head drawn at its own tab"
+        );
+        // The question answered: the diff's card alone.
+        app.world.inbox[i].open = false;
+        assert_eq!(app.question_elsewhere(one), None);
+        assert_eq!(app.detail_card(one), Some(0));
     }
 
     #[test]

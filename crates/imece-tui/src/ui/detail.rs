@@ -36,7 +36,7 @@ fn title_of(app: &App, id: AgentId, tab: Tab) -> String {
     let w = &app.world;
     let t = app.lang.text();
     let a = &w.agents[id];
-    if let Some(c) = app.detail_card(id).and_then(|c| w.cards.get(c)) {
+    if let Some(c) = app.card_on(id, tab).and_then(|c| w.cards.get(c)) {
         return clean(&c.title);
     }
     if tab == Tab::Diff
@@ -60,7 +60,7 @@ pub(crate) fn head_line(app: &App, id: AgentId, tab: Tab, width: usize) -> Line<
     let w = &app.world;
     let a = &w.agents[id];
     let mut spans = Vec::new();
-    if let Some(c) = app.detail_card(id) {
+    if let Some(c) = app.card_on(id, tab) {
         spans.push(Span::styled(format!("{} ", words::card_ref(c)), dim()));
     }
     spans.push(Span::styled(title_of(app, id, tab), bold(pal().strong)));
@@ -118,7 +118,7 @@ pub(crate) fn head_lines(app: &App, id: AgentId, tab: Tab, width: usize) -> Vec<
     if line.width() <= width {
         return vec![line];
     }
-    let title = 1 + usize::from(app.detail_card(id).is_some());
+    let title = 1 + usize::from(app.card_on(id, tab).is_some());
     let mut spans = line.spans;
     let mut rest = spans.split_off(title.min(spans.len()));
     if let Some(first) = rest.first_mut() {
@@ -146,6 +146,16 @@ pub(crate) fn question_lines(
         fill(t.asks_you_head, &[&name]),
         bold(pal().warn),
     )];
+    // Over another card's work (its diff) the question says its own card.
+    if let Some(c) = app.question_elsewhere(id) {
+        let title = (app.world.cards.get(c)).map_or(String::new(), |card| clean(&card.title));
+        head.push(Span::styled(
+            format!(" · {} {title}", words::card_ref(c))
+                .trim_end()
+                .to_string(),
+            dim(),
+        ));
+    }
     // A leader's question about a worker's block (record 143) says why
     // it asks, and reads the worker's words and what the leader tried
     // before the question.
@@ -488,6 +498,50 @@ mod tests {
         };
         assert!(text(&tr[0]).ends_with("sana soruyor"));
         assert!(text(tr.last().unwrap()).contains("kendi yanıtını yaz"));
+    }
+
+    #[test]
+    fn a_question_over_another_card_s_diff_says_its_card() {
+        // #486: #1's change waits, #2's question is asked.
+        let mut app = team();
+        let a = worker(&app);
+        let name = app.world.agents[a].name.clone();
+        app.world.cards[0].title = "mend shelf.py".into();
+        app.world.cards[1].title = "mend \u{1b}[31mcli.py".into();
+        app.world.change_ready(change(a, 1));
+        let i = app.world.inbox.len() - 1;
+        app.world.inbox[i].card = Some(0);
+        app.world.asked_you(a, "May I?");
+        let i = app.world.inbox.len() - 1;
+        app.world.inbox[i].card = Some(1);
+        let q = Question {
+            text: "May I?",
+            options: &[],
+        };
+        let head = |app: &App, tab| text(&head_line(app, a, tab, 120));
+        let asks = |app: &App| text(&question_lines(app, a, &q, 120)[0]);
+        app.zoom = Zoom::Focus(a);
+        assert!(
+            head(&app, Tab::Log).starts_with("#2 mend"),
+            "{}",
+            head(&app, Tab::Log)
+        );
+        assert_eq!(
+            asks(&app),
+            format!("{name} asks you"),
+            "its own card is the head's"
+        );
+        app.zoom = Zoom::Diff(a);
+        assert!(
+            head(&app, Tab::Diff).starts_with("#1 mend shelf.py · "),
+            "{}",
+            head(&app, Tab::Diff)
+        );
+        let cli = clean("mend \u{1b}[31mcli.py");
+        assert_eq!(asks(&app), format!("{name} asks you · #2 {cli}"), "cleaned");
+        let lines = question_lines(&app, a, &q, 120);
+        let card = lines[0].spans.iter().find(|s| s.content.contains("#2"));
+        assert_eq!(card.map(|s| s.style), Some(dim()), "{:?}", lines[0]);
     }
 
     #[test]

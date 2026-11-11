@@ -246,11 +246,14 @@ said with the person else with anyone; the log always), `open_tab` (the
 diff and the log close a conversation; the talk opens over what was
 there); a digit and `/` work on a question's detail as on Home
 (`question_at_hand` covers the detail). `ui::detail::frame` draws the
-head (`head_line`: the card the open item came on else the agent's
-(`detail_card`), the card's title else the change's on the diff else the
+head (`head_line`: the card of what the tab shows (`detail_card`/`card_on`:
+on the diff the change's item's, on talk and log the open question's,
+else any open item's, else the agent's; the oldest item's won before,
+so a question on #2 was headed with #1's change, #486), the card's title else the change's on the diff else the
 focus's first words, project, agent, `ago` since `App::since`, cost; on
 the diff the files and lines and `place_among` at the right), a question's
-block (`question_lines`: `{} asks you`, the ask whole cleaned line by
+block (`question_lines`: `{} asks you`, ` · #2 title` when its card is
+not the head's (`App::question_elsewhere`: over another card's diff), the ask whole cleaned line by
 line, the answers with their key badges and `/ write your own answer`),
 and the tab bar (`tab_line`: the open tab bold, one without content dim,
 `tab switches` when another has); the bodies draw under it: `focus::draw`
