@@ -12,8 +12,10 @@ a mock-up.
 (`@`), a command (`/`, `:`), a card (`#`) or a jump (`&`) has a drop-down
 list: `Menu.list`, drawn by `ui::footer::word_list` over the screen above
 the line, at the column the word starts in (the cursor less the word's
-cells), slid left at the right edge, from the row above the line up and
-never over the header. There is no frame: the rows have a ground of their
+cells), slid left at the right edge, from the row above the text being
+written up (above its first row, so a text of several lines is never
+covered; above the cursor's row when that one scrolled out of view above
+it) and never over the header. There is no frame: the rows have a ground of their
 own (`Theme.selection`; nothing in mono), because a box would change its
 width with every key and take two rows more; the person chose this over
 the boxed mock-up. Its width is the widest row's, at least `LIST_MIN` 24
@@ -41,6 +43,21 @@ word, only on a word begun where it began or on the next one, or by
 opens one from the first letter, the files by any part of their path
 when no word starts so (record 67's `complete::files`), and takes a word
 that is the only one.
+
+**Mid-line and over lines.** The word is the one that ends at the cursor
+(`App::word_at_cursor`), on any line of the text and with text after the
+cursor: `Menu.end` is where it ends, `Menu::insert` replaces only
+`start..end` (`complete::TO_END` for the row menu's words, which end
+where the line does) and keeps what follows, so the cursor stays after
+the word taken. No list while the cursor is inside a word
+(`line::word_goes_on`: a letter, a `/`, or a `.` before a letter follows
+it); a space, a sentence's dot or an apostrophe ends it, so a suffix
+written already stays (`retry_pol|'yi` → `retry_policy'yi`). Only a key
+that changes the text opens the list by itself; moving the cursor alone
+does not, or every word passed with `← →` would open one, and `tab` opens
+it where the cursor stands. The row menu of `@ : # & ^r` stays on a
+single line with the cursor at its end. Over several lines `↑ ↓` move in
+an open list as on one line; with no list open they go between lines.
 
 **Where the words come from** (`pool.rs`, pure): the conversation at
 hand's messages, then the rest said in the project at hand (the journal's
@@ -94,7 +111,8 @@ likely word.
 **Gaps.** The names are words, not a language's symbols: a word in a
 comment counts as one in the code, and nothing tells a function from a
 local. A file changed is read again only with the whole listing (no cache
-by file). A list with the
-cursor mid-line or on a text of several lines needs `Menu::insert` to
-keep what follows the cursor: the one after. The demo shows the list
-through the same `App` on its own talk and files (`Project.repo`).
+by file). The cursor inside a word has no list: completing the
+word's start while keeping its rest (an IDE's "insert" mode) or
+replacing it whole ("replace" mode) is a choice nobody asked for yet.
+The demo shows the list through the same `App` on its own talk and files
+(`Project.repo`).

@@ -163,7 +163,7 @@ pub fn draw(f: &mut Frame, app: &App) {
     // The word list over everything drawn so far, above the line; what
     // breathes under it is drawn whole again, not patched.
     if let (Some(m), Some(at)) = (app.menu.as_ref().filter(|m| app.typing && m.list), line)
-        && footer::word_list(f, &app.input, m, at, head.bottom()).is_some()
+        && footer::word_list(f, &app.input, m, at, (head.bottom(), foot.y)).is_some()
     {
         *app.breathing.borrow_mut() = None;
     }

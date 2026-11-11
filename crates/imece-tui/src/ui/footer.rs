@@ -103,24 +103,26 @@ fn cut_cells(s: &str, room: usize) -> String {
 }
 
 /// The word list (record 149), drawn over the screen with no frame: rows
-/// of a background of their own, from the row above the line up, the
-/// first item on top, as many as [`LIST_ROWS`] and the rows below `top`
-/// allow; at the column the word being written starts in (the cursor
-/// `caret` less the word's cells), slid left where it would leave the
-/// screen. Each row is ` item … note `; the item at hand bold, and in
-/// the selection's colour (reversed in mono) once the person moved to
-/// it; the rows scroll to keep it, the last row counting `+N` below.
-/// The area drawn, none when there is no room.
+/// of a background of their own, up from `floor` (the row the text being
+/// written starts on, so no line of it is covered; the cursor's own row
+/// at most), the first item on top, as many as [`LIST_ROWS`] and the
+/// rows below `top` allow; at the column the word being written starts
+/// in (the cursor `caret` less the word's cells), slid left where it
+/// would leave the screen. Each row is ` item … note `; the item at hand
+/// bold, and in the selection's colour (reversed in mono) once the person
+/// moved to it; the rows scroll to keep it, the last row counting `+N`
+/// below. The area drawn, none when there is no room.
 pub(super) fn word_list(
     f: &mut Frame,
     input: &str,
     m: &crate::complete::Menu,
     caret: Position,
-    top: u16,
+    (top, floor): (u16, u16),
 ) -> Option<Rect> {
     let screen = f.area();
+    let floor = floor.min(caret.y);
     let rows = LIST_ROWS
-        .min(caret.y.saturating_sub(top))
+        .min(floor.saturating_sub(top))
         .min(u16::try_from(m.items.len()).unwrap_or(u16::MAX));
     if rows == 0 || screen.width == 0 {
         return None;
@@ -139,13 +141,14 @@ pub(super) fn word_list(
         .min(usize::from(screen.width));
     let first = (m.chosen + 1).saturating_sub(usize::from(rows));
     let below = m.items.len() - first - usize::from(rows);
-    let typed = input.get(m.start..).map_or(0, |w| clean(w).width());
+    let end = m.end.min(input.len());
+    let typed = input.get(m.start..end).map_or(0, |w| clean(w).width());
     let x = caret
         .x
         .saturating_sub(u16::try_from(typed).unwrap_or(u16::MAX));
     let w16 = u16::try_from(width).unwrap_or(u16::MAX);
     let x = x.min(screen.right().saturating_sub(w16));
-    let area = Rect::new(x, caret.y - rows, w16, rows);
+    let area = Rect::new(x, floor - rows, w16, rows);
     let p = pal();
     let row_style = if p.mono {
         Style::new()

@@ -9,8 +9,9 @@ impl App {
     /// ctrl-n / ctrl-p) step too, `enter` takes the highlighted match
     /// when the word is not in yet, else sends, and `esc` hides the menu
     /// before it cancels the writing. The rest are readline's editing
-    /// keys (`edit::key`); the menu is offered only with the cursor at
-    /// the end, since a completion replaces the word the line ends with.
+    /// keys (`edit::key`); the one-row menu is offered only on one line
+    /// with the cursor at the end, the word list (record 149) at the end
+    /// of any word the cursor stands after, on any line.
     /// Shift-enter, alt-enter and enter after a `\` start a new line;
     /// `↑` `↓` go between lines while no menu is shown.
     pub(super) fn type_key(&mut self, k: KeyEvent) {
@@ -109,7 +110,6 @@ impl App {
                 self.menu = self.suggest();
             }
             KeyCode::Tab => match &mut self.menu {
-                None if self.after > 0 => {}
                 // `tab` opens the list when it was not open (from one
                 // letter, the files by any part of their path when no
                 // word starts so) and takes a word that is the only one.
@@ -160,7 +160,8 @@ impl App {
     }
 
     /// The line was `was` with the cursor at `at`; now the cursor is at
-    /// `to`. A change or a move asks the menu again, at the end only.
+    /// `to`. A change asks the menu again; a move alone only the one-row
+    /// menu.
     fn moved(&mut self, was: &str, at: usize, to: usize) {
         self.after = self.input.len() - to;
         if self.input != was {
@@ -175,12 +176,13 @@ impl App {
         {
             self.word_closed = None;
         }
-        if to != at || self.input != was {
-            self.menu = if self.after == 0 {
-                self.suggest()
-            } else {
-                None
-            };
+        if self.input != was {
+            self.menu = self.suggest();
+        } else if to != at {
+            // A move alone: the one-row menu at the line's end as ever; the
+            // word list waits for a key that writes, or `tab`, so moving
+            // through the text does not open it at every word passed.
+            self.menu = self.suggest().filter(|m| !m.list);
         }
     }
 
@@ -237,19 +239,23 @@ impl App {
     }
 
     /// The word list's item at hand goes in place of the word, nothing
-    /// after it (a Turkish suffix may follow: `retry_policy'yi`), and the
+    /// after it (a Turkish suffix may follow: `retry_policy'yi`), what
+    /// follows the cursor kept and the cursor after the item, and the
     /// list closes until the line changes again.
     fn take_word(&mut self) {
         if let Some(mut m) = self.menu.take() {
+            // The cursor stands as far from the end as before: only what
+            // was before it changed.
             m.insert(&mut self.input);
-            self.after = 0;
             self.recall = None;
             self.word_closed = None;
         }
     }
 
-    /// What the composer could complete the input with, now. Nothing once
-    /// the text runs over lines: a name or a command is on one.
+    /// What the composer could complete the input with, now. Once the
+    /// text runs over lines or the cursor stands before its end, only the
+    /// word list (record 149): a name, a command, a card or a place to go
+    /// is the whole of a line.
     pub(super) fn suggest(&self) -> Option<Menu> {
         self.suggest_with(false)
     }
@@ -257,8 +263,11 @@ impl App {
     /// [`suggest`](Self::suggest); `forced` when `tab` asked, which
     /// completes any word of a message to a file.
     fn suggest_with(&self, forced: bool) -> Option<Menu> {
-        if self.input.contains('\n') || self.noting.is_some() {
+        if self.noting.is_some() {
             return None;
+        }
+        if self.input.contains('\n') || self.cursor() < self.input.len() {
+            return (!self.searching).then(|| self.word_menu(forced)).flatten();
         }
         if self.searching && self.recalling {
             return self.recall_menu();
@@ -408,20 +417,28 @@ impl App {
         }
     }
 
-    /// The word a message or a `!` line ends with, up to the space before
-    /// it. None on the lines that are something else (`:` `#` `&`), for
-    /// a name (`@`) or a command (`/`).
-    fn last_word(&self) -> Option<&str> {
+    /// The word of a message or a `!` line that ends at the cursor, from
+    /// the space (or line end) before it, and where it starts; on any
+    /// line of the text (record 149). None on the lines that are
+    /// something else (`:` `#` `&`), for a name (`@`) or a command (`/`),
+    /// and with the cursor inside a word ([`word_goes_on`]).
+    fn word_at_cursor(&self) -> Option<(usize, &str)> {
         if self.input.starts_with([':', '#', '&']) {
             return None;
         }
-        let word = (self.input.rsplit(char::is_whitespace).next()).unwrap_or_default();
-        let word = if word.len() == self.input.len() {
-            word.strip_prefix('!').unwrap_or(word)
-        } else {
-            word
-        };
-        (!word.is_empty() && !word.starts_with(['@', '/'])).then_some(word)
+        let at = self.cursor();
+        if word_goes_on(&self.input[at..]) {
+            return None;
+        }
+        let before = &self.input[..at];
+        let mut start = before.rfind(char::is_whitespace).map_or(0, |i| {
+            i + before[i..].chars().next().map_or(1, char::len_utf8)
+        });
+        if start == 0 && before.starts_with('!') {
+            start = 1;
+        }
+        let word = &before[start..];
+        (!word.is_empty() && !word.starts_with(['@', '/'])).then_some((start, word))
     }
 
     /// The drop-down list for the word the line ends with (record 149):
@@ -434,7 +451,8 @@ impl App {
     /// from (a leased file: its holder); nothing follows a word taken.
     /// Not again on the word whose list `esc` closed, unless `tab` asked.
     fn word_menu(&self, forced: bool) -> Option<Menu> {
-        let whole = self.last_word()?;
+        let (_, whole) = self.word_at_cursor()?;
+        let at = self.cursor();
         let t = self.lang.text();
         // A word with a dot is a file's name more often than not: the
         // files by any part of their path first, the word after the dot
@@ -447,12 +465,12 @@ impl App {
         } else if let Some(m) = dotted {
             m
         } else {
-            let start = pool::word_start(&self.input, self.input.len());
+            let start = pool::word_start(&self.input, at);
             let p = self.current_project();
             let files = self.world.files_of(p);
             let code = self.world.names_of(p);
             let said = self.said_texts();
-            let picks = pool::picks(&self.input[start..], forced, said, &code, &files);
+            let picks = pool::picks(&self.input[start..at], forced, said, &code, &files);
             if picks.is_empty() {
                 if !forced {
                     return None;
@@ -476,6 +494,7 @@ impl App {
         }
         m.list = true;
         m.tail = "";
+        m.end = at;
         for note in &mut m.notes {
             if note.is_empty() {
                 *note = t.from_file.to_string();
@@ -534,17 +553,18 @@ impl App {
             .unwrap_or_default()
     }
 
-    /// The last word of a message or a `!` line, completed to a file of
-    /// the project at hand, or a symbol leased on its code map
+    /// The word at the cursor of a message or a `!` line, completed to a
+    /// file of the project at hand, or a symbol leased on its code map
     /// (`file::name`), the holder of the file as the note (see
     /// [`complete::files`]).
     fn file_menu(&self, forced: bool) -> Option<Menu> {
-        let word = self.last_word()?;
-        let start = self.input.len() - word.len();
+        let (start, word) = self.word_at_cursor()?;
         let paths = self.world.files_of(self.current_project());
         let held = self.held();
         let symbols: Vec<(&str, &str)> = held.iter().map(|h| (h.0, h.1)).collect();
-        complete::files(start, word, forced, &paths, &symbols, |f| self.file_note(f))
+        let mut m = complete::files(start, word, forced, &paths, &symbols, |f| self.file_note(f))?;
+        m.end = start + word.len();
+        Some(m)
     }
 
     /// Where the terminal's own cursor stands and what it looks like, while
@@ -967,6 +987,20 @@ impl App {
     }
 }
 
+/// Whether `after`, the text after the cursor, carries on the word before
+/// it: a word's letter, a `/`, or a `.` before a letter (`src/a|.rs`). A
+/// dot that ends a sentence, a space or an apostrophe (a Turkish suffix
+/// written already: `retry_pol|'yi`) does not.
+fn word_goes_on(after: &str) -> bool {
+    let mut chars = after.chars();
+    match chars.next() {
+        Some('/') => true,
+        Some('.') => chars.next().is_some_and(pool::word_char),
+        Some(c) => pool::word_char(c),
+        None => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::tests::*;
@@ -1191,6 +1225,86 @@ mod tests {
     }
 
     #[test]
+    fn the_word_list_opens_mid_line_and_taking_keeps_what_follows_the_cursor() {
+        let mut app = writing_after("keep quorum_size and quorum_wait");
+        type_in(&mut app, "fix the  later");
+        for _ in 0..6 {
+            app.on_key(key(KeyCode::Left));
+        }
+        type_in(&mut app, "qu");
+        assert_eq!(items(&app), ["quorum_wait", "quorum_size"]);
+        assert_eq!(app.menu.as_ref().map(|m| (m.start, m.end)), Some((8, 10)));
+        app.on_key(key(KeyCode::Tab));
+        assert_eq!(app.input, "fix the quorum_wait later");
+        assert_eq!(app.cursor(), "fix the quorum_wait".len(), "after the word");
+        assert!(app.menu.is_none());
+        // Moved to the second: enter takes it mid-line, nothing sent.
+        type_in(&mut app, " qu");
+        app.on_key(key(KeyCode::Down));
+        app.on_key(key(KeyCode::Enter));
+        assert!(app.typing);
+        assert_eq!(app.input, "fix the quorum_wait quorum_size later");
+        // Writing on goes in at the cursor.
+        type_in(&mut app, "'yi");
+        assert_eq!(app.input, "fix the quorum_wait quorum_size'yi later");
+    }
+
+    #[test]
+    fn inside_a_word_no_list_and_a_move_alone_opens_none_but_tab_does() {
+        let mut app = writing_after("keep quorum_size and quorum_wait");
+        // The cursor inside `quxrum`: what follows carries the word on.
+        type_in(&mut app, "fix qurum");
+        for _ in 0..3 {
+            app.on_key(key(KeyCode::Left));
+        }
+        type_in(&mut app, "o");
+        assert!(app.menu.is_none(), "{:?}", app.menu);
+        app.on_key(key(KeyCode::Tab));
+        assert!(app.menu.is_none() && app.input == "fix quorum");
+        // A suffix written already: moving back after `qu` opens nothing,
+        // `tab` opens the list there and the suffix stays.
+        let mut app = writing_after("keep quorum_size and quorum_wait");
+        type_in(&mut app, "fix qu'yi now");
+        for _ in 0..7 {
+            app.on_key(key(KeyCode::Left));
+        }
+        assert!(app.menu.is_none(), "a move alone");
+        app.on_key(key(KeyCode::Tab));
+        assert_eq!(items(&app), ["quorum_wait", "quorum_size"]);
+        app.on_key(key(KeyCode::Tab));
+        assert_eq!(app.input, "fix quorum_wait'yi now");
+        // `esc` closes it on that word mid-line too; the next word has one.
+        type_in(&mut app, " qu");
+        assert!(app.menu.is_some());
+        app.on_key(key(KeyCode::Esc));
+        assert!(app.typing && app.menu.is_none());
+        type_in(&mut app, "o");
+        assert!(app.menu.is_none(), "closed on that word");
+        type_in(&mut app, " qu");
+        assert!(app.menu.is_some(), "the next word");
+    }
+
+    #[test]
+    fn a_word_goes_on_past_the_cursor_only_with_a_letter_a_slash_or_an_extension() {
+        for (after, on) in [
+            ("", false),
+            (" later", false),
+            ("'yi", false),
+            (",", false),
+            (".", false),
+            (". Then", false),
+            ("x", true),
+            ("_size", true),
+            ("ç", true),
+            ("7", true),
+            ("/Money.cs", true),
+            (".rs", true),
+        ] {
+            assert_eq!(word_goes_on(after), on, "{after:?}");
+        }
+    }
+
+    #[test]
     fn the_lines_that_are_something_else_keep_their_one_row() {
         let mut app = writing_after("keep quorum_size and quorum_wait");
         for line in [":re", "#re", "&re", "@re"] {
@@ -1204,11 +1318,15 @@ mod tests {
             app.on_key(key(KeyCode::Esc));
             app.typing = true;
         }
-        // Over several lines, nothing yet.
+        // Over several lines the word list, never a line's one row.
         type_in(&mut app, "x\\");
         app.on_key(key(KeyCode::Enter));
         type_in(&mut app, "qu");
-        assert!(app.menu.is_none());
+        assert!(app.menu.as_ref().is_some_and(|m| m.list));
+        app.on_key(key(KeyCode::Tab));
+        assert_eq!(app.input, "x\nquorum_wait");
+        type_in(&mut app, " @re");
+        assert!(app.menu.is_none(), "{:?}", app.menu);
     }
 
     #[test]
@@ -1623,7 +1741,14 @@ mod tests {
         type_in(&mut app, "x\\");
         app.on_key(KeyEvent::from(KeyCode::Enter));
         type_in(&mut app, "src/Or");
-        assert!(app.menu.is_none(), "over lines");
+        assert_eq!(
+            menu(&app),
+            ["src/Orders/Money.cs", "src/Orders/OrderService.cs"],
+            "over lines too"
+        );
+        assert_eq!(app.menu.as_ref().map(|m| m.start), Some(9));
+        tab(&mut app);
+        assert_eq!(app.input, "src/Or x\nsrc/Orders/Money.cs");
         app.on_key(KeyEvent::from(KeyCode::Esc));
         // A symbol leased on the code map: `file::name`, the holder as the
         // note of the file and of its symbols.

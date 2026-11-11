@@ -33,4 +33,22 @@ gone tab take
 key C-u
 type and datac
 see dataclass
-key C-u Escape Escape
+# Mid-line: the word ending at the cursor, what follows it kept.
+key C-u
+type see  later
+key Left Left Left Left Left Left
+gone tab take
+type coun
+see tab take · ↓ choose · esc close
+key Tab
+see see counter_total_rows later
+gone tab take
+# On the second line of a text, writing opens the list too.
+key C-e C-u
+type first\
+key Enter
+type coun
+see tab take · ↓ choose · esc close
+key Tab
+gone tab take
+key Escape Escape

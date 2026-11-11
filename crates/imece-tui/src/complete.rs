@@ -55,11 +55,18 @@ pub fn long(word: &str) -> &str {
 /// What `:lang` takes.
 pub const LANGS: [&str; 2] = ["en", "tr"];
 
+/// [`Menu::end`] for a word that ends where the input does.
+pub const TO_END: usize = usize::MAX;
+
 /// The matches for the word being typed.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Menu {
     /// Where the word starts in the input (a byte offset).
     pub start: usize,
+    /// Where it ends: the cursor (record 149), so what follows it stays
+    /// when an item goes in; [`TO_END`] for a word the input ends with.
+    /// After an item went in, where that item ends.
+    pub end: usize,
     pub items: Vec<String>,
     /// The highlighted item.
     pub chosen: usize,
@@ -88,6 +95,7 @@ impl Menu {
         }
         Some(Menu {
             start,
+            end: TO_END,
             items,
             chosen: 0,
             tail,
@@ -98,11 +106,14 @@ impl Menu {
         })
     }
 
-    /// Puts the highlighted item into `input` in place of the word.
+    /// Puts the highlighted item into `input` in place of the word (or
+    /// of the item put in before), what follows it kept.
     pub fn insert(&mut self, input: &mut String) {
-        input.truncate(self.start);
-        input.push_str(&self.items[self.chosen]);
-        input.push_str(self.tail);
+        let start = self.start.min(input.len());
+        let end = self.end.clamp(start, input.len());
+        let put = format!("{}{}", self.items[self.chosen], self.tail);
+        input.replace_range(start..end, &put);
+        self.end = start + put.len();
         self.inserted = true;
     }
 
@@ -1216,6 +1227,35 @@ mod tests {
         m.insert(&mut input);
         assert_eq!(input, ":lang en");
         assert_eq!(Menu::new(0, vec![], " "), None);
+    }
+
+    #[test]
+    fn inserting_mid_text_keeps_what_follows_and_again_replaces_the_item_put_in() {
+        let mut m = Menu::new(4, vec!["quorum_size".into(), "quiet".into()], "").unwrap();
+        m.end = 6;
+        let mut input = String::from("fix qu'yi\nnow");
+        m.insert(&mut input);
+        assert_eq!(input, "fix quorum_size'yi\nnow");
+        assert_eq!(m.end, 15, "where the item ends");
+        m.step(true);
+        m.insert(&mut input);
+        assert_eq!(input, "fix quiet'yi\nnow", "the first item replaced whole");
+        // An end past the text (`TO_END`, or a stale one) stops at it; a
+        // start past it puts the item at the end.
+        let mut m = Menu::new(2, vec!["xyz".into()], " ").unwrap();
+        let mut input = String::from("ab");
+        m.insert(&mut input);
+        assert_eq!(input, "abxyz ");
+        let mut m = Menu::new(9, vec!["xyz".into()], "").unwrap();
+        let mut input = String::from("ab");
+        m.insert(&mut input);
+        assert_eq!(input, "abxyz");
+        // An end before the start stops at the start: nothing is lost.
+        let mut m = Menu::new(2, vec!["xyz".into()], "").unwrap();
+        m.end = 1;
+        let mut input = String::from("abcd");
+        m.insert(&mut input);
+        assert_eq!(input, "abxyzcd");
     }
 
     #[test]
