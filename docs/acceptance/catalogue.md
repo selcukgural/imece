@@ -831,18 +831,20 @@ Expect: the diff shows `max_tokens=5` as it is and never the token's value, whic
 
 ### EYE-1 · The screens in both languages and on a small terminal
 
-- records: 131
+- records: 125, 131
 - commands: :lang
 - tier: stand-in
 
-Steps: `scenarios/EYE-1.scn`: a change and a question waiting; Home, the
+Steps: `scenarios/EYE-1.scn`: a change (#1) and a question (#2) of one worker waiting; Home, the
 question, the change, the help and the journal each looked at in English
 and in Turkish (`L`, then `:lang`); then at 60×20.
 
 Expect: in Turkish no English text of imece's is left (`eye.py english`:
 no piece of `i18n.rs`'s English that the Turkish does not share) and no
 row is cut (`…`) that was whole in English (`eye.py cut`); at 60×20 every
-row of TO DECIDE reads whole, in both (`eye.py whole`).
+row of TO DECIDE reads whole, in both (`eye.py whole`). The question's
+detail is headed with #2, its own card; over #1's diff the question says
+`asks you · #2 …` (#486).
 
 ### EYE-2 · What moves, and the cursor
 

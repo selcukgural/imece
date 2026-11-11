@@ -34,6 +34,8 @@ sh python3 -I $ACC_SOURCE/tools/acceptance/eye.py cut home-en.txt home-tr.txt
 # The question's detail (`W`: the first thing to decide).
 key W
 see asks you
+# Its head names the question's card, not the change's (#486).
+see #2 mend cli.py [question] ·
 look question-en.txt
 key Escape
 type :lang tr
@@ -52,6 +54,8 @@ sh python3 -I $ACC_SOURCE/tools/acceptance/eye.py cut question-en.txt question-t
 key g c
 key Enter
 see ready to approve
+# Over #1's diff the question says whose it is (#486).
+see asks you · #2 mend cli.py [question]
 look change-en.txt
 key Escape
 type :lang tr
