@@ -19,6 +19,35 @@ pub(super) const CARGO_DENIED: &[&str] = &[
     "yank",
 ];
 
+/// Cargo commands that build or test: a run of one in a worker's own
+/// shell is said on its change (record 11).
+const CARGO_CHECKS: &[&str] = &["bench", "build", "check", "clippy", "nextest", "test"];
+
+/// Whether `line`, run in an agent's own shell, builds or tests: cargo's
+/// build and test commands, and the tests its project's files call for
+/// (`tests`, record 136), one command, its output perhaps cut to its last
+/// or first lines. The line as said: what is cut off goes. Nothing else
+/// (a `cd` first, `&&`, another program) is one: the change says only what
+/// it can name for sure.
+pub(crate) fn a_check(line: &str, tests: &Runners) -> Option<String> {
+    let line = line.trim();
+    let line = uncut(line).unwrap_or(line);
+    if line.contains(['\n', '\r']) {
+        return None;
+    }
+    let argv = run::split(line).ok()?;
+    let sub = || {
+        argv[1..]
+            .iter()
+            .find(|a| !a.starts_with('-') && !a.starts_with('+'))
+    };
+    let checks = match argv.first()?.as_str() {
+        "cargo" => sub().is_some_and(|s| CARGO_CHECKS.contains(&s.as_str())),
+        _ => tests.runs(&argv),
+    };
+    checks.then(|| line.to_string())
+}
+
 /// Cargo commands a leader may not run either: they change files.
 pub(super) const CARGO_WRITES: &[&str] = &["clean", "fix", "fmt", "init", "new"];
 
@@ -1050,6 +1079,49 @@ mod tests {
         node: None,
         go: false,
     };
+
+    #[test]
+    fn a_build_or_a_test_in_an_agent_s_own_shell_is_named_and_nothing_else() {
+        let py = Runners {
+            python: true,
+            ..NO_TESTS
+        };
+        let check = |line: &str, tests: &Runners| a_check(line, tests);
+        for line in [
+            "cargo test",
+            "cargo build --release",
+            "cargo +nightly clippy",
+            "cargo nextest run",
+            "cargo check",
+            "cargo bench",
+        ] {
+            assert_eq!(check(line, &NO_TESTS).as_deref(), Some(line), "{line}");
+        }
+        assert_eq!(
+            check("  cargo test 2>&1 | tail -20 ", &NO_TESTS).as_deref(),
+            Some("cargo test"),
+            "its output cut: the command"
+        );
+        assert_eq!(
+            check("python3 -m unittest", &py).as_deref(),
+            Some("python3 -m unittest")
+        );
+        for line in [
+            "python3 -m unittest",
+            "cargo",
+            "cargo fmt",
+            "cargo run",
+            "cargo publish",
+            "ls -la",
+            "",
+            "cd x && cargo test",
+            "cargo test\ncargo build",
+            "cargo test 'open",
+            "npm test",
+        ] {
+            assert_eq!(check(line, &NO_TESTS), None, "{line:?}");
+        }
+    }
 
     #[test]
     fn what_may_run_is_cargo_git_s_reads_and_the_person_s_programs_nothing_else() {

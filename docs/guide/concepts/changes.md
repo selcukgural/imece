@@ -30,7 +30,7 @@ The row at hand ends with `a approve  r send back`; `enter` opens the diff.
 
 ### Evidence on the line
 
-A run of the worker or a helper through imece's `run` tool is tied to the tree it ran on (the worktree is read before and after; a run that changed the tree counts for none). When a `done` is read, the runs on exactly its tree go with it: the verdict line, on the change's row on Home and above its diff, names each with how it ended (`✓ cargo test`, `✗ cargo test: exit 101`), or says `nothing ran`, and then the change is one to look at first. It is shown, never a gate: a change with no run can still be applied; you decide. Claude Code's own shell does not count, since imece does not see what tree it ran on.
+A run of the worker or a helper through imece's `run` tool is tied to the tree it ran on (the worktree is read before and after; a run that changed the tree counts for none). When a `done` is read, the runs on exactly its tree go with it: the verdict line, on the change's row on Home and above its diff, names each with how it ended (`✓ cargo test`, `✗ cargo test: exit 101`), or says `nothing ran`, and then the change is one to look at first. It is shown, never a gate: a change with no run can still be applied; you decide. Claude Code's own shell does not count, since imece does not see what tree it ran on; a build or a test run there (cargo's, and the tests the project's files call for) is said on a change with no run or check of its own, with how it ended (`npm test passed in its own shell, not proved on this tree`), so the change never says `nothing ran` when something did, and it never makes a change ready.
 
 ### The repository's check
 

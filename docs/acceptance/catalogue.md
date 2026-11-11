@@ -540,7 +540,7 @@ Expect: the header says `⌀ no git`; the solo writes in the folder itself (`Cha
 
 Steps: `scenarios/PROJ-1.scn`: `:open` tally, a task (its `npm test` asks nothing); `]` `[`; apply, `G`, `s`, `:unsettle`, `:fold`, `:unfold`; `:pin tally`; `:rename counter`; `:close`, `u`; `:close`, `U`; `:open` again.
 
-Expect: `opened tally at …`; the change comes with no permission asked; `]` narrows Home to shelf, `[` to tally; `s` says `hidden until it needs you`, `:unsettle` `1 back in the team`; `tally is pinned to the top of the team`; the header says `shelf · counter`; `:close` counts down `u keeps it open · U now`, `u` keeps it (`counter stays open`), `U` closes it at once and `:open` brings it back.
+Expect: `opened tally at …`; the change comes with no permission asked, and says its tests ran in the worker's own shell (`npm test passed in its own shell`), never `nothing ran`; `]` narrows Home to shelf, `[` to tally; `s` says `hidden until it needs you`, `:unsettle` `1 back in the team`; `tally is pinned to the top of the team`; the header says `shelf · counter`; `:close` counts down `u keeps it open · U now`, `u` keeps it (`counter stays open`), `U` closes it at once and `:open` brings it back.
 
 ### PROJ-2 · Ignored files copied into a worktree
 

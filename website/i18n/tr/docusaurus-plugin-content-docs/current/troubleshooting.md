@@ -89,7 +89,7 @@ Listeye girmeden önce: `imece doctor` bir açılışın ihtiyaç duyduğu her �
 
 **Ne görürsünüz.** Her değişikliğin hükmü `hiçbir şey koşmadı` ve `! önce bak` der.
 
-**Neden.** Yalnız imece'nin kendi `run` aracı kanıt sayılır, tam ağaca bağlı; Claude Code'un kendi kabuğu görünmez (imece hangi ağaçta çalıştığını görmez). İşçilere son düzenlemeden sonra `run` ile denetlemeleri söylenir. Ağacı değiştiren bir çalıştırma (bir biçimlendirici) hiçbirine sayılmaz.
+**Neden.** Yalnız imece'nin kendi `run` aracı kanıt sayılır, tam ağaca bağlı; Claude Code'un kendi kabuğu sayılmaz (imece hangi ağaçta çalıştığını görmez). İşçinin orada koştuğu bir derleme ya da test değişikliğin üstünde söylenir (`npm test kendi kabuğunda geçti, bu ağaçta kanıtlanmadı`); yani `hiçbir şey koşmadı` hiçbir şeyin koşmadığı demektir. İşçilere son düzenlemeden sonra `run` ile denetlemeleri söylenir. Ağacı değiştiren bir çalıştırma (bir biçimlendirici) hiçbirine sayılmaz.
 
 ### Değişiklik getirmeyen bir `done`: yama 4 MiB'ın üstünde
 

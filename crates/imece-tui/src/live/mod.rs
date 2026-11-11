@@ -905,6 +905,7 @@ pub fn world(o: Options) -> Result<(World, Live), String> {
                 plans: Vec::new(),
                 changes: Vec::new(),
                 clashes: Default::default(),
+                shelled: Default::default(),
                 proposals: Default::default(),
                 items: Default::default(),
                 paid: 0,

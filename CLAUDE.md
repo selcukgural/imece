@@ -125,7 +125,7 @@ record in the same PR.
 - 08 `who-leads` (replaced by 109: Claude Code leads): `--lead`, the primary vendor, the question screen, `choose_lead`.
 - 09 `helpers`: workers hire helpers in their worktree, `--helpers`, listed under their worker on Home (`└`; their fold went with the salon, 2026-11-09); a helper that stops or fails its last turn before `done` is told to its worker (`Live::helper_lost`, a note; an idle worker woken with `GO_ON` via `Live::lost`, counted in `MAX_WOKEN`); the demo mirrors it.
 - 10 `dogfooding-prep`: worktrees follow HEAD (not one with a start point), the `run` tool, vendor commands; the checkout's own test commands since record 136.
-- 11 `change-review`: a worker's `done` → Δ in WAITING FOR YOU, diff view, apply (three-way when clean)/reject, the runs on exactly its tree.
+- 11 `change-review`: a worker's `done` → Δ in WAITING FOR YOU, diff view, apply (three-way when clean)/reject, the runs on exactly its tree; a build or a test run in Claude Code's own shell is said (`Event::ShellRan`, `tools::a_check`, `World.shelled`, `Proof::Shell`), never counted.
 - 12 `completion`: `complete.rs` menus for names, commands, `:` words and directories.
 - 13 `own-shell`: `!cmd` in the person's shell, the terminal dance, its exit code and time in the journal (its output: record 68); while the line starts with `!` its lead is a badge on `Theme::shell` (`ui::shell`, reversed in mono).
 - 14 `journal`: when a closing text is journaled as `Replied`.

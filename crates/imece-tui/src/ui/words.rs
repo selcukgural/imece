@@ -1503,6 +1503,19 @@ pub fn ran(lang: Lang, r: &Ran) -> String {
     }
 }
 
+/// A build or a test the worker ran in its own shell, as a change's
+/// verdict says it: that it ran and how it ended, never `✓`, since imece
+/// did not see what tree it ran on (record 11). Its line cleaned.
+pub fn shell_ran(lang: Lang, r: &Ran) -> String {
+    let t = lang.text();
+    let line = crate::i18n::clean(&r.line);
+    match r.code {
+        Some(0) => fill(t.shell_ok, &[&line]),
+        Some(c) => fill(t.shell_exit, &[&line, &c.to_string()]),
+        None => fill(t.shell_exit, &[&line, "?"]),
+    }
+}
+
 /// A token count in a few characters: `980`, `144k`, `1.2M`.
 pub(crate) fn tokens(n: u64) -> String {
     if n >= 1_000_000 {

@@ -684,6 +684,8 @@ pub struct Parser {
     started: bool,
     /// Tool names by tool-use id, to name a failed result.
     calls: HashMap<String, String>,
+    /// The lines of the `Bash` calls under way, by tool-use id.
+    shells: HashMap<String, String>,
     /// The session's cost counter starts again after `/clear`; the screen
     /// gets one that never goes down: what the earlier conversations
     /// cost, and the last total seen.
@@ -766,6 +768,7 @@ impl Parser {
             account: false,
             started: false,
             calls: HashMap::new(),
+            shells: HashMap::new(),
             commands: Vec::new(),
             unlisted: false,
             cost_base: 0,
@@ -1077,6 +1080,11 @@ impl Parser {
                     }
                     if let Some(id) = block["id"].as_str() {
                         self.calls.insert(id.to_string(), name.clone());
+                        if let (SHELL_TOOL, Some(line)) =
+                            (name.as_str(), block["input"]["command"].as_str())
+                        {
+                            self.shells.insert(id.to_string(), line.to_string());
+                        }
                         if let Some(op) = task_op(&name, &block["input"]) {
                             self.pending.insert(id.to_string(), op);
                         }
@@ -1104,6 +1112,11 @@ impl Parser {
             let id = block["tool_use_id"].as_str().unwrap_or_default();
             let name = self.calls.remove(id).unwrap_or_default();
             let op = self.pending.remove(id);
+            if let Some(command) = self.shells.remove(id)
+                && let Some(code) = shell_code(block)
+            {
+                out.push(Event::ShellRan { command, code });
+            }
             if block["is_error"] == true {
                 out.push(Event::ToolFailed { name });
                 continue;
@@ -1551,6 +1564,27 @@ fn limits(info: &Value) -> Option<Vec<Limit>> {
 /// A fraction as a whole percent, 0 to 100.
 fn percent(fraction: f64) -> u8 {
     (fraction * 100.0).round().clamp(0.0, 100.0) as u8
+}
+
+/// How a `Bash` call's result says its command ended: 0 when it is no
+/// error, the number of Claude Code's first line `Exit code N` when it is
+/// one (probed 2026-11-11: `"is_error": true`, `"Exit code 3\nbad"`);
+/// none for an error of any other words (refused, cut off): it did not
+/// end on its own.
+fn shell_code(block: &Value) -> Option<i32> {
+    if block["is_error"] != true {
+        return Some(0);
+    }
+    let text = match &block["content"] {
+        Value::String(s) => s.as_str(),
+        Value::Array(parts) => parts
+            .first()
+            .and_then(|p| p["text"].as_str())
+            .unwrap_or_default(),
+        _ => "",
+    };
+    let first = text.lines().next()?;
+    first.strip_prefix("Exit code ")?.trim().parse().ok()
 }
 
 #[cfg(test)]
@@ -2446,6 +2480,93 @@ mod tests {
     fn tasked() -> Spec {
         let t = tools(true, Confine::Strict);
         spec(&t.iter().map(String::as_str).collect::<Vec<_>>())
+    }
+
+    #[test]
+    fn a_shell_command_s_end_is_said_with_its_exit_code() {
+        let mut p = Parser::new(&spec(&["Bash", "Read"]));
+        p.line(&init(r#"["Bash","Read"]"#, "acceptEdits", "[]"))
+            .unwrap();
+        let ended = |p: &mut Parser, id: &str, line: &str, result: &str| {
+            let input = format!(r#"{{"command":{}}}"#, serde_json::json!(line));
+            p.line(&tool_use(id, "Bash", &input)).unwrap();
+            let res = format!(
+                r#"{{"type":"user","message":{{"content":[{{"type":"tool_result","tool_use_id":"{id}",{result}}}]}}}}"#
+            );
+            p.line(&res).unwrap()
+        };
+        let ran = |command: &str, code| Event::ShellRan {
+            command: command.into(),
+            code,
+        };
+        let failed = || Event::ToolFailed {
+            name: "Bash".into(),
+        };
+        assert_eq!(
+            ended(
+                &mut p,
+                "a",
+                "npm test",
+                r#""is_error":false,"content":"ok""#
+            ),
+            [ran("npm test", 0)]
+        );
+        assert_eq!(
+            ended(&mut p, "b", "npm test", r#""content":"ok""#),
+            [ran("npm test", 0)],
+            "no is_error is no error"
+        );
+        assert_eq!(
+            ended(
+                &mut p,
+                "c",
+                "sh -c 'exit 3'",
+                r#""is_error":true,"content":"Exit code 3\nbad""#
+            ),
+            [ran("sh -c 'exit 3'", 3), failed()]
+        );
+        assert_eq!(
+            ended(
+                &mut p,
+                "d",
+                "make",
+                r#""is_error":true,"content":[{"type":"text","text":"Exit code 2\nno rule"}]"#
+            ),
+            [ran("make", 2), failed()]
+        );
+        // Refused or cut off: it did not end on its own.
+        assert_eq!(
+            ended(
+                &mut p,
+                "e",
+                "rm x",
+                r#""is_error":true,"content":"The user denied it""#
+            ),
+            [failed()]
+        );
+        assert_eq!(
+            ended(
+                &mut p,
+                "f",
+                "x",
+                r#""is_error":true,"content":"Exit code nope""#
+            ),
+            [failed()]
+        );
+        assert_eq!(
+            ended(&mut p, "g", "x", r#""is_error":true,"content":7"#),
+            [failed()]
+        );
+        // Another tool's end, or a result of a call it never saw: none.
+        p.line(&tool_use("h", "Read", r#"{"file_path":"a"}"#))
+            .unwrap();
+        assert_eq!(p.line(&tool_result("h", r#""text""#)).unwrap(), []);
+        assert_eq!(p.line(&tool_result("zz", r#""ok""#)).unwrap(), []);
+        // A call answered once is not answered again.
+        p.line(&tool_use("i", "Bash", r#"{"command":"ls"}"#))
+            .unwrap();
+        assert_eq!(p.line(&tool_result("i", r#""a""#)).unwrap(), [ran("ls", 0)]);
+        assert_eq!(p.line(&tool_result("i", r#""a""#)).unwrap(), []);
     }
 
     fn tool_use(id: &str, name: &str, input: &str) -> String {

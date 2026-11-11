@@ -3039,6 +3039,22 @@ pub struct ChangedFile {
     pub binary: bool,
 }
 
+/// The builds and tests workers ran in Claude Code's own shell, as the
+/// change says them (record 11, 2026-11-11: never a proof, since imece
+/// does not see what tree they ran on, but no `nothing ran` either when
+/// they did). A helper's are its worker's, as its `run`s are.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Shelled {
+    /// Since each worker's last change was read: the last of each line,
+    /// oldest first, [`SHELL_KEPT`] at most.
+    pub pending: HashMap<AgentId, Vec<Ran>>,
+    /// Those that came before the change of each worker that waits now.
+    pub of_change: HashMap<AgentId, Vec<Ran>>,
+}
+
+/// How many of a worker's own shell's builds and tests a change says.
+pub const SHELL_KEPT: usize = 6;
+
 /// What a worker changed in its worktree, as the person sees it: the
 /// patch, file by file, with what the worker said it did.
 #[derive(Clone, Debug)]
@@ -3079,15 +3095,21 @@ pub struct Question<'a> {
 /// repository's check, or a run on exactly its tree.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Proof {
-    Check { ok: bool, end: String },
+    Check {
+        ok: bool,
+        end: String,
+    },
     Run(Ran),
+    /// A build or a test the worker ran in its own shell: said, never a
+    /// proof of the tree (it does not make a change ready).
+    Shell(Ran),
 }
 
 impl Proof {
     pub fn ok(&self) -> bool {
         match self {
             Proof::Check { ok, .. } => *ok,
-            Proof::Run(r) => r.ok(),
+            Proof::Run(r) | Proof::Shell(r) => r.ok(),
         }
     }
 }
@@ -3514,6 +3536,9 @@ pub struct World {
     /// What of a worker's waiting change did not fit the checkout, when
     /// git last refused it (record 108). Memory only: `a` finds it again.
     pub clashes: HashMap<AgentId, Clashes>,
+    /// The builds and tests workers ran in their own shell (record 11:
+    /// no proof of a tree, said as run). Memory only.
+    pub shelled: Shelled,
     /// Which proposal in Lonca a worker's waiting change is (record 120).
     /// Memory only: the next look finds it again.
     pub proposals: HashMap<AgentId, StoreProposal>,
@@ -4242,6 +4267,7 @@ impl World {
             suggested: None,
             reviews: Default::default(),
             clashes: Default::default(),
+            shelled: Default::default(),
             proposals: Default::default(),
             items: Default::default(),
             orphans: crate::model::Orphans::default(),
@@ -4810,7 +4836,7 @@ impl World {
                 && !clashes
                 && !partial
                 && unknown.is_empty(),
-            proof: c.proofs(),
+            proof: self.proof_of(c),
             files: c.files.len(),
             card: card.filter(|c| !c.paths.is_empty()).map(|c| c.id),
             outside: c.outside(card).iter().map(|f| f.to_string()).collect(),
@@ -4849,6 +4875,10 @@ impl World {
         let agent = change.agent;
         self.carry_spend(agent);
         self.forget_change(agent);
+        // What its own shell ran before this change goes with it.
+        if let Some(runs) = self.shelled.pending.remove(&agent) {
+            self.shelled.of_change.insert(agent, runs);
+        }
         self.own_card(agent);
         self.move_cards(agent, Column::Working, Column::Review);
         let cards = self.owned_in(agent, Column::Review);
@@ -5726,6 +5756,33 @@ impl World {
     }
 
     /// What of worker `id`'s waiting change does not fit the checkout.
+    /// What proved change `c`: its check and its runs on the tree; with
+    /// neither, what its worker's own shell ran (said, proving nothing),
+    /// so `nothing ran` is said only when nothing did.
+    fn proof_of(&self, c: &Change) -> Vec<Proof> {
+        let proved = c.proofs();
+        if !proved.is_empty() {
+            return proved;
+        }
+        let shell = self.shelled.of_change.get(&c.agent).into_iter().flatten();
+        shell.cloned().map(Proof::Shell).collect()
+    }
+
+    /// Agent `id` ran `ran`, a build or a test, in its own shell: kept
+    /// for the next change of its worker (its own, or the worker's it
+    /// helps), the last of each line, the newest [`SHELL_KEPT`].
+    pub fn shell_ran(&mut self, id: AgentId, ran: Ran) {
+        let worker = match self.agents[id].role {
+            Role::Helper => self.agents[id].parent.unwrap_or(id),
+            _ => id,
+        };
+        let runs = self.shelled.pending.entry(worker).or_default();
+        runs.retain(|r| r.line != ran.line);
+        runs.push(ran);
+        let extra = runs.len().saturating_sub(SHELL_KEPT);
+        runs.drain(..extra);
+    }
+
     pub fn clashes_of(&self, id: AgentId) -> Option<&Clashes> {
         self.change_of(id)?;
         self.clashes.get(&id)
@@ -5788,6 +5845,7 @@ impl World {
     fn forget_change(&mut self, id: AgentId) {
         self.reviews.remove(&id);
         self.clashes.remove(&id);
+        self.shelled.of_change.remove(&id);
         self.proposals.remove(&id);
         self.changes.retain(|c| c.agent != id);
         for i in &mut self.inbox {
@@ -6675,6 +6733,7 @@ mod tests {
             suggested: None,
             reviews: Default::default(),
             clashes: Default::default(),
+            shelled: Default::default(),
             proposals: Default::default(),
             items: Default::default(),
             orphans: crate::model::Orphans::default(),
@@ -10740,6 +10799,59 @@ mod tests {
             on_trunk: true,
             intent: String::new(),
         }
+    }
+
+    #[test]
+    fn what_a_worker_s_own_shell_ran_goes_with_its_next_change_and_proves_nothing() {
+        let mut w = crate::live::testing::team(2);
+        let ran = |line: &str, code| Ran {
+            line: line.into(),
+            code: Some(code),
+            timed_out: false,
+        };
+        w.agents[2].role = Role::Helper;
+        w.agents[2].parent = Some(1);
+        w.shell_ran(1, ran("cargo test", 101));
+        w.shell_ran(2, ran("cargo build", 0));
+        w.shell_ran(1, ran("cargo test", 0));
+        for n in 0..SHELL_KEPT {
+            w.shell_ran(0, ran(&format!("cargo test {n}"), 0));
+        }
+        w.shell_ran(0, ran("cargo test x", 0));
+        assert_eq!(w.shelled.pending[&0].len(), SHELL_KEPT, "the newest kept");
+        assert_eq!(w.shelled.pending[&0][0].line, "cargo test 1");
+        assert_eq!(
+            w.shelled.pending[&1],
+            [ran("cargo build", 0), ran("cargo test", 0)],
+            "a helper's are its worker's; the last of each line, oldest first"
+        );
+        w.change_ready(change(1, "T", &[("a", 1, 0)]));
+        assert!(!w.shelled.pending.contains_key(&1), "taken by the change");
+        let v = w.verdict(1).unwrap();
+        assert_eq!(
+            v.proof,
+            [
+                Proof::Shell(ran("cargo build", 0)),
+                Proof::Shell(ran("cargo test", 0))
+            ]
+        );
+        assert!(!v.ready, "no proof of the tree");
+        // A change proved by its check or its runs says those alone.
+        w.changes[0].runs = vec![ran("cargo test", 0)];
+        assert_eq!(
+            w.verdict(1).unwrap().proof,
+            [Proof::Run(ran("cargo test", 0))]
+        );
+        w.changes[0].runs.clear();
+        // A newer change has only what came after.
+        w.change_ready(change(1, "U", &[("a", 1, 0)]));
+        assert_eq!(w.verdict(1).unwrap().proof, []);
+        w.shell_ran(1, ran("cargo test", 0));
+        w.change_ready(change(1, "V", &[("a", 1, 0)]));
+        assert_eq!(w.verdict(1).unwrap().proof.len(), 1);
+        // Settled: gone with it.
+        w.change_rejected(1);
+        assert!(w.shelled.of_change.is_empty());
     }
 
     #[test]
