@@ -136,6 +136,7 @@ pub(super) fn claude_spec(program: String, cwd: PathBuf, model: &str, cap: u64) 
         scratch: None,
         notes: None,
         store: None,
+        mark: None,
         program,
         cwd,
         name: "imece-review".into(),

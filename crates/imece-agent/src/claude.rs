@@ -51,6 +51,13 @@ pub const ENV: &[&str] = &[
 /// reads none otherwise. Not in [`ENV`]: imece sets it, from nobody's.
 const NOTES_ENV: &str = "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD";
 
+/// The variable that marks every process a session starts, the session's
+/// own and whatever it runs, also one that leaves it (`nohup … &`: its
+/// own process group, its parent gone): imece finds them by it, lists
+/// them under their agent, ends them at its quit, and a later start finds
+/// those an earlier run left (record 129). Not in [`ENV`]: imece sets it.
+pub const MARK_ENV: &str = "IMECE_SESSION";
+
 /// The person's own `CLAUDE.md`, where Claude Code keeps it: in
 /// `CLAUDE_CONFIG_DIR` when that is set, else in `~/.claude`.
 pub fn own_notes() -> Option<PathBuf> {
@@ -307,6 +314,8 @@ pub struct Spec {
     pub notes: Option<PathBuf>,
     /// Lonca, for a session that works in a Lonca workspace (record 119).
     pub store: Option<Store>,
+    /// [`MARK_ENV`]'s value for this session's processes; none sets none.
+    pub mark: Option<String>,
 }
 
 /// What a session in a Lonca workspace needs of Lonca: `lonca hook` on every
@@ -1392,6 +1401,9 @@ impl Session {
         if let Some(store) = &spec.store {
             cmd.env(LONCA_SOCKET_ENV, &store.socket);
         }
+        if let Some(mark) = &spec.mark {
+            cmd.env(MARK_ENV, mark);
+        }
         let mut parser = Parser::new(spec);
         let mut stopped = false;
         let child = Child::spawn(cmd, move |out| match out {
@@ -1598,6 +1610,7 @@ mod tests {
             scratch: None,
             notes: None,
             store: None,
+            mark: None,
             program: "claude".into(),
             cwd: PathBuf::from("/work/w1"),
             name: "claude-1".into(),
@@ -3191,6 +3204,27 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    #[test]
+    fn a_session_s_processes_carry_its_mark_and_one_without_carries_none() {
+        let dir = std::env::temp_dir().join(format!("imece-mark-{}", std::process::id()));
+        let told = dir.join("told");
+        let body = format!("echo \"[${MARK_ENV}]\" > '{}'", told.display());
+        let run = |mark: Option<&str>| {
+            let mut s = with_bus(&["Read"]);
+            s.mark = mark.map(str::to_string);
+            s.program = fake(&dir, &body);
+            s.cwd = dir.clone();
+            let _ = events(&s, "go");
+            std::fs::read_to_string(&told).unwrap()
+        };
+        assert_eq!(
+            run(Some("1-2-0/shop/claude-1")).trim_end(),
+            "[1-2-0/shop/claude-1]"
+        );
+        assert_eq!(run(None).trim_end(), "[]");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// A stand-in for `claude` that checks its stdin and prints a session.
     fn fake(dir: &Path, body: &str) -> String {
         std::fs::create_dir_all(dir).unwrap();
@@ -4150,6 +4184,7 @@ sleep 5"#
             scratch: None,
             notes: None,
             store: None,
+            mark: None,
             program: "claude".into(),
             cwd: cwd.clone(),
             name: "imece probe".into(),
@@ -4243,6 +4278,7 @@ sleep 5"#
             scratch: None,
             notes: None,
             store: None,
+            mark: None,
             program: "claude".into(),
             cwd: cwd.clone(),
             name: "imece probe".into(),

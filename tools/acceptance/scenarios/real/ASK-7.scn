@@ -10,6 +10,14 @@ key Escape Escape
 # The server answers (the leader's words name the address before it does).
 until 600 curl -s -o /dev/null http://127.0.0.1:8765/
 wait 60 http://127.0.0.1:8765
-# A server started with nohup leaves its session: :ps does not list it, and
-# it outlives imece (record 147's findings). The case ends it itself.
-sh pkill -f 'http.server 8765'
+# The server left its worker's session (nohup, &), yet :ps lists it under
+# the worker by the session's mark (record 129).
+type :ps
+key Enter
+see PROCESSES
+see Python || python
+key Escape
+# The quit ends what carries this run's mark: the server goes with imece
+# (its sessions end first, a turn under way included).
+stop
+until 40 ! curl -s -o /dev/null http://127.0.0.1:8765/

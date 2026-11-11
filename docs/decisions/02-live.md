@@ -22,6 +22,11 @@ the one SIGTERM was. Claude Code ends a turn cleanly on SIGINT and writes
 its `result` (probed 2026-11-08 on 2.1.319: a turn cut mid-answer exits 0
 in 0.9 s with `error_during_execution`); on SIGTERM it leaves the turn with
 no result. That late result belongs to an ended generation and is dropped.
+At the quit (`Drop for Live`) every session ends so, one after another,
+then whatever still carries this run's `IMECE_SESSION` mark goes too
+(`procs::end_marked`, record 129): a process that left its session, or a
+session of real Claude Code that outlived its end (acceptance, 2026-11-11:
+ASK-7's worker ran 15 s past imece's quit, once in four runs).
 imece's own paid calls (a suggested commit message, record 56) are paid
 from the same pot (`World::paid`, in `World::spent`).
 

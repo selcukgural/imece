@@ -125,7 +125,7 @@ Listeye girmeden önce: `imece doctor` bir açılışın ihtiyaç duyduğu her �
 
 ### Önceki bir çalışmadan kalan süreçler: `önceki bir çalışmadan kalan 2 süreç var: :ps listeler`
 
-**Neden.** Oturumlarını bitirmeden kapanan bir imece (bir çökme, kapatılan bir terminal, `kill -9`) onları başlattıklarıyla birlikte çalışır bırakır. imece her başlangıçta komut satırı kendi worktree dizinini adlandıran ve üstünde çalışan bir imece olmayan süreçleri arar ve kaç tane bulduğunu söyler.
+**Neden.** Oturumlarını bitirmeden kapanan bir imece (bir çökme, kapatılan bir terminal, `kill -9`) onları başlattıklarıyla birlikte çalışır bırakır. imece her başlangıçta komut satırı kendi worktree dizinini adlandıran ve üstünde çalışan bir imece olmayan süreçleri, bir de imece'si artık çalışmayan bir çalışmanın işaretini taşıyanları arar (`nohup … &` ile başlatılan bir sunucu hiçbir şey adlandırmaz) ve kaç tane bulduğunu söyler.
 
 **Ne yapmalı.** `:ps` onları ÖNCEKİ BİR ÇALIŞMADAN KALAN altında, her ağacı çalıştığı yerin altında listeler. `d` birini, `a` kalanların hepsini bir `y`'den sonra sonlandırır: `SIGTERM`, süre dolunca `SIGKILL`. Hiçbir şey kendiliğinden sonlandırılmaz; şu an çalışan başka bir imece kendi oturumlarını korur.
 

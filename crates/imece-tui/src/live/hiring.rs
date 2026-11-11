@@ -86,6 +86,7 @@ impl Live {
         self.resuming.push(None);
         self.forks.push(None);
         self.slots.push(Slot::None);
+        self.marks.push(None);
         self.generation.push(0);
         self.spent_before.push(0);
         self.models.push(model);

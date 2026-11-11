@@ -258,3 +258,12 @@ The second: a build or a test a worker ran in its own shell is said on
 its change and never counted (record 11): `npm test passed in its own
 shell, not proved on this tree`, so `nothing ran` means nothing ran.
 PROJ-1 checks it.
+
+The third: every session's processes carry its mark (`IMECE_SESSION`,
+record 129), so a server started with `nohup … &` is listed by `:ps` under
+its worker and ended there, the quit ends whatever still carries the run's
+mark (a session that outlived its end too, record 02), and a later start
+finds what an earlier run's sessions left. ASK-7 no longer ends the server
+itself: it sees it on `:ps`, closes the terminal and waits for the server
+to go (three runs in a row on Claude Code, once more than 20 s: a turn
+under way ends first).

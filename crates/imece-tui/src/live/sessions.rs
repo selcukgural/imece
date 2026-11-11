@@ -540,6 +540,15 @@ impl Live {
                 );
             }
         }
+        // What its processes carry: `:ps` finds one that left the session
+        // by it, and the quit ends them all (`Drop for Live`).
+        let a = &w.agents[id];
+        self.marks[id] = Some(crate::procs::mark(
+            &self.run,
+            &w.projects[a.project].name,
+            &a.name,
+        ));
+        self.marked = true;
         self.slots[id] = Slot::Running(session);
     }
 
@@ -920,6 +929,8 @@ impl Live {
         let (repo, root) = (place.repo.clone(), place.root.clone());
         let copies = w.projects[a.project].copies.clone();
         let scratch = self.scratch_of(w, id);
+        // Every process of the session carries it, one that leaves it too.
+        let mark = crate::procs::mark(&self.run, &w.projects[a.project].name, &a.name);
         let store = (w.projects[a.project].lonca.as_ref()).map(|on| on.repo.clone());
         // A helper's session is its worker's: a session goes by the owner.
         let owner = &w.agents[a.parent.unwrap_or(id)].name;
@@ -1053,6 +1064,7 @@ impl Live {
                                 fork,
                                 models: r.models,
                             }),
+                            mark: Some(mark),
                         },
                         on,
                     )

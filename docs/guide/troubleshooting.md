@@ -125,7 +125,7 @@ Before going through the list: `imece doctor` checks what a start needs in one g
 
 ### Processes left from an earlier run: `2 processes left from an earlier run: :ps lists them`
 
-**Why.** An imece that ended without ending its sessions (a crash, a terminal closed, `kill -9`) leaves them running with what they started. At each start imece looks for processes whose command line names its worktrees directory and that no running imece is above, and says how many it found.
+**Why.** An imece that ended without ending its sessions (a crash, a terminal closed, `kill -9`) leaves them running with what they started. At each start imece looks for processes whose command line names its worktrees directory and that no running imece is above, and for those that carry the mark of a run whose imece is gone (a server started with `nohup … &` names nothing), and says how many it found.
 
 **What to do.** `:ps` lists them under LEFT FROM AN EARLIER RUN, each tree under the place it ran in. `d` ends one and `a` all that are left over, after a `y`: `SIGTERM`, then `SIGKILL` after the grace. Nothing is ended by itself, and another imece running now keeps its own sessions.
 
