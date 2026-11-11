@@ -160,7 +160,9 @@ tools/acceptance/drive.py run --real --jobs 4     # scenarios/real/*.scn
   the yes it gives from a shell included.
 - Measured 2026-11-11: each case a few cents; the 12 together about $0.50
   and 10 minutes at 4 jobs (TEAM-11 and CARD-3 the longest). Each passed
-  row of the report says what its case spent.
+  row of the report says what its case spent, as its header says it
+  (`≈$0.04+?` when a turn has no figure, record 132); the run's total
+  adds the known part and counts the cases with such a turn.
 
 ## The run's world
 
