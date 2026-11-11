@@ -2807,7 +2807,11 @@ mod tests {
 
     /// A server that answers `initialize` and `tools/list` with tool
     /// `echo`, then each call with `body` (a shell line that reads the
-    /// call and writes its answer), in a directory of its own.
+    /// call and writes its answer), in a directory of its own. The tests
+    /// start it as `/bin/sh SCRIPT`, never the script itself: a file just
+    /// written can be held open by a child another test thread forked
+    /// meanwhile, and Linux refuses to exec it then (`ETXTBSY`: the
+    /// server had no tools on CI, 2026-11-11).
     fn script_server(name: &str, body: &str) -> (PathBuf, PathBuf) {
         use std::os::unix::fs::PermissionsExt;
         let dir =
@@ -2827,7 +2831,7 @@ mod tests {
     fn a_server_that_would_not_end_is_ended_with_the_stand_in() {
         within(move || {
             let (dir, script) = script_server("stays", "sleep 30");
-            let s = Server::start(&script.to_string_lossy(), &[], &dir);
+            let s = Server::start("/bin/sh", &[script.to_string_lossy().into_owned()], &dir);
             assert!(s.connected());
             let pid = s.pid().unwrap() as libc::pid_t;
             assert_eq!(unsafe { libc::kill(pid, 0) }, 0, "it runs");
@@ -2847,7 +2851,7 @@ mod tests {
                 ("other".to_string(), Server::listing(&["whoami"])),
                 (
                     crate::claude::MCP_SERVER.to_string(),
-                    Server::start(&script.to_string_lossy(), &[], &dir),
+                    Server::start("/bin/sh", &[script.to_string_lossy().into_owned()], &dir),
                 ),
             ];
             let mut stream = stream();
@@ -2911,7 +2915,7 @@ mod tests {
             let (dir, script) = script_server("approve", &body);
             let mut servers = vec![(
                 crate::claude::MCP_SERVER.to_string(),
-                Server::start(&script.to_string_lossy(), &[], &dir),
+                Server::start("/bin/sh", &[script.to_string_lossy().into_owned()], &dir),
             )];
             let mut stream = stream();
             let args = Args {
@@ -3218,7 +3222,7 @@ echo '{"jsonrpc":"2.0","id":6,"error":{}}'
 "#;
             std::fs::write(&script, body).unwrap();
             std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700)).unwrap();
-            let mut s = Server::start(&script.to_string_lossy(), &[], &dir);
+            let mut s = Server::start("/bin/sh", &[script.to_string_lossy().into_owned()], &dir);
             assert_eq!(s.tools, strings(&["echo", "approve"]));
             assert!(s.connected());
             assert_eq!(s.call("echo", &json!({ "word": "hi" })), Ok("a\nb".into()));
