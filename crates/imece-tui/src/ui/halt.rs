@@ -88,7 +88,7 @@ pub(crate) fn banner(app: &App, width: usize) -> Vec<Line<'static>> {
 /// The choices of a stop as the row's keys: `1 raise by $50.00  2 …`.
 fn choice_spans(app: &App, p: ProjectId, halt: Halt) -> Vec<Span<'static>> {
     let mut spans = Vec::new();
-    for (n, &c) in halt.choices().iter().enumerate() {
+    for (n, &c) in app.choices_of(p, halt).iter().enumerate() {
         spans.push(Span::styled(format!(" {} ", n + 1), key_style()));
         let said = words::choice_words(app.lang, &app.world, p, c);
         spans.push(Span::styled(format!(" {said}  "), dim()));
@@ -96,9 +96,9 @@ fn choice_spans(app: &App, p: ProjectId, halt: Halt) -> Vec<Span<'static>> {
     spans
 }
 
-/// The digits a stop's choices take, for the status line: `1`, `1-3`.
-pub(crate) fn digits(halt: Halt) -> &'static str {
-    match halt.choices().len() {
+/// The digits `choices` take, for the status line: `1`, `1-3`.
+pub(crate) fn digits(choices: &[crate::halt::Choice]) -> &'static str {
+    match choices.len() {
         1 => "1",
         2 => "1-2",
         _ => "1-3",
@@ -232,7 +232,7 @@ pub(crate) fn preview(app: &App, p: ProjectId, halt: Halt, room: usize) -> Vec<L
         lines.push(overlay::cut(line, room).0);
     }
     lines.push(Line::default());
-    for (n, &c) in halt.choices().iter().enumerate() {
+    for (n, &c) in app.choices_of(p, halt).iter().enumerate() {
         let does = words::does_words(app.lang, c);
         let line = Line::from(vec![
             Span::styled(format!(" {} ", n + 1), key_style()),
@@ -495,11 +495,12 @@ mod tests {
 
     #[test]
     fn the_status_line_names_the_digits_a_stop_takes() {
-        assert_eq!(digits(Halt::Lead), "1");
-        assert_eq!(digits(Halt::Store), "1-2");
-        assert_eq!(digits(Halt::Pot), "1-3");
+        assert_eq!(digits(Halt::Lead.choices()), "1");
+        assert_eq!(digits(Halt::Store.choices()), "1-2");
+        assert_eq!(digits(Halt::Store.choices_when(true)), "1-3");
+        assert_eq!(digits(Halt::Pot.choices()), "1-3");
         for halt in [Halt::Limit, Halt::Hung, Halt::Failed] {
-            assert_eq!(digits(halt), "1");
+            assert_eq!(digits(halt.choices()), "1");
         }
     }
 }

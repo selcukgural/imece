@@ -80,6 +80,17 @@ on a real run (Claude Code 2.1.319, haiku, an isolated daemon): imece's hooks
 and `unhooked` stays null; its proposal waited for `unobserved_session` alone.
 The Δ words both reasons and the queue's `verification_missing:<check>`.
 
+Every reason a proposal can carry is worded (`ui::diff::why_it_waits`, from
+`lonca-policy`'s `decide.rs`; an acceptance run on 2026-11-11 found
+`nobody watched this session's tools, approvals=1` on every Δ, which a
+person could not follow): `unobserved_session` says why a person reads it
+(Lonca does not watch the agent's tools), `approvals=1` says nothing the
+line does not and is left out (`diff_proposal_bare` when nothing else is
+left), `approvals=N` above one, `approvals_capped`, `tests_weakened`,
+`unread_file:`, `signature_change:`, `affected_lease:` (its ids say
+nothing here), `affected_more:` and the default policy's `auth`,
+`revert-storm`, `blast-radius` have words; any other as Lonca wrote it.
+
 A look also reads each agent's newest live session's `bound_ms` and `unhooked`
 (`lonca::Hooks`: `Heard`, `Unbound`, `Missed(tool)`; an `unhooked` of any shape is
 a miss, a `bound_ms` there and no time no bind, fields not there an older daemon

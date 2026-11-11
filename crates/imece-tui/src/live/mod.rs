@@ -1479,7 +1479,7 @@ impl Live {
                         // Nobody sends done for a solo: every turn that
                         // ends with an answer shows the person what its
                         // worktree holds (a command's turn says nothing).
-                        let title = text.lines().next().unwrap_or_default().to_string();
+                        let title = w.solo_title(id, &text);
                         let (nobody, _) = mpsc::channel();
                         self.snapshot(w, id, title, String::new(), nobody);
                     }

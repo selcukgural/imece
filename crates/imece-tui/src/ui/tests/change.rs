@@ -237,7 +237,7 @@ fn a_proposal_says_so_in_its_view_and_its_row_says_its_keys() {
     let proposal = crate::model::StoreProposal {
         seq: 5,
         change: "c5".into(),
-        why: vec!["unobserved_session".into()],
+        why: vec!["tests_weakened".into(), "approvals=1".into()],
         redacted: Vec::new(),
         cut: false,
         verifies: Runs::default(),
@@ -250,9 +250,10 @@ fn a_proposal_says_so_in_its_view_and_its_row_says_its_keys() {
     app.zoom = Zoom::Diff(1);
     let s = render(&app, 140, 40);
     assert!(
-        s.contains("nobody watched this session's tools · proposal 5"),
+        s.contains("needs your yes: it deletes or skips tests · proposal 5"),
         "{s}"
     );
+    assert!(!s.contains("approvals="), "{s}");
 }
 
 #[test]

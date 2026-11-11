@@ -25,6 +25,8 @@ type not like this
 key Enter
 see note kept (1 on this change)
 key n
+# One note is said as one (it said `1 notes` once).
+see 1 note went to claude-1; the change went back to them
 # The change went back with the note: nothing to decide of it.
 gone 1 ready to approve
 key J

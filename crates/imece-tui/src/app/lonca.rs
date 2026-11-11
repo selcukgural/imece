@@ -110,7 +110,7 @@ impl App {
 
     /// The engine starts `job` and the bottom line says `word` while it
     /// runs; one at a time.
-    fn store_start(&mut self, job: StoreJob, word: String) {
+    pub(super) fn store_start(&mut self, job: StoreJob, word: String) {
         let started = match &mut self.engine {
             Engine::Live(l) => l.store_job(job),
             Engine::Sim(s) => s.store_job(&self.world, job),

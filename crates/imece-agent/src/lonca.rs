@@ -447,6 +447,17 @@ impl Place {
         client.conn.token = Some(token_of(&file, now_ms()).ok_or(Down::SignedOut)?);
         Ok(client)
     }
+
+    /// Whether the daemon takes the person's session for `repo`: none,
+    /// one ended, or one it does not know (a file another daemon left: a
+    /// reinstall) is signed out. [`Place::open`] reads only the file, so
+    /// this asks the daemon; one that does not answer says nothing of it
+    /// (acceptance, 2026-11-11: an import with such a file went on
+    /// unsigned and the team stopped at once).
+    pub fn signed_out(&self, repo: &str) -> bool {
+        let asked = self.open().and_then(|mut c| c.status(repo).map(drop));
+        matches!(asked, Err(Down::SignedOut))
+    }
 }
 
 /// A worker's place on Lonca: what [`Place::sit`] asks for.
@@ -2665,6 +2676,27 @@ mod tests {
         let wait = Some(Duration::from_secs(2));
         c.log("demo", 0, None, wait).expect("log");
         assert_eq!(c.conn.timeout(), Some(TIMEOUT));
+    }
+
+    #[test]
+    fn a_session_the_daemon_does_not_take_is_signed_out() {
+        // Its own session: signed in.
+        let d = up();
+        assert!(!d.place.signed_out("demo"));
+        // No file: signed out, the daemon not asked.
+        let d = Daemon::start(PROTOCOL, |_| Ok(status(&[])));
+        assert!(d.place.signed_out("demo"));
+        assert!(d.heard.lock().unwrap().is_empty());
+        // A file another daemon left: the daemon does not know it.
+        let d = Daemon::start(PROTOCOL, |_| Err("unauthenticated"));
+        d.sign_in();
+        assert!(d.place.open().is_ok(), "the file alone looks fine");
+        assert!(d.place.signed_out("demo"));
+        assert_eq!(d.heard.lock().unwrap()[0]["repo"], "demo");
+        // A daemon that refuses for another reason says nothing of it.
+        let d = Daemon::start(PROTOCOL, |_| Err("busy"));
+        d.sign_in();
+        assert!(!d.place.signed_out("demo"));
     }
 
     #[test]

@@ -81,8 +81,12 @@ board is the team's), the Solo prompt and a solo's helper's prompt
 (`prompts.rs`), `hire` lets it hire helpers (`solo-notes.1`), `follow`,
 `stand`, `stand_busy` and the row's link treat it as a worker, `reports`
 as a leader. The Δ: in `Live::step`, a solo's turn that ends with an answer
-the person gets (`asked` or `reports`) calls `snapshot` with the answer's
-first line as the title and nobody to answer; an empty answer (a command's
+the person gets (`asked` or `reports`) calls `snapshot` with
+`World::solo_title` as the title (a change of it still waiting keeps its
+own, else the first line of the person's newest words to it, the answer's
+first line only when the journal holds none: titled by the answer, a
+change said `Changed shelf.py.`, found by an acceptance script on
+2026-11-11; the demo the same) and nobody to answer; an empty answer (a command's
 turn) reads nothing; a worker's turn end still reads nothing, its `done`
 does. Screen: `:solo [PATH] [CHOICE] [NAME]` (`App::solo_project`, the
 words placed by shape: `/` `~` `.` → path, a vendor's name → choice, the rest

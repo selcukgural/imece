@@ -151,7 +151,16 @@ impl App {
             KeyCode::Char('g') | KeyCode::Home => 0,
             KeyCode::Char('G') | KeyCode::End => last,
             KeyCode::Char('d') => {
-                let sure = rows.get(win.at).map(|&(o, p)| Sure::One(o, p.pid));
+                let Some(&(whose, p)) = rows.get(win.at) else {
+                    return;
+                };
+                if let Whose::Agent(id) = whose
+                    && let Some(no) = self.refused_proc(id, p.pid)
+                {
+                    let agent = self.world.agents[id].name.clone();
+                    return self.flash(self.proc_refusal(no, &agent));
+                }
+                let sure = Some(Sure::One(whose, p.pid));
                 self.ps = Some(PsWin { sure, ..win });
                 return;
             }
@@ -230,11 +239,31 @@ impl App {
         let agent = self.world.agents[id].name.clone();
         let said = match done {
             Ok(()) => fill(t.ev_killed, &[&name, &pid.to_string(), &agent]),
-            Err(ProcRefusal::Session) => fill(t.ps_session, &[&agent]),
-            Err(ProcRefusal::Bus) => fill(t.ps_bus, &[&agent]),
-            Err(ProcRefusal::NotUnder) => fill(t.ps_gone, &[&agent]),
+            Err(no) => self.proc_refusal(no, &agent),
         };
         self.flash(said);
+    }
+
+    /// What ending process `pid` under agent `id`'s session would be
+    /// refused for, by the processes as last read: its session itself or
+    /// imece's relay is said at `d`, before any `y` is asked.
+    fn refused_proc(&self, id: AgentId, pid: u32) -> Option<ProcRefusal> {
+        let own = match &self.engine {
+            Engine::Sim(_) => Some(crate::sim::DEMO_OWN.to_string()),
+            _ => crate::procs::own_name(),
+        };
+        let listed = (self.world.procs.agents.iter()).find(|(a, _)| *a == id)?;
+        crate::procs::refused(&listed.1, pid, own.as_deref())
+    }
+
+    /// A refusal to end a process under `agent`'s session, worded.
+    fn proc_refusal(&self, no: ProcRefusal, agent: &str) -> String {
+        let t = self.lang.text();
+        match no {
+            ProcRefusal::Session => fill(t.ps_session, &[agent]),
+            ProcRefusal::Bus => fill(t.ps_bus, &[agent]),
+            ProcRefusal::NotUnder => fill(t.ps_gone, &[agent]),
+        }
     }
 }
 
@@ -302,30 +331,25 @@ mod tests {
     }
 
     #[test]
-    fn d_asks_y_ends_and_the_session_and_its_bus_stay() {
+    fn d_refuses_the_session_and_its_bus_at_once_and_asks_y_for_the_rest() {
         let mut app = opened();
         let all = rows(&app);
-        let (whose, root, _) = all[0].clone();
+        let (whose, _, _) = all[0].clone();
         let Whose::Agent(id) = whose else {
             unreachable!()
         };
         let name = app.world.agents[id].name.clone();
-        // Its session: asked, then refused.
+        // Its session: refused at d, with no y asked for nothing.
         app.on_key(key(KeyCode::Char('d')));
-        assert_eq!(app.ps.unwrap().sure, Some(Sure::One(whose, root)));
-        app.on_key(key(KeyCode::Char('n')));
-        assert_eq!(app.ps.unwrap().sure, None, "any other key keeps it");
-        assert_eq!(rows(&app), all);
-        app.on_key(key(KeyCode::Char('d')));
-        app.on_key(key(KeyCode::Char('y')));
+        assert_eq!(app.ps.unwrap().sure, None, "nothing to say yes to");
         assert_eq!(
             said(&app),
             format!("that is {name}'s session itself: :forget or a stop ends it, not :ps")
         );
-        // Its relay.
+        // Its relay, the same.
         app.on_key(key(KeyCode::Char('j')));
         app.on_key(key(KeyCode::Char('d')));
-        app.on_key(key(KeyCode::Char('y')));
+        assert_eq!(app.ps.unwrap().sure, None, "nothing to say yes to");
         assert_eq!(
             said(&app),
             format!("that is imece's bus for {name}: it stays")
@@ -337,6 +361,11 @@ mod tests {
             .expect("a working agent runs a command");
         let (_, pid, cmd) = all[i].clone();
         app.ps = Some(PsWin { at: i, sure: None });
+        app.on_key(key(KeyCode::Char('d')));
+        assert_eq!(app.ps.unwrap().sure, Some(Sure::One(whose, pid)));
+        app.on_key(key(KeyCode::Char('n')));
+        assert_eq!(app.ps.unwrap().sure, None, "any other key keeps it");
+        assert_eq!(rows(&app), all);
         app.on_key(key(KeyCode::Char('d')));
         app.on_key(key(KeyCode::Char('y')));
         assert_eq!(said(&app), format!("you ended {cmd} ({pid}) under {name}"));
