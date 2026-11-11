@@ -142,7 +142,7 @@ record in the same PR.
 - 25 `left-off`: the "where you left off" window at start.
 - 26 `posture-change`: the plan from restricted tools to full capability, (a)–(d) and what is done.
 - 27 `ask-the-person`: `send(to: "you")`, questions in WAITING FOR YOU; an ask's `options` (≤4, ≤60 chars, `bus::options_of`, `Event::ToYou.options`, `World::question_of`), `1`-`9` on Home answer with one, `/` writes (record 125).
-- 28 `confine-dial`: `--confine open|standard|strict`; strict's sockets offer no `approve` (`Live::bind` under `Confine::full` only: offered, every strict session stopped at its start until 2026-11-11).
+- 28 `confine-dial`: `--confine open|standard|strict`; strict's sockets offer no `approve` (`Live::bind` under `Confine::full` only: offered, every strict session stopped at its start until 2026-11-11); a call of a tool imece did not give stops the session, at once when the session has it (`Parser.offered`), at its result when it does not (`Parser.unknown`: Claude Code's refusal is a note, anything else stops; 2026-11-11).
 - 29 `legibility`: dimmed backdrop, plain rows, the trace by kind (`focus::TraceKind` glyphs, text as Markdown, vendor notes `note …`), the focus story's agent text as Markdown (`STORY_ROWS`), web addresses as OSC 8 links shown whole (`model::web_url_at`, `ui::linked`, `rows_of` + `link_rows`), a conversation that follows.
 - 30 `approval-routing`: Claude's permission prompts to `approve`, routine commands (the checkout's tests too: record 136; `git -C` of the agent's own directory as `git`: `tools::own_dir`), `⚑` asks in WAITING FOR YOU.
 - 31 `demo-mirrors-live`: the demo shows what live does (Δ, `⚑`, questions, hiring, helpers, sessions); the merge queue left it.
