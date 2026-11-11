@@ -453,10 +453,14 @@ def outlived(d: Path) -> str:
 
 def leftovers(d: Path) -> None:
     """Ends what of case directory `d` still runs, never the tmux server
-    (whose command line is its first session's, so it may name `d`)."""
+    (whose command line is its first session's, so it may name `d`): what
+    names `d` on its command line, and what works in it though its command
+    line does not (a worker's `nohup python3 -m http.server &`: ASK-7's
+    outlived the case, 2026-11-11)."""
     # With its slash: SCR-1's directory is a prefix of SCR-14's.
     found = subprocess.run(["pgrep", "-f", str(d) + "/"], capture_output=True, text=True)
-    for pid in found.stdout.split():
+    pids = set(found.stdout.split()) | {entry.split()[0] for entry in running_in(d)}
+    for pid in sorted(pids):
         name = subprocess.run(["ps", "-o", "comm=", "-p", pid], capture_output=True, text=True)
         if not is_tmux(name.stdout) and int(pid) != os.getpid():
             subprocess.run(["kill", pid], capture_output=True)

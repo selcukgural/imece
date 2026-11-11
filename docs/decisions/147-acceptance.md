@@ -267,3 +267,8 @@ finds what an earlier run's sessions left. ASK-7 no longer ends the server
 itself: it sees it on `:ps`, closes the terminal and waits for the server
 to go (three runs in a row on Claude Code, once more than 20 s: a turn
 under way ends first).
+
+**What a case leaves (2026-11-11).** A case's cleanup (`drive::leftovers`)
+ended what named the case's directory on its command line; a process that
+only works there (a worker's `nohup python3 -m http.server &`) outlived
+the case. It now ends what `running_in` finds in the directory too.
