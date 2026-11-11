@@ -816,6 +816,8 @@ fn menu_of(items: &[&str], chosen: usize) -> crate::complete::Menu {
         tail: " ",
         inserted: false,
         notes: Vec::new(),
+        list: false,
+        moved: false,
     }
 }
 
@@ -1241,13 +1243,202 @@ fn the_history_search_says_so_over_the_line_and_the_help_names_its_keys() {
     app.help = true;
     let help = render(&app, 140, 40);
     assert!(
-        help.contains("tab ↑ ↓ ^r    yazarken: tamamla · gönderilenler · :history"),
+        help.contains("tab ↑ ↓ ^r    yazarken: kelime ve dosya · gönderilenler · :history"),
         "{help}"
     );
     app.lang = Lang::En;
     let help = render(&app, 140, 40);
     assert!(
-        help.contains("tab ↑ ↓ ^r    writing: complete · sent lines · :history"),
+        help.contains("tab ↑ ↓ ^r    writing: words and files · sent lines · :history"),
         "{help}"
+    );
+}
+
+/// `word_list` alone on a `width` × `height` screen: the cursor at
+/// `caret`, the header's foot at `top`; the rows as text and the area.
+fn list_drawn(
+    m: &crate::complete::Menu,
+    input: &str,
+    caret: (u16, u16),
+    top: u16,
+    width: u16,
+    height: u16,
+) -> (Vec<String>, Option<Rect>, ratatui::buffer::Buffer) {
+    let mut t = Terminal::new(TestBackend::new(width, height)).unwrap();
+    let mut area = None;
+    t.draw(|f| {
+        area = word_list(f, input, m, Position::new(caret.0, caret.1), top);
+    })
+    .unwrap();
+    let buf = t.backend().buffer().clone();
+    let rows = (0..height)
+        .map(|y| (0..width).map(|x| buf[(x, y)].symbol()).collect::<String>())
+        .collect();
+    (rows, area, buf)
+}
+
+fn list_of(items: &[&str], notes: &[&str], start: usize) -> crate::complete::Menu {
+    let mut m =
+        crate::complete::Menu::new(start, items.iter().map(|s| s.to_string()).collect(), "")
+            .unwrap();
+    m.notes = notes.iter().map(|s| s.to_string()).collect();
+    m.list = true;
+    m
+}
+
+#[test]
+fn the_word_list_stands_above_the_line_at_the_word_with_no_frame() {
+    let m = list_of(
+        &["retry_policy", "RetryPolicy", "retry.rs"],
+        &["said", "code", "file"],
+        9,
+    );
+    // `› keep the retr`: the cursor after the word, column 15, row 9.
+    let (rows, area, _) = list_drawn(&m, "keep the retr", (15, 9), 1, 60, 10);
+    assert_eq!(area, Some(Rect::new(11, 6, 24, 3)), "{rows:#?}");
+    assert_eq!(&rows[6][11..35], " retry_policy      said ");
+    assert_eq!(&rows[7][11..35], " RetryPolicy       code ");
+    assert_eq!(&rows[8][11..35], " retry.rs          file ");
+    assert!(
+        rows[..6]
+            .iter()
+            .chain(&rows[9..])
+            .all(|r| r.trim().is_empty()),
+        "{rows:#?}"
+    );
+}
+
+#[test]
+fn the_word_list_keeps_on_the_screen_and_below_the_header() {
+    let m = list_of(&["alpha_one", "alpha_two", "alpha_three"], &["said"; 3], 0);
+    // At the right edge it slides left.
+    let (_, area, _) = list_drawn(&m, "al", (59, 9), 1, 60, 10);
+    assert_eq!(area, Some(Rect::new(36, 6, 24, 3)));
+    // A screen narrower than the list: the list takes it whole.
+    let (_, area, _) = list_drawn(&m, "al", (5, 9), 1, 20, 10);
+    assert_eq!(area.map(|a| (a.x, a.width)), Some((0, 20)));
+    // Two rows free under the header: two rows, the rest counted.
+    let (rows, area, _) = list_drawn(&m, "al", (2, 3), 1, 60, 10);
+    assert_eq!(area, Some(Rect::new(0, 1, 24, 2)));
+    assert!(rows[2].contains("said +1"), "{rows:#?}");
+    // None free: none drawn.
+    let (_, area, _) = list_drawn(&m, "al", (2, 1), 1, 60, 10);
+    assert_eq!(area, None);
+}
+
+#[test]
+fn the_word_list_shows_six_rows_scrolled_to_the_one_at_hand() {
+    let names: Vec<String> = (0..9).map(|i| format!("word_{i}")).collect();
+    let names: Vec<&str> = names.iter().map(String::as_str).collect();
+    let mut m = list_of(&names, &["said"; 9], 0);
+    let (rows, area, _) = list_drawn(&m, "wo", (2, 19), 1, 60, 20);
+    assert_eq!(area.map(|a| a.height), Some(LIST_ROWS));
+    assert!(rows[13].starts_with(" word_0"), "{rows:#?}");
+    assert!(
+        rows[18].contains("word_5") && rows[18].contains("said +3"),
+        "{rows:#?}"
+    );
+    m.chosen = 7;
+    let (rows, _, _) = list_drawn(&m, "wo", (2, 19), 1, 60, 20);
+    assert!(rows[13].starts_with(" word_2"), "{rows:#?}");
+    assert!(
+        rows[18].contains("word_7") && rows[18].contains("said +1"),
+        "{rows:#?}"
+    );
+    m.chosen = 8;
+    let (rows, _, _) = list_drawn(&m, "wo", (2, 19), 1, 60, 20);
+    assert!(
+        rows[18].contains("word_8") && !rows[18].contains('+'),
+        "{rows:#?}"
+    );
+}
+
+#[test]
+fn the_word_list_grows_with_its_widest_name_and_cuts_past_forty_eight() {
+    let long = format!("very_{}", "long_".repeat(12));
+    let m = list_of(
+        &["a_name_of_thirty_letters_here_x", &long],
+        &["said", "code"],
+        0,
+    );
+    let (rows, area, _) = list_drawn(&m, "a", (1, 9), 1, 100, 10);
+    assert_eq!(area.map(|a| a.width), Some(LIST_MAX as u16));
+    let cut = &rows[8];
+    assert!(cut.contains('…') && cut.contains("code"), "{cut}");
+    assert!(
+        rows[7].contains("a_name_of_thirty_letters_here_x"),
+        "{rows:#?}"
+    );
+    // Narrow names: the list keeps its least width.
+    let m = list_of(&["ab", "cd"], &["", ""], 0);
+    assert_eq!(
+        list_drawn(&m, "a", (1, 9), 1, 100, 10).1.map(|a| a.width),
+        Some(LIST_MIN as u16)
+    );
+}
+
+#[test]
+fn the_word_list_marks_the_one_at_hand_and_more_once_the_person_moved() {
+    assert!(crate::theme::set("gruvbox-dark-medium"));
+    let mut m = list_of(&["alpha_one", "alpha_two"], &["said"; 2], 0);
+    let (_, _, buf) = list_drawn(&m, "al", (2, 9), 1, 60, 10);
+    let at_hand = &buf[(3, 7)];
+    let other = &buf[(3, 8)];
+    assert!(at_hand.modifier.contains(Modifier::BOLD));
+    assert!(!other.modifier.contains(Modifier::BOLD));
+    assert_eq!(at_hand.bg, other.bg, "not moved: the same ground");
+    m.moved = true;
+    let (_, _, buf) = list_drawn(&m, "al", (2, 9), 1, 60, 10);
+    assert_ne!(
+        buf[(3, 7)].bg,
+        buf[(3, 8)].bg,
+        "moved: the selection's ground"
+    );
+    assert!(crate::theme::set("mono"));
+    let (_, _, buf) = list_drawn(&m, "al", (2, 9), 1, 60, 10);
+    assert!(buf[(3, 7)].modifier.contains(Modifier::REVERSED));
+    assert!(!buf[(3, 8)].modifier.contains(Modifier::REVERSED));
+    assert!(crate::theme::set("terminal"));
+}
+
+#[test]
+fn the_word_list_moves_nothing_on_the_screen_and_its_keys_are_on_the_line() {
+    let mut app = quiet_rows();
+    let lead = app.world.projects[0].leader;
+    app.world.note(Event::Replied {
+        agent: lead,
+        text: "keep quorum_size and quorum_wait".into(),
+    });
+    key(&mut app, KeyCode::Char('/'));
+    for c in "fix the q".chars() {
+        key(&mut app, KeyCode::Char(c));
+    }
+    let before = render(&app, 100, 24);
+    key(&mut app, KeyCode::Char('u'));
+    assert!(app.menu.as_ref().is_some_and(|m| m.list));
+    let with = render(&app, 100, 24);
+    assert!(
+        with.contains("quorum_wait") && with.contains("quorum_size"),
+        "{with}"
+    );
+    assert!(with.contains("tab take · ↓ choose · esc close"), "{with}");
+    // Every row but the list's and the line's is as it was.
+    let (b, w): (Vec<&str>, Vec<&str>) = (before.lines().collect(), with.lines().collect());
+    let changed: Vec<usize> = (0..b.len()).filter(|&y| b[y] != w[y]).collect();
+    assert_eq!(changed, [21, 22, 23], "{with}");
+    key(&mut app, KeyCode::Down);
+    let moved = render(&app, 100, 24);
+    assert!(
+        moved.contains("enter take · ↑↓ choose · esc close · 2 of 2"),
+        "{moved}"
+    );
+    app.lang = Lang::Tr;
+    assert!(render(&app, 100, 24).contains("enter al · ↑↓ seç · esc kapat"));
+    // Its notes are worded as the list is made, at the next key.
+    key(&mut app, KeyCode::Char('o'));
+    let tr = render(&app, 100, 24);
+    assert!(
+        tr.contains("söylendi") && tr.contains("tab al · ↓ seç · esc kapat"),
+        "{tr}"
     );
 }

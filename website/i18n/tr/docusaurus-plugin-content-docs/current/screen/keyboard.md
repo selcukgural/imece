@@ -42,7 +42,7 @@ Bir akorun ilk tuşu ikincisini beklerken satır ikinci tuşun ne olabileceğini
 | `:pin NAME` | projeyi ekibin en üstüne sabitle; yine: bırak |
 | `!cmd` | `cmd`'yi kendi kabuğunuzda çalıştır, ekran kenara çekilir |
 | `O`  `:output` | eldeki projenin son `!kmt`'sini (nasıl bittiği, son 40 satırı) eldeki agent'a, yoksa projenin başına bir mesajda alıntıla |
-| `tab` `⇧tab` `↑` `↓` | yazarken: ad ve komut tamamla (`^n` `^p` de ilerler); `tab` bir mesajın ya da `!kmt` satırının herhangi bir sözcüğünü projenin bir dosyasına da tamamlar (`/` içeren bir sözcük menüyü kendiliğinden açar), ya da kod haritasında kiralanmış bir sembole, `dosya::ad` olarak |
+| `tab` `⇧tab` `↑` `↓` | yazarken: ad ve komut tamamla (`^n` `^p` de ilerler); bir mesajın ya da `!kmt` satırının başka her sözcüğünün ikinci harfinden bir listesi olur: söylenen sözcükler ve dosyalar, `tab` alır, `↓` `↑` gezer, `enter` yalnız gezdiysen alır, yoksa gönderir ([kelimeler ve dosyalar](command-line.md#kelimeler-ve-dosyalar)); `/` içeren bir sözcük dosyaları yoluyla, kiralanmış sembolleri `dosya::ad` olarak listeler |
 | `↑` `↓` | yazarken, metnin ilk / son satırında: önce gönderilenler, en yenisi önce; en yeninin ötesinde yazmakta olduğunuz geri gelir |
 | `^r`  `:history` | gönderilenleri ara: yazılan her sözcük satırda geçmeli, `enter` seçili olanı satıra koyar, `tab` ilerler |
 | `H`  `:recall` | her projenin ve arşivin tüm günlük ve iz satırlarında ara: yazılan her sözcük satırın bir sözcüğünü başlatmalı, en yenisi önce, kim, nerede ve ne zaman ile; `enter` oraya gider (konuşması, bir arşivin görünümü, ajanın ham akışı), `tab` ilerler |

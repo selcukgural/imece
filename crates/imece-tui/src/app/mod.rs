@@ -20,6 +20,7 @@ use crate::live::{self, Live, Open, Refusal, TidyRefusal, standing};
 use crate::model::*;
 use crate::motion::{self, Glow, GlowOn, Lit, Motion};
 use crate::notify::{self, Note, Notify};
+use crate::pool;
 use crate::recall;
 use crate::screen::Progress;
 use crate::shell::{Caught, Output, Ran};
@@ -1083,6 +1084,9 @@ pub struct App {
     pub cut: String,
     /// What the composer offers for the word being typed, if anything.
     pub menu: Option<Menu>,
+    /// Where the word starts whose list `esc` closed: it does not open
+    /// again on that word, only on the next one (or by `tab`).
+    pub word_closed: Option<usize>,
     /// Whether the terminal tells shift-enter from enter (it speaks the
     /// kitty keyboard protocol): `?` and the footer name shift-enter for
     /// a new line, else `\` enter.
@@ -1371,6 +1375,7 @@ impl App {
             shift_enter: false,
             cut: String::new(),
             menu: None,
+            word_closed: None,
             paused: false,
             speed: 1,
             help: false,

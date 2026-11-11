@@ -1,0 +1,31 @@
+# SCR-15 · Writing: words and files in a list above the line.
+start
+see any key: close
+key Escape
+# A line sent: its words come back in the list.
+type :why counter_total_rows
+key Enter
+key /
+type and coun
+see counter_total_rows
+see tab take · ↓ choose · esc close
+# Moved to, enter takes the word and sends nothing.
+key Down
+see enter take · ↑↓ choose · esc close
+key Enter
+see and counter_total_rows
+gone esc close
+# A file by its name, taken with nothing after it.
+type  sh
+see shelf.py
+key Tab
+see and counter_total_rows shelf.py
+gone tab take
+# esc closes the list for that word; another letter keeps it closed.
+type  coun
+see tab take · ↓ choose · esc close
+key Escape
+gone tab take
+type t
+gone tab take
+key C-u Escape Escape

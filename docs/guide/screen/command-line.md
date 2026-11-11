@@ -96,7 +96,27 @@ Writing completes as a shell does: after `@` the agents' names (the project at h
 | `enter` | take the highlighted match when it is not in yet, else send |
 | `esc` | hide the menu; again, cancel the writing |
 
-The menu is offered only with the cursor at the end, since a completion replaces the word the line ends with; moving off the end hides it, `tab` there does nothing, coming back offers it again. Nothing completes after `!`.
+The menu is offered only with the cursor at the end, since a completion replaces the word the line ends with; moving off the end hides it, `tab` there does nothing, coming back offers it again.
+
+### Words and files
+
+Any other word of a message or a `!cmd` line has a list of its own, as an IDE's: from the second letter it opens by itself, above the line at the word's column, drawn over the screen so nothing moves. It holds, in this order, the words said in the conversation at hand, then the rest said in the project, then the lines you sent (newest first), then the project's files whose name starts with the word; a word with a `/` lists the files by any part of their path. Each row says where it comes from (`said`, `file`, or who holds a leased file). Matching folds case and the Turkish letters; a word has four letters at least, the word you typed is never offered, and a word that looks like a secret never enters the list. No model is asked: it is local and free.
+
+```text
+                   retry_policy          said
+                   retry_after_ms        said
+                   src/net/retry.rs      file
+ › to lead: keep the old retr   tab take · ↓ choose · esc close
+```
+
+| Key | What it does |
+| --- | --- |
+| `tab` | take the word at hand; nothing goes after it, so a suffix may follow (`retry_policy'yi`). With no list open, `tab` opens one from the first letter (the files by any part of their path when no word starts so) and takes a word that is the only one |
+| `↓` `↑`, `^n` `^p`, `⇧tab` | move in the list; nothing goes in until it is taken |
+| `enter` | sends, unless you moved in the list: then it takes the word at hand |
+| `esc` | close the list; it stays closed on that word, the next word has one again. Again: cancel the writing |
+
+While no list is open, `↑` `↓` recall the lines sent as before. Six rows show at most, `+N` counts the rest; the list is 24 to 48 cells wide, a long name cut with `…`, and slides left at the screen's edge. Not yet: identifiers from the repository's code, and a list mid-line or on a text of several lines.
 
 ## Readline keys
 

@@ -42,7 +42,7 @@ While the first key of a chord waits for its second, the row lists what the seco
 | `:pin NAME` | pin a project to the top of the team; again: unpin |
 | `!cmd` | run `cmd` in your own shell, screen aside |
 | `O`  `:output` | quote the last `!cmd` of the project at hand (how it ran, its last 40 lines) in a message to the agent at hand, else the project's head |
-| `tab` `⇧tab` `↑` `↓` | while writing: complete names and commands (`^n` `^p` step too); `tab` also completes any word of a message or a `!cmd` line to a file of the project (a word with a `/` opens the menu by itself), or to a symbol leased on the code map as `file::name` |
+| `tab` `⇧tab` `↑` `↓` | while writing: complete names and commands (`^n` `^p` step too); any other word of a message or a `!cmd` line has a list from its second letter: words said and files, `tab` takes, `↓` `↑` move, `enter` takes only once you moved, else sends ([words and files](command-line.md#words-and-files)); a word with a `/` lists files by their path, and leased symbols as `file::name` |
 | `↑` `↓` | writing, at the text's first / last line: the lines sent before, newest first; past the newest, what you were writing comes back |
 | `^r`  `:history` | search the lines sent: every word typed must be in the line, `enter` puts the one highlighted on the line, `tab` steps |
 | `H`  `:recall` | search every journal and trace line of every project and archive: each word typed must start a word of the line, newest first with who, where and when; `enter` goes there (its conversation, an archive's view, the agent's raw stream), `tab` steps |

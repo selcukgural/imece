@@ -96,7 +96,27 @@ Yazmak bir kabuktaki gibi tamamlanır: `@` ardından agent adları (eldeki proje
 | `enter` | vurgulu eşleşme henüz girilmemişse al, yoksa gönder |
 | `esc` | menüyü gizle; yine basılınca yazmaktan vazgeç |
 
-Menü yalnız imleç sondayken önerilir, çünkü bir tamamlama satırın bittiği sözcüğün yerini alır; sondan ayrılmak gizler, orada `tab` bir şey yapmaz, geri gelmek yine önerir. `!` ardından hiçbir şey tamamlanmaz.
+Menü yalnız imleç sondayken önerilir, çünkü bir tamamlama satırın bittiği sözcüğün yerini alır; sondan ayrılmak gizler, orada `tab` bir şey yapmaz, geri gelmek yine önerir.
+
+### Kelimeler ve dosyalar
+
+Bir mesajın ya da `!kmt` satırının başka her sözcüğünün, bir IDE'deki gibi kendi listesi vardır: ikinci harften sonra kendiliğinden açılır, satırın üstünde sözcüğün sütununda, ekranın üstüne çizilir, böylece hiçbir şey kaymaz. Sırayla şunları tutar: eldeki konuşmada söylenen sözcükler, sonra projede söylenen öbürleri, sonra gönderdiğin satırlar (en yeni önce), sonra adı sözcükle başlayan proje dosyaları; `/` içeren bir sözcük dosyaları yolunun herhangi bir parçasıyla listeler. Her satır nereden geldiğini söyler (`söylendi`, `dosya` ya da kiralanmış bir dosyayı kimin tuttuğu). Eşleşme büyük küçük harfi ve Türkçe harfleri katlar; bir sözcük en az dört harftir, yazdığın sözcüğün kendisi hiç önerilmez, gizli bir değere benzeyen sözcük listeye hiç girmez. Hiçbir model sorulmaz: yereldir ve ücretsizdir.
+
+```text
+                   retry_policy          söylendi
+                   retry_after_ms        söylendi
+                   src/net/retry.rs      dosya
+ › lead için: eski retr   tab al · ↓ seç · esc kapat
+```
+
+| Tuş | Ne yapar |
+| --- | --- |
+| `tab` | eldeki sözcüğü al; ardına hiçbir şey konmaz, böylece bir ek gelebilir (`retry_policy'yi`). Liste açık değilken `tab` ilk harften bir liste açar (hiçbir sözcük öyle başlamıyorsa dosyaları yolunun herhangi bir parçasıyla) ve tek olan sözcüğü hemen alır |
+| `↓` `↑`, `^n` `^p`, `⇧tab` | listede gezin; alınana dek hiçbir şey girmez |
+| `enter` | gönderir, ama listede gezdiysen eldeki sözcüğü alır |
+| `esc` | listeyi kapat; o sözcükte kapalı kalır, sonraki sözcüğün yine listesi olur. Yine basılınca: yazmaktan vazgeç |
+
+Liste açık değilken `↑` `↓` gönderilen satırları eskisi gibi geri getirir. En çok altı satır görünür, `+N` kalanları sayar; liste 24 ile 48 hücre genişliğindedir, uzun ad `…` ile kesilir ve ekranın kenarında sola kayar. Henüz yok: deponun kodundaki tanımlayıcılar, ve satırın ortasında ya da birkaç satırlık metinde bir liste.
 
 ## Readline tuşları
 
