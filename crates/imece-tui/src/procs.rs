@@ -844,6 +844,11 @@ pub(crate) fn sleeper() -> String {
             .output()
             .unwrap();
         assert!(signed.status.success(), "{signed:?}");
+        // The first run of a program signed just now waits for macOS to
+        // look at it, seconds on a busy machine: it happens here, not
+        // inside a test's wait for the mark (`left_behind`).
+        let ran = Command::new(&copy).arg("0").status().unwrap();
+        assert!(ran.success(), "{ran:?}");
         copy.display().to_string()
     })
     .clone()
@@ -863,9 +868,9 @@ pub(crate) fn left_behind(mark: &str) -> u32 {
         .unwrap();
     let pid = String::from_utf8_lossy(&out.stdout).trim().parse().unwrap();
     // Until it runs the sleeper it is the shell, whose environment
-    // macOS does not show.
+    // macOS does not show; a loaded CI runner took more than 5 s once.
     let start = std::time::Instant::now();
-    while mark_of(pid).is_none() && start.elapsed() < Duration::from_secs(5) {
+    while mark_of(pid).is_none() && start.elapsed() < Duration::from_secs(30) {
         std::thread::sleep(Duration::from_millis(10));
     }
     pid
