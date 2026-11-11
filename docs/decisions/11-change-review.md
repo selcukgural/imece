@@ -106,7 +106,21 @@ no run as before; the person decides. A vendor's own shell does not
 count: imece does not see what tree it ran on, Claude's and Gemini's
 events carry no exit code, and "failed" means something else per
 vendor. So the worker's instructions say to check with the run tool
-after the last edit, and that a check in its own shell does not show.
+after the last edit, and that a check in its own shell shows only as
+run. Since 2026-11-11 (an acceptance run: `nothing ran` on a change whose
+worker had run `npm test` in its shell, the person's word: the rule
+stays, the words change) a build or a test the worker or a helper ran in
+Claude Code's `Bash` is said on the change (`imece_agent::Event::ShellRan`
+from the result's `is_error` and its `Exit code N` line, probed;
+`tools::a_check`: cargo's build and test commands and the project's
+runners, output cut by `| tail` allowed; `World.shelled`, memory only,
+`SHELL_KEPT` 6 a worker, taken by its next change; `Proof::Shell` in the
+verdict of a change with no check or run of its own (`World::proof_of`:
+a proved change's row stays short), `npm test passed in its own shell, not proved on this tree` in
+the warning colour, `✗ … in its own shell: exit N` red), never counted:
+it does not make a change ready, and `nothing ran` now means nothing ran.
+The demo's every fourth change was tested in the worker's own shell
+(`SHELL_EVERY`).
 Known gaps: a run takes two tree reads more (each the `add -A` of
 reading a change, without its diff); a run that edits a
 file and puts it back between the reads counts; ignored files

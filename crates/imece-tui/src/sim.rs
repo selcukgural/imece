@@ -299,6 +299,10 @@ const OWN_CHANGE_EVERY: u32 = 2;
 /// says no figure, as a Claude Code result may (record 132): its cost
 /// reads `+?`, and the agent's until a later turn says the whole.
 const UNPRICED_EVERY: u32 = 5;
+/// Every this many changes of the demo's workers were built and tested in
+/// the worker's own shell, not through imece's `run`: the change says they
+/// ran, and proves nothing of its tree (record 11).
+const SHELL_EVERY: u32 = 4;
 
 /// Every this many failed test runs, the worker goes round on it: the
 /// same run fails again until imece tells its leader (record 128).
@@ -1303,6 +1307,7 @@ pub fn world(
         research_queue: VecDeque::new(),
         changes: Vec::new(),
         clashes: Default::default(),
+        shelled: Default::default(),
         proposals: Default::default(),
         items: Default::default(),
         paid: 0,
@@ -4996,7 +5001,12 @@ impl Sim {
             }
         }
         let (files, patch) = self.patch(&symbols);
-        let runs = std::mem::take(&mut self.mind(id).runs);
+        let mut runs = std::mem::take(&mut self.mind(id).runs);
+        if (self.extras.changes_done + 1).is_multiple_of(SHELL_EVERY) {
+            for r in std::mem::take(&mut runs) {
+                w.shell_ran(id, r);
+            }
+        }
         let change = Change {
             agent: id,
             title,
@@ -6481,6 +6491,33 @@ mod tests {
         );
         assert_eq!(a.activity, None);
         assert!(Sim::free(&w, worker), "it takes the next card");
+    }
+
+    #[test]
+    fn every_fourth_change_was_tested_in_the_worker_s_own_shell() {
+        let (mut w, mut s, worker, _) = one_at_work();
+        s.extras.changes_done = SHELL_EVERY - 1;
+        s.test(&mut w, worker);
+        s.tested(&mut w, worker, 0);
+        let change = w.change_of(worker).expect("a change");
+        assert!(change.runs.is_empty(), "no proof of its tree");
+        assert!(!change.easy(None));
+        let v = w.verdict(worker).unwrap();
+        let shell: Vec<&str> = (v.proof.iter())
+            .map(|p| match p {
+                Proof::Shell(r) => r.line.as_str(),
+                other => panic!("{other:?}"),
+            })
+            .collect();
+        assert_eq!(shell, ["dotnet build", "dotnet test"]);
+        assert!(!v.ready);
+        // The next one goes through imece's run again.
+        let (mut w, mut s, worker, _) = one_at_work();
+        s.extras.changes_done = SHELL_EVERY;
+        s.test(&mut w, worker);
+        s.tested(&mut w, worker, 0);
+        assert_eq!(w.change_of(worker).unwrap().runs.len(), 2);
+        assert!(w.shelled.of_change.is_empty());
     }
 
     #[test]

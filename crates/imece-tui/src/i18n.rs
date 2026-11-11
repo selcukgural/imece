@@ -1886,6 +1886,10 @@ pub struct Text {
     /// when there is none.
     pub ran_ok: &'static str,
     pub ran_exit: &'static str,
+    /// A build or a test the worker ran in its own shell (record 11):
+    /// said, never a proof of the tree.
+    pub shell_ok: &'static str,
+    pub shell_exit: &'static str,
     pub ran_deadline: &'static str,
     pub ran_killed: &'static str,
     pub in_question: &'static str,
@@ -3324,6 +3328,8 @@ pub const EN: Text = Text {
     ran_none: " · no run on this tree",
     ran_ok: "✓ {}",
     ran_exit: "✗ {}: exit {}",
+    shell_ok: "{} passed in its own shell, not proved on this tree",
+    shell_exit: "✗ {} in its own shell: exit {}",
     ran_deadline: "✗ {}: killed at the deadline",
     ran_killed: "✗ {}: killed",
     in_question: "{} asks you: {}",
@@ -5084,6 +5090,8 @@ pub const TR: Text = Text {
     ran_none: " · bu ağaçta çalıştırma yok",
     ran_ok: "✓ {}",
     ran_exit: "✗ {}: exit {}",
+    shell_ok: "{} kendi kabuğunda geçti, bu ağaçta kanıtlanmadı",
+    shell_exit: "✗ {} kendi kabuğunda: exit {}",
     ran_deadline: "✗ {}: süre dolunca durduruldu",
     ran_killed: "✗ {}: durduruldu",
     in_question: "{} sana soruyor: {}",
@@ -6338,6 +6346,8 @@ mod tests {
             (e.ran_none, t.ran_none),
             (e.ran_ok, t.ran_ok),
             (e.ran_exit, t.ran_exit),
+            (e.shell_ok, t.shell_ok),
+            (e.shell_exit, t.shell_exit),
             (e.ran_deadline, t.ran_deadline),
             (e.ran_killed, t.ran_killed),
             (e.left_title_ago, t.left_title_ago),

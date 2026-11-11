@@ -257,8 +257,9 @@ pub(super) fn system_prompt(
                  turn ends, the person sees your worktree's diff and applies it to their \
                  checkout or rejects it, with notes when they have them; so finish a piece \
                  before you answer, and check it with the run tool (build, test) after your \
-                 last edit: the person sees which runs passed on exactly the diff, and a \
-                 check in your own shell does not show there. Answer briefly: what you did \
+                 last edit: the person sees which runs passed on exactly the diff; a check \
+                 in your own shell shows only as run, never as proof of the diff. Answer \
+                 briefly: what you did \
                  and what is left; when you need the person to decide, end with one clear \
                  question, or send it mid-task (send to you, type ask) and their answer \
                  starts your next turn.{helpers} Use these tools only for that, not for \
@@ -336,7 +337,8 @@ pub(super) fn system_prompt(
                  your worktree's diff, which they apply to their checkout or reject, \
                  so finish before you send it and check it with the run tool (build, \
                  test) after your last edit: the person sees which runs passed on exactly \
-                 the diff you hand in, and a check in your own shell does not show there. \
+                 the diff you hand in; a check in your own shell shows only as run, never \
+                 as proof of the diff. \
                  A card that owns paths is done inside them: a file you change outside \
                  them is noted on the change the person reads, and you are told; say in \
                  your done what else needs changing, or ask {leader} to widen the card. \

@@ -89,7 +89,7 @@ Before going through the list: `imece doctor` checks what a start needs in one g
 
 **What you see.** Every change's verdict says `nothing ran` and `! look first`.
 
-**Why.** Only imece's own `run` tool counts as evidence, tied to the exact tree; Claude Code's own shell does not show (imece does not see which tree it ran on). Workers are told to check with `run` after their last edit. A run that changed the tree (a formatter) counts for none.
+**Why.** Only imece's own `run` tool counts as evidence, tied to the exact tree; Claude Code's own shell does not (imece does not see which tree it ran on). A build or a test the worker ran there is said on the change (`npm test passed in its own shell, not proved on this tree`), so `nothing ran` means nothing ran at all. Workers are told to check with `run` after their last edit. A run that changed the tree (a formatter) counts for none.
 
 ### A `done` that brings no change: the patch is over 4 MiB
 

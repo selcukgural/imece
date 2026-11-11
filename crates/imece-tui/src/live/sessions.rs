@@ -98,6 +98,20 @@ pub fn apply(w: &mut World, id: AgentId, e: AgentEvent, before: u64) {
                 w.story(card, StoryEvent::Touched(target));
             }
         }
+        // A build or a test in its own shell: said on its change, never a
+        // proof of the tree (record 11).
+        AgentEvent::ShellRan { command, code } => {
+            w.agents[id].trace(t, format!("shell exit {code}: {command}"));
+            let runners = w.projects[w.agents[id].project].runners;
+            if let Some(line) = super::tools::a_check(&command, &runners) {
+                let ran = Ran {
+                    line,
+                    code: Some(code),
+                    timed_out: false,
+                };
+                w.shell_ran(id, ran);
+            }
+        }
         AgentEvent::ToolFailed { name } => {
             w.agents[id].trace(t, format!("tool_result {name} ✕"));
             // Named as its call was (`Tool` above).
@@ -1099,6 +1113,28 @@ pub(super) fn make_private(dir: &Path) -> io::Result<PathBuf> {
 mod tests {
     use super::*;
     use crate::live::testing::*;
+
+    #[test]
+    fn a_build_or_a_test_its_own_shell_ran_is_kept_for_its_change() {
+        let mut w = crate::live::testing::team(2);
+        let shell = |command: &str, code| AgentEvent::ShellRan {
+            command: command.into(),
+            code,
+        };
+        apply(&mut w, 1, shell("ls", 0), 0);
+        apply(&mut w, 1, shell("cargo test | tail -5", 101), 0);
+        assert_eq!(
+            w.shelled.pending[&1],
+            [Ran {
+                line: "cargo test".into(),
+                code: Some(101),
+                timed_out: false
+            }],
+            "a build or a test only, as said"
+        );
+        let traced = (w.agents[1].trace.iter()).any(|l| l.ends_with(" shell exit 0: ls"));
+        assert!(traced, "every end is traced");
+    }
 
     #[test]
     fn a_vendor_s_refusal_is_kept_as_its_first_line_cut() {

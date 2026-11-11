@@ -13,6 +13,9 @@ key Escape Escape
 # The change itself, not the leader's words that name the task.
 wait 60 2 files +2 −0
 gone permissions
+# Its tests ran in the worker's own shell: said, never a proof (record 11).
+see npm test passed in its own shell
+gone nothing ran
 # The team at work, or done already when the machine is quick to it.
 see AT WORK || TEAM FINISHED
 key ]

@@ -253,3 +253,8 @@ session (`nohup … &`) is found by a mark in the session's environment
 (probed: it reaches such a server), listed by `:ps` under its agent, ended
 with the session at quit, and found by a later start when it outlived one;
 the same mark is to close a session of real Claude Code outliving the quit.
+
+The second: a build or a test a worker ran in its own shell is said on
+its change and never counted (record 11): `npm test passed in its own
+shell, not proved on this tree`, so `nothing ran` means nothing ran.
+PROJ-1 checks it.

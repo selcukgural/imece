@@ -781,11 +781,18 @@ pub(crate) fn verdict_spans(
         parts.push(Span::styled(t.row_not_run.to_string(), fg(pal().warn)));
     }
     for p in &v.proof {
-        let colour = if p.ok() { pal().ok } else { pal().bad };
+        // A run in the worker's own shell is said, but proves nothing of
+        // the tree (record 11): a warning when it went well.
+        let colour = match p {
+            _ if !p.ok() => pal().bad,
+            Proof::Shell(_) => pal().warn,
+            _ => pal().ok,
+        };
         let said = match p {
             Proof::Check { ok: true, .. } => format!("✓ {}", t.row_check_word),
             Proof::Check { end, .. } => fill(t.check_bad, &[&clean(end)]),
             Proof::Run(r) => words::ran(lang, r),
+            Proof::Shell(r) => words::shell_ran(lang, r),
         };
         parts.push(Span::styled(said, fg(colour)));
     }
@@ -2106,6 +2113,45 @@ diff --git a/c.rs b/c.rs
         (verdict_spans(lang, v, head, counts).iter())
             .map(|s| s.content.as_ref())
             .collect()
+    }
+
+    #[test]
+    fn a_run_in_the_worker_s_own_shell_is_said_never_proved() {
+        let shell = |line: &str, code| {
+            Proof::Shell(Ran {
+                line: line.into(),
+                code,
+                timed_out: false,
+            })
+        };
+        let v = Verdict {
+            ready: false,
+            proof: vec![shell("npm test", Some(0)), shell("cargo build", Some(101))],
+            ..a_verdict()
+        };
+        assert_eq!(
+            worded(Lang::En, &v, true, None),
+            "! look first · npm test passed in its own shell, not proved on this tree · \
+             ✗ cargo build in its own shell: exit 101 · 2 files, both inside #6"
+        );
+        assert_eq!(
+            worded(Lang::Tr, &v, false, None),
+            "npm test kendi kabuğunda geçti, bu ağaçta kanıtlanmadı · ✗ cargo build kendi \
+             kabuğunda: exit 101 · 2 dosya, ikisi de #6 içinde"
+        );
+        let spans = verdict_spans(Lang::En, &v, false, None);
+        assert_eq!(spans[0].style, fg(pal().warn), "passed, but no proof");
+        assert_eq!(spans[2].style, fg(pal().bad), "failed");
+        assert!(!worded(Lang::En, &v, false, None).contains("nothing ran"));
+        // A line of the agent's is cleaned; one cut off says so.
+        let v = Verdict {
+            proof: vec![shell("make\u{1b}[31m", None)],
+            ..v
+        };
+        assert_eq!(
+            worded(Lang::En, &v, false, None),
+            "✗ make [31m in its own shell: exit ? · 2 files, both inside #6"
+        );
     }
 
     #[test]

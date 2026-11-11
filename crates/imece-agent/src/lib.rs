@@ -609,6 +609,12 @@ pub enum Event {
     Tool { name: String, target: String },
     /// A tool call came back with an error.
     ToolFailed { name: String },
+    /// A command the agent ran in its own shell (Claude Code's `Bash`)
+    /// ended: the line as given and its exit code. Said only of one that
+    /// ran (not of one refused or cut off). No proof of a tree: imece
+    /// does not see what tree it ran on (record 11), so the change only
+    /// says it ran.
+    ShellRan { command: String, code: i32 },
     /// The agent's own to-do list as its planning tool now holds it,
     /// whole, in the agent's order; an empty list is a cleared one.
     Plan(Vec<Step>),
