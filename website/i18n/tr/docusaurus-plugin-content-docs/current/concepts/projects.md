@@ -132,7 +132,7 @@ imece, işbirlikçi kipte çalışan bir `lonca daemon`'ın istemcisidir: soket 
 
 `:lonca import`, çalışma kopyasından bir depo oluşturur: üzerinde olduğun dal ve geçmişi, projenin adıyla ya da verdiğin adla Lonca'nın deposuna kopyalanır. Önce bir pencere neyin gideceğini söyler ve yalnız `a` çalıştırır, çünkü imece bunu geri alamaz; çalışma kopyan olduğu gibi kalır, commit edilmemiş olan gitmez. Yeni bir daemon'da ilk adım budur: hiç deposu olmayan bir daemon kimsenin oturumunu açamaz, bu yüzden aktarma oturumunu da açar. Deponun politikasını da imzalar, böylece kritik bir yol reddedilmez, seni bekler (aşağıda): bir imza daha gerekir, geçmezse günlük söyler ve aktarma yine de durur. Bir öneri için fazla büyük dosya günlükte uyarılır.
 
-Her 5 saniyede bir projenin satırı nerede durduğunu söyler:
+Projenin satırı nerede durduğunu söyler; bir işçi Lonca'da çalışırken her 5 saniyede, hiçbiri çalışmıyorken her 30 saniyede okunur. Arada ajanlarınızın oradaki oturumlarına olanı (bir değişikliğin trunk'a girmesi ya da kontrollerden geçememesi, bir karar, el değiştiren bir lease) daemon imece'ye hemen söyler ve satır bir iki saniye içinde ona uyar. Lonca 0.2.3'ten eski bir daemon bir şey söylemez; imece onu her 5 saniyede okur.
 
 | Satır | Anlamı |
 | --- | --- |

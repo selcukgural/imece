@@ -132,7 +132,7 @@ imece is a client of a running `lonca daemon` in cooperative mode: the socket is
 
 `:lonca import` makes a repository of the checkout: the branch you are on and its history are copied into Lonca's store, as the project's name or the name you give. A window says what goes first, and only `a` runs it, because imece can not take it back; your checkout stays as it is and what is not committed does not go. On a new daemon this comes first: a daemon with no repository can sign nobody in, so the import signs you in as well. It also signs the repository's policy, so a critical path waits for you instead of being refused (below): one more signature, and if it does not go through the journal says so and the import stands. A file too large for a proposal is warned of in the journal.
 
-Every 5 seconds the project's line says how it stands:
+The project's line says how it stands, read every 5 seconds while a worker works on Lonca, every 30 seconds while none does; what happens to your agents' sessions there in between (a change landing or failing its checks, a decision, a lease handed over) the daemon tells imece at once, and the line follows within a second or two. A daemon older than Lonca 0.2.3 tells nothing, so imece reads it every 5 seconds.
 
 | The line | What it means |
 | --- | --- |

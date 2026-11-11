@@ -624,14 +624,14 @@ Expect: the window says `WAITING FOR A HUMAN · 1` and `Δ shown`; the change sa
 
 ### LONCA-3 · The Δ on Lonca: the yes lands it on trunk
 
-- records: 120, 122, 125, 127
+- records: 120, 122, 125, 127, 148
 - commands: :checks
 - tier: real
 - after: LONCA-2
 
 Steps: `scenarios/real/LONCA-3.scn`: its own daemon; an import; a cheap worker's change; its verdict; `gd` `a`; `J J`.
 
-By hand, in the same run: `r` on another proposal, its reason written (the worker hears it); `[verification]` set with `lonca policy set` and the verdict naming it; `:checks NAMES` on a change.
+By hand, in the same run: `r` on another proposal, its reason written (the worker hears it); `[verification]` set with `lonca policy set` and the verdict naming it; `:checks NAMES` on a change; with nobody at work, another proposal approved from a shell (`lonca approve SEQ`): the journal says `on trunk as …` within a couple of seconds, not half a minute.
 
 Expect: the verdict says what runs after the yes (`nothing runs after your yes`, or Lonca's checks by name); the yes lands it: the journal says `on trunk as …`.
 
@@ -650,7 +650,7 @@ Expect: the header says `↓1` once it landed; `:sync` takes it away and the che
 
 ### LONCA-5 · The daemon goes away and comes back
 
-- records: 116
+- records: 116, 148
 - commands: —
 - tier: real
 - after: LONCA-4
