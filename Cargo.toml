@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/*"]
 
 [workspace.package]
-version = "0.1.202611100124"
+version = "0.1.202611111627"
 edition = "2024"
 license = "Apache-2.0"
 rust-version = "1.99"
@@ -14,4 +14,4 @@ homepage = "https://selcukgural.github.io/imece/"
 # imece's own crates name each other at the workspace's version, exactly:
 # crates.io gets them together (`cargo publish --workspace`), and a version
 # changed above without this line fails the build.
-imece-agent = { path = "crates/imece-agent", version = "=0.1.202611100124" }
+imece-agent = { path = "crates/imece-agent", version = "=0.1.202611111627" }

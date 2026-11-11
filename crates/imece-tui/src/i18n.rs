@@ -3569,6 +3569,16 @@ pub const EN: Text = Text {
     news_close: " any key: close · :news shows this again",
     news: &[
         (
+            "0.1.202611111627",
+            &[
+                "What stops the team comes first on Home, with its choices as digits 1-9.",
+                "The leader solves a blocked or stopped worker first; you hear what it can't.",
+                "A card can name the issue it closes; imece closes it once the card lands.",
+                "Writing to the lead reads as Claude Code's screen; Home says when all is done.",
+                ":ps finds what left a session and the quit ends it; Lonca tells imece at once.",
+            ],
+        ),
+        (
             "0.1.202611100124",
             &[
                 "Home lists what is to decide with its keys; a change opens with a verdict.",
@@ -5330,6 +5340,16 @@ pub const TR: Text = Text {
     news_title: " IMECE {} SÜRÜMÜNDE YENİ OLANLAR ",
     news_close: " herhangi bir tuş: kapat · :news bunu yine gösterir",
     news: &[
+        (
+            "0.1.202611111627",
+            &[
+                "Ekibi durduran ne varsa Ana ekranda ilk sırada, seçenekleri 1-9 rakamlarıyla.",
+                "Lider takılan ya da duran işçiyi önce kendi çözer; çözemediğini sen duyarsın.",
+                "Kart kapattığı issue'yu söyleyebilir; kart inince imece o issue'yu kapatır.",
+                "Lidere yazmak Claude Code'un ekranı gibi okunur; iş bitince Ana ekran söyler.",
+                ":ps oturumdan kopan süreçleri bulur, çıkış onları bitirir; Lonca hemen söyler.",
+            ],
+        ),
         (
             "0.1.202611100124",
             &[
