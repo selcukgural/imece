@@ -1347,6 +1347,7 @@ pub fn world(
             leader,
             trunk: None,
             files: Vec::new(),
+            names: Vec::new(),
             repo,
             closed: false,
             pinned: false,

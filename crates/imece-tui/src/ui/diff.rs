@@ -647,6 +647,12 @@ enum Kind {
     Generated,
 }
 
+/// Whether `path` is a lock file, minified or generated code, by its
+/// name: the word list reads no names from it (record 149).
+pub(crate) fn generated(path: &str) -> bool {
+    kind(path) == Kind::Generated
+}
+
 /// What `path` is, by its name alone.
 fn kind(path: &str) -> Kind {
     let lower = path.to_ascii_lowercase();

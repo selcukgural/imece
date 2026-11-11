@@ -80,10 +80,12 @@ pub(super) fn git_thread(jobs: Receiver<GitJob>, done: Sender<GitDone>) {
             GitJob::Files { project, repo } => {
                 let files = worktree::files(&repo, FILES_MAX);
                 let runners = (files.as_ref()).map_or(Runners::default(), |(f, _)| runners::of(f));
+                let names = (files.as_ref()).map_or(Vec::new(), |(f, _)| names::of(&repo, f));
                 GitDone::Files {
                     project,
                     files,
                     runners,
+                    names,
                 }
             }
         };
@@ -200,7 +202,8 @@ impl Live {
                     project,
                     files,
                     runners,
-                } => self.filed(w, project, files, runners),
+                    names,
+                } => self.filed(w, project, files, runners, names),
             }
         }
         done_any
@@ -247,23 +250,26 @@ impl Live {
         }
     }
 
-    /// What git listed for project `p`: the files for completion and the
-    /// tests they call for (`runners`, record 136: a change is said in the
+    /// What git listed for project `p`: the files for completion, the
+    /// names in their code for the word list (record 149) and the tests
+    /// they call for (`runners`, record 136: a change is said in the
     /// journal, so what runs without the person never grows unseen); a
     /// checkout with more than it keeps is said once in the journal; a
-    /// listing that failed keeps the last of both and is traced.
+    /// listing that failed keeps the last of them and is traced.
     fn filed(
         &mut self,
         w: &mut World,
         p: ProjectId,
         files: io::Result<(Vec<String>, bool)>,
         runners: Runners,
+        names: Vec<String>,
     ) {
         self.filing.remove(&p);
         let leader = w.projects[p].leader;
         match files {
             Ok((files, cut)) => {
                 w.projects[p].files = files;
+                w.projects[p].names = names;
                 if w.projects[p].runners != runners {
                     w.projects[p].runners = runners;
                     let commands = runners.lines();
@@ -1701,17 +1707,23 @@ mod tests {
         // The same again says nothing; none any more is said; a listing
         // that fails keeps them.
         let files = || Ok((vec!["pyproject.toml".to_string()], false));
-        live.filed(&mut w, 0, files(), py);
+        live.filed(&mut w, 0, files(), py, Vec::new());
         assert_eq!(found(&w).len(), 1);
-        live.filed(&mut w, 0, files(), Runners::default());
+        live.filed(&mut w, 0, files(), Runners::default(), Vec::new());
         let none = Event::TestsFound {
             leader: 0,
             commands: Vec::new(),
         };
         assert_eq!(found(&w), [said, none]);
         assert_eq!(w.projects[0].runners, Runners::default());
-        live.filed(&mut w, 0, files(), py);
-        live.filed(&mut w, 0, Err(io::Error::other("boom")), Runners::default());
+        live.filed(&mut w, 0, files(), py, Vec::new());
+        live.filed(
+            &mut w,
+            0,
+            Err(io::Error::other("boom")),
+            Runners::default(),
+            Vec::new(),
+        );
         assert_eq!(w.projects[0].runners, py);
         assert_eq!(found(&w).len(), 3);
         let _ = std::fs::remove_dir_all(&repo);
@@ -1739,6 +1751,7 @@ mod tests {
         assert!(w.journal.is_empty(), "not cut");
         // Read: again only while an agent is mid-turn, every FILES_EVERY.
         std::fs::write(repo.join("b.txt"), "b").unwrap();
+        std::fs::write(repo.join("c.rs"), "fn code_name() {}").unwrap();
         live.filed_at.insert(0, now);
         live.files_due(&w, now + FILES_EVERY);
         assert!(!live.filing.contains(&0), "nobody busy");
@@ -1754,7 +1767,9 @@ mod tests {
             }
             thread::sleep(Duration::from_millis(10));
         }
-        assert_eq!(w.projects[0].files, ["a.txt", "b.txt"]);
+        assert_eq!(w.projects[0].files, ["a.txt", "b.txt", "c.rs"]);
+        // The names in the code are read with them (record 149).
+        assert_eq!(w.projects[0].names, ["code_name"]);
         assert_eq!(FILES_EVERY, Duration::from_secs(60));
         // A list cut at FILES_MAX is said once in the journal; a listing
         // that fails keeps the last list and is traced on the leader.
@@ -1763,12 +1778,14 @@ mod tests {
             0,
             Ok((vec!["a.txt".into()], true)),
             Runners::default(),
+            vec!["code_name".into()],
         );
         live.filed(
             &mut w,
             0,
             Ok((vec!["a.txt".into()], true)),
             Runners::default(),
+            vec!["code_name".into()],
         );
         let cuts: Vec<&Event> = w
             .journal
@@ -1784,8 +1801,15 @@ mod tests {
             }]
         );
         assert_eq!(FILES_MAX, 20_000);
-        live.filed(&mut w, 0, Err(io::Error::other("boom")), Runners::default());
+        live.filed(
+            &mut w,
+            0,
+            Err(io::Error::other("boom")),
+            Runners::default(),
+            Vec::new(),
+        );
         assert_eq!(w.projects[0].files, ["a.txt"]);
+        assert_eq!(w.projects[0].names, ["code_name"], "kept too");
         assert!(
             w.agents[0].trace.iter().any(|l| l.ends_with("files: boom")),
             "{:?}",

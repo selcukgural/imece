@@ -31,9 +31,9 @@ type @claude
 key Tab
 see @claude-1
 key C-u
-# Files by any part of their path: tab opens the list, tab takes.
+# Files by any part of their path: a word with a dot opens the list by
+# itself, tab takes.
 type see shelf.p
-key Tab
 see test_shelf.py
 key Tab
 see see shelf.py

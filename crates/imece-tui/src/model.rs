@@ -587,6 +587,11 @@ pub struct Project {
     /// message (live: read on the git thread, at most [`FILES_MAX`]; not
     /// saved). The demo's files are `repo`'s (`World::files_of`).
     pub files: Vec<String>,
+    /// The names in the checkout's code, the most used first, for the
+    /// word list (live: read on the git thread with the files, see
+    /// `names::of`; not saved). The demo's are `repo`'s symbols
+    /// (`World::names_of`).
+    pub names: Vec<String>,
     /// Closed by the person (`:close`): its agents left and it is not
     /// drawn; kept so ids stay stable, and opened again in place.
     pub closed: bool,
@@ -3684,6 +3689,22 @@ impl World {
         }
     }
 
+    /// The names in project `p`'s code the word list offers (record 149):
+    /// the words of the code map's symbols where it has one (the demo:
+    /// `Rates.Quote` is `Rates` and `Quote`), else what was read from the
+    /// checkout's files, the most used first.
+    pub fn names_of(&self, p: ProjectId) -> Vec<&str> {
+        let project = &self.projects[p];
+        if project.repo.is_empty() {
+            project.names.iter().map(String::as_str).collect()
+        } else {
+            (project.repo.iter())
+                .flat_map(|(_, symbols)| symbols.iter())
+                .flat_map(|s| crate::pool::words(s))
+                .collect()
+        }
+    }
+
     /// The person sent `text` now: kept for recall, unless it is the last
     /// line again (a shell keeps one of a run of the same line).
     pub fn recall_line(&mut self, text: &str) {
@@ -3919,6 +3940,7 @@ impl World {
                 leader,
                 trunk: None,
                 files: Vec::new(),
+                names: Vec::new(),
                 repo: &[],
                 closed: false,
                 pinned: false,
@@ -6705,6 +6727,7 @@ mod tests {
                 leader: 0,
                 trunk: None,
                 files: Vec::new(),
+                names: Vec::new(),
                 repo: &[],
                 closed: false,
                 pinned: false,
@@ -7548,6 +7571,7 @@ mod tests {
             leader: 1,
             trunk: None,
             files: Vec::new(),
+            names: Vec::new(),
             repo: &[],
             closed: false,
             pinned: false,
@@ -9786,6 +9810,7 @@ mod tests {
             leader: 3,
             trunk: None,
             files: Vec::new(),
+            names: Vec::new(),
             repo: &[],
             closed: false,
             pinned: false,
@@ -9996,6 +10021,7 @@ mod tests {
                 leader: 0,
                 trunk: None,
                 files: Vec::new(),
+                names: Vec::new(),
                 repo: &[],
                 closed: true,
                 pinned: false,
@@ -10041,6 +10067,7 @@ mod tests {
             leader: 1,
             trunk: None,
             files: Vec::new(),
+            names: Vec::new(),
             repo: &[],
             closed: false,
             pinned: false,

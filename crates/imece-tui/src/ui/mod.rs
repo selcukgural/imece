@@ -39,8 +39,8 @@ use crate::motion::{GlowOn, Lit};
 use crate::screen::{Look, Shape};
 pub(crate) use crate::theme::pal;
 pub(crate) use diff::{
-    QUOTE_LINES, Shown, clash_message, copy_patch, file_of, file_starts, head_path, hunk_at,
-    notes_message, place, quote,
+    QUOTE_LINES, Shown, clash_message, copy_patch, file_of, file_starts, generated, head_path,
+    hunk_at, notes_message, place, quote,
 };
 pub(crate) use footer::caret_in;
 use footer::{completions, footer, input_rows};

@@ -426,22 +426,33 @@ impl App {
 
     /// The drop-down list for the word the line ends with (record 149):
     /// the words said in the conversation at hand and in the lines sent,
-    /// then the project's files by name ([`pool::picks`]); a word with a
+    /// then the names in the project's code, then its files by name
+    /// ([`pool::picks`]); a word with a
     /// `/` has the files by any part of their path ([`Self::file_menu`]),
-    /// and so has `tab` when no word starts so. Each says where it comes
+    /// so has a word with a `.` that some path holds, and so has `tab`
+    /// when no word starts so. Each says where it comes
     /// from (a leased file: its holder); nothing follows a word taken.
     /// Not again on the word whose list `esc` closed, unless `tab` asked.
     fn word_menu(&self, forced: bool) -> Option<Menu> {
         let whole = self.last_word()?;
         let t = self.lang.text();
+        // A word with a dot is a file's name more often than not: the
+        // files by any part of their path first, the word after the dot
+        // when none has it.
+        let dotted = (whole.contains('.') && !whole.contains('/'))
+            .then(|| self.file_menu(true))
+            .flatten();
         let mut m = if whole.contains('/') {
             self.file_menu(forced)?
+        } else if let Some(m) = dotted {
+            m
         } else {
             let start = pool::word_start(&self.input, self.input.len());
             let p = self.current_project();
             let files = self.world.files_of(p);
+            let code = self.world.names_of(p);
             let said = self.said_texts();
-            let picks = pool::picks(&self.input[start..], forced, said, &[], &files);
+            let picks = pool::picks(&self.input[start..], forced, said, &code, &files);
             if picks.is_empty() {
                 if !forced {
                     return None;
@@ -970,6 +981,7 @@ mod tests {
     /// worker of the first.
     fn writing_in(projects: usize, text: &str) -> App {
         let mut app = App::new(projects, 2, 0, 1, Lang::En);
+        said_alone(&mut app);
         let worker = (app.world.agents.iter())
             .find(|a| a.role == Role::Worker && a.project == 0)
             .map(|a| a.id)
@@ -1061,6 +1073,45 @@ mod tests {
         type_in(&mut app, "qu");
         assert_eq!(items(&app), ["quorum_size"]);
         assert!(!theirs.is_empty(), "a second project to look at");
+    }
+
+    #[test]
+    fn names_in_the_code_come_after_what_was_said_and_before_the_files() {
+        // Live: the names read from the checkout.
+        let mut app = writing_after("keep quorum_size");
+        let p = app.current_project();
+        app.world.projects[p].names = vec!["QuorumCode".into(), "quorum_size".into()];
+        app.world.projects[p].files = vec!["src/quorum.rs".into()];
+        type_in(&mut app, "qu");
+        assert_eq!(items(&app), ["quorum_size", "QuorumCode", "src/quorum.rs"]);
+        let notes = &app.menu.as_ref().unwrap().notes;
+        assert_eq!(notes, &["said", "code", "file"]);
+        // A word with a dot lists the files that hold it, by itself; none
+        // holding it, the word after the dot is looked for.
+        app.world.projects[p].names.push("print_all".into());
+        type_in(&mut app, " quorum.");
+        assert_eq!(items(&app), ["src/quorum.rs"]);
+        type_in(&mut app, "p");
+        assert!(app.menu.is_none(), "one letter after the dot");
+        type_in(&mut app, "r");
+        assert_eq!(items(&app), ["print_all"]);
+        app.on_key(key(KeyCode::Tab));
+        assert!(app.input.ends_with(" quorum.print_all"), "{}", app.input);
+        // The demo: the words of its code map's symbols.
+        let mut app = App::new(1, 2, 0, 1, Lang::En);
+        let p = app.current_project();
+        let symbol = (app.world.projects[p].repo.iter())
+            .flat_map(|(_, s)| s.iter())
+            .flat_map(|s| pool::words(s))
+            .next()
+            .unwrap();
+        assert!(app.world.names_of(p).contains(&symbol));
+        app.typing = true;
+        let start: String = symbol.chars().take(3).collect();
+        type_in(&mut app, &format!("fix {start}"));
+        let m = app.menu.as_ref().unwrap();
+        let at = m.items.iter().position(|i| i == symbol).unwrap();
+        assert_eq!(m.notes[at], "code");
     }
 
     #[test]
@@ -1602,7 +1653,7 @@ mod tests {
         }];
         app.on_key(KeyEvent::from(KeyCode::Char('/')));
         type_in(&mut app, "Session.");
-        tab(&mut app);
+        // A word with a dot lists the files that hold it by itself.
         let m = app.menu.as_ref().expect("the menu");
         assert_eq!(
             m.items,
@@ -1610,7 +1661,7 @@ mod tests {
         );
         let holder = format!("○ {}", app.world.agents[w[1]].name);
         assert_eq!(m.notes, [holder.clone(), holder]);
-        assert_eq!(app.input, "Session.", "tab opened the list, two in it");
+        assert_eq!(app.input, "Session.", "two in it, nothing taken");
         app.on_key(KeyEvent::from(KeyCode::Down));
         tab(&mut app);
         assert_eq!(app.input, "src/Auth/Session.cs::Session.Start");

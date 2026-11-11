@@ -89,7 +89,8 @@ pub fn words(text: &str) -> impl Iterator<Item = &str> {
 
 /// The picks for `typed`, the word being written: the said words (from
 /// `said`, newest text first, its words last to first, so the word seen
-/// last comes first), then the names in `code` as given, then the `files`
+/// last comes first), then the names in `code` as given (`names::of`: the
+/// most used first), then the `files`
 /// whose name (the path's last part) starts with the word, shorter paths
 /// first; each starting with `typed` (folded), never `typed` itself, a
 /// word once (folded: the first spelling met stays), at most [`SHOWN`].
@@ -128,7 +129,8 @@ pub fn picks<'a>(
         }
     }
     for name in code {
-        if clean(name) == *name {
+        // Most names do not start so: they are not cleaned.
+        if out.len() < SHOWN && fold(name).starts_with(&want) && clean(name) == *name {
             take(name, From::Code, &mut out);
         }
     }

@@ -800,3 +800,12 @@ fn a_message_refused_for_the_pot_names_the_pot_and_budget() {
     );
     assert!(!said.contains(&lead), "{said}");
 }
+
+/// The demo's projects with their files but no names in the code
+/// (record 149): the tests of said words are not the code's.
+pub(crate) fn said_alone(app: &mut App) {
+    for p in &mut app.world.projects {
+        p.files = p.repo.iter().map(|(f, _)| f.to_string()).collect();
+        p.repo = &[];
+    }
+}

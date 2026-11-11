@@ -24,6 +24,7 @@ mod ledger;
 mod live;
 mod model;
 mod motion;
+mod names;
 mod notify;
 mod paths;
 mod pool;
