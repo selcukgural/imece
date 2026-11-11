@@ -453,8 +453,7 @@ def play(acc: Path, path: Path) -> tuple[str, float, str]:
         # What the case spent, as the header says it (a real case's cost).
         spent = ""
         try:
-            m = re.search(r"([≈<]*\$[0-9.]+|\?) of \$", snap(name))
-            spent = m.group(1) if m else ""
+            spent = spent_of(snap(name))
         except Failed:
             pass
         # Nothing of the case may outlive its terminal (record 86); what
@@ -485,6 +484,32 @@ def play(acc: Path, path: Path) -> tuple[str, float, str]:
         # terminal goes; whatever outlived it goes now.
         time.sleep(0.5)
         leftovers(d)
+
+
+# The header's spent figure before ` of $POT`: `$0.16`, `≈$0.04` (a plan's
+# login), `≈$0.04+?` (a turn with no figure: record 132) or `?` alone.
+SPENT = re.compile(r"([≈<]*\$[0-9.]+(?:\+\?)?|\?) of \$")
+
+
+def spent_of(screen: str) -> str:
+    """What a case spent, as its header says it; empty when it says nothing.
+    `≈$0.04+?` stays whole: the `?` alone lost the known part (#487)."""
+    m = SPENT.search(screen)
+    return m.group(1) if m else ""
+
+
+def spent_total(spent: list[str]) -> tuple[float, int]:
+    """The known dollars of what cases spent, and how many of them had a
+    turn with no figure (`+?` or `?` alone), which the dollars leave out."""
+    dollars = 0.0
+    unpriced = 0
+    for said in spent:
+        m = re.search(r"\$([0-9.]+)", said)
+        if m:
+            dollars += float(m.group(1))
+        if said.endswith("?"):
+            unpriced += 1
+    return dollars, unpriced
 
 
 def is_tmux(name: str) -> bool:
@@ -615,13 +640,11 @@ def run(args: argparse.Namespace) -> int:
     with ThreadPoolExecutor(max_workers=max(1, args.jobs)) as pool:
         list(pool.map(one, paths))
     failed = sorted(c for c, r in results.items() if r[0] == "fail")
-    dollars = [
-        float(m.group(1))
-        for r in results.values()
-        if r[0] == "pass" and (m := re.search(r"\$([0-9.]+)", r[2]))
-    ]
-    if dollars and args.real:
-        print(f"drive: what the passed cases' headers say they spent: ${sum(dollars):.2f}")
+    said = [r[2] for r in results.values() if r[0] == "pass" and r[2]]
+    if said and args.real:
+        dollars, unpriced = spent_total(said)
+        gaps = f", and {unpriced} with a turn that has no figure" if unpriced else ""
+        print(f"drive: what the passed cases' headers say they spent: ${dollars:.2f}{gaps}")
     print(
         f"drive: {len(results) - len(failed)} of {len(results)} passed in "
         f"{time.monotonic() - began:.0f} s" + (f"; failed: {', '.join(failed)}" if failed else "")

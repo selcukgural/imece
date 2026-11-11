@@ -58,6 +58,25 @@ class DriveTest(unittest.TestCase):
         # that name exactly, so a case's cleanup ended another's screen.
         self.assertEqual(drive.exact("case-scr-1"), "=case-scr-1:")
 
+    def test_a_header_s_spent_figure_is_read_whole(self):
+        # TEAM-2's header said `≈$0.04+? of $2` and the row said `?`: the
+        # known part was lost (#487).
+        for header, spent in [
+            (" ! 1 to decide · ≈$0.04+? of $2 · 12:01", "≈$0.04+?"),
+            (" ≈$0.03 of $2 ", "≈$0.03"),
+            (" $0.16 of $15 ", "$0.16"),
+            (" ? of $2 ", "?"),
+            (" <$0.01 of $2 ", "<$0.01"),
+            (" nothing spent yet ", ""),
+        ]:
+            self.assertEqual(drive.spent_of(header), spent, header)
+
+    def test_the_run_s_total_counts_the_known_part_and_the_gaps(self):
+        dollars, unpriced = drive.spent_total(["≈$0.04+?", "$0.16", "?", "≈$0.03"])
+        self.assertAlmostEqual(dollars, 0.23)
+        self.assertEqual(unpriced, 2)
+        self.assertEqual(drive.spent_total([]), (0.0, 0))
+
     def test_a_script_is_a_step_a_line(self):
         steps = drive.parse("# a comment\n\nstart --size 60x20\nwait 5 TO DECIDE\nkey g d\n")
         self.assertEqual(
