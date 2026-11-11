@@ -496,17 +496,21 @@ Expect: `PROCESSES` lists each session with what runs under it; `d` on the sessi
 
 ### SESS-8 · The terminal goes away
 
-- records: 86
+- records: 86, 129
 - commands: —
 - tier: stand-in
 
-Steps: `scenarios/SESS-8.scn`: a task done, then `/` `!true`, and the
-terminal closed while imece waits for a key after it.
+Steps: `scenarios/SESS-8.scn`: a task done; a process started with a
+session's mark that left it (`marked.py start`, as a `nohup … &` server);
+then `/` `!true`, and the terminal closed while imece waits for a key
+after it.
 
-Expect: imece quits as on `:quit`: nothing that worked in the case's
-directory is running ten seconds later (the runner checks this after
-every scripted case). Until 2026-11-10 imece spun at full CPU here, deaf
-to SIGTERM.
+Expect: imece quits as on `:quit`: the marked process is gone within 15 s
+(`marked.py gone`), and nothing that worked in the case's directory is
+running ten seconds later (the runner checks this after every scripted
+case). Until 2026-11-10 imece spun at full CPU here, deaf to SIGTERM;
+until 2026-11-11 its last words to a terminal gone panicked, the process
+aborted and the marked one lived on (ASK-7, the real run).
 
 ## Solo
 

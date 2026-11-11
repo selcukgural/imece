@@ -29,7 +29,8 @@ key /
 type Withdraw card #1, saying it is not needed.
 key Enter
 key Escape Escape
-allow 600 withdrew
+# imece's words, never the leader's: ALL DONE counts the withdrawn card.
+allow 600 1 withdrawn
 see 1 withdrawn
 # On the board it stands done, marked – and its try.
 type :board

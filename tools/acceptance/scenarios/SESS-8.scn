@@ -1,4 +1,5 @@
-# SESS-8 · The terminal goes away: imece quits, nothing of it left running.
+# SESS-8 · The terminal goes away: imece quits, nothing of it left running,
+# a process that left a session included.
 # The runner fails the case when anything still works in its directory
 # five seconds after its terminal went.
 start
@@ -9,6 +10,10 @@ type find() should ignore case in shelf.py
 key Enter
 see claude-1 said done.
 key Escape Escape
+# A process that left a session, as a `nohup … &` server does: it carries
+# the session's mark (record 129), and the quit must end it, however
+# imece is quit.
+until 30 python3 -I $ACC_SOURCE/tools/acceptance/marked.py start $ACC_CASE
 # The terminal goes while imece waits for a key after a `!cmd` (it spun
 # there at full CPU, deaf to SIGTERM, until 2026-11-10).
 key /
@@ -16,3 +21,6 @@ type !true
 key Enter
 see [imece] exit 0 · 
 stop
+# Until 2026-11-11 a closed terminal made imece's last words panic, the
+# process aborted, and what carried the mark lived on.
+until 15 python3 -I $ACC_SOURCE/tools/acceptance/marked.py gone $ACC_CASE
