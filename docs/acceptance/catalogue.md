@@ -715,9 +715,9 @@ Expect: the line takes two lines and `^w` deletes the last word; names and files
 - records: 149
 - tier: stand-in
 
-Steps: `scenarios/SCR-15.scn`: `:why counter_total_rows` sent; `/`, `and coun`; `↓`, `enter`; ` shelf.`, `tab`; ` coun`, `esc`, `t`; `^u`, `and datac`.
+Steps: `scenarios/SCR-15.scn`: `:why counter_total_rows` sent; `/`, `and coun`; `↓`, `enter`; ` shelf.`, `tab`; ` coun`, `esc`, `t`; `^u`, `and datac`; `^u`, `see  later`, `←` six times, `coun`, `tab`; `^e ^u`, `first\` `enter`, `coun`, `tab`.
 
-Expect: from the second letter a list opens above the line by itself with `counter_total_rows` (`said`) and `tab take · ↓ choose · esc close`; `↓` turns the keys to `enter take · ↑↓ choose · esc close` and `enter` puts the word in without sending it; ` shelf.` lists `shelf.py` (`file`) and `test_shelf.py`, `tab` takes the first with nothing after it; `esc` closes the list and another letter on that word does not open it again; `and datac` lists `dataclass` from `shelf.py`'s code, never said. That `enter` sends past a list nobody moved in is held by the unit tests (`enter_sends_past_an_open_list_unless_the_person_moved_in_it`): sending here would start the leader's work. How the list looks over the screen (its ground, the column) is EYE's to judge.
+Expect: from the second letter a list opens above the line by itself with `counter_total_rows` (`said`) and `tab take · ↓ choose · esc close`; `↓` turns the keys to `enter take · ↑↓ choose · esc close` and `enter` puts the word in without sending it; ` shelf.` lists `shelf.py` (`file`) and `test_shelf.py`, `tab` takes the first with nothing after it; `esc` closes the list and another letter on that word does not open it again; `and datac` lists `dataclass` from `shelf.py`'s code, never said. Mid-line, moving the cursor opens no list, writing `coun` does, and `tab` makes the line `see counter_total_rows later`; on the second line of a text the list opens and `tab` takes too. That `enter` sends past a list nobody moved in is held by the unit tests (`enter_sends_past_an_open_list_unless_the_person_moved_in_it`): sending here would start the leader's work. How the list looks over the screen (its ground, the column) is EYE's to judge.
 
 ### SCR-4 · A conversation: turns, folds, choosing, export
 

@@ -811,6 +811,7 @@ fn completion_row(m: &crate::complete::Menu, width: u16) -> (String, Vec<bool>) 
 fn menu_of(items: &[&str], chosen: usize) -> crate::complete::Menu {
     crate::complete::Menu {
         start: 1,
+        end: crate::complete::TO_END,
         items: items.iter().map(|s| s.to_string()).collect(),
         chosen,
         tail: " ",
@@ -1255,7 +1256,8 @@ fn the_history_search_says_so_over_the_line_and_the_help_names_its_keys() {
 }
 
 /// `word_list` alone on a `width` × `height` screen: the cursor at
-/// `caret`, the header's foot at `top`; the rows as text and the area.
+/// `caret`, the header's foot at `top`, the text written on one row; the
+/// rows as text and the area.
 fn list_drawn(
     m: &crate::complete::Menu,
     input: &str,
@@ -1264,10 +1266,21 @@ fn list_drawn(
     width: u16,
     height: u16,
 ) -> (Vec<String>, Option<Rect>, ratatui::buffer::Buffer) {
+    list_over(m, input, caret, (top, caret.1), (width, height))
+}
+
+/// [`list_drawn`] with the text written starting on row `floor`.
+fn list_over(
+    m: &crate::complete::Menu,
+    input: &str,
+    caret: (u16, u16),
+    (top, floor): (u16, u16),
+    (width, height): (u16, u16),
+) -> (Vec<String>, Option<Rect>, ratatui::buffer::Buffer) {
     let mut t = Terminal::new(TestBackend::new(width, height)).unwrap();
     let mut area = None;
     t.draw(|f| {
-        area = word_list(f, input, m, Position::new(caret.0, caret.1), top);
+        area = word_list(f, input, m, Position::new(caret.0, caret.1), (top, floor));
     })
     .unwrap();
     let buf = t.backend().buffer().clone();
@@ -1306,6 +1319,26 @@ fn the_word_list_stands_above_the_line_at_the_word_with_no_frame() {
             .all(|r| r.trim().is_empty()),
         "{rows:#?}"
     );
+}
+
+#[test]
+fn the_word_list_stands_above_the_whole_text_at_a_word_mid_line() {
+    // `keep the retr|y later` on the third of three rows (7 to 9): the
+    // word is the part before the cursor, so the list stands at its start
+    // (the cursor's column less four cells), above the text's first row.
+    let mut m = list_of(&["retry_policy", "RetryPolicy"], &["said", "code"], 9);
+    m.end = 13;
+    let input = "keep the retr later";
+    let (rows, area, _) = list_over(&m, input, (15, 9), (1, 7), (60, 10));
+    assert_eq!(area, Some(Rect::new(11, 5, 24, 2)), "{rows:#?}");
+    assert!(rows[7..].iter().all(|r| r.trim().is_empty()), "{rows:#?}");
+    // The cursor's row above the text's (it scrolled out of view): the
+    // list stands on the cursor's row still.
+    let (_, area, _) = list_over(&m, input, (15, 4), (1, 7), (60, 10));
+    assert_eq!(area, Some(Rect::new(11, 2, 24, 2)));
+    // No room above the text: none drawn, though there is above the cursor.
+    let (_, area, _) = list_over(&m, input, (15, 9), (1, 1), (60, 10));
+    assert_eq!(area, None);
 }
 
 #[test]
@@ -1442,4 +1475,35 @@ fn the_word_list_moves_nothing_on_the_screen_and_its_keys_are_on_the_line() {
         tr.contains("söylendi") && tr.contains("tab al · ↓ seç · esc kapat"),
         "{tr}"
     );
+}
+
+#[test]
+fn the_word_list_of_a_word_on_a_text_s_last_line_covers_none_of_its_lines() {
+    let mut app = quiet_rows();
+    crate::app::tests::said_alone(&mut app);
+    let lead = app.world.projects[0].leader;
+    app.world.note(Event::Replied {
+        agent: lead,
+        text: "keep quorum_size and quorum_wait".into(),
+    });
+    key(&mut app, KeyCode::Char('/'));
+    for line in ["first line\\", "second line\\"] {
+        for c in line.chars() {
+            key(&mut app, KeyCode::Char(c));
+        }
+        key(&mut app, KeyCode::Enter);
+    }
+    for c in "qu".chars() {
+        key(&mut app, KeyCode::Char(c));
+    }
+    assert!(app.menu.as_ref().is_some_and(|m| m.list));
+    let screen = render(&app, 100, 24);
+    let rows: Vec<&str> = screen.lines().collect();
+    // The text on rows 21-23, its words whole; the list's two rows right
+    // above it.
+    assert!(rows[21].contains("first line"), "{screen}");
+    assert!(rows[22].contains("second line"), "{screen}");
+    assert!(rows[23].contains("qu"), "{screen}");
+    assert!(rows[19].contains("quorum_wait"), "{screen}");
+    assert!(rows[20].contains("quorum_size"), "{screen}");
 }

@@ -96,7 +96,7 @@ Yazmak bir kabuktaki gibi tamamlanır: `@` ardından agent adları (eldeki proje
 | `enter` | vurgulu eşleşme henüz girilmemişse al, yoksa gönder |
 | `esc` | menüyü gizle; yine basılınca yazmaktan vazgeç |
 
-Menü yalnız imleç sondayken önerilir, çünkü bir tamamlama satırın bittiği sözcüğün yerini alır; sondan ayrılmak gizler, orada `tab` bir şey yapmaz, geri gelmek yine önerir.
+Bu menü yalnız tek satırda ve imleç sondayken önerilir, çünkü bir tamamlama satırın bittiği sözcüğün yerini alır; sondan ayrılmak gizler, geri gelmek yine önerir. Aşağıdaki kelime listesi metnin her yerinde çalışır.
 
 ### Kelimeler ve dosyalar
 
@@ -116,7 +116,9 @@ Bir mesajın ya da `!kmt` satırının başka her sözcüğünün, bir IDE'deki 
 | `enter` | gönderir, ama listede gezdiysen eldeki sözcüğü alır |
 | `esc` | listeyi kapat; o sözcükte kapalı kalır, sonraki sözcüğün yine listesi olur. Yine basılınca: yazmaktan vazgeç |
 
-Liste açık değilken `↑` `↓` gönderilen satırları eskisi gibi geri getirir. En çok altı satır görünür, `+N` kalanları sayar; liste 24 ile 48 hücre genişliğindedir, uzun ad `…` ile kesilir ve ekranın kenarında sola kayar. Henüz yok: deponun kodundaki tanımlayıcılar, ve satırın ortasında ya da birkaç satırlık metinde bir liste.
+Liste açık değilken `↑` `↓` gönderilen satırları eskisi gibi geri getirir. En çok altı satır görünür, `+N` kalanları sayar; liste 24 ile 48 hücre genişliğindedir, uzun ad `…` ile kesilir ve ekranın kenarında sola kayar.
+
+Liste birkaç satırlık bir metnin her satırında ve imleç satırın ortasındayken de çalışır: sözcük imlecin bittiği yerdeki sözcüktür, ardından gelen yerinde kalır (`fix the retr| later` → `fix the retry_policy later`, imleç sözcüğün ardında). Listenin yeri metnin tamamının üstüdür, böylece yazdığın hiçbir satırı örtmez. İmleç bir sözcüğün içindeyken liste olmaz, ama ardından gelen bir boşluk, bir nokta ya da bir kesme işareti sözcüğü bitirir, böylece önceden yazdığın ek yerinde kalır (`retry_pol|'yi` → `retry_policy'yi`). Yalnız imleci gezdirmek liste açmaz; yazmak açar, imlecin durduğu yerde `tab` da.
 
 ## Readline tuşları
 

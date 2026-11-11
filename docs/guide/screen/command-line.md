@@ -96,7 +96,7 @@ Writing completes as a shell does: after `@` the agents' names (the project at h
 | `enter` | take the highlighted match when it is not in yet, else send |
 | `esc` | hide the menu; again, cancel the writing |
 
-The menu is offered only with the cursor at the end, since a completion replaces the word the line ends with; moving off the end hides it, `tab` there does nothing, coming back offers it again.
+This menu is offered only on a single line with the cursor at the end, since a completion replaces the word the line ends with; moving off the end hides it, coming back offers it again. The word list below works anywhere in the text.
 
 ### Words and files
 
@@ -116,7 +116,9 @@ Any other word of a message or a `!cmd` line has a list of its own, as an IDE's:
 | `enter` | sends, unless you moved in the list: then it takes the word at hand |
 | `esc` | close the list; it stays closed on that word, the next word has one again. Again: cancel the writing |
 
-While no list is open, `↑` `↓` recall the lines sent as before. Six rows show at most, `+N` counts the rest; the list is 24 to 48 cells wide, a long name cut with `…`, and slides left at the screen's edge. Not yet: identifiers from the repository's code, and a list mid-line or on a text of several lines.
+While no list is open, `↑` `↓` recall the lines sent as before. Six rows show at most, `+N` counts the rest; the list is 24 to 48 cells wide, a long name cut with `…`, and slides left at the screen's edge.
+
+The list works on any line of a text of several lines and with the cursor mid-line: the word is the one that ends at the cursor, and what follows it stays where it is (`fix the retr| later` → `fix the retry_policy later`, the cursor after the word). It stands above the whole text, so it never covers a line you wrote. A cursor inside a word has no list, but a space, a full stop or an apostrophe after it end the word, so a suffix you wrote already stays (`retry_pol|'yi` → `retry_policy'yi`). Moving the cursor alone opens no list; writing does, and so does `tab` where the cursor stands.
 
 ## Readline keys
 
