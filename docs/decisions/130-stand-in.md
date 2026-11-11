@@ -450,7 +450,11 @@ the task: `[ask]` runs a command that is no routine (the kind's ask),
 the tests, `[stray]` changes a file the card does not own, `[cards N]`
 cuts the task into N cards (2 at least), `[fault]` and `[account]` fail
 the turn the person's words start at Claude's API (passing, or the
-account's; mail never fails by a cue, so a worker's assign goes through).
+account's; mail never fails by a cue, so a worker's assign goes through),
+`[slow N]` keeps the worker at its first step N seconds (1 to
+`SLOW_MOST` 60: a row to look at while it works), and `[closes N]` has
+the leader name issue N as the card's `closes` (`lead::closes_of`, on an
+assign, a post and a plan card; record 142).
 A cue acts whatever the habits say, so the scripted world runs with no
 habit at all (`tools/acceptance/setup.sh --stand-in`: a pause of 150 ms,
 nothing by chance). A Python kind joined the others (`.py`: `python3 -m

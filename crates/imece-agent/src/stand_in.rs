@@ -622,10 +622,11 @@ impl Mind {
                 Err(why) => return format!("I could not hire: {why}"),
             },
         };
-        let sent = hands.call(
-            "send",
-            json!({ "to": name, "type": "assign", "body": task }),
-        );
+        let mut assign = json!({ "to": name, "type": "assign", "body": task });
+        if let Some(n) = lead::closes_of(&task) {
+            assign["closes"] = json!(n);
+        }
+        let sent = hands.call("send", assign);
         match sent {
             Ok(_) => {
                 hands.say(&format!("I gave {name} the work."));

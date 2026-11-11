@@ -1,0 +1,76 @@
+# TEAM-13 · The issue a card closes (record 142), on the git path: the
+# card names it (the stand-in's leader passes `[closes N]` on), the change
+# says it, `:commit`'s message ends `Closes #N`; with `:closes off` the
+# next has none, and the setting is kept with the project. A `gh` of the
+# case's own answers for the repository's issue 7, as GitHub would.
+sh mkdir -p bin && printf '#!/bin/sh\necho "$*" >> "%s/gh.log"\ncase "$2" in\nview) echo "{\\"state\\":\\"OPEN\\",\\"title\\":\\"find ignores case\\",\\"url\\":\\"https://github.com/o/shelf/issues/$3\\"}" ;;\nclose) echo closed ;;\nesac\n' "$ACC_CASE" > bin/gh && chmod 755 bin/gh
+env PATH $ACC_CASE/bin:$PATH
+start
+see any key: close
+key Escape
+key /
+type mend shelf.py [closes 7]
+key Enter
+key Escape Escape
+see run .imece/worktree-setup.sh
+key g d
+key a
+see run .imece/check on its
+key g d
+key a
+see 1 ready to approve
+# The change says which issue it answers, its title read with gh.
+key g c
+key Enter
+see closes #7
+see find ignores case
+see :commit's message will say so
+key a
+see ALL DONE
+sh grep -q "issue view 7" gh.log
+# The git path closes nothing itself: the commit's message does.
+fails grep -q "issue close" gh.log
+type :commit
+key Enter
+see !git commit -m '
+see Closes #7
+key Enter
+see [imece] exit 0 · 
+key Escape
+sh git -C repos/shelf log -1 --format=%B
+says Closes #7
+# Off: the next change says nothing closes it, and :commit adds no line.
+type :closes off
+key Enter
+see closing issues is off for shelf
+key /
+type mend cli.py [closes 8]
+key Enter
+key Escape Escape
+# The check's bytes had their yes already: it runs without asking.
+see 1 ready to approve
+key g c
+key Enter
+see nothing closes it: :closes is off
+key a
+see ALL DONE
+type :commit
+key Enter
+see !git commit -m '
+key Enter
+see [imece] exit 0 · 
+key Escape
+fails git -C repos/shelf log -1 --format=%B | grep -q Closes
+# Kept with the project: the next start says it is still off.
+type :quit
+key Enter
+see quit imece?
+key q
+see Pane is dead
+stop
+start
+see WHERE YOU LEFT OFF
+key Escape
+type :closes
+key Enter
+see closing issues is off for shelf

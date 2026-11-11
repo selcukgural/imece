@@ -83,7 +83,7 @@ class DriveTest(unittest.TestCase):
 
     def test_a_wrong_step_is_refused_with_its_line(self):
         for text, why in [
-            ("start\nlook it\n", "line 2: `look` is not a step"),
+            ("start\npeek it\n", "line 2: `peek` is not a step"),
             ("see\n", "line 1: `see` needs its text"),
             ("wait soon TO DECIDE\n", "line 1: `wait SECONDS TEXT`"),
         ]:
