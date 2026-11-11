@@ -58,7 +58,12 @@ age -d -i ~/.config/lonca/fuzz-crashes.age-key fuzz-<target>.tar.gz.age | tar xz
 
 `fuzz/` is its own workspace with its own lock: `deny.yml` checks it and
 Dependabot updates it; `imece-fuzz` is `publish = false` and left out of
-the release's `cargo publish --workspace`.
+the release's `cargo publish --workspace`. The lock names the workspace's
+version (`imece-agent`, `imece-fuzz`), so a version bump updates it too
+(`cargo update -p imece-agent -p imece-fuzz` in `fuzz/`): the
+v0.1.202611111627 tag's run stopped every target at `--locked` without a
+finding. CI's `test` job now fails a lock left behind
+(`cargo metadata --locked --manifest-path fuzz/Cargo.toml`).
 
 **First finds** (before the first run, two minutes a target on a laptop):
 a yes gave a tool call's input back with a float off in its last place
