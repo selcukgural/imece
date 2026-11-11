@@ -26,6 +26,7 @@ mod model;
 mod motion;
 mod notify;
 mod paths;
+mod pool;
 mod prefs;
 mod probe;
 mod procs;

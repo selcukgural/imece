@@ -700,6 +700,15 @@ pub struct Text {
     pub keys_as: &'static str,
     /// The footer's hint while the composer offers completions.
     pub pick_cancel: &'static str,
+    /// The footer's hint while the word list is open (record 149): before
+    /// the person moved in it, and after (then `enter` takes).
+    pub list_keys: &'static str,
+    pub list_moved: &'static str,
+    /// Where a word in the list comes from: said in the conversation or a
+    /// line sent, a name in the code, a file of the project.
+    pub from_said: &'static str,
+    pub from_code: &'static str,
+    pub from_file: &'static str,
     // Notices
     pub sent: &'static str,
     pub no_agent: &'static str,
@@ -2136,6 +2145,11 @@ pub const EN: Text = Text {
     keys_nowhere: "no home folder, so no key file",
     keys_as: "your key: as {}",
     pick_cancel: "   tab next · enter take · esc hide",
+    list_keys: "   tab take · ↓ choose · esc close",
+    list_moved: "   enter take · ↑↓ choose · esc close",
+    from_said: "said",
+    from_code: "code",
+    from_file: "file",
     menu_more: " +{} more › ",
     menu_at: " · {} of {}",
     command_hints: [
@@ -3403,7 +3417,10 @@ pub const EN: Text = Text {
             "!cmd  O  ^x^e",
             "cmd in your shell; O quotes it; ^x^e $EDITOR",
         ),
-        ("tab ↑ ↓ ^r", "writing: complete · sent lines · :history"),
+        (
+            "tab ↑ ↓ ^r",
+            "writing: words and files · sent lines · :history",
+        ),
         ("^a ^e ⌥b ⌥f", "writing: to start / end, a word back / on"),
         ("^w ^u ^k ^y", "writing: cut a word / before / after; paste"),
         ("#N #word n p", "a card's detail; n p: next / previous card"),
@@ -3869,6 +3886,11 @@ pub const TR: Text = Text {
     keys_nowhere: "ev klasörü yok, tuş dosyası da yok",
     keys_as: "senin tuşun: {} gibi",
     pick_cancel: "   tab sonraki · enter al · esc gizle",
+    list_keys: "   tab al · ↓ seç · esc kapat",
+    list_moved: "   enter al · ↑↓ seç · esc kapat",
+    from_said: "söylendi",
+    from_code: "kod",
+    from_file: "dosya",
     menu_more: " +{} tane daha › ",
     menu_at: " · {}/{}",
     command_hints: [
@@ -5169,7 +5191,10 @@ pub const TR: Text = Text {
             "!kmt  O  ^x^e",
             "kmt kabuğunda; O alıntılar; ^x^e $EDITOR'da",
         ),
-        ("tab ↑ ↓ ^r", "yazarken: tamamla · gönderilenler · :history"),
+        (
+            "tab ↑ ↓ ^r",
+            "yazarken: kelime ve dosya · gönderilenler · :history",
+        ),
         ("^a ^e ⌥b ⌥f", "yazarken: başa / sona, kelime geri / ileri"),
         ("^w ^u ^k ^y", "yazarken: kelime/öncesi/sonrası kes; koy"),
         (

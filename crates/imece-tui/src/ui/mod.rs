@@ -86,8 +86,11 @@ pub fn draw(f: &mut Frame, app: &App) {
         return view_banner(f, app, v);
     }
     paint(f, f.area());
-    // The completion menu takes a row above the footer while it is shown.
-    let menu_rows = u16::from(app.typing && app.menu.is_some());
+    // The completion menu takes a row above the footer while it is shown;
+    // the word list (record 149) is drawn over the screen instead, so
+    // nothing moves.
+    let row_menu = app.menu.as_ref().filter(|m| app.typing && !m.list);
+    let menu_rows = u16::from(row_menu.is_some());
     let [head, body, menu, foot] = Layout::vertical([
         Constraint::Length(1),
         Constraint::Min(0),
@@ -114,9 +117,7 @@ pub fn draw(f: &mut Frame, app: &App) {
         Zoom::Diff(id) => diff::draw(f, body, app, id),
         Zoom::None => home::draw(f, body, app),
     }
-    if let Some(m) = &app.menu
-        && app.typing
-    {
+    if let Some(m) = row_menu {
         completions(f, menu, m, app.lang);
     }
     let line = footer(f, foot, app);
@@ -159,6 +160,13 @@ pub fn draw(f: &mut Frame, app: &App) {
         over.push(overlay::import(f, app, ask));
     }
     let line = line.filter(|&at| !over.iter().any(|r| r.contains(at)));
+    // The word list over everything drawn so far, above the line; what
+    // breathes under it is drawn whole again, not patched.
+    if let (Some(m), Some(at)) = (app.menu.as_ref().filter(|m| app.typing && m.list), line)
+        && footer::word_list(f, &app.input, m, at, head.bottom()).is_some()
+    {
+        *app.breathing.borrow_mut() = None;
+    }
     let mut filter = None;
     let mut window = true;
     if let Some(p) = &app.solo_pick {

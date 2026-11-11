@@ -31,9 +31,13 @@ type @claude
 key Tab
 see @claude-1
 key C-u
-type see shel
+# Files by any part of their path: tab opens the list, tab takes.
+type see shelf.p
 key Tab
-see shelf.py
+see test_shelf.py
+key Tab
+see see shelf.py
+gone test_shelf.py
 key C-u
 # ^x ^e: the draft to the editor and back, never sent by itself.
 key C-x C-e

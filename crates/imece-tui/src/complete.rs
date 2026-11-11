@@ -71,10 +71,18 @@ pub struct Menu {
     /// What is drawn after each item and never inserted (a command's
     /// value now, `$` when it raises the bill); empty for none.
     pub notes: Vec<String>,
+    /// A drop-down list under the word being written (record 149: words
+    /// and files), not the one row above the line: `tab` takes the item
+    /// at hand and closes it, the arrows only move, nothing goes in
+    /// before it is taken.
+    pub list: bool,
+    /// The person moved in the list (`↓ ↑ ^n ^p ⇧tab`): `enter` takes
+    /// the item at hand instead of sending.
+    pub moved: bool,
 }
 
 impl Menu {
-    fn new(start: usize, items: Vec<String>, tail: &'static str) -> Option<Menu> {
+    pub(crate) fn new(start: usize, items: Vec<String>, tail: &'static str) -> Option<Menu> {
         if items.is_empty() {
             return None;
         }
@@ -85,6 +93,8 @@ impl Menu {
             tail,
             inserted: false,
             notes: Vec::new(),
+            list: false,
+            moved: false,
         })
     }
 

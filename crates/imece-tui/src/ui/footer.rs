@@ -71,6 +71,125 @@ pub(super) fn completions(f: &mut Frame, area: Rect, m: &crate::complete::Menu, 
     f.render_widget(Paragraph::new(Line::from(spans)), area);
 }
 
+/// Rows the word list shows at most; it scrolls through the rest.
+pub(crate) const LIST_ROWS: u16 = 6;
+
+/// The word list's width in cells, at least and at most: no narrower,
+/// so it does not change shape with every key, and no wider, a long
+/// name cut with `…`.
+pub(crate) const LIST_MIN: usize = 24;
+pub(crate) const LIST_MAX: usize = 48;
+
+/// A note's cells at most (a leased file's holder).
+const NOTE_MAX: usize = 14;
+
+/// `s` cut to `room` cells, `…` where cut.
+fn cut_cells(s: &str, room: usize) -> String {
+    if s.width() <= room {
+        return s.to_string();
+    }
+    let mut out = String::new();
+    let mut used = 0;
+    for c in s.chars() {
+        let w = c.width().unwrap_or(0);
+        if used + w + 1 > room {
+            break;
+        }
+        used += w;
+        out.push(c);
+    }
+    out.push('…');
+    out
+}
+
+/// The word list (record 149), drawn over the screen with no frame: rows
+/// of a background of their own, from the row above the line up, the
+/// first item on top, as many as [`LIST_ROWS`] and the rows below `top`
+/// allow; at the column the word being written starts in (the cursor
+/// `caret` less the word's cells), slid left where it would leave the
+/// screen. Each row is ` item … note `; the item at hand bold, and in
+/// the selection's colour (reversed in mono) once the person moved to
+/// it; the rows scroll to keep it, the last row counting `+N` below.
+/// The area drawn, none when there is no room.
+pub(super) fn word_list(
+    f: &mut Frame,
+    input: &str,
+    m: &crate::complete::Menu,
+    caret: Position,
+    top: u16,
+) -> Option<Rect> {
+    let screen = f.area();
+    let rows = LIST_ROWS
+        .min(caret.y.saturating_sub(top))
+        .min(u16::try_from(m.items.len()).unwrap_or(u16::MAX));
+    if rows == 0 || screen.width == 0 {
+        return None;
+    }
+    let notes: Vec<String> = (0..m.items.len())
+        .map(|i| cut_cells(&clean(m.notes.get(i).map_or("", String::as_str)), NOTE_MAX))
+        .collect();
+    let items: Vec<String> = m.items.iter().map(|i| clean(i)).collect();
+    // ` item  note ` with a space at either end and two between.
+    let widest = (items.iter().zip(&notes))
+        .map(|(i, n)| i.width() + n.width() + 4)
+        .max()
+        .unwrap_or(0);
+    let width = widest
+        .clamp(LIST_MIN, LIST_MAX)
+        .min(usize::from(screen.width));
+    let first = (m.chosen + 1).saturating_sub(usize::from(rows));
+    let below = m.items.len() - first - usize::from(rows);
+    let typed = input.get(m.start..).map_or(0, |w| clean(w).width());
+    let x = caret
+        .x
+        .saturating_sub(u16::try_from(typed).unwrap_or(u16::MAX));
+    let w16 = u16::try_from(width).unwrap_or(u16::MAX);
+    let x = x.min(screen.right().saturating_sub(w16));
+    let area = Rect::new(x, caret.y - rows, w16, rows);
+    let p = pal();
+    let row_style = if p.mono {
+        Style::new()
+    } else {
+        Style::new().bg(p.selection).fg(p.fg)
+    };
+    let lines: Vec<Line> = (first..first + usize::from(rows))
+        .map(|i| {
+            let mut note = notes[i].clone();
+            if i + 1 == first + usize::from(rows) && below > 0 {
+                note = format!("{note} +{below}").trim_start().to_string();
+            }
+            let room = width.saturating_sub(note.width() + 4).max(1);
+            let item = cut_cells(&items[i], room);
+            let gap = width.saturating_sub(item.width() + note.width() + 2);
+            let at_hand = i == m.chosen;
+            let mut style = row_style;
+            if at_hand {
+                style = style.add_modifier(Modifier::BOLD);
+                if m.moved {
+                    style = if p.mono {
+                        style.add_modifier(Modifier::REVERSED)
+                    } else {
+                        style.bg(p.key).fg(p.on_key)
+                    };
+                }
+            }
+            let note_style = if at_hand && m.moved {
+                style
+            } else {
+                row_style.patch(dim())
+            };
+            Line::from(vec![
+                Span::styled(format!(" {item}{}", " ".repeat(gap)), style),
+                Span::styled(note, note_style),
+                Span::styled(" ", style),
+            ])
+        })
+        .collect();
+    f.render_widget(Clear, area);
+    f.render_widget(Paragraph::new(lines), area);
+    Some(area)
+}
+
 /// The line being written as it is drawn, and the byte of it the cursor
 /// stands before. A line `clean` would change (a pasted token) is drawn
 /// cleaned whole with the cursor at its end, so moving into it does not
@@ -226,7 +345,15 @@ fn writing(app: &App, rows: usize, width: usize) -> (Vec<Line<'static>>, (usize,
     };
     // The menu's keys while it is open; the keys to send only until
     // something is written.
+    let at = |m: &crate::complete::Menu| {
+        fill(
+            t.menu_at,
+            &[&(m.chosen + 1).to_string(), &m.items.len().to_string()],
+        )
+    };
     let keys = match (&app.menu, &app.noting) {
+        (Some(m), _) if m.list && m.moved => Some(format!("{}{}", t.list_moved, at(m))),
+        (Some(m), _) if m.list => Some(t.list_keys.to_string()),
         (Some(m), _) if m.items.len() > 1 => Some(format!(
             "{}{}",
             t.pick_cancel,

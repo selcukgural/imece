@@ -56,11 +56,16 @@ impl App {
                     self.edit(k);
                 }
             }
+            // The word list (record 149): enter takes the word the person
+            // moved to; one they did not move in does not hold the send.
+            KeyCode::Enter if self.menu.as_ref().is_some_and(|m| m.list && m.moved) => {
+                self.take_word();
+            }
             // A command's name typed whole is a command already, as a
             // short name is: `:news` runs at once.
             KeyCode::Enter if self.whole_command() => self.submit(),
             KeyCode::Enter => match &mut self.menu {
-                Some(m) if !m.inserted => {
+                Some(m) if !m.inserted && !m.list => {
                     m.insert(&mut self.input);
                     // A card or a place to go is all there is to take: it
                     // opens at once.
@@ -75,11 +80,15 @@ impl App {
                     }
                 }
             },
-            KeyCode::Esc if self.menu.is_some() => self.menu = None,
+            KeyCode::Esc if self.menu.is_some() => {
+                // A word's list stays closed on that word.
+                self.word_closed = (self.menu.take()).filter(|m| m.list).map(|m| m.start);
+            }
             KeyCode::Esc => {
                 if self.rejecting.take().is_some() {
                     self.flash(self.lang.text().not_rejected);
                 }
+                self.word_closed = None;
                 self.typing = false;
                 self.noting = None;
                 self.input.clear();
@@ -101,12 +110,23 @@ impl App {
             }
             KeyCode::Tab => match &mut self.menu {
                 None if self.after > 0 => {}
+                // `tab` opens the list when it was not open (from one
+                // letter, the files by any part of their path when no
+                // word starts so) and takes a word that is the only one.
                 None => {
                     self.menu = self.suggest_with(true);
-                    if let Some(m) = &mut self.menu {
-                        m.insert(&mut self.input);
+                    let only = self.menu.as_ref().map(|m| (m.list, m.items.len()));
+                    match only {
+                        Some((true, 1)) => self.take_word(),
+                        Some((true, _)) | None => {}
+                        Some((false, _)) => {
+                            if let Some(m) = &mut self.menu {
+                                m.insert(&mut self.input);
+                            }
+                        }
                     }
                 }
+                Some(m) if m.list => self.take_word(),
                 Some(m) if !m.inserted => m.insert(&mut self.input),
                 Some(_) => self.pick(true),
             },
@@ -146,6 +166,14 @@ impl App {
         if self.input != was {
             // Written on: the line is the person's own again.
             self.recall = None;
+        }
+        // A word begun where a closed list's word began, or that word
+        // gone: the next one may have its list.
+        if self
+            .word_closed
+            .is_some_and(|s| at <= s || s > self.input.len())
+        {
+            self.word_closed = None;
         }
         if to != at || self.input != was {
             self.menu = if self.after == 0 {
@@ -195,11 +223,28 @@ impl App {
         self.moved(&was, at, at + text.len());
     }
 
-    /// Highlights the next (or previous) match and puts it in.
+    /// Highlights the next (or previous) match and puts it in; in the word
+    /// list only moves, which `enter` then takes.
     fn pick(&mut self, forward: bool) {
         if let Some(m) = &mut self.menu {
             m.step(forward);
+            if m.list {
+                m.moved = true;
+            } else {
+                m.insert(&mut self.input);
+            }
+        }
+    }
+
+    /// The word list's item at hand goes in place of the word, nothing
+    /// after it (a Turkish suffix may follow: `retry_policy'yi`), and the
+    /// list closes until the line changes again.
+    fn take_word(&mut self) {
+        if let Some(mut m) = self.menu.take() {
             m.insert(&mut self.input);
+            self.after = 0;
+            self.recall = None;
+            self.word_closed = None;
         }
     }
 
@@ -237,7 +282,7 @@ impl App {
             self.current_project(),
             self.home.as_deref(),
         ) else {
-            return self.file_menu(forced);
+            return self.word_menu(forced);
         };
         // The command names: the demo's own left out live, each with its
         // value.
@@ -363,50 +408,132 @@ impl App {
         }
     }
 
-    /// The last word of a message or a `!` line, completed to a file of
-    /// the project at hand, or a symbol leased on its code map
-    /// (`file::name`), the holder of the file as the note (see
-    /// [`complete::files`]). Not on the lines that are something else
-    /// (`:` `#` `&`, a search), nor for a name (`@`) or a command (`/`).
-    fn file_menu(&self, forced: bool) -> Option<Menu> {
+    /// The word a message or a `!` line ends with, up to the space before
+    /// it. None on the lines that are something else (`:` `#` `&`), for
+    /// a name (`@`) or a command (`/`).
+    fn last_word(&self) -> Option<&str> {
         if self.input.starts_with([':', '#', '&']) {
             return None;
         }
-        let word = self
-            .input
-            .rsplit(char::is_whitespace)
-            .next()
-            .unwrap_or_default();
+        let word = (self.input.rsplit(char::is_whitespace).next()).unwrap_or_default();
         let word = if word.len() == self.input.len() {
             word.strip_prefix('!').unwrap_or(word)
         } else {
             word
         };
-        if word.is_empty() || word.starts_with(['@', '/']) {
+        (!word.is_empty() && !word.starts_with(['@', '/'])).then_some(word)
+    }
+
+    /// The drop-down list for the word the line ends with (record 149):
+    /// the words said in the conversation at hand and in the lines sent,
+    /// then the project's files by name ([`pool::picks`]); a word with a
+    /// `/` has the files by any part of their path ([`Self::file_menu`]),
+    /// and so has `tab` when no word starts so. Each says where it comes
+    /// from (a leased file: its holder); nothing follows a word taken.
+    /// Not again on the word whose list `esc` closed, unless `tab` asked.
+    fn word_menu(&self, forced: bool) -> Option<Menu> {
+        let whole = self.last_word()?;
+        let t = self.lang.text();
+        let mut m = if whole.contains('/') {
+            self.file_menu(forced)?
+        } else {
+            let start = pool::word_start(&self.input, self.input.len());
+            let p = self.current_project();
+            let files = self.world.files_of(p);
+            let said = self.said_texts();
+            let picks = pool::picks(&self.input[start..], forced, said, &[], &files);
+            if picks.is_empty() {
+                if !forced {
+                    return None;
+                }
+                self.file_menu(true)?
+            } else {
+                let items = picks.iter().map(|p| p.text.clone()).collect();
+                let mut m = Menu::new(start, items, "")?;
+                m.notes = (picks.iter())
+                    .map(|p| match p.from {
+                        pool::From::Said => t.from_said.to_string(),
+                        pool::From::Code => t.from_code.to_string(),
+                        pool::From::File => self.file_note(&p.text),
+                    })
+                    .collect();
+                m
+            }
+        };
+        if !forced && self.word_closed == Some(m.start) {
             return None;
         }
-        let start = self.input.len() - word.len();
+        m.list = true;
+        m.tail = "";
+        for note in &mut m.notes {
+            if note.is_empty() {
+                *note = t.from_file.to_string();
+            }
+        }
+        Some(m)
+    }
+
+    /// The texts the word list reads words from, newest first: the
+    /// messages of the conversation at hand, then the rest said in the
+    /// project at hand (among the journal's last [`pool::JOURNAL_BACK`]
+    /// lines), then the lines sent, at most [`pool::SAID_BACK`] of each.
+    fn said_texts(&self) -> Vec<&str> {
         let w = &self.world;
+        let said = |i: &usize| w.journal.get(*i).and_then(|e| ui::words::said(&e.event));
+        let talk = (self.thread.iter())
+            .flat_map(|th| th.entries.iter().rev())
+            .filter_map(said)
+            .map(|s| s.text)
+            .take(pool::SAID_BACK);
+        let project = self.current_project();
+        let ours = |p: Party| match p {
+            Party::Agent(a) => w.agents.get(a).is_some_and(|a| a.project == project),
+            Party::Person => false,
+        };
+        let around = (0..w.journal.len())
+            .rev()
+            .take(pool::JOURNAL_BACK)
+            .filter_map(|i| said(&i))
+            .filter(|s| ours(s.from) || ours(s.to))
+            .map(|s| s.text)
+            .take(pool::SAID_BACK);
+        let sent = (w.sent.iter().rev().take(pool::SAID_BACK)).map(|s| s.text.as_str());
+        talk.chain(around).chain(sent).collect()
+    }
+
+    /// The symbols leased on the project at hand's code map: file, name,
+    /// holder.
+    fn held(&self) -> Vec<(&str, &str, AgentId)> {
         let p = self.current_project();
-        let paths = w.files_of(p);
-        let held: Vec<(&str, &str, AgentId)> = w
-            .cards
-            .iter()
+        (self.world.cards.iter())
             .filter(|c| c.project == p && c.holds_leases())
             .filter_map(|c| c.owner.map(|o| (c, o)))
             .flat_map(|(c, o)| c.symbols.iter().map(move |s| (s.file, s.name, o)))
-            .collect();
-        let note = |file: &str| -> String {
-            held.iter()
-                .find(|h| h.0 == file)
-                .map(|h| {
-                    let a = &w.agents[h.2];
-                    format!("{} {}", ui::glyph(a).0, a.name)
-                })
-                .unwrap_or_default()
-        };
+            .collect()
+    }
+
+    /// Who holds `file` on the code map, as its glyph and name; empty
+    /// when nobody does.
+    fn file_note(&self, file: &str) -> String {
+        (self.held().iter().find(|h| h.0 == file))
+            .map(|h| {
+                let a = &self.world.agents[h.2];
+                format!("{} {}", ui::glyph(a).0, a.name)
+            })
+            .unwrap_or_default()
+    }
+
+    /// The last word of a message or a `!` line, completed to a file of
+    /// the project at hand, or a symbol leased on its code map
+    /// (`file::name`), the holder of the file as the note (see
+    /// [`complete::files`]).
+    fn file_menu(&self, forced: bool) -> Option<Menu> {
+        let word = self.last_word()?;
+        let start = self.input.len() - word.len();
+        let paths = self.world.files_of(self.current_project());
+        let held = self.held();
         let symbols: Vec<(&str, &str)> = held.iter().map(|h| (h.0, h.1)).collect();
-        complete::files(start, word, forced, &paths, &symbols, note)
+        complete::files(start, word, forced, &paths, &symbols, |f| self.file_note(f))
     }
 
     /// Where the terminal's own cursor stands and what it looks like, while
@@ -834,6 +961,205 @@ mod tests {
     use super::super::tests::*;
     use super::*;
 
+    /// A chat whose agent said `text`, the person writing in it.
+    fn writing_after(text: &str) -> App {
+        writing_in(1, text)
+    }
+
+    /// [`writing_after`] in a demo of `projects` projects, the chat with a
+    /// worker of the first.
+    fn writing_in(projects: usize, text: &str) -> App {
+        let mut app = App::new(projects, 2, 0, 1, Lang::En);
+        let worker = (app.world.agents.iter())
+            .find(|a| a.role == Role::Worker && a.project == 0)
+            .map(|a| a.id)
+            .unwrap();
+        app.world.said(worker, "first");
+        app.open_thread(app.world.journal.len() - 1);
+        app.world.note(Event::Replied {
+            agent: worker,
+            text: text.into(),
+        });
+        app.follow_thread();
+        app.typing = true;
+        app
+    }
+
+    fn items(app: &App) -> Vec<String> {
+        (app.menu.as_ref())
+            .map(|m| m.items.clone())
+            .unwrap_or_default()
+    }
+
+    #[test]
+    fn the_word_list_opens_at_two_letters_with_what_was_said_and_tab_takes_with_nothing_after() {
+        let mut app = writing_after("keep quorum_size and quorum_wait");
+        type_in(&mut app, "fix the q");
+        assert!(app.menu.is_none(), "one letter");
+        type_in(&mut app, "u");
+        assert_eq!(items(&app), ["quorum_wait", "quorum_size"]);
+        let m = app.menu.as_ref().unwrap();
+        assert!(m.list && !m.moved && m.chosen == 0);
+        assert_eq!((m.start, m.tail), (8, ""));
+        assert_eq!(m.notes, ["said", "said"]);
+        assert_eq!(
+            app.input, "fix the qu",
+            "nothing goes in before it is taken"
+        );
+        app.on_key(key(KeyCode::Tab));
+        assert_eq!(app.input, "fix the quorum_wait");
+        assert!(app.menu.is_none() && app.typing);
+        // A Turkish suffix right after it: no space to take back.
+        type_in(&mut app, "'yi");
+        assert_eq!(app.input, "fix the quorum_wait'yi");
+        // Words the person sent come too, after the conversation's.
+        app.world.recall_line("the quorum_after_ms field");
+        type_in(&mut app, " quo");
+        assert_eq!(
+            items(&app),
+            ["quorum_wait", "quorum_size", "quorum_after_ms"]
+        );
+    }
+
+    #[test]
+    fn the_project_s_talk_comes_after_the_conversation_and_another_project_s_never() {
+        let mut app = writing_in(2, "keep quorum_size");
+        let p = app.current_project();
+        let (mine, theirs): (Vec<AgentId>, Vec<AgentId>) = (app.world.agents.iter().map(|a| a.id))
+            .partition(|&a| app.world.agents[a].project == p);
+        app.world.note(Event::Talk {
+            from: mine[0],
+            to: mine[1],
+            text: "use quorum_lease here".into(),
+        });
+        type_in(&mut app, "qu");
+        assert_eq!(items(&app), ["quorum_size", "quorum_lease"]);
+        app.on_key(key(KeyCode::Esc));
+        app.on_key(key(KeyCode::Esc));
+        // Another project's talk is not this one's; past the journal's
+        // last JOURNAL_BACK lines nothing is read.
+        let mut app = writing_in(2, "keep quorum_size");
+        if let Some(&other) = theirs.first() {
+            app.world.note(Event::Talk {
+                from: other,
+                to: other,
+                text: "their quorum_other".into(),
+            });
+        }
+        app.world.note(Event::Talk {
+            from: mine[0],
+            to: mine[1],
+            text: "an old quorum_older".into(),
+        });
+        for _ in 0..pool::JOURNAL_BACK {
+            app.world.note(Event::Talk {
+                from: mine[0],
+                to: mine[1],
+                text: "filler".into(),
+            });
+        }
+        type_in(&mut app, "qu");
+        assert_eq!(items(&app), ["quorum_size"]);
+        assert!(!theirs.is_empty(), "a second project to look at");
+    }
+
+    #[test]
+    fn enter_sends_past_an_open_list_unless_the_person_moved_in_it() {
+        let mut app = writing_after("keep quorum_size and quorum_wait");
+        type_in(&mut app, "fix qu");
+        assert!(app.menu.is_some());
+        app.on_key(key(KeyCode::Enter));
+        assert!(app.input.is_empty() && app.menu.is_none(), "sent");
+        assert_eq!(
+            app.world.sent.last().map(|s| s.text.as_str()),
+            Some("fix qu")
+        );
+        // Moved: down, up and ctrl-n / ctrl-p step it, nothing goes in;
+        // enter takes the one at hand.
+        app.typing = true;
+        type_in(&mut app, "fix qu");
+        app.on_key(key(KeyCode::Down));
+        let m = app.menu.as_ref().unwrap();
+        assert_eq!((m.chosen, m.moved), (1, true));
+        app.on_key(key(KeyCode::Up));
+        app.on_key(ctrl('n'));
+        app.on_key(ctrl('p'));
+        app.on_key(key(KeyCode::BackTab));
+        assert_eq!(app.input, "fix qu");
+        assert_eq!(app.menu.as_ref().unwrap().chosen, 1, "round the end");
+        app.on_key(key(KeyCode::Enter));
+        assert_eq!(app.input, "fix quorum_size");
+        assert!(app.typing && app.menu.is_none(), "taken, not sent");
+    }
+
+    #[test]
+    fn esc_closes_the_list_for_that_word_and_the_next_word_has_one_again() {
+        let mut app = writing_after("keep quorum_size and quorum_wait");
+        type_in(&mut app, "fix qu");
+        app.on_key(key(KeyCode::Esc));
+        assert!(app.typing && app.menu.is_none(), "the list first");
+        type_in(&mut app, "o");
+        assert!(app.menu.is_none(), "not again on that word");
+        // Up recalls a line sent while no list is open.
+        app.world.recall_line("an earlier line");
+        app.on_key(key(KeyCode::Up));
+        assert_eq!(app.input, "an earlier line");
+        app.on_key(key(KeyCode::Down));
+        assert_eq!(app.input, "fix quo");
+        // tab opens it on the same word.
+        app.on_key(key(KeyCode::Tab));
+        assert_eq!(items(&app), ["quorum_wait", "quorum_size"]);
+        app.on_key(key(KeyCode::Esc));
+        // The word gone and written again, or the next word: open again.
+        for _ in 0..3 {
+            app.on_key(key(KeyCode::Backspace));
+        }
+        type_in(&mut app, "qu");
+        assert!(app.menu.is_some(), "a word begun where it began");
+        app.on_key(key(KeyCode::Esc));
+        type_in(&mut app, " and qu");
+        assert!(app.menu.is_some(), "the next word");
+        // Esc twice leaves writing, and the next line starts afresh.
+        app.on_key(key(KeyCode::Esc));
+        app.on_key(key(KeyCode::Esc));
+        assert!(!app.typing && app.word_closed.is_none());
+    }
+
+    #[test]
+    fn tab_opens_the_list_from_one_letter_and_takes_an_only_word_at_once() {
+        let mut app = writing_after("keep quorum_size and quorum_wait");
+        type_in(&mut app, "q");
+        app.on_key(key(KeyCode::Tab));
+        assert_eq!(items(&app), ["quorum_wait", "quorum_size"]);
+        assert_eq!(app.input, "q", "two: the list opens, nothing goes in");
+        app.on_key(key(KeyCode::Esc));
+        type_in(&mut app, "uorum_s");
+        app.on_key(key(KeyCode::Tab));
+        assert_eq!(app.input, "quorum_size", "the only one");
+        assert!(app.menu.is_none());
+    }
+
+    #[test]
+    fn the_lines_that_are_something_else_keep_their_one_row() {
+        let mut app = writing_after("keep quorum_size and quorum_wait");
+        for line in [":re", "#re", "&re", "@re"] {
+            type_in(&mut app, line);
+            assert!(
+                app.menu.as_ref().is_none_or(|m| !m.list),
+                "{line}: {:?}",
+                app.menu
+            );
+            app.on_key(key(KeyCode::Esc));
+            app.on_key(key(KeyCode::Esc));
+            app.typing = true;
+        }
+        // Over several lines, nothing yet.
+        type_in(&mut app, "x\\");
+        app.on_key(key(KeyCode::Enter));
+        type_in(&mut app, "qu");
+        assert!(app.menu.is_none());
+    }
+
     #[test]
     fn a_message_to_an_agent_with_no_text_is_not_sent() {
         let (mut app, worker) = with_thread();
@@ -1179,23 +1505,29 @@ mod tests {
         // The demo's files are its code map's.
         let files = app.world.files_of(0);
         assert!(files.contains(&"src/Auth/Session.cs"), "{files:?}");
-        // A word with a `/` opens the menu by itself, at the word; enter
-        // puts the file in its place, a space after it; enter sends.
+        // A word with a `/` opens the list by itself, at the word, its
+        // files by any part of their path; tab puts the file in its place,
+        // nothing after it; enter sends.
         app.on_key(KeyEvent::from(KeyCode::Char('/')));
         type_in(&mut app, "see src/Auth/Se");
         assert_eq!(menu(&app), ["src/Auth/Session.cs"]);
-        assert_eq!(app.menu.as_ref().unwrap().start, 4);
-        app.on_key(KeyEvent::from(KeyCode::Enter));
-        assert_eq!(app.input, "see src/Auth/Session.cs ");
-        assert!(app.typing);
+        let m = app.menu.as_ref().unwrap();
+        assert_eq!(
+            (m.start, m.list, m.notes.clone()),
+            (4, true, vec!["file".to_string()])
+        );
+        tab(&mut app);
+        assert_eq!(app.input, "see src/Auth/Session.cs");
+        assert!(app.typing && app.menu.is_none());
         app.on_key(KeyEvent::from(KeyCode::Enter));
         assert!(app.typing && app.input.is_empty(), "the chat's line");
-        // Without a `/`, nothing until tab, which takes the first match.
+        // Without a `/`, the files whose name starts so, by themselves;
+        // moved to, enter takes one.
         type_in(&mut app, "fix Rates");
-        assert!(app.menu.is_none());
-        tab(&mut app);
-        assert_eq!(app.input, "fix src/Shipping/Rates.cs ");
-        app.on_key(KeyEvent::from(KeyCode::Esc));
+        assert_eq!(menu(&app), ["src/Shipping/Rates.cs"]);
+        app.on_key(KeyEvent::from(KeyCode::Down));
+        app.on_key(KeyEvent::from(KeyCode::Enter));
+        assert_eq!(app.input, "fix src/Shipping/Rates.cs");
         app.on_key(KeyEvent::from(KeyCode::Esc));
         // Out of the chat.
         app.on_key(KeyEvent::from(KeyCode::Esc));
@@ -1209,8 +1541,8 @@ mod tests {
         type_in(&mut app, "!src/Orders/Mo");
         assert_eq!(menu(&app), ["src/Orders/Money.cs"]);
         assert_eq!(app.menu.as_ref().unwrap().start, 1);
-        app.on_key(KeyEvent::from(KeyCode::Enter));
-        assert_eq!(app.input, "!src/Orders/Money.cs ");
+        tab(&mut app);
+        assert_eq!(app.input, "!src/Orders/Money.cs");
         app.on_key(KeyEvent::from(KeyCode::Esc));
         // Not a name, not a command, not on the lines that are something
         // else, not after a space, not over several lines.
@@ -1278,9 +1610,10 @@ mod tests {
         );
         let holder = format!("○ {}", app.world.agents[w[1]].name);
         assert_eq!(m.notes, [holder.clone(), holder]);
-        assert_eq!(app.input, "src/Auth/Session.cs ");
+        assert_eq!(app.input, "Session.", "tab opened the list, two in it");
+        app.on_key(KeyEvent::from(KeyCode::Down));
         tab(&mut app);
-        assert_eq!(app.input, "src/Auth/Session.cs::Session.Start ");
+        assert_eq!(app.input, "src/Auth/Session.cs::Session.Start");
     }
 
     #[test]

@@ -1326,7 +1326,7 @@ fn the_help_shows_the_persons_own_keys_first_and_in_place() {
     );
     assert_eq!(row("quit (q or :quit asks first)"), ["^w/q ^w/q  :quit"]);
     assert_eq!(
-        row("writing: complete · sent lines · :history"),
+        row("writing: words and files · sent lines · :history"),
         ["tab ↑ ↓ ^r"],
         "written keys are not turned"
     );

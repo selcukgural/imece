@@ -46,3 +46,10 @@ symbol index of the repository (ctags, tree-sitter) was not built: the
 item says what the map knows. The menu over several lines (record 39)
 and completion for the `:copy` and `:export` arguments beyond
 directories are left as they were.
+
+**Since record 149** (Words while writing, in a list) the files are
+offered in the word list, not the row menu: a word with a `/` opens it by
+itself as before, a word without one lists the files whose name starts
+with it after the words said, and a file taken has nothing after it (no
+space), so a suffix may follow. `tab` with no list open still searches
+the files by any part of their path.
