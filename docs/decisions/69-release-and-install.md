@@ -107,7 +107,8 @@ directory keeps its name. `imece-agent` is published with it, since a
 crate on crates.io can depend only on crates there: its description says
 its API has no stability promise. The two name each other at the
 workspace's version exactly (`[workspace.dependencies]`, `=X.Y.Z`): a
-version changed without that line fails the build. `imece_core` on
+version changed without that line fails the build, and so does one
+without `fuzz/Cargo.lock` brought along (record 139). `imece_core` on
 crates.io is someone else's and has nothing to do with imece.
 
 **Publishing.** The first version of each crate is published by hand

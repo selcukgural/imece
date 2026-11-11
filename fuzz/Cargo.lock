@@ -165,7 +165,7 @@ dependencies = [
 
 [[package]]
 name = "imece-agent"
-version = "0.1.202611100124"
+version = "0.1.202611111627"
 dependencies = [
  "libc",
  "lonca-client",
@@ -174,7 +174,7 @@ dependencies = [
 
 [[package]]
 name = "imece-fuzz"
-version = "0.1.202611100124"
+version = "0.1.202611111627"
 dependencies = [
  "imece-agent",
  "serde",

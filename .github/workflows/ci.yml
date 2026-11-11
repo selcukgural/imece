@@ -25,6 +25,11 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo test --workspace --locked
+      # fuzz/ has its own lock, which names the workspace's version: a
+      # version bump that leaves it behind stops every fuzz run at
+      # --locked (record 139; the v0.1.202611111627 tag's run).
+      - name: fuzz/Cargo.lock is up to date
+        run: cargo metadata --locked --format-version 1 --manifest-path fuzz/Cargo.toml > /dev/null
 
   # install.sh (website/static) end to end against a release made from this
   # build: the download, the checksum, the install, the PATH line, the
