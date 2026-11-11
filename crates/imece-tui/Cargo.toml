@@ -32,7 +32,7 @@ libc = "=0.2.191"
 # A change of the terminal's size wakes the main loop's wait (`input::Wake`):
 # the crate crossterm already registers SIGWINCH with, so the two share one
 # handler instead of taking it from each other.
-signal-hook = { version = "=0.3.18", default-features = false }
+signal-hook = { version = "=0.4.6", default-features = false }
 # What imece remembers between runs (projects, agents, cards, the journal,
 # mail), one SQLite file; bundled, so the build needs no system library.
 rusqlite = { version = "=0.41.1", default-features = false, features = ["bundled"] }
