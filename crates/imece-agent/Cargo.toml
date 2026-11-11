@@ -25,4 +25,4 @@ serde_json = { version = "=1.0.154", features = ["float_roundtrip"] }
 # Lonca's own client of its daemon socket (record 116): the socket and its
 # peer checked against what the machine's install names, the framing, the
 # timeout, the human session file. imece's reading of the answers is its own.
-lonca-client = "=0.2.2"
+lonca-client = "=0.2.3"
