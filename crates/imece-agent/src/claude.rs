@@ -693,6 +693,13 @@ pub struct Parser {
     started: bool,
     /// Tool names by tool-use id, to name a failed result.
     calls: HashMap<String, String>,
+    /// The tools Claude Code said the session has (`init`).
+    offered: BTreeSet<String>,
+    /// Calls of a tool the session does not have, by tool-use id: a
+    /// model's slip (`mcp__lonca__run` for imece's `run`, acceptance
+    /// 2026-11-11) that Claude Code refuses itself. Its result decides:
+    /// refused, a note; anything else, the session stops.
+    unknown: HashMap<String, String>,
     /// The lines of the `Bash` calls under way, by tool-use id.
     shells: HashMap<String, String>,
     /// The session's cost counter starts again after `/clear`; the screen
@@ -777,6 +784,8 @@ impl Parser {
             account: false,
             started: false,
             calls: HashMap::new(),
+            offered: BTreeSet::new(),
+            unknown: HashMap::new(),
             shells: HashMap::new(),
             commands: Vec::new(),
             unlisted: false,
@@ -848,7 +857,7 @@ impl Parser {
         }
         match kind {
             "assistant" => self.assistant(&v),
-            "user" => Ok(self.results(&v)),
+            "user" => self.results(&v),
             "result" => Ok(self.result(&v)),
             "system" if v["subtype"] == "api_retry" => Ok(vec![Event::Note(retry(&v))]),
             "system" if v["subtype"] == "compact_boundary" => {
@@ -979,6 +988,7 @@ impl Parser {
         if let Some(t) = SUBAGENT_TOOLS.iter().find(|t| tools.contains(**t)) {
             return Err(format!("has the {t} tool, which starts agents of its own"));
         }
+        self.offered = tools.clone();
         let servers = v["mcp_servers"]
             .as_array()
             .ok_or("reports no MCP server list")?;
@@ -1085,7 +1095,17 @@ impl Parser {
                 "tool_use" => {
                     let name = block["name"].as_str().unwrap_or_default().to_string();
                     if !self.tools.contains(&name) {
-                        return Err(format!("used tool {name:?} it was not given"));
+                        // A tool it has but was not given: it may run.
+                        if self.offered.contains(&name) {
+                            return Err(not_given(&name));
+                        }
+                        // One it does not have: Claude Code refuses it,
+                        // which its result shows.
+                        if let Some(id) = block["id"].as_str() {
+                            self.unknown.insert(id.to_string(), name);
+                            continue;
+                        }
+                        return Err(not_given(&name));
                     }
                     if let Some(id) = block["id"].as_str() {
                         self.calls.insert(id.to_string(), name.clone());
@@ -1107,11 +1127,11 @@ impl Parser {
         Ok(out)
     }
 
-    fn results(&mut self, v: &Value) -> Vec<Event> {
+    fn results(&mut self, v: &Value) -> Result<Vec<Event>, String> {
         // A prompt imece gave, taken now: echoed with nothing in it to
         // read (the text is imece's own).
         if v["isReplay"] == true {
-            return vec![Event::Took];
+            return Ok(vec![Event::Took]);
         }
         let mut out = Vec::new();
         for block in v["message"]["content"].as_array().into_iter().flatten() {
@@ -1119,6 +1139,15 @@ impl Parser {
                 continue;
             }
             let id = block["tool_use_id"].as_str().unwrap_or_default();
+            if let Some(name) = self.unknown.remove(id) {
+                if block["is_error"] != true {
+                    return Err(not_given(&name));
+                }
+                out.push(Event::Note(format!(
+                    "asked for {name}, a tool it does not have; Claude Code refused it"
+                )));
+                continue;
+            }
             let name = self.calls.remove(id).unwrap_or_default();
             let op = self.pending.remove(id);
             if let Some(command) = self.shells.remove(id)
@@ -1171,8 +1200,13 @@ impl Parser {
                 out.push(self.plan());
             }
         }
-        out
+        Ok(out)
     }
+}
+
+/// Why a session stops that used tool `name`, which imece did not give it.
+fn not_given(name: &str) -> String {
+    format!("used tool {name:?} it was not given")
 }
 
 /// What a task-tool call does, read from its input; nothing for a call
@@ -3174,13 +3208,53 @@ mod tests {
         assert_eq!(p.line(r#"{"type":"rate_limit_event"}"#).unwrap(), []);
     }
 
+    fn used(id: &str, name: &str) -> String {
+        format!(
+            r#"{{"type":"assistant","message":{{"content":[{{"type":"tool_use","id":"{id}","name":"{name}","input":{{}}}}]}}}}"#
+        )
+    }
+
+    fn refused(id: &str) -> String {
+        format!(
+            r#"{{"type":"user","message":{{"content":[{{"type":"tool_result","tool_use_id":"{id}","is_error":true,"content":"<tool_use_error>No such tool available: x</tool_use_error>"}}]}}}}"#
+        )
+    }
+
     #[test]
-    fn a_tool_it_was_not_given_stops_the_session() {
+    fn a_tool_it_has_but_was_not_given_stops_the_session_at_once() {
+        // Open lets the session have more than imece gave it.
+        let mut p = Parser::new(&spec(READ_TOOLS));
+        p.open = true;
+        p.line(&init(
+            r#"["Glob","Grep","Read","Write"]"#,
+            "acceptEdits",
+            "[]",
+        ))
+        .unwrap();
+        assert_eq!(p.line(&used("t", "Write")), Err(not_given("Write")));
+    }
+
+    #[test]
+    fn a_tool_it_does_not_have_waits_for_claude_code_s_refusal() {
         let mut p = Parser::new(&spec(READ_TOOLS));
         p.line(&init(r#"["Glob","Grep","Read"]"#, "acceptEdits", "[]"))
             .unwrap();
-        let line = r#"{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t","name":"Write","input":{}}]}}"#;
-        assert!(p.line(line).is_err());
+        // A model's slip: no such tool. Claude Code refuses it: a note.
+        assert_eq!(p.line(&used("t", "mcp__lonca__run")).unwrap(), []);
+        assert_eq!(
+            p.line(&refused("t")).unwrap(),
+            [Event::Note(
+                "asked for mcp__lonca__run, a tool it does not have; Claude Code refused it".into()
+            )]
+        );
+        assert!(p.unknown.is_empty());
+        // Whatever else answers it means it ran: the session stops.
+        assert_eq!(p.line(&used("u", "Write")).unwrap(), []);
+        let ran = r#"{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"u","content":"written"}]}}"#;
+        assert_eq!(p.line(ran), Err(not_given("Write")));
+        // Without an id to wait on, it stops at once.
+        let bare = r#"{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Write","input":{}}]}}"#;
+        assert_eq!(p.line(bare), Err(not_given("Write")));
     }
 
     #[test]

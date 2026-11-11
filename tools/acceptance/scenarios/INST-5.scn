@@ -1,0 +1,78 @@
+# INST-5 · The tab: its title and progress follow the work, its icon is
+# imece's while imece has the screen, and nothing of imece's screen is left
+# at the quit. relay.py keeps every byte imece writes to the terminal and
+# answers its question for the terminal's name, as the terminal would.
+#
+# As iTerm2 3.6.6, which shows a tab's progress (record 82).
+start --as 'iTerm2 3.6.6'
+see any key: close
+# Calm: imece's mark before its name, no progress.
+sent \e]2;⁙ imece\a
+sent \e]9;4;0\a
+key Escape
+key /
+type mend shelf.py [ask]
+key Enter
+key Escape Escape
+see run .imece/worktree-setup.sh
+# Something waits for the person: `!` and the count, the waiting progress.
+sent \e]2;! imece · 1 to decide\a
+sent \e]9;4;4;100\a
+key g d
+key a
+see run Bash: python3 -m pip
+key g d
+key a
+see run .imece/check on its
+key g d
+key a
+see 1 ready to approve
+# At work in between: `●`, the working progress.
+sent \e]2;● imece\a
+sent \e]9;4;3\a
+key a
+see ALL DONE
+# No icon by name outside Konsole.
+unsent \e]32;
+type :quit
+key Enter
+see quit imece?
+key q
+see Pane is dead
+# The main screen as it was, its last words under it, the progress
+# cleared and the title given back.
+sh python3 -I $ACC_SOURCE/tools/acceptance/eye.py quit $ACC_CASE/screen.bytes
+says resume: imece
+stop
+# As Konsole, which takes a tab's icon by name (`OSC 32`, record 101):
+# imece's while it has the screen, the terminal's own after. A state of
+# its own: a first start, nothing left off to show.
+env XDG_STATE_HOME $ACC_CASE/state-konsole
+start --as 'Konsole 24.08.0'
+see any key: close
+sent \e]32;imece\a
+key Escape
+see Nothing needs you
+type :quit
+key Enter
+see quit imece?
+key q
+see Pane is dead
+sent \e]32;utilities-terminal\a
+stop
+# IMECE_TAB_ICON=off keeps it off. (iTerm2's icon is its own table's,
+# which install.sh writes: AUTO-2's test-install proves it, and that
+# IMECE_NO_ICON=1 writes nothing.)
+sh rm screen.bytes
+env IMECE_TAB_ICON off
+env XDG_STATE_HOME $ACC_CASE/state-off
+start --as 'Konsole 24.08.0'
+see any key: close
+key Escape
+see Nothing needs you
+type :quit
+key Enter
+see quit imece?
+key q
+see Pane is dead
+unsent \e]32;

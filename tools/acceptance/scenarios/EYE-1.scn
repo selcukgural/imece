@@ -1,0 +1,112 @@
+# EYE-1 · The screens in both languages and on a small terminal: in
+# Turkish no English word of imece's is left and nothing is cut that was
+# whole in English; at 60×20 every row that decides reads whole.
+start
+see any key: close
+key Escape
+# A change waiting and a question waiting.
+key /
+type mend shelf.py
+key Enter
+key Escape Escape
+see run .imece/worktree-setup.sh
+key g d
+key a
+see run .imece/check on its
+key g d
+key a
+see 1 ready to approve
+key /
+type mend cli.py [question]
+key Enter
+key Escape Escape
+see questions
+# Home, in English then, with `L`, in Turkish.
+look home-en.txt
+key L
+see KARAR
+look home-tr.txt
+type :lang en
+key Enter
+see TO DECIDE
+sh python3 -I $ACC_SOURCE/tools/acceptance/eye.py english home-tr.txt
+sh python3 -I $ACC_SOURCE/tools/acceptance/eye.py cut home-en.txt home-tr.txt
+# The question's detail (`W`: the first thing to decide).
+key W
+see asks you
+look question-en.txt
+key Escape
+type :lang tr
+key Enter
+see KARAR
+key W
+see soruyor
+look question-tr.txt
+key Escape
+type :lang en
+key Enter
+see TO DECIDE
+sh python3 -I $ACC_SOURCE/tools/acceptance/eye.py english question-tr.txt
+sh python3 -I $ACC_SOURCE/tools/acceptance/eye.py cut question-en.txt question-tr.txt
+# The change (`gc`: the first change on Home).
+key g c
+key Enter
+see ready to approve
+look change-en.txt
+key Escape
+type :lang tr
+key Enter
+see KARAR
+key g c
+key Enter
+see onaya hazır
+look change-tr.txt
+key Escape
+type :lang en
+key Enter
+see TO DECIDE
+sh python3 -I $ACC_SOURCE/tools/acceptance/eye.py english change-tr.txt
+sh python3 -I $ACC_SOURCE/tools/acceptance/eye.py cut change-en.txt change-tr.txt
+# The help.
+key ?
+see HELP
+look help-en.txt
+key Escape
+type :lang tr
+key Enter
+see KARAR
+key ?
+see YARDIM
+look help-tr.txt
+key Escape
+type :lang en
+key Enter
+see TO DECIDE
+sh python3 -I $ACC_SOURCE/tools/acceptance/eye.py english help-tr.txt
+# The journal.
+key J
+look journal-en.txt
+key Escape
+type :lang tr
+key Enter
+see KARAR
+key J
+look journal-tr.txt
+key Escape
+type :lang en
+key Enter
+see TO DECIDE
+sh python3 -I $ACC_SOURCE/tools/acceptance/eye.py english journal-tr.txt
+sh python3 -I $ACC_SOURCE/tools/acceptance/eye.py cut journal-en.txt journal-tr.txt
+# A small terminal: every row that decides reads whole, in both.
+size 60 20
+see TO DECIDE
+look small-en.txt
+sh python3 -I $ACC_SOURCE/tools/acceptance/eye.py whole small-en.txt 'TO DECIDE' 'AT WORK'
+type :lang tr
+key Enter
+see KARAR
+look small-tr.txt
+sh python3 -I $ACC_SOURCE/tools/acceptance/eye.py whole small-tr.txt 'KARAR BEKLEYEN' 'ÇALIŞAN'
+sh python3 -I $ACC_SOURCE/tools/acceptance/eye.py english small-tr.txt
+sh python3 -I $ACC_SOURCE/tools/acceptance/eye.py cut small-en.txt small-tr.txt

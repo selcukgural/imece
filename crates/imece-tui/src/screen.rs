@@ -92,10 +92,21 @@ pub fn init(keys: bool, progress: bool, icon: bool) -> io::Result<Screen> {
 }
 
 /// Gives the terminal back: auto-wrap on, the main screen, cooked mode.
-/// Nothing to do about a failure this late, so it is only printed.
+/// Nothing to do about a failure this late, so it is only said, where
+/// it can be: a terminal gone away takes nothing, and saying so must not
+/// panic (`eprintln!` does), or the panic hook's own `restore` panics
+/// again, the process aborts, and the sessions and what carries their mark
+/// outlive the quit (acceptance, 2026-11-11: ASK-7's server).
 pub fn restore() {
-    if let Err(e) = give_back(&mut io::stdout()).and_then(|()| disable_raw_mode()) {
-        eprintln!("imece: the terminal could not be restored: {e}");
+    let back = give_back(&mut io::stdout()).and_then(|()| disable_raw_mode());
+    unrestored(&mut io::stderr(), back);
+}
+
+/// Says on `err` that the terminal could not be restored, when `back`
+/// says so; a failure to say it is let go.
+fn unrestored(err: &mut impl Write, back: io::Result<()>) {
+    if let Err(e) = back {
+        let _ = writeln!(err, "imece: the terminal could not be restored: {e}");
     }
 }
 
@@ -619,6 +630,34 @@ impl<W: Write> Backend for Quiet<W> {
 
 #[cfg(test)]
 mod tests {
+    /// A terminal gone away: every write fails.
+    struct Gone;
+
+    impl Write for Gone {
+        fn write(&mut self, _: &[u8]) -> io::Result<usize> {
+            Err(io::Error::from_raw_os_error(libc::EIO))
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Err(io::Error::from_raw_os_error(libc::EIO))
+        }
+    }
+
+    #[test]
+    fn a_terminal_that_could_not_be_restored_is_said_and_one_gone_never_panics() {
+        let mut said = Vec::new();
+        unrestored(&mut said, Err(io::Error::from_raw_os_error(libc::EIO)));
+        let said = String::from_utf8(said).unwrap();
+        assert!(
+            said.starts_with("imece: the terminal could not be restored: "),
+            "{said}"
+        );
+        let mut nothing = Vec::new();
+        unrestored(&mut nothing, Ok(()));
+        assert!(nothing.is_empty());
+        // Nowhere to say it: let go, no panic.
+        unrestored(&mut Gone, Err(io::Error::from_raw_os_error(libc::EIO)));
+    }
+
     use std::cell::RefCell;
     use std::rc::Rc;
 

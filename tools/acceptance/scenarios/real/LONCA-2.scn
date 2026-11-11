@@ -32,3 +32,11 @@ see needs your yes
 # Lonca's reasons in imece's words, never `approvals=1` (2026-11-11).
 see needs your yes: Lonca does not watch
 gone approvals=
+key Escape
+# Who edits what: the proposal pins its lease (record 123), the code map
+# shows the file and its holder.
+type :code
+key Enter
+see shelf.py
+see claude-1
+key Escape

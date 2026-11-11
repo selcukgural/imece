@@ -25,14 +25,27 @@ key J
 key J
 allow 600 try 2
 key Escape
+# A card that waits on it (`after`), posted now so it changes nothing of
+# the tries above.
+key /
+type Post a card titled Shelve books with the same task, to be taken only after card 1 (after: [1]). Do nothing else.
+key Enter
+key Escape Escape
+key J
+key J
+allow 300 posted #2
+key Escape
 key /
 type Withdraw card #1, saying it is not needed.
 key Enter
 key Escape Escape
-allow 600 withdrew
-see 1 withdrawn
+# imece's words, never the leader's: the card after it says what became
+# of the one it waits on.
+allow 600 waits on #1 which was
 # On the board it stands done, marked – and its try.
 type :board
 key Enter
 see · try 2
+# The card after it never begins: it says what it waited on.
+see ✕ #1 withdrawn
 key Escape

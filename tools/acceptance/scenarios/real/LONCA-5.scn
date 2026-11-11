@@ -16,6 +16,21 @@ key a
 wait 120 lonca lonca-five 
 sh pkill -f "lonca daemon --home $ACC_CASE/lonca"
 wait 120 no lonca
+# A hire while it is gone: refused, in imece's words to the leader.
+key /
+type Hire one worker on the cheap tier now, then tell me in one line what the hire tool said.
+key Enter
+key Escape Escape
+wait 240 lead ⇄ you || answered
+key G
+key Enter
+key Tab
+see FOCUS · lead
+# Its raw stream has what the hire tool answered.
+key Enter
+wait 60 nobody is hired now
+key Escape
+key Escape
 bg lonca daemon --home $ACC_CASE/lonca --no-notify --no-proxy
 wait 120 lonca lonca-five
 key J

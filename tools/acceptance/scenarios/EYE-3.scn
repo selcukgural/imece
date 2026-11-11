@@ -1,0 +1,113 @@
+# EYE-3 · The themes: `T` goes through every one, each scheme draws the
+# whole screen in its own background, and the theme chosen last is the
+# one the next start draws with.
+start
+see any key: close
+key Escape
+# Something on the screen: a change waiting.
+key /
+type mend shelf.py
+key Enter
+key Escape Escape
+see run .imece/worktree-setup.sh
+key g d
+key a
+see run .imece/check on its
+key g d
+key a
+see 1 ready to approve
+# The first is the terminal's own: `T` goes on from it, round to it again.
+key T
+see theme: dark
+look dark.txt
+sh python3 -I $ACC_SOURCE/tools/acceptance/eye.py has dark.txt '1 ready to approve'
+key T
+see theme: light
+look light.txt
+sh python3 -I $ACC_SOURCE/tools/acceptance/eye.py has light.txt '1 ready to approve'
+key T
+see theme: mono
+look mono.txt
+sh python3 -I $ACC_SOURCE/tools/acceptance/eye.py has mono.txt '1 ready to approve'
+key T
+see theme: dracula
+look dracula.txt
+sh python3 -I $ACC_SOURCE/tools/acceptance/eye.py themed dracula.txt
+key T
+see theme: nord
+look nord.txt
+sh python3 -I $ACC_SOURCE/tools/acceptance/eye.py themed nord.txt
+key T
+see theme: gruvbox-dark-medium
+look gruvbox-dark-medium.txt
+sh python3 -I $ACC_SOURCE/tools/acceptance/eye.py themed gruvbox-dark-medium.txt
+key T
+see theme: gruvbox-light-medium
+look gruvbox-light-medium.txt
+sh python3 -I $ACC_SOURCE/tools/acceptance/eye.py themed gruvbox-light-medium.txt
+key T
+see theme: catppuccin-mocha
+look catppuccin-mocha.txt
+sh python3 -I $ACC_SOURCE/tools/acceptance/eye.py themed catppuccin-mocha.txt
+key T
+see theme: catppuccin-latte
+look catppuccin-latte.txt
+sh python3 -I $ACC_SOURCE/tools/acceptance/eye.py themed catppuccin-latte.txt
+key T
+see theme: tokyo-night-dark
+look tokyo-night-dark.txt
+sh python3 -I $ACC_SOURCE/tools/acceptance/eye.py themed tokyo-night-dark.txt
+key T
+see theme: solarized-dark
+look solarized-dark.txt
+sh python3 -I $ACC_SOURCE/tools/acceptance/eye.py themed solarized-dark.txt
+key T
+see theme: solarized-light
+look solarized-light.txt
+sh python3 -I $ACC_SOURCE/tools/acceptance/eye.py themed solarized-light.txt
+key T
+see theme: onedark
+look onedark.txt
+sh python3 -I $ACC_SOURCE/tools/acceptance/eye.py themed onedark.txt
+key T
+see theme: rose-pine
+look rose-pine.txt
+sh python3 -I $ACC_SOURCE/tools/acceptance/eye.py themed rose-pine.txt
+key T
+see theme: everforest
+look everforest.txt
+sh python3 -I $ACC_SOURCE/tools/acceptance/eye.py themed everforest.txt
+key T
+see theme: kanagawa
+look kanagawa.txt
+sh python3 -I $ACC_SOURCE/tools/acceptance/eye.py themed kanagawa.txt
+key T
+see theme: github
+look github.txt
+sh python3 -I $ACC_SOURCE/tools/acceptance/eye.py themed github.txt
+key T
+see theme: monokai
+look monokai.txt
+sh python3 -I $ACC_SOURCE/tools/acceptance/eye.py themed monokai.txt
+key T
+see theme: terminal
+look terminal.txt
+sh python3 -I $ACC_SOURCE/tools/acceptance/eye.py has terminal.txt '1 ready to approve'
+# One kept: the next start draws with it.
+type :theme nord
+key Enter
+see theme: nord
+look before.txt
+type :quit
+key Enter
+see quit imece?
+key q
+see Pane is dead
+stop
+start
+see WHERE YOU LEFT OFF
+key Escape
+see 1 ready to approve
+look after.txt
+sh python3 -I $ACC_SOURCE/tools/acceptance/eye.py samebg before.txt after.txt
+sh python3 -I $ACC_SOURCE/tools/acceptance/eye.py themed after.txt

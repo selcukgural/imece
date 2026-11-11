@@ -211,7 +211,10 @@ impl Habits {
 /// `[stray]` changes a file the card does not own, `[fault]` and
 /// `[account]` fail the leader's turn at Claude's API (one imece tries
 /// again, one that is the account's), `[cards N]` cuts the task into N
-/// cards (2 to [`super::lead::CARDS_MOST`]).
+/// cards (2 to [`super::lead::CARDS_MOST`]), `[slow N]` keeps the worker
+/// at its first step N seconds (1 to [`SLOW_MOST`]), so a case can look
+/// at a row that works, and `[closes N]` has the leader name issue N as
+/// the card's (`lead::closes_of`).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Cues {
     pub ask: bool,
@@ -220,7 +223,11 @@ pub struct Cues {
     pub stray: bool,
     pub fault: Option<crate::Fault>,
     pub cards: Option<u64>,
+    pub slow: Option<Duration>,
 }
+
+/// The longest `[slow N]` a worker takes, in seconds.
+pub const SLOW_MOST: u64 = 60;
 
 impl Cues {
     pub fn of(text: &str) -> Cues {
@@ -236,6 +243,15 @@ impl Cues {
             let (n, _) = rest.split_once(']')?;
             n.trim().parse::<u64>().ok().filter(|n| *n >= 2)
         });
+        let slow = text.split("[slow ").nth(1).and_then(|rest| {
+            let (n, _) = rest.split_once(']')?;
+            let n = n
+                .trim()
+                .parse::<u64>()
+                .ok()
+                .filter(|n| (1..=SLOW_MOST).contains(n))?;
+            Some(Duration::from_secs(n))
+        });
         Cues {
             ask: has("[ask]"),
             question: has("[question]"),
@@ -243,6 +259,7 @@ impl Cues {
             stray: has("[stray]"),
             fault,
             cards,
+            slow,
         }
     }
 }
@@ -783,6 +800,9 @@ impl Mind {
         let list = List::made(hands);
         hands.pause();
         list.begin(hands, 0);
+        if let Some(slow) = Cues::of(&task).slow {
+            std::thread::sleep(slow);
+        }
         if let Err(why) = hands.tool("Read", json!({ "file_path": main })) {
             return format!("I could not read {main}: {why}");
         }
@@ -1708,6 +1728,7 @@ mod tests {
                 stray: true,
                 fault: None,
                 cards: Some(3),
+                slow: None,
             }
         );
         assert_eq!(Cues::of("x [fault]").fault, Some(crate::Fault::Passing));
@@ -1720,6 +1741,11 @@ mod tests {
         assert_eq!(Cues::of("x [cards two]").cards, None);
         assert_eq!(Cues::of("x [cards 2").cards, None);
         assert_eq!(Cues::of("x [cards 2]").cards, Some(2));
+        assert_eq!(Cues::of("x [slow 3]").slow, Some(Duration::from_secs(3)));
+        assert_eq!(Cues::of("x [slow 60]").slow, Some(Duration::from_secs(60)));
+        assert_eq!(Cues::of("x [slow 61]").slow, None);
+        assert_eq!(Cues::of("x [slow 0]").slow, None);
+        assert_eq!(Cues::of("x [slow 1").slow, None);
         // A word not in brackets is no cue.
         assert_eq!(Cues::of("ask a question of the helper"), Cues::default());
 

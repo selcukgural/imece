@@ -91,3 +91,14 @@ ends it, and the main loop then quits as on its own screen. The case
 `SESS-8` closes the terminal at exactly that wait, and the runner fails
 any case that leaves a process working in its directory five seconds
 after its terminal went.
+
+**Its last words (2026-11-11).** With the terminal gone, `screen::restore`
+can not give the screen back and said so with `eprintln!`, which panics
+when stderr (the same terminal) takes nothing; the panic hook's own
+`restore` panicked again and the process aborted, so `Drop for Live` never
+ran: the sessions were not ended in order and what carried this run's mark
+(record 129: a worker's `nohup … &` server) lived on. The acceptance run
+of 0.1.202611111627 found it (ASK-7). `restore` now says it through
+`screen::unrestored`, which lets a failed write go. `SESS-8` starts a
+process with a session's mark that left it (`tools/acceptance/marked.py`)
+and fails unless the closed terminal's quit ends it within 15 s.

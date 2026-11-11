@@ -25,3 +25,44 @@ key a
 key J
 key J
 allow 300 on trunk as
+key Escape
+# A check in the policy (one more signature): the next change's verdict
+# names what runs after the yes (record 122).
+sh lonca policy show --repo lonca-three > policy.all && awk '/^==> lonca.toml <==/{f="lonca.toml";next} /^==> policy.cedar <==/{f="policy.cedar";next} f{print > f}' policy.all && python3 -I -c "p='lonca.toml'; s=open(p).read(); s=s.replace('[verification]\n', '[verification]\ntest = \"python3 -m unittest\"\n', 1).replace('env_passthrough = []', 'env_passthrough = [\"HOME\", \"TMPDIR\"]', 1).replace('checks = {}', 'checks = { api = \"python3 -m unittest\" }', 1); open(p, 'w').write(s)" && lonca policy set --repo lonca-three --config lonca.toml --policy policy.cedar
+key /
+type Add a function count_titles() to shelf.py's Shelf returning how many books there are, with a test. One worker on the cheap tier.
+key Enter
+key Escape Escape
+allow 900 ready to approve || look first
+key g d
+key Enter
+see after your yes Lonca runs: test
+# The card asks for a check the policy names (record 127), from Home with
+# its change at hand; `test` is Lonca's own and is no name to ask for.
+key Escape
+key g c
+type :checks api
+key Enter
+see the yes to claude-1's change also asks Lonca for api || the yes to claude-2's change also asks Lonca for api
+key g c
+# r: Lonca takes no rejection without a reason; the words are both, and
+# the worker hears them.
+key r
+# The line opens to the worker: what is written is the reason too.
+see to claude-1: @claude-1 || to claude-2: @claude-2
+type count_titles must skip books without a title
+key Enter
+key Escape Escape
+key J
+key J
+wait 120 proposal refused: 
+key Escape
+# Approved from a shell while the change waits: imece hears it from Lonca
+# at once (record 148), not at its next look half a minute later.
+allow 900 ready to approve || look first
+type :lonca
+key Enter
+see WAITING FOR A HUMAN · 1
+sh seq=$(lonca pending --repo lonca-three --json | python3 -I -c "import json,sys; print(json.load(sys.stdin)[0]['seq'])") && lonca approve "$seq" --repo lonca-three
+wait 12 WAITING FOR A HUMAN · 0
+key Escape

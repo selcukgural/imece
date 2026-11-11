@@ -56,11 +56,12 @@ Expect: what is seen, in the screen's own words where they matter.
   **stand-in**: a script (`tools/acceptance/scenarios/<ID>.scn`) that
   `drive.py run` plays on the real `Live` with imece's stand-in for Claude
   Code: free, in seconds, nobody at the keys. **real**: Claude Code and,
-  for the Lonca cases, a Lonca daemon; it costs, and someone drives it.
+  for the Lonca cases, a Lonca daemon; it costs, and its script drives it.
 - A case is `stand-in` unless what it shows needs a real model (how Claude
   Code takes a prompt, what it writes, how it resumes, Lonca's
-  workspaces) or an eye (`EYE-1`). A new feature's case starts as a script
-  where it can.
+  workspaces). What an eye judged is a script too (below: `relay.py`,
+  `eye.py`); nothing is left to do by hand. A new feature's case starts as
+  a script.
 - A case id is never used again: a case that goes is listed under
   "Retired" with why. Renumbering is not done; a new case takes the next
   free number of its area.
@@ -100,8 +101,34 @@ tools/acceptance/drive.py run --jobs 4 --report docs/acceptance/runs/vX.Y.Z.md
   and anything still working in its directory ten seconds later (fifteen
   for a real case) fails it. A failure's screen is in `$ACC/out/<ID>.txt`, every key in
   `$ACC/drive.log`.
-- The 49 scripts (48 stand-in cases and the demo's) take about 95 s at 6
-  jobs, most of it TEAM-12's minute of waiting; 15 cases stay real.
+- The 57 scripts (56 stand-in cases and the demo's) take about three
+  minutes at 6 jobs, most of it TEAM-12's and EYE-4's minutes of waiting;
+  12 cases are real.
+
+What a person's eye judged, a script judges:
+
+- `start --as TERMINAL` runs imece through `relay.py`, which keeps every
+  byte imece writes to the terminal in `$ACC_CASE/screen.bytes` and
+  answers its question for the terminal's name (XTVERSION) as that
+  terminal would (`'iTerm2 3.6.6'`, `'kitty(0.40.0)'`, `'Konsole
+  24.08.0'`), so imece takes itself for running there; `sent` and
+  `unsent` look for what it wrote (`\e` is ESC, `\a` BEL): the tab's title
+  and progress, a note, an icon. `input` sends bytes as the terminal's
+  own (kitty's click report), `focus in|out` its focus reports.
+- `look FILE` keeps the screen with its colours, every cell; `cursor TEXT`
+  waits for the terminal's cursor right after TEXT.
+- `eye.py` judges them (`sh python3 -I $ACC_SOURCE/tools/acceptance/eye.py
+  …`): `quit` (only the last words left, progress cleared, title back),
+  `english` (no English of `i18n.rs` left on a Turkish screen), `cut`,
+  `whole`, `themed` (every cell in the theme's background), `same` /
+  `moved` / `turns` (a row still, breathing, spinning), `samebg`, `dots`
+  (the mark cell by cell), `notes` (kitty's notes by number), `child` /
+  `nochild` (`caffeinate`), `serve` (a push server on loopback). Its
+  docstring has them whole.
+- The stand-in takes `[slow N]` (its worker stays at its first step N
+  seconds, so a row can be looked at while it works) and `[closes N]` (its
+  leader names issue N as the card's). `env NAME VALUE` expands `$NAME`,
+  so a case puts a `claude` or a `gh` of its own first on `PATH`.
 - CI runs every script on every pull request, on Linux and macOS (the
   `acceptance-scripts` job); a failure keeps `out/` and `drive.log` as
   the job's artifact. A change that breaks a script is fixed in the same
@@ -117,7 +144,7 @@ lonca human keygen acc                            # once: the Lonca cases' key
 tools/acceptance/drive.py run --real --jobs 4     # scenarios/real/*.scn
 ```
 
-- 12 of the 15 real cases are scripts under `scenarios/real/`, played on
+- The 12 real cases are scripts under `scenarios/real/`, played on
   Claude Code itself (sonnet leads, haiku works). `run --real` refuses a
   stand-in's world and plain `run` a real one: a stand-in's script never
   spends, a real one never proves nothing.
@@ -129,8 +156,8 @@ tools/acceptance/drive.py run --real --jobs 4     # scenarios/real/*.scn
 - Each Lonca case runs a daemon of its own (`bg lonca daemon --home …`,
   its own `LONCA_HOME` and `LONCA_HUMANS` with the run's key), so they run
   side by side; the runner ends it with the case.
-- What a script can not do is the case's "By hand" line, in the same run:
-  INST-5, TEAM-13 and EYE-1 are by hand whole.
+- Each real script does all its case says, the policy LONCA-3 sets and
+  the yes it gives from a shell included.
 - Measured 2026-11-11: each case a few cents; the 12 together about $0.50
   and 10 minutes at 4 jobs (TEAM-11 and CARD-3 the longest). Each passed
   row of the report says what its case spent.
@@ -163,11 +190,13 @@ tools/acceptance/drive.py snap imece
 - `drive.py` runs each program on a tmux server of its own, so the
   person's tmux is not touched; `wait NAME 'words'` waits for words on
   the screen instead of sleeping.
-- A Lonca policy for LONCA-3: `lonca policy show --repo shelf`, its
-  `lonca.toml` and `policy.cedar` into two files of `$ACC/out`, add
-  `[verification]` with `test = "python3 -m unittest"` and
-  `env_passthrough = ["HOME", "TMPDIR"]` to the first, then
-  `lonca policy set --repo shelf --config lonca.toml --policy policy.cedar`.
+- LONCA-3's script sets its repository's policy itself: `lonca policy
+  show` split into `lonca.toml` and `policy.cedar`, `test = "python3 -m
+  unittest"` and `env_passthrough = ["HOME", "TMPDIR"]` written under the
+  `[verification]` the file has (a second `[verification]` is a duplicate
+  key, and `env_passthrough = []` is there already), a named check `api`
+  in its `checks = {}` for `:checks` (a card asks only for named
+  checks; `test` is Lonca's own), then `lonca policy set`.
 
 ## A run
 
@@ -179,8 +208,7 @@ tools/acceptance/drive.py snap imece
    Lonca's, the terminal and its size.
 3. The scripted cases first, in a stand-in world (above) with `--report`:
    their rows are written by the run. Then the `auto` cases, then the
-   real scripts in a world of their own (`run --real --report`), then the
-   "By hand" lines and the cases by hand. Each row: `pass`; `fail` with what was seen;
+   real scripts in a world of their own (`run --real --report`). Each row: `pass`; `fail` with what was seen;
    `skip` only where the case has `skip-if`, with why. What rubbed but did
    not fail goes under "Findings" as the field entries do; a field entry
    for the run goes in `docs/field/` the same day.

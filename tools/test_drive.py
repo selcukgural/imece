@@ -28,6 +28,31 @@ class DriveTest(unittest.TestCase):
         self.assertFalse(drive.is_tmux("imece"))
         self.assertFalse(drive.is_tmux("python3"))
 
+    def test_a_case_s_cleanup_ends_what_works_in_its_directory(self):
+        # Its command line does not name the directory: only where it works
+        # does, as a worker's `nohup … &` server.
+        import subprocess
+        import tempfile
+        import time
+
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d).resolve()
+            proc = subprocess.Popen(
+                [sys.executable, "-I", "-c", "import time; time.sleep(60)"],
+                cwd=d,
+                start_new_session=True,
+            )
+            try:
+                deadline = time.monotonic() + 10
+                while not any(e.split()[0] == str(proc.pid) for e in drive.running_in(d)):
+                    self.assertLess(time.monotonic(), deadline, "never seen working there")
+                    time.sleep(0.1)
+                drive.leftovers(d)
+                proc.wait(timeout=10)
+            finally:
+                proc.kill()
+                proc.wait()
+
     def test_a_screen_is_named_whole(self):
         # tmux takes `-t case-scr-1` for case-scr-14 when no session has
         # that name exactly, so a case's cleanup ended another's screen.
@@ -58,7 +83,7 @@ class DriveTest(unittest.TestCase):
 
     def test_a_wrong_step_is_refused_with_its_line(self):
         for text, why in [
-            ("start\nlook it\n", "line 2: `look` is not a step"),
+            ("start\npeek it\n", "line 2: `peek` is not a step"),
             ("see\n", "line 1: `see` needs its text"),
             ("wait soon TO DECIDE\n", "line 1: `wait SECONDS TEXT`"),
         ]:

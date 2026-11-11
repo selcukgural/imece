@@ -267,3 +267,31 @@ finds what an earlier run's sessions left. ASK-7 no longer ends the server
 itself: it sees it on `:ps`, closes the terminal and waits for the server
 to go (three runs in a row on Claude Code, once more than 20 s: a turn
 under way ends first).
+
+**What a case leaves (2026-11-11).** A case's cleanup (`drive::leftovers`)
+ended what named the case's directory on its command line; a process that
+only works there (a worker's `nohup python3 -m http.server &`) outlived
+the case. It now ends what `running_in` finds in the directory too.
+
+**Nothing by hand (user, 2026-11-11).** "I do not want to do these by
+hand: automate them." What an eye judged is scripted, and the stand-in
+plays most of it, so CI runs it on every pull request: INST-5, TEAM-13 and
+EYE-1 are stand-in scripts, EYE-1's ground is split into EYE-1 to EYE-5,
+and TEAM-15 holds what TEAM-2's "By hand" line asked. `relay.py` runs
+imece on a pty of its own under tmux, keeps every byte it writes to the
+terminal and answers XTVERSION as the terminal a case names, so imece
+takes the paths it takes in iTerm2, kitty or Konsole while tmux still draws
+the screen; `drive.py`'s `sent` `unsent` `input` `focus` `look` `cursor`
+and `env $NAME` steps and `eye.py`'s checks judge what it wrote and drew.
+The stand-in got two cues for it: `[slow N]` (a row to look at while it
+works) and `[closes N]` (the leader names the card's issue). The real
+scripts do what their "By hand" lines said: CARD-3's card `after` the
+withdrawn one, LONCA-2's `:code`, LONCA-3's policy check, `:checks`, `r`
+and a yes from a shell (record 148), LONCA-4's commit of the person's own,
+LONCA-5's refused hire. What a script still does not reach is said where
+it is proved instead: the row's `◔` `≡` `⎇` on a card's screen and a
+reply's `%` by the screen's tests, closing an issue on Lonca by the
+engine's. Writing them caught imece's quit aborting on a closed terminal
+a second time (EYE-2, before #483 was in), and two mistakes of the
+checker's own, now tested (`tools/test_eye.py`: tmux carries colours
+across a look's rows; an RGB colour's `0` is no reset).

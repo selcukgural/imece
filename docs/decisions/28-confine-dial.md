@@ -60,3 +60,18 @@ to end since approvals were routed. `Live::bind` now binds `approve` only
 under a level whose asks come to imece (`Confine::full`); the bus's test
 lists a strict socket's tools, and the acceptance case ASK-5 runs a team
 under strict to its change.
+
+**A tool the session does not have (2026-11-11).** A call of a tool imece
+did not give stopped the session at once. A model can name a tool that
+does not exist: the acceptance run of 0.1.202611111627 saw a worker on
+Lonca call `mcp__lonca__run` (imece's `run` is `mcp__imece__run`), which
+Claude Code refuses itself (`No such tool available`), and its session was
+stopped for it. Now the parser keeps the tools `init` reported
+(`Parser.offered`): a call of one the session has but was not given stops
+it at once, as before; a call of one it does not have waits for its
+result (`Parser.unknown`, by tool-use id): refused, a trace note (`asked
+for NAME, a tool it does not have; Claude Code refused it`) and the turn
+goes on; any other answer means it ran, and the session stops as before.
+A call with no id to wait on stops at once. Nothing that runs is let
+through: the check moved from the call to its result only where the call
+could not run.

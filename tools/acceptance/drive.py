@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Drives a program on a tmux pane of its own, for an acceptance run
+r"""Drives a program on a tmux pane of its own, for an acceptance run
 (docs/acceptance/README.md): start it, type, press keys, look, wait for
 words, resize, stop; or play a scripted case whole. Every action goes to
 $ACC/drive.log with its time, so a run can be read back.
@@ -25,10 +25,16 @@ VISUAL, LANG, LC_*), nothing else of the driver's environment.
 A scripted case is `tools/acceptance/scenarios/<ID>.scn`, a step a line
 (`#` starts a comment):
 
-    env NAME VALUE               NAME=VALUE for what starts after it
-    start [--size CxR] [--bare] [ARG …]
+    env NAME VALUE               NAME=VALUE for what starts after it; `$NAME`
+                                 in VALUE is that variable's value now
+                                 (`env PATH $ACC_CASE/bin:$PATH`)
+    start [--size CxR] [--bare] [--as TERMINAL] [ARG …]
                                  imece-acc with ARGs on a screen of its own;
-                                 --bare: imece itself, without imece-acc's flags
+                                 --bare: imece itself, without imece-acc's flags;
+                                 --as: through relay.py, which keeps every byte
+                                 it writes in $ACC_CASE/screen.bytes and answers
+                                 its question for the terminal's name as
+                                 TERMINAL (`'kitty(0.40.0)'`, `'iTerm2 3.6.6'`)
     type TEXT                    the text as typed (the rest of the line)
     key KEY …                    tmux key names
     see TEXT                     TEXT on the screen within 30 s
@@ -38,6 +44,18 @@ A scripted case is `tools/acceptance/scenarios/<ID>.scn`, a step a line
                                  yes to every ask meanwhile
     asked-none TEXT              no ask `allow` said yes to held TEXT
     gone TEXT                    TEXT off the screen within 30 s
+    sent TEXT                    TEXT among the bytes written (`start --as`)
+                                 within 30 s; `\e` is ESC, `\a` BEL, `\\` \
+    unsent TEXT                  TEXT not among them (now)
+    focus in|out                 the terminal's focus report, as a terminal
+                                 sends it when its window gains or loses focus
+    input TEXT                   TEXT's bytes as the terminal's own input (a
+                                 report it sends): `\e` and the rest as `sent`
+    look FILE                    the screen with its colours, every cell
+                                 (`capture-pane -e -N`), into FILE in the
+                                 case's directory
+    cursor TEXT                  the terminal's cursor right after TEXT on its
+                                 row (spaces between them aside), within 30 s
     size COLS ROWS               the screen resized
     sh COMMAND                   `sh -c COMMAND` in the case's directory; exit 0
     bg COMMAND                   COMMAND in the background (a daemon), ended
@@ -67,6 +85,7 @@ import argparse
 import os
 import re
 import shlex
+import string
 import shutil
 import subprocess
 import sys
@@ -190,6 +209,57 @@ def wait_for(
         time.sleep(LOOK_EVERY)
 
 
+RELAY = Path(__file__).resolve().parent / "relay.py"
+# The terminal's focus reports (mode 1004).
+FOCUS = {"in": "\x1b[I", "out": "\x1b[O"}
+
+
+def unescaped(text: str) -> bytes:
+    """A step's TEXT as the bytes it stands for: `\\e` ESC, `\\a` BEL,
+    `\\\\` a backslash; the rest as UTF-8."""
+    out, i = [], 0
+    while i < len(text):
+        two = text[i : i + 2]
+        if two in ("\\e", "\\a", "\\\\"):
+            out.append({"\\e": "\x1b", "\\a": "\x07", "\\\\": "\\"}[two])
+            i += 2
+        else:
+            out.append(text[i])
+            i += 1
+    return "".join(out).encode()
+
+
+def sent_within(file: Path, text: str, timeout: float) -> None:
+    """`text` among the bytes kept in `file` within `timeout`."""
+    want = unescaped(text)
+    deadline = time.monotonic() + timeout
+    while True:
+        if file.exists() and want in file.read_bytes():
+            return
+        if time.monotonic() >= deadline:
+            raise Failed(f"{text!r} not sent in {timeout:g} s")
+        time.sleep(LOOK_EVERY)
+
+
+def cursor_after(name: str, text: str, timeout: float) -> None:
+    """The cursor right after `text` on its row within `timeout`."""
+    deadline = time.monotonic() + timeout
+    while True:
+        at = tmux("display-message", "-p", "-t", exact(name), "#{cursor_x} #{cursor_y}").stdout.split()
+        rows = snap(name).split("\n")
+        x, y = int(at[0]), int(at[1])
+        row = rows[y] if y < len(rows) else ""
+        # Cells, not characters, would differ for wide ones: the texts a
+        # case looks for are narrow.
+        # A space before the cursor (after a prompt) is the row's, not
+        # the text's.
+        if row[:x].rstrip().endswith(text):
+            return
+        if time.monotonic() >= deadline:
+            raise Failed(f"the cursor is at {x},{y}, not after {text!r}: {row!r}")
+        time.sleep(LOOK_EVERY)
+
+
 @dataclass
 class Step:
     line: int
@@ -197,7 +267,7 @@ class Step:
     rest: str
 
 
-VERBS = ("start", "env", "bg", "allow", "until", "asked-none", "type", "key", "see", "wait", "gone", "size", "sh", "fails", "says", "write", "sleep", "stop")
+VERBS = ("start", "env", "bg", "allow", "until", "asked-none", "type", "key", "see", "wait", "gone", "size", "sh", "fails", "says", "write", "sleep", "stop", "sent", "unsent", "focus", "look", "cursor", "input")
 
 
 def parse(text: str) -> list[Step]:
@@ -209,10 +279,12 @@ def parse(text: str) -> list[Step]:
         verb, _, rest = line.partition(" ")
         if verb not in VERBS:
             raise Failed(f"line {n}: `{verb}` is not a step ({', '.join(VERBS)})")
-        if verb in ("type", "see", "gone", "sh", "fails", "says", "env", "bg") and not rest:
+        if verb in ("type", "see", "gone", "sh", "fails", "says", "env", "bg", "sent", "unsent", "look", "cursor", "input") and not rest:
             raise Failed(f"line {n}: `{verb}` needs its text")
         if verb in ("wait", "allow", "until") and not re.fullmatch(r"[0-9.]+ \S.*", rest):
             raise Failed(f"line {n}: `{verb} SECONDS TEXT`")
+        if verb == "focus" and rest not in ("in", "out"):
+            raise Failed(f"line {n}: `focus in` or `focus out`")
         if verb == "asked-none" and not rest:
             raise Failed(f"line {n}: `asked-none` needs its text")
         steps.append(Step(n, verb, raw.strip()[len(verb) + 1 :]))
@@ -258,21 +330,27 @@ def play(acc: Path, path: Path) -> tuple[str, float, str]:
     try:
         for step in parse(path.read_text(encoding="utf-8")):
             v, rest = step.verb, step.rest
-            if v in ("type", "write", "see", "wait", "gone", "says", "env", "allow", "bg", "until", "sh", "fails"):
+            if v in ("type", "write", "see", "wait", "gone", "says", "env", "allow", "bg", "until", "sh", "fails", "look"):
                 # The case's own directory, wherever the run is.
                 rest = rest.replace("$ACC_CASE", str(d))
             if v == "start":
                 words = shlex.split(rest)
-                size, program = "120x40", "imece-acc"
-                while words[:1] in (["--size"], ["--bare"]):
+                size, program, terminal = "120x40", "imece-acc", None
+                while words[:1] in (["--size"], ["--bare"], ["--as"]):
                     if words[0] == "--size":
                         size, words = words[1], words[2:]
+                    elif words[0] == "--as":
+                        terminal, words = words[1], words[2:]
                     else:
                         program, words = "imece", words[1:]
-                start(name, size, [program, *words], env, str(d))
+                command = [program, *words]
+                if terminal:
+                    relay = [sys.executable, "-I", str(RELAY), "--as", terminal]
+                    command = [*relay, "--log", str(d / "screen.bytes"), "--", *command]
+                start(name, size, command, env, str(d))
             elif v == "env":
                 key, _, value = rest.partition(" ")
-                env[key] = value
+                env[key] = string.Template(value).safe_substitute(env)
             elif v == "type":
                 tmux("send-keys", "-t", exact(name), "-l", "--", rest)
                 log(f"type {name}: {rest}")
@@ -326,6 +404,28 @@ def play(acc: Path, path: Path) -> tuple[str, float, str]:
                     raise Failed(f"asked for a yes to {rest!r}: {hit}")
             elif v == "gone":
                 wait_for(name, rest, SEE_WAIT, present=False)
+            elif v == "sent":
+                sent_within(d / "screen.bytes", rest, SEE_WAIT)
+                log(f"sent {name}: {rest}")
+            elif v == "unsent":
+                kept = d / "screen.bytes"
+                if kept.exists() and unescaped(rest) in kept.read_bytes():
+                    raise Failed(f"{rest!r} was sent")
+            elif v == "focus":
+                tmux("send-keys", "-t", exact(name), "-l", "--", FOCUS[rest])
+                log(f"focus {name}: {rest}")
+                time.sleep(KEY_GAP)
+            elif v == "input":
+                tmux("send-keys", "-t", exact(name), "-l", "--", unescaped(rest).decode())
+                log(f"input {name}: {rest}")
+                time.sleep(KEY_GAP)
+            elif v == "look":
+                # Every cell, trailing ones too (`-N`): a theme paints them.
+                looked = tmux("capture-pane", "-p", "-e", "-N", "-t", exact(name)).stdout
+                (d / rest).write_text(looked, encoding="utf-8")
+                log(f"look {name}: {rest}")
+            elif v == "cursor":
+                cursor_after(name, rest, SEE_WAIT)
             elif v == "size":
                 cols, rows = rest.split()
                 tmux("resize-window", "-t", exact(name), "-x", cols, "-y", rows)
@@ -453,10 +553,14 @@ def outlived(d: Path) -> str:
 
 def leftovers(d: Path) -> None:
     """Ends what of case directory `d` still runs, never the tmux server
-    (whose command line is its first session's, so it may name `d`)."""
+    (whose command line is its first session's, so it may name `d`): what
+    names `d` on its command line, and what works in it though its command
+    line does not (a worker's `nohup python3 -m http.server &`: ASK-7's
+    outlived the case, 2026-11-11)."""
     # With its slash: SCR-1's directory is a prefix of SCR-14's.
     found = subprocess.run(["pgrep", "-f", str(d) + "/"], capture_output=True, text=True)
-    for pid in found.stdout.split():
+    pids = set(found.stdout.split()) | {entry.split()[0] for entry in running_in(d)}
+    for pid in sorted(pids):
         name = subprocess.run(["ps", "-o", "comm=", "-p", pid], capture_output=True, text=True)
         if not is_tmux(name.stdout) and int(pid) != os.getpid():
             subprocess.run(["kill", pid], capture_output=True)
