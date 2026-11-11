@@ -4667,13 +4667,23 @@ mod tests {
         for next in 1..=20 {
             d.tell(serde_json::json!({"events": [], "next": next, "reserved": [], "ended": []}));
         }
+        // Counted against the time it had, not a count in a fixed time: a
+        // loaded runner once made only two watches in 600 ms.
+        let start = Instant::now();
         let (_heard, stop, ear) = ear(&d, "demo");
-        thread::sleep(Duration::from_millis(600));
+        while d.watched.lock().unwrap().len() < 3 {
+            assert!(start.elapsed() < WAIT, "no third watch");
+            thread::sleep(Duration::from_millis(5));
+        }
+        // The third came no sooner than two least times after the first.
+        assert!(start.elapsed() >= 2 * HEAR_SOONEST, "{:?}", start.elapsed());
+        thread::sleep(Duration::from_millis(300));
         stop.store(true, Ordering::Relaxed);
         ear.join().unwrap();
-        // At 0, 250 and 500 ms, and perhaps one more on a slow machine.
-        let asked = d.watched.lock().unwrap().len();
-        assert!((3..=4).contains(&asked), "{asked}");
+        // However long it ran, never more than one watch a least time.
+        let asked = d.watched.lock().unwrap().len() as u128;
+        let most = start.elapsed().as_millis() / HEAR_SOONEST.as_millis() + 1;
+        assert!(asked <= most, "{asked} watches, at most {most}");
     }
 
     #[test]
