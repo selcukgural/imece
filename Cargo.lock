@@ -768,9 +768,9 @@ checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
 
 [[package]]
 name = "lonca-client"
-version = "0.2.2"
+version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cd6d2b707721bc1e5dc0b18220e018075c8f6fc992e62970a172b0e6da558552"
+checksum = "47da668cbc51c051879ddf5321bc91f91b3e99a67d43fa03a0bd41dbb3a4cd7d"
 dependencies = [
  "libc",
  "lonca-core",
@@ -780,9 +780,9 @@ dependencies = [
 
 [[package]]
 name = "lonca-core"
-version = "0.2.2"
+version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f96fb0ab3d4e1a5b578956affce4f17d07b08757c91d24628b5a6c8b4c9bbc5a"
+checksum = "7b9d81d11d3aaf4f5544299dbaaecd8c40d08d92d65aa0d88f7d22608ecf0a19"
 dependencies = [
  "base64 0.23.1",
  "ed25519-dalek",
