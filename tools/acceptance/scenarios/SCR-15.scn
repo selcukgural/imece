@@ -15,9 +15,10 @@ see enter take · ↑↓ choose · esc close
 key Enter
 see and counter_total_rows
 gone esc close
-# A file by its name, taken with nothing after it.
-type  sh
-see shelf.py
+# A file by its name (a word with a dot lists the files that hold it),
+# taken with nothing after it.
+type  shelf.
+see test_shelf.py
 key Tab
 see and counter_total_rows shelf.py
 gone tab take
@@ -28,4 +29,8 @@ key Escape
 gone tab take
 type t
 gone tab take
+# A name from the checkout's code, never said.
+key C-u
+type and datac
+see dataclass
 key C-u Escape Escape

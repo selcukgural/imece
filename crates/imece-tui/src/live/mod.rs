@@ -46,6 +46,7 @@ use crate::checks;
 use crate::closes;
 use crate::i18n::{Lang, clean};
 use crate::model::*;
+use crate::names;
 use crate::paths;
 use crate::runners::{self, Runners};
 use crate::store::{self, Found, Kept, Store};
@@ -568,6 +569,9 @@ enum GitDone {
         /// The tests those files call for (record 136); none when they
         /// could not be listed.
         runners: Runners,
+        /// The names in their code, for the word list (record 149); none
+        /// when they could not be listed.
+        names: Vec<String>,
     },
 }
 
@@ -1920,11 +1924,13 @@ mod tests {
                 project: 0,
                 files,
                 runners,
+                names: vec!["a_name".into()],
             })
             .unwrap();
         });
         assert!(came, "git");
         assert_eq!(w.projects[0].files, ["a.rs"]);
+        assert_eq!(w.projects[0].names, ["a_name"]);
         // A suggestion's answer.
         let came = says(&mut live, &mut w, |live| {
             let unsaid = imece_agent::Unsaid {

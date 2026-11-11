@@ -2409,6 +2409,7 @@ mod tests {
             leader: 2,
             trunk: None,
             files: Vec::new(),
+            names: Vec::new(),
             repo: &[],
             closed: true,
             pinned: false,

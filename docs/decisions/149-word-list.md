@@ -47,10 +47,14 @@ hand's messages, then the rest said in the project at hand (the journal's
 said lines whose speaker or listener is of it, among its last
 `JOURNAL_BACK` 2,000 lines), then the lines sent, `SAID_BACK` 200 texts
 of each, newest first and a text's words last to first; then the names in
-the code (none yet, see the gaps); then the files of the project whose
-name starts with the word, shorter paths first. A word with a `/` lists
-the files by any part of their path and the symbols leased as
-`file::name`, as record 67 did. A word is a run of letters, digits and
+the code (below), the most used first; then the files of the project
+whose name starts with the word, shorter paths first. A word with a `/`
+lists the files by any part of their path and the symbols leased as
+`file::name`, as record 67 did; so does a word with a `.` when some
+path holds it (`shelf.p`, `config.toml`): a word with a dot is a file's
+name more often than not, and the word after the dot would find the
+code's names first. No path holding it (`e.g`, `self.world`), the word
+after the dot is looked for as any other. A word is a run of letters, digits and
 `_` starting with no digit, `SHORTEST` 4 to `LONGEST` 48 characters;
 matching folds case and Turkish letters (`ui::fold`); the word typed is
 never offered, and a word is offered once (its first spelling). At most
@@ -59,16 +63,38 @@ are read, so a secret it holds never enters the list, and a name from the
 code that `clean` would change is left out. No model is asked: the list
 is local and free.
 
+**The names in the code** (`names.rs`) are read on the git thread with
+the files (`GitJob::Files`, so at a project's opening, after an apply and
+every `FILES_EVERY` 60 s while one of its agents is mid-turn) into
+`Project.names` (memory only, kept when a listing fails): the words of
+every file git lists, in its order, counted, the most used first, at most
+`KEPT` 10,000. Left out: a file larger than `FILE_MOST` 1 MiB (generated
+or data more often than code), the files after `READ_MOST` 8 MiB read in
+all, a file with a NUL byte or not UTF-8, lock files, minified or
+generated code (`ui::diff::generated`, the change view's kinds) and prose
+or data by extension (`md txt rst adoc org csv tsv svg …`). A file is
+read only as a plain file inside the checkout: its real path must stand
+under the checkout's, it is opened `O_NOFOLLOW | O_NONBLOCK` and looked at
+as opened, so a link to a file outside or a pipe is never read. Every
+file's text is cleaned (`i18n::clean`) before its words are counted, and
+`pool::picks` cleans a name again when it matches, so a secret the code
+holds is never offered. On imece's own checkout (626 files, about 7 MiB
+of code) a read takes 0.18 s in a release build, on the git thread. The
+demo's names are the words of its code map's symbols (`World::names_of`:
+`Rates.Quote` is `Rates` and `Quote`).
+
 **Read cost.** Each key that changes the line reads at most 2,000 journal
-lines and 600 texts; a text that does not hold the word folded is not
-cleaned or split. Nothing is kept between keys, so nothing grows; the
+lines and 600 texts and looks at the 10,000 names; a text that does not
+hold the word folded is not cleaned or split, a name that does not start
+with it is not cleaned. Nothing is kept between keys, so nothing grows; the
 list lives as long as the word. At ten times the talk the caps hold the
 cost where it is; what goes first is the oldest talk, which is the least
 likely word.
 
-**Gaps.** The names in the repository's code (a tokenizer over the
-tracked text files on the git thread, with caps per file and in all) are
-the next pull request; `pool::picks` takes them already. A list with the
+**Gaps.** The names are words, not a language's symbols: a word in a
+comment counts as one in the code, and nothing tells a function from a
+local. A file changed is read again only with the whole listing (no cache
+by file). A list with the
 cursor mid-line or on a text of several lines needs `Menu::insert` to
 keep what follows the cursor: the one after. The demo shows the list
 through the same `App` on its own talk and files (`Project.repo`).

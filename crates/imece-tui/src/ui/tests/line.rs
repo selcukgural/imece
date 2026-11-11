@@ -1404,6 +1404,7 @@ fn the_word_list_marks_the_one_at_hand_and_more_once_the_person_moved() {
 #[test]
 fn the_word_list_moves_nothing_on_the_screen_and_its_keys_are_on_the_line() {
     let mut app = quiet_rows();
+    crate::app::tests::said_alone(&mut app);
     let lead = app.world.projects[0].leader;
     app.world.note(Event::Replied {
         agent: lead,
