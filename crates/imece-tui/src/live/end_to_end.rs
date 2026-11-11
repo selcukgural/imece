@@ -46,6 +46,12 @@ fn a_leader_hires_a_worker_whose_change_waits_for_the_person() {
     // the worker added them to the file of its worktree and said done.
     assert_eq!(w.agents[1].name, "claude-1");
     assert_eq!(w.agents[1].role, Role::Worker);
+    // Each session's processes carry its mark: the run's, its place.
+    for (id, name) in [(0, w.agents[0].name.as_str()), (1, "claude-1")] {
+        let want = crate::procs::mark(&live.run, &w.projects[0].name, name);
+        assert_eq!(live.marks[id].as_deref(), Some(want.as_str()));
+    }
+    assert!(live.marked);
     let change = w.changes.iter().find(|c| c.agent == 1).unwrap();
     assert_eq!(change.title, "Write a greeting");
     let files: Vec<&str> = change.files.iter().map(|f| f.path.as_str()).collect();

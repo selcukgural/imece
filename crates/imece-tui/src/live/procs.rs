@@ -45,9 +45,12 @@ impl Live {
         }
         w.procs.looking = true;
         let (roots, tx) = (self.session_pids(), self.looks.tx.clone());
+        let marked: Vec<(AgentId, String)> = (roots.iter())
+            .filter_map(|&(id, _)| Some((id, self.marks.get(id)?.clone()?)))
+            .collect();
         let worktrees = self.worktrees();
         thread::spawn(move || {
-            let read = procs::read(&roots).and_then(|agents| {
+            let read = procs::read(&roots, &marked).and_then(|agents| {
                 let left = procs::leftovers(&worktrees, &own(), std::process::id())?;
                 Ok((agents, left))
             });
@@ -82,7 +85,12 @@ impl Live {
             _ => return Err(Refusal::NotUnder),
         };
         let name = proc_name(w, id, pid);
-        procs::end(pid, root, &name)?;
+        procs::end(
+            pid,
+            root,
+            &name,
+            self.marks.get(id).and_then(Option::as_deref),
+        )?;
         w.agents[id].trace(w.tick, format!("ended by the person: {name} ({pid})"));
         w.note(Event::Killed {
             agent: id,
@@ -121,7 +129,34 @@ mod tests {
     use super::*;
 
     #[test]
+    fn the_quit_ends_what_carries_its_run_s_mark_and_nothing_of_another_s() {
+        let _one = crate::procs::one_at_a_time();
+        let alive = |pid: u32| unsafe { libc::kill(pid as i32, 0) == 0 };
+        let (mut live, other) = (idle_live(1), idle_live(1));
+        let ours = crate::procs::left_behind(&procs::mark(&live.run, "p", "claude-1"));
+        let theirs = crate::procs::left_behind(&procs::mark(&other.run, "p", "claude-1"));
+        // No session ran: nothing is looked for.
+        let quiet = idle_live(1);
+        let never = crate::procs::left_behind(&procs::mark(&quiet.run, "p", "claude-1"));
+        drop(quiet);
+        assert!(alive(never), "no session, no look");
+        live.marked = true;
+        drop(live);
+        let start = std::time::Instant::now();
+        while alive(ours) && start.elapsed().as_secs() < 5 {
+            thread::sleep(std::time::Duration::from_millis(20));
+        }
+        assert!(!alive(ours), "this run's");
+        assert!(alive(theirs), "another run's");
+        for pid in [theirs, never] {
+            unsafe { libc::kill(pid as i32, libc::SIGKILL) };
+        }
+        drop(other);
+    }
+
+    #[test]
     fn nothing_without_a_session_and_a_look_comes_once() {
+        let _one = crate::procs::one_at_a_time();
         let mut w = team(1);
         let mut live = idle_live(2);
         assert_eq!(live.end_proc(&mut w, 1, 1234), Err(Refusal::NotUnder));

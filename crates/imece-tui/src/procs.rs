@@ -6,12 +6,21 @@
 //! from an earlier run of imece (E16's second half): a process whose
 //! command line names imece's worktrees with no imece above it, and what
 //! runs under it; listed, and ended only on the person's word.
+//!
+//! Every process a session starts carries the session's mark in its
+//! environment ([`MARK_ENV`]), one that leaves the session's tree too
+//! (`nohup … &`: its own group, its parent gone; acceptance, 2026-11-11):
+//! `:ps` lists such a one under its agent and may end it, imece's quit
+//! ends whatever carries this run's mark, and a later start finds what
+//! carries the mark of a run no imece runs any more.
 
 use std::path::Path;
 use std::process::Command;
-use std::time::Duration;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use imece_agent::child;
+pub use imece_agent::claude::MARK_ENV;
 
 use crate::model::AgentId;
 
@@ -168,20 +177,34 @@ fn ps(args: &[&str]) -> Result<String, String> {
 /// The processes of each session (`roots`: an agent and its session's
 /// process): every process's parent first (a short answer whatever the
 /// machine runs), then CPU and memory of those under the sessions alone;
-/// a session whose process is gone is left out.
-pub fn read(roots: &[(AgentId, u32)]) -> Result<Vec<(AgentId, Vec<Proc>)>, String> {
+/// a session whose process is gone is left out. After each session's
+/// tree, what carries its mark (`marked`: an agent and its session's
+/// mark) outside it: a process that left the session.
+pub fn read(
+    roots: &[(AgentId, u32)],
+    marked: &[(AgentId, String)],
+) -> Result<Vec<(AgentId, Vec<Proc>)>, String> {
     if roots.is_empty() {
         return Ok(Vec::new());
     }
     let pairs = pairs(&ps(&["-A", "-o", "pid=,ppid="])?);
     // A session gone is not asked about: `ps` refuses a whole list for
     // one number it does not take.
-    let trees: Vec<(AgentId, Vec<u32>)> = (roots.iter())
+    let mut trees: Vec<(AgentId, Vec<u32>)> = (roots.iter())
         .filter(|&&(_, root)| pairs.iter().any(|&(pid, _)| pid == root))
         .map(|&(id, root)| (id, under(&pairs, root)))
         .collect();
     if trees.is_empty() {
         return Ok(Vec::new());
+    }
+    if !marked.is_empty() {
+        let marks = marks().unwrap_or_default();
+        for (id, mark) in marked {
+            let all: Vec<Vec<u32>> = trees.iter().map(|(_, t)| t.clone()).collect();
+            if let Some((_, tree)) = trees.iter_mut().find(|(a, _)| a == id) {
+                tree.extend(left_session(mark, &marks, &pairs, &all));
+            }
+        }
     }
     let pids: Vec<u32> = trees.iter().flat_map(|(_, p)| p.clone()).collect();
     Ok(group(&trees, &listed(&pids)?))
@@ -221,6 +244,217 @@ pub fn group(trees: &[(AgentId, Vec<u32>)], procs: &[Proc]) -> Vec<(AgentId, Vec
         .collect()
 }
 
+/// A run's part of a session's mark: this process's number, the second
+/// it was made at, and a count, so each `Live` (tests side by side
+/// included) has one of its own; the number tells whether the run's
+/// imece still runs.
+pub fn new_run() -> String {
+    static COUNT: AtomicU64 = AtomicU64::new(0);
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs());
+    let n = COUNT.fetch_add(1, Ordering::Relaxed);
+    format!("{}-{secs}-{n}", std::process::id())
+}
+
+/// The process a run's mark was made by.
+fn run_pid(run: &str) -> Option<u32> {
+    run.split('-').next()?.parse().ok()
+}
+
+/// `word` as one part of a mark: letters, digits, `.`, `_` and `-` as
+/// they are, anything else `_`, at most 40 characters.
+fn mark_word(word: &str) -> String {
+    (word.chars().take(40))
+        .map(|c| match c {
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '.' | '_' | '-' => c,
+            _ => '_',
+        })
+        .collect()
+}
+
+/// The mark of a session of agent `agent` of project `project` in run
+/// `run`: `RUN/PROJECT/AGENT`, one word, no space.
+pub fn mark(run: &str, project: &str, agent: &str) -> String {
+    format!("{run}/{}/{}", mark_word(project), mark_word(agent))
+}
+
+/// A mark's run and its place (`PROJECT/AGENT`).
+pub fn mark_parts(mark: &str) -> Option<(&str, &str)> {
+    mark.split_once('/')
+        .filter(|(run, place)| !run.is_empty() && !place.is_empty())
+}
+
+/// The mark in one process's environment (`NAME=value` a NUL apart).
+fn mark_in_environ(bytes: &[u8]) -> Option<String> {
+    let key = format!("{MARK_ENV}=");
+    (bytes.split(|b| *b == 0))
+        .find_map(|v| v.strip_prefix(key.as_bytes()))
+        .and_then(|v| std::str::from_utf8(v).ok())
+        .filter(|v| mark_parts(v).is_some())
+        .map(str::to_string)
+}
+
+/// Process `pid`'s environment as it started, `NAME=value` a NUL apart;
+/// none for one of another user's, or gone.
+#[cfg(target_os = "linux")]
+fn environ(pid: u32) -> Option<Vec<u8>> {
+    std::fs::read(format!("/proc/{pid}/environ")).ok()
+}
+
+/// Process `pid`'s environment as it started (`KERN_PROCARGS2`: the
+/// count of its arguments, its program's path, the arguments, then the
+/// environment, each ending in a NUL); none for one of another user's,
+/// one gone, and macOS's own programs (it shows none of theirs, as `ps
+/// -E` shows none: a server of the system's own goes unmarked).
+#[cfg(target_os = "macos")]
+fn environ(pid: u32) -> Option<Vec<u8>> {
+    let mut mib = [
+        libc::CTL_KERN,
+        libc::KERN_PROCARGS2,
+        i32::try_from(pid).ok()?,
+    ];
+    let mut size: libc::size_t = 0;
+    let null = std::ptr::null_mut();
+    // SAFETY: a size query, then a read into a buffer of that size.
+    if unsafe { libc::sysctl(mib.as_mut_ptr(), 3, null, &mut size, null, 0) } != 0 {
+        return None;
+    }
+    let mut buf = vec![0u8; size];
+    let at = buf.as_mut_ptr().cast();
+    if unsafe { libc::sysctl(mib.as_mut_ptr(), 3, at, &mut size, null, 0) } != 0 {
+        return None;
+    }
+    buf.truncate(size);
+    environ_in_procargs(&buf)
+}
+
+/// The environment in `KERN_PROCARGS2`'s answer.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn environ_in_procargs(buf: &[u8]) -> Option<Vec<u8>> {
+    let argc = i32::from_ne_bytes(buf.get(..4)?.try_into().ok()?);
+    let mut rest = buf.get(4..)?;
+    // The program's path, then the NULs that pad it.
+    rest = &rest[rest.iter().position(|b| *b == 0)?..];
+    rest = &rest[rest.iter().position(|b| *b != 0)?..];
+    for _ in 0..argc.max(0) {
+        let end = rest.iter().position(|b| *b == 0)?;
+        rest = rest.get(end + 1..)?;
+    }
+    Some(rest.to_vec())
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+fn environ(_: u32) -> Option<Vec<u8>> {
+    None
+}
+
+/// Of the processes `pids`, those that carry a mark, each with it (only
+/// one's own processes' environments can be read).
+pub fn marks_of(pids: &[u32]) -> Vec<(u32, String)> {
+    (pids.iter())
+        .filter_map(|&pid| Some((pid, mark_in_environ(&environ(pid)?)?)))
+        .collect()
+}
+
+/// Every process that carries a mark, each with it.
+pub fn marks() -> Result<Vec<(u32, String)>, String> {
+    let pairs = pairs(&ps(&["-A", "-o", "pid=,ppid="])?);
+    Ok(marks_of(
+        &pairs.iter().map(|&(pid, _)| pid).collect::<Vec<_>>(),
+    ))
+}
+
+/// The mark process `pid` carries, read now; none when it carries none
+/// or is gone.
+fn mark_of(pid: u32) -> Option<String> {
+    marks_of(&[pid]).pop().map(|(_, m)| m)
+}
+
+/// Of `marks`, those that carry `mark` and are in none of `trees`: the
+/// first of each (its parent carries no such mark) and those under it,
+/// parents first, as `pairs` has them. A process that left its session
+/// is listed with it so.
+pub fn left_session(
+    mark: &str,
+    marks: &[(u32, String)],
+    pairs: &[(u32, u32)],
+    trees: &[Vec<u32>],
+) -> Vec<u32> {
+    let listed = |pid: u32| trees.iter().any(|t| t.contains(&pid));
+    let mut found: Vec<u32> = Vec::new();
+    for root in marked_roots(mark, marks, pairs, trees) {
+        for pid in under(pairs, root) {
+            if !found.contains(&pid) && !listed(pid) && found.len() < MOST_UNDER {
+                found.push(pid);
+            }
+        }
+    }
+    found
+}
+
+/// Of `marks`, the processes that carry `mark`, are in none of `trees`
+/// and whose parent carries no such mark: the first of each tree of them.
+fn marked_roots(
+    mark: &str,
+    marks: &[(u32, String)],
+    pairs: &[(u32, u32)],
+    trees: &[Vec<u32>],
+) -> Vec<u32> {
+    let listed = |pid: u32| trees.iter().any(|t| t.contains(&pid));
+    let ours: Vec<u32> = (marks.iter())
+        .filter(|(pid, m)| m == mark && !listed(*pid))
+        .map(|&(pid, _)| pid)
+        .collect();
+    let parent = |pid: u32| pairs.iter().find(|&&(p, _)| p == pid).map(|&(_, up)| up);
+    (ours.iter().copied())
+        .filter(|&pid| !parent(pid).is_some_and(|up| ours.contains(&up)))
+        .collect()
+}
+
+/// Ends every process that carries run `run`'s mark but this one:
+/// `SIGTERM`, and `SIGKILL` for each still there after [`KILL_GRACE`].
+/// imece's quit, once its sessions ended: what left a session goes too,
+/// and a session that outlived its own end. How many were sent the first.
+pub fn end_marked(run: &str) -> usize {
+    let Ok(marks) = marks() else {
+        return 0;
+    };
+    let me = std::process::id();
+    let ours: Vec<u32> = (marks.into_iter())
+        .filter(|(pid, m)| *pid != me && mark_parts(m).is_some_and(|(r, _)| r == run))
+        .map(|(pid, _)| pid)
+        .collect();
+    for &pid in &ours {
+        signal(pid, libc::SIGTERM);
+    }
+    let alive = |pid: u32| i32::try_from(pid).is_ok_and(|p| unsafe { libc::kill(p, 0) } == 0);
+    let start = Instant::now();
+    while start.elapsed() < KILL_GRACE && ours.iter().any(|&p| alive(p)) {
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    for &pid in &ours {
+        if alive(pid) && mark_of(pid).is_some_and(|m| m.starts_with(&format!("{run}/"))) {
+            signal(pid, libc::SIGKILL);
+        }
+    }
+    ours.len()
+}
+
+/// Of `marks`, those of a run no imece runs any more: not this one
+/// (process `me`), and its process gone from `pairs` (a number taken
+/// again by another program meanwhile keeps it, as a run alive would).
+pub fn dead_runs(marks: &[(u32, String)], pairs: &[(u32, u32)], me: u32) -> Vec<(u32, String)> {
+    (marks.iter())
+        .filter(|(_, m)| {
+            mark_parts(m)
+                .and_then(|(r, _)| run_pid(r))
+                .is_some_and(|run| run != me && !pairs.iter().any(|&(p, _)| p == run))
+        })
+        .cloned()
+        .collect()
+}
+
 /// Why a process was not ended.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Refusal {
@@ -232,16 +466,21 @@ pub enum Refusal {
     NotUnder,
 }
 
-/// Ends process `pid` (named `name` when read) under session `root`:
-/// checked again first, then `SIGTERM`, and `SIGKILL` after
-/// [`KILL_GRACE`] if it is still there and still under the session. The
-/// session's own process and imece's relay (a program named as imece is,
-/// right under the session) are refused.
-pub fn end(pid: u32, root: u32, name: &str) -> Result<(), Refusal> {
+/// Ends process `pid` (named `name` when read) under session `root`, or
+/// one that left it carrying its `mark`: checked again first, then
+/// `SIGTERM`, and `SIGKILL` after [`KILL_GRACE`] if it is still there and
+/// still the session's. The session's own process and imece's relay (a
+/// program named as imece is, right under the session) are refused.
+pub fn end(pid: u32, root: u32, name: &str, mark: Option<&str>) -> Result<(), Refusal> {
     if pid == root {
         return Err(Refusal::Session);
     }
-    if !child::descends(pid, root) {
+    let mark = mark.map(str::to_string);
+    let ours = move |pid: u32| {
+        child::descends(pid, root)
+            || (mark.as_deref()).is_some_and(|m| mark_of(pid).as_deref() == Some(m))
+    };
+    if !ours(pid) {
         return Err(Refusal::NotUnder);
     }
     if relay(pid, root, name, own_name().as_deref()) {
@@ -250,7 +489,7 @@ pub fn end(pid: u32, root: u32, name: &str) -> Result<(), Refusal> {
     signal(pid, libc::SIGTERM);
     std::thread::spawn(move || {
         std::thread::sleep(KILL_GRACE);
-        if child::descends(pid, root) {
+        if ours(pid) {
             signal(pid, libc::SIGKILL);
         }
     });
@@ -405,10 +644,79 @@ pub fn place_in(args: &str, worktrees: &Path) -> String {
 /// `worktrees` with no imece above it, and those under it.
 pub fn leftovers(worktrees: &Path, own: &str, me: u32) -> Result<Vec<Left>, String> {
     let naming = naming(worktrees)?;
-    if naming.is_empty() {
+    let marks = marks().unwrap_or_default();
+    if naming.is_empty() && marks.is_empty() {
         return Ok(Vec::new());
     }
     let pairs = pairs(&ps(&["-A", "-o", "pid=,ppid="])?);
+    let mut found = named_leftovers(&naming, &pairs, worktrees, own, me)?;
+    found.extend(marked_leftovers(&marks, &pairs, &found, me)?);
+    found.truncate(MOST_LEFT);
+    Ok(found)
+}
+
+/// What carries the mark of a run no imece runs any more (`marks`), in
+/// none of the trees `found` already: a tree for each process whose
+/// parent carries no such mark, its place the mark's.
+fn marked_leftovers(
+    marks: &[(u32, String)],
+    pairs: &[(u32, u32)],
+    found: &[Left],
+    me: u32,
+) -> Result<Vec<Left>, String> {
+    let dead = dead_runs(marks, pairs, me);
+    let taken: Vec<Vec<u32>> = (found.iter())
+        .map(|l| l.procs.iter().map(|p| p.pid).collect())
+        .collect();
+    let mut trees: Vec<(usize, Vec<u32>)> = Vec::new();
+    let mut places: Vec<String> = Vec::new();
+    let mut seen: Vec<String> = Vec::new();
+    for (_, m) in &dead {
+        if seen.contains(m) || trees.len() + found.len() >= MOST_LEFT {
+            continue;
+        }
+        seen.push(m.clone());
+        let place: String = mark_parts(m)
+            .map_or("", |(_, p)| p)
+            .chars()
+            .take(PLACE_MOST)
+            .collect();
+        let mut all = taken.clone();
+        all.extend(trees.iter().map(|(_, t)| t.clone()));
+        // Each a tree of its own, its first first, as a session's is.
+        for root in marked_roots(m, &dead, pairs, &all) {
+            let tree: Vec<u32> = (under(pairs, root).into_iter())
+                .filter(|p| !all.iter().any(|t| t.contains(p)))
+                .collect();
+            all.push(tree.clone());
+            places.push(place.clone());
+            trees.push((trees.len(), tree));
+        }
+    }
+    let pids: Vec<u32> = trees.iter().flat_map(|(_, t)| t.clone()).collect();
+    let procs = listed(&pids)?;
+    Ok((group(&trees, &procs).into_iter())
+        .map(|(i, procs)| Left {
+            place: places[i].clone(),
+            procs,
+        })
+        .collect())
+}
+
+/// The trees of the processes `naming` imece's worktrees left from an
+/// earlier run.
+fn named_leftovers(
+    naming: &[u32],
+    pairs: &[(u32, u32)],
+    worktrees: &Path,
+    own: &str,
+    me: u32,
+) -> Result<Vec<Left>, String> {
+    if naming.is_empty() {
+        return Ok(Vec::new());
+    }
+    let naming = naming.to_vec();
+    let pairs = pairs.to_vec();
     let mut asked = naming.clone();
     for &pid in &naming {
         for up in above(&pairs, pid) {
@@ -440,23 +748,35 @@ fn still_left(roots: &[u32], worktrees: &Path, own: &str, me: u32) -> Vec<u32> {
     let Ok(naming) = naming(worktrees) else {
         return Vec::new();
     };
+    let Ok(text) = ps(&["-A", "-o", "pid=,ppid="]) else {
+        return Vec::new();
+    };
+    let pairs = pairs(&text);
+    // Those that carry the mark of a run no imece runs any more.
+    let marks = marks().unwrap_or_default();
+    let dead = dead_runs(&marks, &pairs, me);
+    let marked: Vec<u32> = (roots.iter().copied())
+        .filter(|r| dead.iter().any(|(p, _)| p == r))
+        .collect();
     let roots: Vec<u32> = roots
         .iter()
         .copied()
         .filter(|r| naming.contains(r))
         .collect();
-    let Ok(text) = ps(&["-A", "-o", "pid=,ppid="]) else {
-        return Vec::new();
-    };
-    let pairs = pairs(&text);
     let mut asked = roots.clone();
     for &root in &roots {
         asked.extend(above(&pairs, root));
     }
-    match listed(&asked) {
+    let mut left = match listed(&asked) {
         Ok(named) => left_roots(&roots, &pairs, &named, own, me),
         Err(_) => Vec::new(),
+    };
+    for r in marked {
+        if !left.contains(&r) {
+            left.push(r);
+        }
     }
+    left
 }
 
 /// Of `asked` (each a process and the first of the tree left from an
@@ -495,6 +815,60 @@ pub fn end_left(asked: &[(u32, u32)], worktrees: &Path, own: &str, me: u32) -> u
         }
     });
     n
+}
+
+/// What looks for what an earlier run left sees every test's: the tests
+/// that look, or leave one, go one at a time.
+#[cfg(test)]
+pub(crate) fn one_at_a_time() -> std::sync::MutexGuard<'static, ()> {
+    static ONE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    ONE.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+#[cfg(test)]
+/// A `sleep` whose environment `ps` shows: macOS shows none of its
+/// own programs' (`/bin/sleep` is one), so there a copy signed anew.
+pub(crate) fn sleeper() -> String {
+    static MADE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    MADE.get_or_init(|| {
+        if !cfg!(target_os = "macos") {
+            return "sleep".into();
+        }
+        let dir = std::env::temp_dir().join(format!("imece-sleeper-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let copy = dir.join("sleep");
+        std::fs::copy("/bin/sleep", &copy).unwrap();
+        let signed = Command::new("codesign")
+            .args(["-s", "-", "-f"])
+            .arg(&copy)
+            .output()
+            .unwrap();
+        assert!(signed.status.success(), "{signed:?}");
+        copy.display().to_string()
+    })
+    .clone()
+}
+
+#[cfg(test)]
+/// A process that left its session: started by one in the background
+/// with the mark, its parent gone; its number.
+pub(crate) fn left_behind(mark: &str) -> u32 {
+    let out = Command::new("sh")
+        .args([
+            "-c",
+            &format!("'{}' 60 >/dev/null 2>&1 & echo $!", sleeper()),
+        ])
+        .env(MARK_ENV, mark)
+        .output()
+        .unwrap();
+    let pid = String::from_utf8_lossy(&out.stdout).trim().parse().unwrap();
+    // Until it runs the sleeper it is the shell, whose environment
+    // macOS does not show.
+    let start = std::time::Instant::now();
+    while mark_of(pid).is_none() && start.elapsed() < Duration::from_secs(5) {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    pid
 }
 
 #[cfg(test)]
@@ -592,6 +966,161 @@ mod tests {
 
     /// A shell standing in for a session, with `inner` started under it
     /// in the background: the shell, and the number of what it started.
+    #[test]
+    fn a_mark_is_one_word_and_reads_back_into_its_run_and_place() {
+        let run = new_run();
+        assert_ne!(new_run(), run, "each Live its own");
+        assert_eq!(run_pid(&run), Some(std::process::id()));
+        let m = mark(&run, "my shop/v2", "claude-1");
+        assert_eq!(m, format!("{run}/my_shop_v2/claude-1"));
+        assert!(!m.contains(char::is_whitespace));
+        assert_eq!(mark_parts(&m), Some((run.as_str(), "my_shop_v2/claude-1")));
+        assert_eq!(mark_parts("nothing"), None);
+        assert_eq!(mark_parts("/a/b"), None);
+        assert_eq!(mark_parts("r/"), None);
+        assert_eq!(mark_word(&"x".repeat(50)).len(), 40);
+        assert_eq!(mark_word("çay é"), "_ay__");
+        assert_eq!(run_pid("x-1-2"), None);
+    }
+
+    #[test]
+    fn a_mark_is_read_from_an_environment_and_procargs() {
+        let environ = format!("HOME=/h\0{MARK_ENV}=1-2-0/shop/claude-1\0PATH=/bin\0");
+        assert_eq!(
+            mark_in_environ(environ.as_bytes()).as_deref(),
+            Some("1-2-0/shop/claude-1")
+        );
+        assert_eq!(mark_in_environ(b"HOME=/h\0"), None);
+        assert_eq!(mark_in_environ(format!("{MARK_ENV}=x\0").as_bytes()), None);
+        assert_eq!(
+            mark_in_environ(format!("X{MARK_ENV}=1-2-0/a/b\0").as_bytes()),
+            None
+        );
+        // argc 2, the path padded, two arguments, then the environment.
+        let mut buf = 2i32.to_ne_bytes().to_vec();
+        buf.extend(b"/bin/sh\0\0\0sh\0-c\0A=1\0B=2\0");
+        assert_eq!(
+            environ_in_procargs(&buf).as_deref(),
+            Some(&b"A=1\0B=2\0"[..])
+        );
+        assert_eq!(environ_in_procargs(&buf[..2]), None, "cut short");
+        let mut short = 5i32.to_ne_bytes().to_vec();
+        short.extend(b"/bin/sh\0sh\0");
+        assert_eq!(
+            environ_in_procargs(&short),
+            None,
+            "fewer arguments than said"
+        );
+        // This process carries none; one gone is none.
+        assert_eq!(mark_of(std::process::id()), None);
+        assert_eq!(mark_of(u32::MAX - 1), None);
+    }
+
+    #[test]
+    fn what_left_a_session_is_listed_after_it_its_first_first() {
+        let m = "1-2-0/shop/claude-1".to_string();
+        let other = "1-2-0/shop/claude-2".to_string();
+        // 10 the session, 11 under it; 20 left it (its parent gone), 21
+        // under 20; 30 carries another's mark; 40 left it too.
+        let pairs = [(10, 1), (11, 10), (20, 1), (21, 20), (30, 1), (40, 1)];
+        let marks = [
+            (10, m.clone()),
+            (11, m.clone()),
+            (20, m.clone()),
+            (21, m.clone()),
+            (30, other.clone()),
+            (40, m.clone()),
+        ];
+        let trees = [vec![10, 11]];
+        assert_eq!(marked_roots(&m, &marks, &pairs, &trees), [20, 40]);
+        assert_eq!(left_session(&m, &marks, &pairs, &trees), [20, 21, 40]);
+        assert_eq!(left_session(&other, &marks, &pairs, &trees), [30]);
+        assert!(left_session("none", &marks, &pairs, &trees).is_empty());
+        // A process under one that left goes with it, marked or not.
+        let pairs = [(20, 1), (21, 20), (22, 21)];
+        let marks = [(20, m.clone())];
+        assert_eq!(left_session(&m, &marks, &pairs, &[]), [20, 21, 22]);
+    }
+
+    #[test]
+    fn a_run_is_dead_once_its_process_is_gone_and_never_this_one() {
+        let pairs = [(100, 1), (200, 1)];
+        let marks = [
+            (1, "100-5-0/a/b".to_string()),
+            (2, "300-5-0/a/b".to_string()),
+            (3, "200-5-0/a/c".to_string()),
+            (4, "999-5-0/a/c".to_string()),
+            (5, "x/a/b".to_string()),
+        ];
+        let dead: Vec<u32> = dead_runs(&marks, &pairs, 999)
+            .iter()
+            .map(|(p, _)| *p)
+            .collect();
+        assert_eq!(dead, [2], "100 and 200 run; 999 is this one; x is no run");
+    }
+
+    fn alive(pid: u32) -> bool {
+        unsafe { libc::kill(pid as i32, 0) == 0 }
+    }
+
+    fn ended_soon(pid: u32) -> bool {
+        let start = Instant::now();
+        while start.elapsed() < Duration::from_secs(5) {
+            if !alive(pid) {
+                return true;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        false
+    }
+
+    #[test]
+    fn a_process_that_left_its_session_is_found_listed_ended_and_left_over() {
+        let _one = one_at_a_time();
+        let run = new_run();
+        let m = mark(&run, "shop", "claude-1");
+        let (root, under_it) = session("sleep 60");
+        let gone = left_behind(&m);
+        // Its mark reads back, its parent is no longer the session.
+        assert_eq!(mark_of(gone).as_deref(), Some(m.as_str()));
+        assert!(marks().unwrap().contains(&(gone, m.clone())));
+        assert!(!child::descends(gone, root.id()));
+        // `:ps` lists it after its session's tree.
+        let got = read(&[(4, root.id())], &[(4, m.clone())]).unwrap();
+        let pids: Vec<u32> = got[0].1.iter().map(|p| p.pid).collect();
+        assert_eq!(pids, [root.id(), under_it, gone]);
+        // Ended as the session's, by its mark; another mark is refused.
+        assert_eq!(
+            end(gone, root.id(), "sleep", Some("1-1-1/x/y")),
+            Err(Refusal::NotUnder)
+        );
+        assert_eq!(end(gone, root.id(), "sleep", None), Err(Refusal::NotUnder));
+        end(gone, root.id(), "sleep", Some(&m)).unwrap();
+        assert!(ended_soon(gone));
+        // The quit ends what carries its run's mark, and nothing else.
+        let first = left_behind(&m);
+        let theirs = left_behind(&mark(&new_run(), "shop", "claude-1"));
+        assert_eq!(end_marked(&run), 1);
+        assert!(ended_soon(first));
+        assert!(alive(theirs), "another run's");
+        // One whose run is gone is left over from an earlier run.
+        let old = left_behind("4000000000-1-0/shop/claude-7");
+        let w = std::env::temp_dir().join(format!("imece-marks-{}", std::process::id()));
+        let all = leftovers(&w, "imece", std::process::id()).unwrap();
+        let left = all
+            .iter()
+            .find(|l| l.procs[0].pid == old)
+            .expect("left over");
+        assert_eq!(left.place, "shop/claude-7");
+        assert!(
+            !all.iter().any(|l| l.procs.iter().any(|p| p.pid == theirs)),
+            "a live run's"
+        );
+        assert_eq!(end_left(&[(old, old)], &w, "imece", std::process::id()), 1);
+        assert!(ended_soon(old));
+        stop(root, &[under_it, theirs]);
+    }
+
     fn session(inner: &str) -> (Child, u32) {
         let mut root = Command::new("sh")
             .args(["-c", &format!("{inner} & echo $!; wait")])
@@ -658,10 +1187,13 @@ mod tests {
     fn a_session_s_process_ends_its_session_and_imece_s_relay_stay() {
         let (root, sleep) = session("sleep 60");
         let r = root.id();
-        assert_eq!(end(r, r, "sh"), Err(Refusal::Session));
-        assert_eq!(end(sleep, 1, "sleep"), Err(Refusal::NotUnder));
+        assert_eq!(end(r, r, "sh", None), Err(Refusal::Session));
+        assert_eq!(end(sleep, 1, "sleep", None), Err(Refusal::NotUnder));
         let (other, other_sleep) = session("sleep 60");
-        assert_eq!(end(sleep, other.id(), "sleep"), Err(Refusal::NotUnder));
+        assert_eq!(
+            end(sleep, other.id(), "sleep", None),
+            Err(Refusal::NotUnder)
+        );
         // A program named as imece's, right under the session, is its
         // relay; under something else, or named otherwise, it is not.
         assert!(relay(sleep, r, "sleep", Some("sleep")));
@@ -677,14 +1209,14 @@ mod tests {
     fn a_process_under_a_session_ends_and_one_that_will_not_is_killed() {
         let (root, sleep) = session("sleep 60");
         let r = root.id();
-        assert_eq!(end(sleep, r, "sleep"), Ok(()));
+        assert_eq!(end(sleep, r, "sleep", None), Ok(()));
         assert!(gone_soon(sleep, r, Duration::from_secs(1)), "TERM ends it");
         stop(root, &[]);
         // One that ignores TERM goes at KILL, after the grace.
         let (root, stubborn) = session("sh -c 'trap \"\" TERM; exec sleep 60'");
         let r = root.id();
         std::thread::sleep(Duration::from_millis(100));
-        assert_eq!(end(stubborn, r, "sleep"), Ok(()));
+        assert_eq!(end(stubborn, r, "sleep", None), Ok(()));
         assert!(!gone_soon(stubborn, r, KILL_GRACE / 2), "TERM is ignored");
         assert!(
             gone_soon(stubborn, r, KILL_GRACE * 2),
@@ -695,7 +1227,7 @@ mod tests {
 
     #[test]
     fn ps_reads_each_session_s_tree() {
-        assert_eq!(read(&[]), Ok(Vec::new()));
+        assert_eq!(read(&[], &[]), Ok(Vec::new()));
         let refused = ps(&["-p", "x"]).unwrap_err();
         assert!(refused.starts_with("ps ended with "), "{refused}");
         let me = std::env::current_exe().unwrap();
@@ -703,7 +1235,7 @@ mod tests {
         assert_eq!(own_name().as_deref(), Some(me.as_ref()));
         let (root, sleep) = session("sleep 60");
         let r = root.id();
-        let got = read(&[(4, r), (5, u32::MAX - 1)]).unwrap();
+        let got = read(&[(4, r), (5, u32::MAX - 1)], &[]).unwrap();
         assert_eq!(got.len(), 1, "{got:?}");
         let (id, procs) = &got[0];
         assert_eq!(*id, 4);
@@ -843,6 +1375,7 @@ mod tests {
 
     #[test]
     fn a_tree_left_from_an_earlier_run_is_found_and_ended() {
+        let _one = one_at_a_time();
         let nanos = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -910,6 +1443,7 @@ mod tests {
 
     #[test]
     fn one_under_a_program_named_as_imece_is_not_left_over() {
+        let _one = one_at_a_time();
         let w = worktrees_for("named");
         // `xargs`, its parent gone, runs a `sh` that names the worktrees;
         // xargs itself does not.
@@ -950,6 +1484,7 @@ mod tests {
 
     #[test]
     fn one_left_over_that_will_not_end_is_killed_after_the_grace() {
+        let _one = one_at_a_time();
         let w = worktrees_for("stubborn");
         let arg = format!("{}/p/claude-1", w.display());
         let out = Command::new("sh")

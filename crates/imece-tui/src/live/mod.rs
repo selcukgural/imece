@@ -605,6 +605,13 @@ struct Attempt {
 pub struct Live {
     /// Where the worktrees and the store live.
     state: PathBuf,
+    /// This run's part of every session's mark (`procs::mark`): one of
+    /// its own per `Live`, so tests side by side end only their own.
+    run: String,
+    /// A session was started: the quit looks for what carries the mark.
+    marked: bool,
+    /// Each agent's session's mark, once one ran.
+    marks: Vec<Option<String>>,
     /// What is remembered between runs; none in tests without a file.
     store: Option<Store>,
     /// What the store had of earlier runs, for the screen's "where you
@@ -1090,6 +1097,9 @@ impl Live {
         thread::spawn(move || git_thread(jobs, done));
         Live {
             state: std::env::temp_dir(),
+            run: crate::procs::new_run(),
+            marked: false,
+            marks: Vec::new(),
             store: None,
             left_off: None,
             home: 0,
@@ -1631,6 +1641,16 @@ impl Drop for Live {
             if let Slot::Running(s) = s {
                 s.terminate();
             }
+        }
+        // Then each ends (its own wait, SIGTERM, SIGKILL), and whatever
+        // still carries this run's mark goes too: a process that left its
+        // session (`nohup … &`), or a session that outlived its end
+        // (acceptance, 2026-11-11).
+        for s in &mut self.slots {
+            *s = Slot::None;
+        }
+        if self.marked {
+            crate::procs::end_marked(&self.run);
         }
     }
 }

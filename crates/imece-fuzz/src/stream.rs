@@ -72,5 +72,6 @@ pub fn spec(c: u8) -> Spec {
             program: "/opt/lonca".into(),
             socket: PathBuf::from("/run/lonca.sock"),
         }),
+        mark: None,
     }
 }

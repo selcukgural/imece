@@ -410,9 +410,9 @@ Expect: `WORKTREES NO AGENT OWNS` lists it; `d` asks for the teardown script fir
 - commands: —
 - tier: real
 
-Steps: `scenarios/real/ASK-7.scn`: a cheap worker told to start `python3 -m http.server 8765` in the background; its asks said yes to; the server answering; `:ps`.
+Steps: `scenarios/real/ASK-7.scn`: a cheap worker told to start `python3 -m http.server 8765` in the background; its asks said yes to; the server answering; `:ps`; the terminal closed.
 
-Expect: the server answers on `http://127.0.0.1:8765` and the address shows on the worker's row; the case ends the server itself (a server started with `nohup` leaves its session: record 147's findings).
+Expect: the server answers on `http://127.0.0.1:8765` and the address shows on the worker's row; though it left the worker's session (`nohup … &`), `:ps` lists it under the worker (the session's mark, record 129); closing the terminal quits imece and the server goes with it, and no `claude` of the case outlives the quit.
 
 ## Sessions and what is kept
 

@@ -1702,6 +1702,7 @@ mod tests {
             scratch: None,
             notes: None,
             store: None,
+            mark: None,
         };
         let mut p = crate::claude::Parser::new(&spec);
         lines

@@ -303,6 +303,10 @@ const UNPRICED_EVERY: u32 = 5;
 /// the worker's own shell, not through imece's `run`: the change says they
 /// ran, and proves nothing of its tree (record 11).
 const SHELL_EVERY: u32 = 4;
+/// Every this many workers of the demo's started a server in the
+/// background that left its session (`nohup … &`): `:ps` lists it under
+/// the worker by the session's mark, and `d` ends it.
+const SERVER_EVERY: usize = 3;
 
 /// Every this many failed test runs, the worker goes round on it: the
 /// same run fails again until imece tells its leader (record 128).
@@ -2197,6 +2201,11 @@ impl Sim {
                 proc(root, 1, 12 + 3 * id as u32, 280 + 7 * id as u64, "claude"),
                 proc(root + 1, root, 0, 9, DEMO_OWN),
             ];
+            // A server it started in the background left its session (its
+            // parent gone), found by the session's mark as live finds it.
+            if a.role == Role::Worker && id % SERVER_EVERY == 1 {
+                procs.push(proc(root + 2, 1, 3, 64, "node"));
+            }
             if a.status.busy() {
                 let run = (t / PROC_TICKS) as u32 % 1000;
                 let pid = COMMAND_PIDS + 1000 * id as u32 + run;
@@ -11455,7 +11464,8 @@ diff --git a/b.rs b/b.rs
                     1,
                     vec![
                         p(41_010, 1, 15, 287, "claude"),
-                        p(41_011, 41_010, 0, 9, "imece")
+                        p(41_011, 41_010, 0, 9, "imece"),
+                        p(41_012, 1, 3, 64, "node"),
                     ]
                 ),
                 (
@@ -11489,6 +11499,9 @@ diff --git a/b.rs b/b.rs
         );
         assert_eq!(s.end_proc(&mut w, 2, 41_020), Err(ProcRefusal::Session));
         assert_eq!(s.end_proc(&mut w, 2, 41_021), Err(ProcRefusal::Bus));
+        // The server that left worker 1's session is its to end.
+        assert_eq!(s.end_proc(&mut w, 1, 41_012), Ok(()));
+        assert!(!(w.procs.agents[0].1.iter()).any(|q| q.pid == 41_012));
         // An `imece` not right under the session is a process like any.
         w.procs.agents[1].1.push(p(70_000, 62_002, 0, 1, "imece"));
         assert_eq!(s.end_proc(&mut w, 2, 70_000), Ok(()));
