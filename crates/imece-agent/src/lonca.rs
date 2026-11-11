@@ -714,6 +714,37 @@ impl Client {
         self.timed(TIMEOUT)?;
         told
     }
+
+    /// `events.watch` on `repo` with the person's session: what happened
+    /// to the agent sessions the person started there, held up to
+    /// `watch.wait_ms` (at most [`LOG_WAIT_MOST`]) while nothing did. Go
+    /// on with `watch.after(&answer)`. A daemon older than Lonca 0.2.3
+    /// does not know it: [`Unheard::Old`].
+    pub fn watch(&mut self, repo: &str, watch: &Watch) -> Result<Watched, Unheard> {
+        let wait_ms = (watch.wait_ms).map(|ms| log_wait(u128::try_from(ms).unwrap_or(0)));
+        let watch = Watch {
+            wait_ms: wait_ms.and_then(|ms| i64::try_from(ms).ok()),
+            ..watch.clone()
+        };
+        self.timed(log_timeout(wait_ms)).map_err(Unheard::Down)?;
+        self.conn.repo = Some(repo.to_string());
+        let told = self.conn.watch(&watch).map_err(|e| match e.kind() {
+            ErrorKind::UnknownMethod => Unheard::Old,
+            kind => Unheard::Down(down_of(kind)),
+        });
+        self.timed(TIMEOUT).map_err(Unheard::Down)?;
+        told
+    }
+}
+
+pub use lonca_client::protocol::{Watch, Watched};
+
+/// Why [`Client::watch`] heard nothing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Unheard {
+    /// The daemon does not know `events.watch`: older than Lonca 0.2.3.
+    Old,
+    Down(Down),
 }
 
 /// `millis` within what the daemon holds.
@@ -730,19 +761,19 @@ fn log_timeout(wait_ms: Option<u64>) -> Duration {
 /// Whether `said`, a daemon's `version`, is [`LEAST`] or later, by its
 /// three numbers; what follows them (`-dev`, `+build`) does not count.
 pub fn new_enough(said: Option<&str>) -> bool {
-    let Some(said) = said else {
-        return false;
-    };
+    said.and_then(version_of).is_some_and(|got| got >= LEAST)
+}
+
+/// The three numbers of `said`, a daemon's `version`; what follows them
+/// (`-dev`, `+build`) does not count. None when it is not three numbers.
+pub fn version_of(said: &str) -> Option<[u64; 3]> {
     let core = said.split(['-', '+']).next().unwrap_or_default();
     let mut numbers = core.split('.').map(|n| n.parse::<u64>().ok());
     let mut got = [0; 3];
     for slot in &mut got {
-        let Some(Some(n)) = numbers.next() else {
-            return false;
-        };
-        *slot = n;
+        *slot = numbers.next()??;
     }
-    numbers.next().is_none() && got >= LEAST
+    numbers.next().is_none().then_some(got)
 }
 
 /// [`LEAST`] as Lonca writes a version.
@@ -2679,6 +2710,58 @@ mod tests {
     }
 
     #[test]
+    fn a_watch_asks_its_repository_within_the_daemon_s_wait_and_reads_the_answer() {
+        use crate::lonca_fake::WATCHES;
+        let d = Daemon::start_at(PROTOCOL, Some(WATCHES), |_| Ok(status(&[])));
+        d.sign_in();
+        d.tell(
+            json!({"events": [{"session": "ses_1", "kind": "approved", "seq": 7}],
+            "next": 8, "reserved": ["r"], "ended": []}),
+        );
+        d.tell(json!("not a watch's answer"));
+        let mut c = d.place.open().expect("opens");
+        let asked = Watch {
+            from: Some(5),
+            wait_ms: Some(60_000),
+            ..Watch::default()
+        };
+        let answer = c.watch("demo", &asked).expect("an answer");
+        assert_eq!(answer.next, 8);
+        assert_eq!(answer.reserved, ["r"]);
+        assert_eq!(answer.events.len(), 1);
+        assert_eq!(answer.events[0].kind, "approved");
+        assert_eq!(c.conn.timeout(), Some(TIMEOUT));
+        let watched = d.watched.lock().unwrap()[0].clone();
+        assert_eq!(watched["repo"], "demo");
+        assert_eq!(watched["params"]["from"], 5);
+        assert_eq!(watched["params"]["wait_ms"], 30_000, "the daemon's most");
+        // An answer outside the protocol: down, never an answer.
+        assert!(matches!(c.watch("demo", &asked), Err(Unheard::Down(_))));
+        // None asked for: none sent, the daemon's own nought.
+        let mut c = d.place.open().expect("opens");
+        c.watch("demo", &Watch::default()).expect("an answer");
+        assert_eq!(d.watched.lock().unwrap()[2]["params"].get("wait_ms"), None);
+    }
+
+    #[test]
+    fn a_daemon_older_than_its_watch_is_told_apart_from_one_that_is_down() {
+        let d = Daemon::start_at(PROTOCOL, Some("0.2.2"), |_| Ok(status(&[])));
+        d.sign_in();
+        let mut c = d.place.open().expect("opens");
+        assert_eq!(c.watch("demo", &Watch::default()), Err(Unheard::Old));
+        assert_eq!(c.conn.timeout(), Some(TIMEOUT));
+    }
+
+    #[test]
+    fn a_version_reads_as_its_three_numbers() {
+        assert_eq!(version_of("0.2.3"), Some([0, 2, 3]));
+        assert_eq!(version_of("1.20.300-dev+x"), Some([1, 20, 300]));
+        assert_eq!(version_of("0.2"), None);
+        assert_eq!(version_of("0.2.3.4"), None);
+        assert_eq!(version_of("0.2.x"), None);
+    }
+
+    #[test]
     fn a_session_the_daemon_does_not_take_is_signed_out() {
         // Its own session: signed in.
         let d = up();
@@ -2835,6 +2918,46 @@ mod tests {
         let listed = (status.changes.iter()).find(|(id, _)| id == change);
         assert_eq!(listed.map(|(_, s)| s), Some(&Standing::Pending));
         assert_eq!(c.holds_unobserved(&repo, &status.policy), Ok(true));
+    }
+
+    /// `events.watch` on a real daemon (Lonca 0.2.3 or later): as above,
+    /// with one proposal waiting and `lonca` on `PATH`. A watch held while
+    /// nothing happens comes back empty; one held while the person
+    /// approves hears it at once, far within its wait.
+    #[test]
+    #[ignore = "needs a running lonca daemon and the lonca program"]
+    fn live_a_watch_hears_a_proposal_decided() {
+        let repo = std::env::var("IMECE_LONCA_REPO").expect("a repository");
+        let place = Place::here();
+        let mut c = place.open().expect("opens");
+        let status = c.status(&repo).expect("status");
+        let [pending] = &status.pending[..] else {
+            panic!("one waiting: {:?}", status.pending);
+        };
+        let quick = Watch {
+            wait_ms: Some(50),
+            ..Watch::default()
+        };
+        let quiet = c.watch(&repo, &quick).expect("a quiet watch");
+        assert!(quiet.events.is_empty(), "{quiet:?}");
+        let held = Watch {
+            wait_ms: Some(30_000),
+            ..quick.after(&quiet)
+        };
+        let (place2, repo2) = (place.clone(), repo.clone());
+        let at = std::time::Instant::now();
+        let watcher =
+            std::thread::spawn(move || place2.open().expect("opens").watch(&repo2, &held));
+        std::thread::sleep(Duration::from_millis(300));
+        assert_eq!(
+            place.approve(&repo, &std::env::temp_dir(), pending.seq, &[]),
+            Ok(())
+        );
+        let heard = watcher.join().unwrap().expect("heard");
+        assert!(at.elapsed() < Duration::from_secs(10), "{:?}", at.elapsed());
+        let kinds: Vec<&str> = heard.events.iter().map(|e| e.kind.as_str()).collect();
+        assert!(kinds.contains(&"approved"), "{kinds:?}");
+        assert!(heard.next > quiet.next);
     }
 
     /// A worker's proposals decided by the real program: as above, with a

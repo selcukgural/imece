@@ -8,13 +8,14 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use imece_agent::Event as AgentEvent;
 use imece_agent::lonca::{
-    self, Client, Diff, Down, Failed, Hooks, Place, Seat, Standing, TRUNK_REF,
+    self, Client, Diff, Down, Failed, Hooks, Place, Seat, Standing, TRUNK_REF, Unheard,
 };
 use imece_agent::worktree::{self, Forward};
 
@@ -26,10 +27,31 @@ use crate::model::{
     StoreSeen, Synced, World, home_tilde,
 };
 
-/// How often the store is asked. Each look is a connection and a
-/// millisecond call per repository; a person sees a daemon gone or a
+/// How often the store is asked while a worker on Lonca is mid-turn, or
+/// while a repository is not heard (below). Each look is a connection and
+/// a millisecond call per repository; a person sees a daemon gone or a
 /// proposal come within this.
 pub(super) const LOOK_EVERY: Duration = Duration::from_secs(5);
+/// How often it is asked when no worker on Lonca is mid-turn and every
+/// repository is heard: what happens to the agents' sessions then (a
+/// change landing, a decision, a lease) comes through `events.watch` and
+/// asks at once; this is for what it does not carry (another person's
+/// proposal, the trunk, the policy).
+pub(super) const LOOK_CALM: Duration = Duration::from_secs(30);
+/// The soonest a look follows the last when the daemon told of something:
+/// a burst of news is one look.
+pub(super) const LOOK_SOONEST: Duration = Duration::from_secs(1);
+/// How long the daemon holds a watch while nothing happens: its most.
+const HEAR_WAIT: Duration = Duration::from_millis(lonca::LOG_WAIT_MOST);
+/// How long a repository's ear waits before it listens again after the
+/// daemon did not answer it.
+pub(super) const HEAR_AGAIN: Duration = Duration::from_secs(30);
+/// The same for a daemon older than Lonca 0.2.3, which has no
+/// `events.watch`: it may be upgraded while imece runs.
+pub(super) const HEAR_OLD: Duration = Duration::from_secs(300);
+/// The least time between two watches of an ear: a burst of news, or a
+/// daemon that answers at once though nothing happened, is never a loop.
+pub(super) const HEAR_SOONEST: Duration = Duration::from_millis(250);
 /// How many looks in a row a repository's daemon may ask to be asked again
 /// (`busy`, `rate_limited`, …) before its project closes as
 /// [`StoreDown::Busy`]: one such answer keeps what the last look saw.
@@ -136,6 +158,9 @@ struct Looked {
     /// How many files each asked worker's workspace holds that no
     /// proposal carries; none when Lonca did not say.
     left_in: Vec<(AgentId, Option<usize>)>,
+    /// Whether a daemon asked to be asked again and its streak is not
+    /// over: the next looks come at [`LOOK_EVERY`].
+    again: bool,
 }
 
 /// What the looks keep: the store does not change what it said.
@@ -579,6 +604,41 @@ pub(super) struct Watch {
     out: bool,
     /// When the next look is due; none: at once.
     next: Option<Instant>,
+    /// When the last look was asked.
+    asked: Option<Instant>,
+    /// The last look met a daemon that asked to be asked again.
+    again: bool,
+    /// A thread per repository on Lonca that waits on the daemon for news
+    /// of its agents' sessions (`events.watch`): its number and what stops
+    /// it.
+    ears: HashMap<String, (u64, Arc<AtomicBool>)>,
+    /// The number of the next ear.
+    next_ear: u64,
+    /// What the ears heard, by number.
+    tell: Sender<(u64, Heard)>,
+    heard: Receiver<(u64, Heard)>,
+    /// The repositories whose ear the daemon answers.
+    hearing: HashSet<String>,
+}
+
+/// What an ear tells the screen's thread.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Heard {
+    /// The daemon answered its first watch: the repository is heard.
+    Up,
+    /// Something happened to an agent's session there: a look is due.
+    News,
+    /// The daemon stopped answering it: not heard until it answers again.
+    Down,
+}
+
+impl Drop for Watch {
+    /// The ears stop with their watch, each after the wait it is in.
+    fn drop(&mut self) {
+        for (_, stop) in self.ears.values() {
+            stop.store(true, Ordering::Relaxed);
+        }
+    }
 }
 
 impl Watch {
@@ -609,6 +669,7 @@ impl Watch {
     }
 
     pub(super) fn start(place: Place) -> Watch {
+        let (tell, heard) = mpsc::channel();
         let (ask, asked) = mpsc::channel::<Asked>();
         let (answer, back) = mpsc::channel();
         let (gated, gates) = mpsc::channel();
@@ -639,7 +700,133 @@ impl Watch {
             started: HashMap::new(),
             out: false,
             next: None,
+            asked: None,
+            again: false,
+            ears: HashMap::new(),
+            next_ear: 0,
+            tell,
+            heard,
+            hearing: HashSet::new(),
         }
+    }
+
+    /// An ear for each of `repos` and none for any other; what the ears
+    /// said. Whether one told of news.
+    fn listen(&mut self, repos: &HashSet<String>) -> bool {
+        for repo in repos {
+            if !self.ears.contains_key(repo) {
+                let stop = Arc::new(AtomicBool::new(false));
+                let (ear, tell) = (self.next_ear, self.tell.clone());
+                let (place, repo2, stop2) = (self.place.clone(), repo.clone(), stop.clone());
+                thread::spawn(move || {
+                    hear(&place, &repo2, &stop2, |h| tell.send((ear, h)).is_ok())
+                });
+                self.ears.insert(repo.clone(), (ear, stop));
+                self.next_ear += 1;
+            }
+        }
+        self.ears.retain(|repo, (_, stop)| {
+            let keep = repos.contains(repo);
+            if !keep {
+                stop.store(true, Ordering::Relaxed);
+            }
+            keep
+        });
+        self.hearing.retain(|repo| repos.contains(repo));
+        let mut news = false;
+        while let Ok((ear, h)) = self.heard.try_recv() {
+            // A stopped ear's last words are nobody's.
+            let Some(repo) = (self.ears.iter()).find_map(|(r, (n, _))| (*n == ear).then_some(r))
+            else {
+                continue;
+            };
+            match h {
+                Heard::Up => {
+                    self.hearing.insert(repo.clone());
+                }
+                Heard::News => news = true,
+                Heard::Down => news |= self.hearing.remove(repo),
+            }
+        }
+        news
+    }
+
+    /// The next look comes soon: the daemon told of something, or stopped
+    /// answering an ear. Never sooner than [`LOOK_SOONEST`] after the last.
+    fn soon(&mut self, now: Instant) {
+        let soonest = self.asked.map_or(now, |a| a + LOOK_SOONEST);
+        self.next = self.next.map(|at| at.min(soonest));
+    }
+}
+
+/// An ear: waits on the daemon for what happens to the agent sessions the
+/// person started on `repo`, one `events.watch` after another, and `tell`s
+/// what it heard until `stop` or `tell` says no more. A daemon that does
+/// not answer is asked again after [`HEAR_AGAIN`], an old one after
+/// [`HEAR_OLD`], one that answers is asked again no sooner than
+/// [`HEAR_SOONEST`] after it was last asked; the next watch then starts from that moment, the looks
+/// having read the state meanwhile.
+fn hear(place: &Place, repo: &str, stop: &AtomicBool, tell: impl Fn(Heard) -> bool) {
+    let fresh = lonca::Watch {
+        wait_ms: i64::try_from(HEAR_WAIT.as_millis()).ok(),
+        ..lonca::Watch::default()
+    };
+    let mut watch = fresh.clone();
+    let mut client: Option<Client> = None;
+    let mut up = false;
+    while !stop.load(Ordering::Relaxed) {
+        let began = Instant::now();
+        let opened = client
+            .take()
+            .map_or_else(|| place.open().map_err(Unheard::Down), Ok);
+        let answer = opened.and_then(|mut c| Ok((c.watch(repo, &watch)?, c)));
+        let (said, pause) = match answer {
+            Ok((answer, c)) => {
+                client = Some(c);
+                let first = !std::mem::replace(&mut up, true);
+                watch = watch.after(&answer);
+                let said = [
+                    first.then_some(Heard::Up),
+                    news(&answer).then_some(Heard::News),
+                ];
+                (said, HEAR_SOONEST.checked_sub(began.elapsed()))
+            }
+            Err(why) => {
+                watch = fresh.clone();
+                let was = std::mem::replace(&mut up, false);
+                let pause = if why == Unheard::Old {
+                    HEAR_OLD
+                } else {
+                    HEAR_AGAIN
+                };
+                ([was.then_some(Heard::Down), None], Some(pause))
+            }
+        };
+        if !said.into_iter().flatten().all(&tell) {
+            return;
+        }
+        if let Some(pause) = pause {
+            rest(pause, stop);
+        }
+    }
+}
+
+/// Whether a watch's answer is worth a look: anything but a message
+/// between agents, which they read themselves and no look shows.
+fn news(answer: &lonca::Watched) -> bool {
+    answer.events.iter().any(|e| e.kind != "message") || !answer.ended.is_empty()
+}
+
+/// Sleeps `pause`, waking early when `stop` is set.
+fn rest(pause: Duration, stop: &AtomicBool) {
+    const STEP: Duration = Duration::from_millis(100);
+    let until = Instant::now() + pause;
+    while !stop.load(Ordering::Relaxed) {
+        let left = until.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            return;
+        }
+        thread::sleep(left.min(STEP));
     }
 }
 
@@ -714,6 +901,7 @@ fn look(place: &Place, repos: &Repos, watched: &[String], kept: &mut Kept) -> Lo
         looked.found.push((*p, repo.clone(), seen));
     }
     kept.diffs.retain(|change, _| waiting.contains(change));
+    looked.again = !kept.again.is_empty();
     looked
 }
 
@@ -828,7 +1016,17 @@ pub(crate) fn down_of(down: Down) -> StoreDown {
 impl Live {
     /// The store is asked when a project is on Lonca and it is time.
     pub(super) fn lonca_due(&mut self, w: &World, now: Instant) {
-        if self.lonca.out || self.lonca.next.is_some_and(|at| now < at) {
+        let stores: HashSet<String> = w.stores().into_iter().map(|(_, repo)| repo).collect();
+        if self.lonca.listen(&stores) {
+            self.lonca.soon(now);
+        }
+        let pace = self.lonca_pace(w, &stores);
+        let watch = &mut self.lonca;
+        // A worker that went to work since: its pace from the last look.
+        if let (Some(asked), Some(at)) = (watch.asked, watch.next) {
+            watch.next = Some(at.min(asked + pace));
+        }
+        if watch.out || watch.next.is_some_and(|at| now < at) {
             return;
         }
         let lines = self.lonca_lines(w);
@@ -843,7 +1041,25 @@ impl Live {
         let watched = shown.chain(watch.queued.keys().cloned()).collect();
         if !repos.is_empty() && watch.ask.send((repos, watched, lines)).is_ok() {
             watch.out = true;
-            watch.next = Some(now + LOOK_EVERY);
+            watch.asked = Some(now);
+            watch.next = Some(now + pace);
+        }
+    }
+
+    /// How often the store is asked now: [`LOOK_CALM`] while no worker
+    /// on Lonca is mid-turn, the daemon answers every one of `stores`'
+    /// ears and no daemon asked to be asked again, else [`LOOK_EVERY`].
+    /// Mid-turn, what Lonca says of a session that `events.watch` does
+    /// not carry is due soon: its hooks heard or not (record 119), the
+    /// leases it takes. A daemon that asks again closes its project after
+    /// [`AGAIN_MOST`] looks, which should not take minutes.
+    fn lonca_pace(&self, w: &World, stores: &HashSet<String>) -> Duration {
+        let working = (w.agents.iter()).any(|a| a.workspace.is_some() && self.turns[a.id] > 0);
+        let heard = stores.iter().all(|repo| self.lonca.hearing.contains(repo));
+        if working || !heard || self.lonca.again {
+            LOOK_EVERY
+        } else {
+            LOOK_CALM
         }
     }
 
@@ -1018,6 +1234,7 @@ impl Live {
             return false;
         };
         self.lonca.out = false;
+        self.lonca.again = looked.again;
         self.lonca.note_ends(looked.left, Instant::now());
         self.lonca.note_hooks(looked.hooks);
         let mut changed = looked
@@ -1409,7 +1626,7 @@ mod tests {
     use std::time::Duration;
 
     use imece_agent::lonca::PROTOCOL;
-    use imece_agent::lonca_fake::{Daemon, POLICY, TRUNK, status};
+    use imece_agent::lonca_fake::{Daemon, POLICY, TRUNK, WATCHES, status};
 
     use super::*;
     use crate::live::testing::{Stub, idle_live, idle_live_in, team, with_card, with_helper};
@@ -1495,6 +1712,7 @@ mod tests {
             // asked on a new one.
             assert_eq!(looked.found, [(3, "other".to_string(), up.clone())]);
             assert_eq!(looked.leases.len(), 1, "nothing of demo moves");
+            assert!(looked.again, "its streak goes on");
         }
         let busy_now = StoreSeen::Down(StoreDown::Busy);
         for _ in 0..2 {
@@ -1503,8 +1721,9 @@ mod tests {
         }
         // An answer starts the count again.
         busy.store(false, std::sync::atomic::Ordering::Relaxed);
-        let found = look(&d.place, &repos, &[], &mut kept).found;
-        assert_eq!(found[0], (0, "demo".to_string(), up));
+        let looked = look(&d.place, &repos, &[], &mut kept);
+        assert!(!looked.again, "the streak is over");
+        assert_eq!(looked.found[0], (0, "demo".to_string(), up));
         busy.store(true, std::sync::atomic::Ordering::Relaxed);
         let found = look(&d.place, &repos, &[], &mut kept).found;
         assert_eq!(found.len(), 1, "one ask again closes nothing: {found:?}");
@@ -4355,5 +4574,279 @@ mod tests {
         live.lonca_after_a_look();
         assert!(live.take_lonca(&mut w));
         assert_eq!(answer.try_recv().unwrap(), Err("no".to_string()));
+    }
+
+    /// A daemon of Lonca 0.2.3 that has `demo`: its watches answer what
+    /// the test tells it.
+    fn hearing_daemon() -> Daemon {
+        let d = Daemon::start_at(PROTOCOL, Some(WATCHES), |asked| {
+            if asked["repo"] == "demo" {
+                Ok(status(&[]))
+            } else {
+                Err("not_found")
+            }
+        });
+        d.sign_in();
+        d
+    }
+
+    /// An ear on `repo` of `d` on a thread of its own: what it says comes
+    /// out of the receiver, and the flag stops it.
+    fn ear(d: &Daemon, repo: &str) -> (Receiver<Heard>, Arc<AtomicBool>, thread::JoinHandle<()>) {
+        let (tell, heard) = mpsc::channel();
+        let stop = Arc::new(AtomicBool::new(false));
+        let (place, repo, stop2) = (d.place.clone(), repo.to_string(), stop.clone());
+        let ear = thread::spawn(move || hear(&place, &repo, &stop2, |h| tell.send(h).is_ok()));
+        (heard, stop, ear)
+    }
+
+    fn event(kind: &str) -> serde_json::Value {
+        serde_json::json!({"session": "ses_1", "kind": kind, "seq": 3})
+    }
+
+    #[test]
+    fn a_watch_is_worth_a_look_unless_it_brought_only_messages() {
+        let answer = |events: Vec<serde_json::Value>, ended: serde_json::Value| {
+            let v = serde_json::json!({"events": events, "next": 4, "ended": ended});
+            serde_json::from_value::<lonca::Watched>(v).unwrap()
+        };
+        let none = serde_json::json!([]);
+        assert!(!news(&answer(vec![], none.clone())));
+        assert!(!news(&answer(vec![event("message")], none.clone())));
+        for kind in [
+            "integrated",
+            "approved",
+            "lease_received",
+            "reserved",
+            "new_kind",
+        ] {
+            assert!(news(&answer(vec![event(kind)], none.clone())), "{kind}");
+            let both = vec![event("message"), event(kind)];
+            assert!(news(&answer(both, none.clone())), "{kind} after a message");
+        }
+        let ended = serde_json::json!([{"session": "ses_1", "reason": "expired"}]);
+        assert!(news(&answer(vec![], ended)));
+    }
+
+    #[test]
+    fn an_ear_says_it_is_heard_tells_news_and_goes_on_from_each_answer() {
+        let d = hearing_daemon();
+        d.tell(serde_json::json!({"events": [event("message")], "next": 4,
+            "reserved": ["r1"], "ended": []}));
+        d.tell(serde_json::json!({"events": [event("approved")], "next": 6,
+            "reserved": [], "ended": []}));
+        let (heard, stop, ear) = ear(&d, "demo");
+        assert_eq!(heard.recv_timeout(WAIT), Ok(Heard::Up));
+        assert_eq!(heard.recv_timeout(WAIT), Ok(Heard::News));
+        // Nothing more happens: it goes on waiting, saying nothing.
+        let till = Instant::now() + WAIT;
+        while d.watched.lock().unwrap().len() < 3 {
+            assert!(Instant::now() < till, "no third watch");
+            thread::sleep(Duration::from_millis(5));
+        }
+        assert_eq!(heard.try_recv(), Err(TryRecvError::Empty));
+        stop.store(true, Ordering::Relaxed);
+        ear.join().unwrap();
+        let watched = d.watched.lock().unwrap().clone();
+        assert!(watched.iter().all(|w| w["repo"] == "demo"));
+        assert!(watched.iter().all(|w| w["params"]["wait_ms"] == 30_000));
+        // The first from now on; each next from the last answer's place,
+        // with the reservations it said.
+        assert_eq!(watched[0]["params"].get("from"), None);
+        assert_eq!(watched[1]["params"]["from"], 4);
+        assert_eq!(watched[1]["params"]["reserved"], serde_json::json!(["r1"]));
+        assert_eq!(watched[2]["params"]["from"], 6);
+        assert_eq!(watched[2]["params"].get("reserved"), None);
+        // One connection for all of them, signed as the person.
+        assert!(watched.iter().all(|w| w["token"] == "lonca_h_secret"));
+    }
+
+    #[test]
+    fn an_ear_never_asks_sooner_than_its_least_time_though_the_daemon_answers_at_once() {
+        let d = hearing_daemon();
+        for next in 1..=20 {
+            d.tell(serde_json::json!({"events": [], "next": next, "reserved": [], "ended": []}));
+        }
+        let (_heard, stop, ear) = ear(&d, "demo");
+        thread::sleep(Duration::from_millis(600));
+        stop.store(true, Ordering::Relaxed);
+        ear.join().unwrap();
+        // At 0, 250 and 500 ms, and perhaps one more on a slow machine.
+        let asked = d.watched.lock().unwrap().len();
+        assert!((3..=4).contains(&asked), "{asked}");
+    }
+
+    #[test]
+    fn an_ear_whose_daemon_stops_answering_says_so_and_rests() {
+        let d = hearing_daemon();
+        d.tell(serde_json::json!({"events": [], "next": 4, "reserved": [], "ended": []}));
+        d.tell(serde_json::json!("not a watch's answer"));
+        let (heard, stop, ear) = ear(&d, "demo");
+        assert_eq!(heard.recv_timeout(WAIT), Ok(Heard::Up));
+        assert_eq!(heard.recv_timeout(WAIT), Ok(Heard::Down));
+        // It rests before it listens again.
+        thread::sleep(Duration::from_millis(300));
+        assert_eq!(d.watched.lock().unwrap().len(), 2);
+        stop.store(true, Ordering::Relaxed);
+        ear.join().unwrap();
+    }
+
+    #[test]
+    fn an_ear_on_a_daemon_without_watches_says_nothing_and_rests() {
+        let d = Daemon::start_at(PROTOCOL, Some("0.2.2"), |_| Ok(status(&[])));
+        d.sign_in();
+        let (heard, stop, ear) = ear(&d, "demo");
+        let till = Instant::now() + WAIT;
+        while d.watched.lock().unwrap().is_empty() {
+            assert!(Instant::now() < till, "no watch");
+            thread::sleep(Duration::from_millis(5));
+        }
+        thread::sleep(Duration::from_millis(300));
+        assert_eq!(d.watched.lock().unwrap().len(), 1);
+        assert_eq!(heard.try_recv(), Err(TryRecvError::Empty));
+        stop.store(true, Ordering::Relaxed);
+        ear.join().unwrap();
+    }
+
+    #[test]
+    fn an_ear_ends_when_nobody_takes_what_it_says() {
+        let d = hearing_daemon();
+        let place = d.place.clone();
+        let stop = AtomicBool::new(false);
+        // Never stopped: the refused word alone ends it.
+        hear(&place, "demo", &stop, |_| false);
+        assert_eq!(d.watched.lock().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn the_store_is_asked_calmly_while_it_is_heard_and_soon_when_it_tells() {
+        let d = hearing_daemon();
+        let mut w = team(1);
+        let mut live = idle_live(2);
+        live.lonca = Watch::start(d.place.clone());
+        w.on_lonca(0, Some("demo".into()));
+        let t0 = Instant::now();
+        live.lonca_due(&w, t0);
+        // Not heard yet: the old pace.
+        assert_eq!(live.lonca.next, Some(t0 + LOOK_EVERY));
+        settle(&mut live, &mut w);
+        let till = Instant::now() + WAIT;
+        while !live.lonca.hearing.contains("demo") {
+            live.lonca_due(&w, t0);
+            assert!(Instant::now() < till, "never heard");
+            thread::sleep(Duration::from_millis(2));
+        }
+        assert_eq!(live.lonca_pace(&w, &stores(&["demo"])), LOOK_CALM);
+        let t1 = t0 + LOOK_EVERY;
+        live.lonca_due(&w, t1);
+        assert!(live.lonca.out);
+        assert_eq!(live.lonca.next, Some(t1 + LOOK_CALM));
+        // What the look says of a daemon asking again is what counts.
+        live.lonca.again = true;
+        settle(&mut live, &mut w);
+        assert!(!live.lonca.again);
+        // A worker on Lonca goes to work: the pace from the last look is
+        // the old one again, and back to calm between its turns.
+        w.agents[1].workspace = Some("demo".into());
+        live.turns[1] = 1;
+        assert_eq!(live.lonca_pace(&w, &stores(&["demo"])), LOOK_EVERY);
+        live.lonca_due(&w, t1 + LOOK_EVERY - Duration::from_millis(1));
+        assert!(!live.lonca.out);
+        assert_eq!(live.lonca.next, Some(t1 + LOOK_EVERY));
+        live.turns[1] = 0;
+        assert_eq!(live.lonca_pace(&w, &stores(&["demo"])), LOOK_CALM);
+        // A worker with no workspace works off Lonca.
+        w.agents[1].workspace = None;
+        live.turns[1] = 1;
+        assert_eq!(live.lonca_pace(&w, &stores(&["demo"])), LOOK_CALM);
+        // A repository whose ear is not heard keeps the old pace.
+        assert_eq!(live.lonca_pace(&w, &stores(&["demo", "other"])), LOOK_EVERY);
+        live.turns[1] = 0;
+        // A daemon that asked to be asked again: the old pace until it
+        // answers.
+        live.lonca.again = true;
+        assert_eq!(live.lonca_pace(&w, &stores(&["demo"])), LOOK_EVERY);
+        live.lonca.again = false;
+        // News: the next look a second after the last.
+        live.lonca.next = Some(t1 + LOOK_CALM);
+        d.tell(
+            serde_json::json!({"events": [event("integrated")], "next": 12,
+            "reserved": [], "ended": []}),
+        );
+        let till = Instant::now() + WAIT;
+        while live.lonca.next == Some(t1 + LOOK_CALM) {
+            live.lonca_due(&w, t1);
+            assert!(Instant::now() < till, "no news");
+            thread::sleep(Duration::from_millis(2));
+        }
+        assert_eq!(live.lonca.next, Some(t1 + LOOK_SOONEST));
+        assert!(!live.lonca.out);
+        live.lonca_due(&w, t1 + LOOK_SOONEST);
+        assert!(live.lonca.out);
+        settle(&mut live, &mut w);
+    }
+
+    fn stores(repos: &[&str]) -> HashSet<String> {
+        repos.iter().map(|r| r.to_string()).collect()
+    }
+
+    #[test]
+    fn news_never_asks_before_its_time_nor_puts_off_a_look_due_sooner() {
+        let mut watch = Watch::start(up_daemon().place.clone());
+        let t0 = Instant::now();
+        // Never asked and due at once: still at once.
+        watch.soon(t0);
+        assert_eq!(watch.next, None);
+        watch.asked = Some(t0);
+        watch.next = Some(t0 + LOOK_CALM);
+        watch.soon(t0);
+        assert_eq!(watch.next, Some(t0 + LOOK_SOONEST));
+        // Due sooner than that: kept.
+        watch.next = Some(t0 + Duration::from_millis(10));
+        watch.soon(t0);
+        assert_eq!(watch.next, Some(t0 + Duration::from_millis(10)));
+        // Never asked but due later: now.
+        watch.asked = None;
+        watch.next = Some(t0 + LOOK_CALM);
+        watch.soon(t0);
+        assert_eq!(watch.next, Some(t0));
+    }
+
+    #[test]
+    fn an_ear_listens_while_its_repository_is_on_lonca_and_its_last_words_are_dropped() {
+        let d = hearing_daemon();
+        let mut watch = Watch::start(d.place.clone());
+        assert!(!watch.listen(&stores(&["demo"])));
+        let (first, stop) = watch.ears["demo"].clone();
+        // The same repository keeps its ear.
+        watch.listen(&stores(&["demo"]));
+        assert_eq!(watch.ears["demo"].0, first);
+        watch.hearing.insert("demo".into());
+        // Off Lonca: it stops and is not heard; what it said late is
+        // nobody's, a new ear's words count.
+        assert!(!watch.listen(&stores(&[])));
+        assert!(stop.load(Ordering::Relaxed));
+        assert!(watch.ears.is_empty());
+        assert!(watch.hearing.is_empty());
+        watch.tell.send((first, Heard::News)).unwrap();
+        watch.tell.send((first, Heard::Up)).unwrap();
+        watch.listen(&stores(&["demo"]));
+        let (second, again) = watch.ears["demo"].clone();
+        assert_ne!(second, first);
+        assert!(watch.hearing.is_empty());
+        watch.tell.send((second, Heard::Up)).unwrap();
+        assert!(!watch.listen(&stores(&["demo"])));
+        assert!(watch.hearing.contains("demo"));
+        // Down after up is news (a look sees why); down again is not.
+        watch.tell.send((second, Heard::Down)).unwrap();
+        assert!(watch.listen(&stores(&["demo"])));
+        assert!(!watch.hearing.contains("demo"));
+        watch.tell.send((second, Heard::Down)).unwrap();
+        assert!(!watch.listen(&stores(&["demo"])));
+        watch.tell.send((second, Heard::News)).unwrap();
+        assert!(watch.listen(&stores(&["demo"])));
+        // The watch's end stops its ears.
+        drop(watch);
+        assert!(again.load(Ordering::Relaxed));
     }
 }

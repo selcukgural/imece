@@ -64,7 +64,7 @@ The board, the code map, the timeline, the journal, the ledger, the processes an
 - A worker hired from then on works in a Lonca **workspace** instead of a worktree, with Lonca's hook and tools in its Claude Code beside imece's bus. It leases what it edits and proposes its change.
 - Its Δ is its newest pending proposal, once its turn is over. `a` approves it and `r` rejects it with a reason, both signed by the `lonca` program; nothing lands in your checkout.
 - After your yes Lonca's merge queue runs the repository's checks on the merged tree and puts the change on trunk, or sends it back to the worker. Your checkout is a client of trunk: `:sync` brings it up.
-- Every 5 seconds imece reads the daemon's state: the project's line (`lonca mobile-app 9d3f1c2 · 3 pending`), the leases on the code map, the `:lonca` window. While the daemon does not answer, the project is closed: nobody is hired and no Δ is decided.
+- imece reads the daemon's state every 5 seconds while a worker works on Lonca, else every 30 seconds, and at once when the daemon tells it something happened to one of your agents' sessions: the project's line (`lonca mobile-app 9d3f1c2 · 3 pending`), the leases on the code map, the `:lonca` window. While the daemon does not answer, the project is closed: nobody is hired and no Δ is decided.
 
 The details are on [projects](projects.md#on-lonca) and [changes](changes.md#on-lonca). A project on no repository works with worktrees and your checkout as above.
 

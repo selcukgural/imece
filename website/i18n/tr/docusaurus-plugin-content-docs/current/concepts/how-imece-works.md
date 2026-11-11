@@ -64,7 +64,7 @@ Pano, kod haritası, zaman çizelgesi, günlük, harcamalar, süreçler ve Lonca
 - O andan sonra tutulan bir işçi worktree yerine bir Lonca **workspace**'inde çalışır; Claude Code'unda imece'nin bus'ının yanında Lonca'nın kancası ve araçları vardır. Düzenlediğini lease'ler ve değişikliğini önerir.
 - Onun Δ'sı, turu bitince, bekleyen en yeni önerisidir. `a` onu onaylar, `r` bir gerekçeyle reddeder; ikisini de `lonca` programı imzalar. Checkout'unuza hiçbir şey inmez.
 - Evetinizden sonra Lonca'nın merge kuyruğu deponun kontrollerini birleşmiş ağaçta çalıştırır ve değişikliği gövdeye (trunk) koyar ya da işçiye geri gönderir. Checkout'unuz gövdenin bir istemcisidir: `:sync` onu yetiştirir.
-- imece her 5 saniyede daemon'ın durumunu okur: projenin satırı (`lonca mobile-app 9d3f1c2 · 3 bekliyor`), kod haritasındaki lease'ler, `:lonca` penceresi. Daemon yanıt vermedikçe proje kapalıdır: kimse tutulmaz ve hiçbir Δ'ya karar verilmez.
+- imece daemon'ın durumunu bir işçi Lonca'da çalışırken her 5 saniyede, yoksa her 30 saniyede okur; daemon ajanlarınızın oturumlarından birine bir şey olduğunu söylediğinde de hemen: projenin satırı (`lonca mobile-app 9d3f1c2 · 3 bekliyor`), kod haritasındaki lease'ler, `:lonca` penceresi. Daemon yanıt vermedikçe proje kapalıdır: kimse tutulmaz ve hiçbir Δ'ya karar verilmez.
 
 Ayrıntılar [projeler](projects.md#loncada) ve [değişiklikler](changes.md#loncada) sayfalarında. Hiçbir depoda olmayan bir proje yukarıdaki gibi worktree'lerle ve checkout'unuzla çalışır.
 

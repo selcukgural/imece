@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 
@@ -61,9 +62,21 @@ pub const POLICY: &str = "7dcb2a6f0e8c1d3b5a497f6e2c8d1b0a3e5f7c9d";
 pub struct Daemon {
     pub dir: PathBuf,
     pub place: Place,
-    /// Every request it took, whole.
+    /// Every request it took, whole, but `events.watch`.
     pub heard: Arc<Mutex<Vec<Value>>>,
+    /// Every `events.watch` it took, whole.
+    pub watched: Arc<Mutex<Vec<Value>>>,
+    /// What the next `events.watch` answers, oldest first: an answer
+    /// waits up to [`WATCH_HOLD`] for one, then says nothing happened.
+    pub news: Arc<Mutex<Vec<Value>>>,
 }
+
+/// The longest the fake holds an `events.watch`: a test does not wait the
+/// daemon's 30 s, and an answer before the time is still the protocol's.
+pub const WATCH_HOLD: Duration = Duration::from_millis(200);
+
+/// The first version whose daemon knows `events.watch`.
+pub const WATCHES: &str = "0.2.3";
 
 static NEXT: AtomicUsize = AtomicUsize::new(0);
 
@@ -89,10 +102,16 @@ impl Daemon {
         let listener = UnixListener::bind(&socket).expect("the fake's socket");
         let heard = Arc::new(Mutex::new(Vec::new()));
         let told = heard.clone();
+        let watched = Arc::new(Mutex::new(Vec::new()));
+        let news: Arc<Mutex<Vec<Value>>> = Arc::new(Mutex::new(Vec::new()));
+        let (watches, waiting) = (watched.clone(), news.clone());
+        let knows_watch = (version.and_then(crate::lonca::version_of))
+            .is_some_and(|v| Some(v) >= crate::lonca::version_of(WATCHES));
         let answer = Arc::new(answer);
         thread::spawn(move || {
             for conn in listener.incoming().flatten() {
                 let (told, answer) = (told.clone(), answer.clone());
+                let (watches, waiting) = (watches.clone(), waiting.clone());
                 thread::spawn(move || {
                     let reader = BufReader::new(conn.try_clone().expect("a clone"));
                     let mut conn = conn;
@@ -103,6 +122,15 @@ impl Daemon {
                             json!({"id": id, "ok": true, "result": {"protocol": protocol, "version": version}})
                         } else if asked["method"] == "tree" && asked["params"]["commit"] == POLICY {
                             json!({"id": id, "ok": true, "result": []})
+                        } else if asked["method"] == "events.watch" {
+                            watches.lock().expect("watched").push(asked.clone());
+                            if knows_watch {
+                                let result = watch_answer(&asked, &waiting);
+                                json!({"id": id, "ok": true, "result": result})
+                            } else {
+                                json!({"id": id, "ok": false,
+                                    "error": {"code": "unknown_method", "message": "no"}})
+                            }
                         } else {
                             told.lock().expect("heard").push(asked.clone());
                             match answer(&asked) {
@@ -134,7 +162,18 @@ impl Daemon {
             // The person's own daemon, whatever this machine's install says.
             trust: Some(Trust::cooperative()),
         };
-        Daemon { dir, place, heard }
+        Daemon {
+            dir,
+            place,
+            heard,
+            watched,
+            news,
+        }
+    }
+
+    /// The next `events.watch` answers `answer`.
+    pub fn tell(&self, answer: Value) {
+        self.news.lock().expect("news").push(answer);
     }
 
     /// A session file for `ayse` beside the socket, as `lonca human
@@ -147,6 +186,26 @@ impl Daemon {
 impl Drop for Daemon {
     fn drop(&mut self) {
         let _ = std::fs::remove_dir_all(&self.dir);
+    }
+}
+
+/// What the fake says to an `events.watch`: the oldest of `news` once
+/// there is one within [`WATCH_HOLD`] (or the request's `wait_ms`, when
+/// less), else nothing new since its `from`.
+fn watch_answer(asked: &Value, news: &Mutex<Vec<Value>>) -> Value {
+    let wait = asked["params"]["wait_ms"].as_u64().unwrap_or(0);
+    let until = Instant::now() + WATCH_HOLD.min(Duration::from_millis(wait));
+    loop {
+        let mut queued = news.lock().expect("news");
+        if !queued.is_empty() {
+            return queued.remove(0);
+        }
+        drop(queued);
+        if Instant::now() >= until {
+            let next = asked["params"]["from"].as_u64().unwrap_or(9);
+            return json!({"events": [], "next": next, "reserved": [], "ended": []});
+        }
+        thread::sleep(Duration::from_millis(5));
     }
 }
 

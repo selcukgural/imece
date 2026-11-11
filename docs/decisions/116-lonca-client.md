@@ -67,7 +67,9 @@ A name is 1 to 64 letters, digits, `.`, `_`, `-`.
 
 **The look.** `Live.lonca` (`Watch`) is a thread with one connection a look:
 `status` for each open project on Lonca, at most every 5 s (`LOOK_EVERY`) and
-at once after `:lonca NAME`, never a second while one is out, so the screen
+at once after `:lonca NAME`, never a second while one is out (since record
+148, every 30 s while nobody works on Lonca and the daemon's `events.watch`
+is heard, and soon after what it tells), so the screen
 never waits on a socket. What it finds goes to `World::store_seen`: an answer
 from a repository the person has since replaced is dropped. `OnLonca.seen` is
 `Asking`, `Up { trunk, pending }` or `Down(why)`, memory only: read anew each
