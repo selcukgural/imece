@@ -239,6 +239,13 @@ requests. The first:
   store's stop for a person signed out offers `:lonca login` first
   (`Halt::choices_when`, record 117). LONCA-1 writes such a file first.
 
+Two scripts that failed now and then in CI were mended with it: PROJ-1
+waited for `AT WORK` where a quick team is `TEAM FINISHED` already
+(either will do), and ASK-6 pressed `d` while `:tidy`'s own look over the
+start's list ran, which the window called `removing…` (`Orphans.removing`
+tells a removal from a look, record 96; the script waits for `looking…`
+to go).
+
 The person's decisions for the other two (2026-11-11): a worker's tests
 run in its own shell stay no proof of a tree (record 11), but the change
 says they ran and how, never `nothing ran`; and a process that leaves its

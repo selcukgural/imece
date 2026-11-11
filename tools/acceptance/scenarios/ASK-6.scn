@@ -7,6 +7,8 @@ type :tidy
 key Enter
 see WORKTREES NO AGENT OWNS
 see left-behind
+# `:tidy` looks again over the start's list: `d` waits for the look.
+gone looking…
 key d
 see teardown
 key a

@@ -2345,6 +2345,7 @@ impl Sim {
             list.retain(|o| !gone.contains(&o.path));
         }
         w.orphans.busy = true;
+        w.orphans.removing = true;
         self.extras.tidy_due = Some(Some(tidied));
         Ok(())
     }
@@ -2374,6 +2375,7 @@ impl Sim {
         w.orphans = Orphans {
             found: Some(found.clone()),
             busy: false,
+            removing: false,
             tidied,
         };
     }
@@ -10561,9 +10563,14 @@ diff --git a/b.rs b/b.rs
         let script = teardown_script(&PathBuf::from(format!("~/src/{name}")));
         w.setup_approved.push(script.key());
         s.tidy(&mut w, &[2], false).unwrap();
+        assert!(w.orphans.busy && w.orphans.removing, "a removal, as live's");
         let told = s.extras.tidy_due.clone().flatten().unwrap();
         let why = told.kept[0].1.as_deref();
         assert_eq!(why, Some(WORKSPACE_MAY_HOLD));
+        s.tidy_answers(&mut w);
+        assert!(!w.orphans.busy && !w.orphans.removing);
+        s.look_orphans(&mut w);
+        assert!(w.orphans.busy && !w.orphans.removing, "a look");
     }
 
     #[test]

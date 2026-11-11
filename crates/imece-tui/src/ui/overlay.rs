@@ -454,7 +454,7 @@ pub fn tidy(f: &mut Frame, app: &App, win: TidyWin) -> Rect {
         Line::default(),
     ];
     if o.busy {
-        let busy = if o.found.is_some() {
+        let busy = if o.removing {
             t.tidy_removing
         } else {
             t.tidy_looking

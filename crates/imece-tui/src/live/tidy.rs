@@ -259,6 +259,7 @@ impl Live {
             ..Tidied::default()
         };
         w.orphans.busy = true;
+        w.orphans.removing = true;
         let paths: Vec<PathBuf> = mine.iter().map(|o| o.path.clone()).collect();
         let removing = self.tidy.removing.clone();
         removing.hold(&paths);
@@ -349,6 +350,7 @@ impl Live {
             w.orphans = Orphans {
                 found: Some(found),
                 busy: false,
+                removing: false,
                 tidied: tidied.or(w.orphans.tidied.take()),
             };
         }
@@ -449,7 +451,7 @@ mod tests {
         std::fs::create_dir_all(PathBuf::from(beside).join("claude-9")).unwrap();
         assert_eq!(w.orphans, Orphans::default());
         live.look_orphans(&mut w);
-        assert!(w.orphans.busy);
+        assert!(w.orphans.busy && !w.orphans.removing, "a look");
         answered(&mut live, &mut w);
         let found = w.orphans.found.clone().unwrap();
         let paths: Vec<&Path> = found.iter().map(|o| o.path.as_path()).collect();
@@ -745,8 +747,9 @@ mod tests {
         assert_eq!(live.tidy(&mut w, &[], false), Err(Refusal::Nothing));
         assert_eq!(live.tidy(&mut w, &[5], false), Err(Refusal::Nothing));
         live.tidy(&mut w, &[0, 1], false).unwrap();
-        assert!(w.orphans.busy);
+        assert!(w.orphans.busy && w.orphans.removing, "a removal");
         answered(&mut live, &mut w);
+        assert!(!w.orphans.busy && !w.orphans.removing);
         assert!(!clean.exists());
         assert!(held.join("new.txt").exists(), "work was thrown away");
         let tidied = w.orphans.tidied.clone().unwrap();

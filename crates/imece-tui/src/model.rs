@@ -3594,6 +3594,10 @@ pub struct Orphans {
     pub found: Option<Vec<Orphan>>,
     /// A look or a removal is under way.
     pub busy: bool,
+    /// The work under way is a removal (else a look): the window says
+    /// which, so a list it shows meanwhile is not said to be going
+    /// (acceptance, 2026-11-11: `:tidy` over a list said `removing…`).
+    pub removing: bool,
     /// What the last removal came to, until the screen says it.
     pub tidied: Option<Tidied>,
 }

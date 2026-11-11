@@ -83,7 +83,9 @@ and this is rare) opens `App.tidy: TidyWin { at, sure }` over the view
 (`overlay::tidy`, after the setup script's window in `ui::draw`) and asks
 the engine to look (`Live::look_orphans` / `Sim::look_orphans`): a
 thread lists them and `Live::take_tidy` in `step` puts them in
-`World.orphans: Orphans { found, busy, tidied }` (memory only, nothing
+`World.orphans: Orphans { found, busy, removing, tidied }` (`removing`
+since 2026-11-11: a look over the list it has says `looking…`, not
+`removing…`; an acceptance script pressed `d` there and met `busy`; memory only, nothing
 saved, no journal line: no agent is in it, and every `Event` is about
 one). `j k g G` (and the arrows, home, end) move, `a` removes the clean
 ones (none: `tidy_no_clean`), `d` the one at hand, at once when clean,
