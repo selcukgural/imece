@@ -299,6 +299,12 @@ fn the_tidy_window_lists_the_worktrees_no_agent_owns_and_asks_before_work_goes()
     // Going: said; all gone: said so.
     app.tidy = Some(crate::app::TidyWin::default());
     app.world.orphans.busy = true;
+    let s = render(&app, 120, 30);
+    assert!(
+        s.contains("looking…") && !s.contains("removing…"),
+        "a look over a list: {s}"
+    );
+    app.world.orphans.removing = true;
     assert!(render(&app, 120, 30).contains("removing…"));
     app.world.orphans = crate::model::Orphans {
         found: Some(Vec::new()),

@@ -4,6 +4,9 @@ env LONCA_HOME $ACC_CASE/lonca
 # Its own identities too: the run's key, no session of another daemon's.
 env LONCA_HUMANS $ACC_CASE/humans
 sh mkdir -p lonca humans && cp "$ACC"/humans/*.key humans/ && cp "$ACC"/humans/default humans/ 2>/dev/null; true
+# A session file another daemon left (a reinstall): the import signs in
+# anew, and the team does not stop as signed out (2026-11-11).
+sh printf '{"token":"lonca_h_stale","expires_ms":4102444800000}' > "humans/$(cat humans/default 2>/dev/null || echo acc).session" && chmod 600 humans/*.session
 bg lonca daemon --home $ACC_CASE/lonca --no-notify --no-proxy
 until 30 test -S lonca/lonca.sock
 start --budget 2
@@ -14,6 +17,7 @@ key Enter
 see IMPORT INTO LONCA
 key a
 wait 120 lonca lonca-one 
+gone not signed in
 key J
 key J
 see went into Lonca as repository lonca-one

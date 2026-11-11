@@ -37,7 +37,12 @@ impl App {
         let (p, halt) = self.halt_at_hand()?;
         self.world.halt_of(p, halt)?;
         let n = usize::try_from(d.to_digit(10)?).ok()?.checked_sub(1)?;
-        halt.choices().get(n).copied()
+        self.choices_of(p, halt).get(n).copied()
+    }
+
+    /// The choices on project `p`'s stop of `halt`, as its row offers them.
+    pub(crate) fn choices_of(&self, p: ProjectId, halt: Halt) -> &'static [Choice] {
+        halt.choices_when(self.world.signed_out(p))
     }
 
     /// Digit `d` on the stop at hand: imece does what the choice says,
@@ -70,6 +75,10 @@ impl App {
             Choice::Store => {
                 self.selected = Sel::Project(p);
                 self.open_lonca(p);
+            }
+            Choice::Login => {
+                self.selected = Sel::Project(p);
+                self.store_start(StoreJob::Login(p), t.lonca_signing_in.to_string());
             }
             Choice::StartLead => {
                 let head = self.world.projects[p].leader;
@@ -310,6 +319,28 @@ mod tests {
         let mut app = stopped(&[Halt::Lead]);
         app.on_key(key(KeyCode::Enter));
         assert_eq!(app.zoom, Zoom::Focus(app.world.projects[0].leader));
+    }
+
+    #[test]
+    fn lonca_saying_the_person_is_signed_out_offers_signing_in_first() {
+        let mut app = stopped(&[Halt::Store]);
+        if let Some(l) = app.world.projects[0].lonca.as_mut() {
+            l.seen = StoreSeen::Down(StoreDown::SignedOut);
+        }
+        assert!(app.world.signed_out(0));
+        assert_eq!(app.choice_at_hand('1'), Some(Choice::Login));
+        assert_eq!(app.choice_at_hand('2'), Some(Choice::LookAgain));
+        assert_eq!(app.choice_at_hand('3'), Some(Choice::Store));
+        assert_eq!(app.choice_at_hand('4'), None);
+        app.on_key(key(KeyCode::Char('1')));
+        let signing = app.lang.text().lonca_signing_in;
+        assert_eq!(flashed(&app).as_deref(), Some(signing));
+        assert_eq!(app.asking.as_deref(), Some(signing), "the job runs");
+        // Any other reason the store is down: no sign in offered.
+        let app = stopped(&[Halt::Store]);
+        assert!(!app.world.signed_out(0));
+        assert_eq!(app.choice_at_hand('1'), Some(Choice::LookAgain));
+        assert_eq!(app.choice_at_hand('3'), None);
     }
 
     #[test]

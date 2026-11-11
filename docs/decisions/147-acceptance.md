@@ -213,3 +213,43 @@ What the real scripts found:
 - On Lonca a change says `needs your yes: nobody watched this session's
   tools, approvals=1`: Lonca's words, which a person may not follow.
 
+
+## The findings mended (2026-11-11)
+
+The person's word on the findings above ("fix them"), in three pull
+requests. The first:
+
+- `:ps` knows a session's own process and imece's relay from the rows it
+  read (`procs::refused`) and refuses them at `d`, with no `y` asked
+  (record 129). SESS-7 now checks the refusal comes at once.
+- `1 notes went to` had been mended already (2026-11-09: `note_sent`,
+  `talk_note_sent`); TEAM-4 now checks the words.
+- A solo's change is titled by the person's newest words to it, and a
+  change of it still waiting keeps its title (`World::solo_title`, record
+  59; the demo the same). SOLO-1 checks the title.
+- Every reason Lonca gives for a human is worded (`ui::diff::why_it_waits`,
+  record 120): `unobserved_session` says why a person reads it,
+  `approvals=1` is left out, `approvals=N`, `tests_weakened`,
+  `unread_file`, `signature_change`, `affected_lease`, `affected_more`,
+  `approvals_capped` and the default policy's `auth`, `revert-storm`,
+  `blast-radius` have words. The demo's proposals carry `approvals=1` and
+  every fifth `tests_weakened`. LONCA-2 checks the words.
+- A session file another daemon left no longer passes for a session: the
+  import asks the daemon (`Place::signed_out`) and signs in anew, and a
+  store's stop for a person signed out offers `:lonca login` first
+  (`Halt::choices_when`, record 117). LONCA-1 writes such a file first.
+
+Two scripts that failed now and then in CI were mended with it: PROJ-1
+waited for `AT WORK` where a quick team is `TEAM FINISHED` already
+(either will do), and ASK-6 pressed `d` while `:tidy`'s own look over the
+start's list ran, which the window called `removing…` (`Orphans.removing`
+tells a removal from a look, record 96; the script waits for `looking…`
+to go).
+
+The person's decisions for the other two (2026-11-11): a worker's tests
+run in its own shell stay no proof of a tree (record 11), but the change
+says they ran and how, never `nothing ran`; and a process that leaves its
+session (`nohup … &`) is found by a mark in the session's environment
+(probed: it reaches such a server), listed by `:ps` under its agent, ended
+with the session at quit, and found by a later start when it outlived one;
+the same mark is to close a session of real Claude Code outliving the quit.

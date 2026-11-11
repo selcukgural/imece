@@ -25,6 +25,11 @@ pub(crate) type Repo = &'static [(&'static str, &'static [&'static str])];
 
 /// The start point the demo's second worker of a project is hired from.
 const DEMO_START: &str = "#41";
+/// The name the demo's made-up bus relays run under, as imece's own do.
+pub(crate) const DEMO_OWN: &str = "imece";
+/// Every this many proposals of the demo's on Lonca deletes or skips tests,
+/// as Lonca's `tests_weakened` says.
+const WEAKENED_EVERY: u64 = 5;
 
 const SHOP: Repo = &[
     (
@@ -1861,7 +1866,12 @@ impl Sim {
         self.extras.proposed += 1;
         let n = self.extras.proposed;
         let seq = 2 * n;
+        // Lonca's reasons in its order: what escalates, what it says
+        // besides, the approvals it needs.
         let mut why = vec!["unobserved_session".to_string()];
+        if n.is_multiple_of(WEAKENED_EVERY) {
+            why.push("tests_weakened".into());
+        }
         let shown = w.proposal_of(id).map(|p| p.change.clone());
         if let Some(old) = &shown {
             w.proposal_left(id, Landed::Replaced);
@@ -1869,6 +1879,7 @@ impl Sim {
         } else if n.is_multiple_of(4) {
             why.push(format!("replaces:unseen{n}"));
         }
+        why.push("approvals=1".into());
         let proposal = StoreProposal {
             seq,
             change: format!("demo{n}"),
@@ -2179,7 +2190,7 @@ impl Sim {
             };
             let mut procs = vec![
                 proc(root, 1, 12 + 3 * id as u32, 280 + 7 * id as u64, "claude"),
-                proc(root + 1, root, 0, 9, "imece"),
+                proc(root + 1, root, 0, 9, DEMO_OWN),
             ];
             if a.status.busy() {
                 let run = (t / PROC_TICKS) as u32 % 1000;
@@ -2215,7 +2226,7 @@ impl Sim {
                 place: "demo-notes/claude-9".into(),
                 procs: vec![
                     proc(10, None, 4, 310, "claude"),
-                    proc(11, Some(10), 0, 9, "imece"),
+                    proc(11, Some(10), 0, 9, DEMO_OWN),
                     proc(12, Some(10), 990, 520, "cargo"),
                 ],
             },
@@ -2256,17 +2267,10 @@ impl Sim {
             .find(|(a, _)| *a == id)
             .map(|(_, ps)| ps.clone())
             .unwrap_or_default();
-        let root = procs.first().map(|p| p.pid);
-        let Some(p) = procs.iter().find(|p| p.pid == pid) else {
-            return Err(ProcRefusal::NotUnder);
-        };
-        if Some(pid) == root {
-            return Err(ProcRefusal::Session);
+        if let Some(no) = crate::procs::refused(&procs, pid, Some(DEMO_OWN)) {
+            return Err(no);
         }
-        if p.name == "imece" && Some(p.ppid) == root {
-            return Err(ProcRefusal::Bus);
-        }
-        let name = p.name.clone();
+        let name = (procs.iter().find(|p| p.pid == pid)).map_or(String::new(), |p| p.name.clone());
         self.extras.ended.insert(pid);
         w.agents[id].trace(w.tick, format!("ended by the person: {name} ({pid})"));
         w.note(Event::Killed {
@@ -2341,6 +2345,7 @@ impl Sim {
             list.retain(|o| !gone.contains(&o.path));
         }
         w.orphans.busy = true;
+        w.orphans.removing = true;
         self.extras.tidy_due = Some(Some(tidied));
         Ok(())
     }
@@ -2370,6 +2375,7 @@ impl Sim {
         w.orphans = Orphans {
             found: Some(found.clone()),
             busy: false,
+            removing: false,
             tidied,
         };
     }
@@ -2843,9 +2849,14 @@ impl Sim {
                 .map(|n| Symbol { file, name: n })
                 .collect();
             let (files, patch) = self.patch(&symbols);
+            let title = if solo_change {
+                w.solo_title(id, text)
+            } else {
+                text.lines().next().unwrap_or_default().to_string()
+            };
             let change = Change {
                 agent: id,
-                title: text.lines().next().unwrap_or_default().to_string(),
+                title,
                 files,
                 patch,
                 runs: Vec::new(),
@@ -10552,9 +10563,14 @@ diff --git a/b.rs b/b.rs
         let script = teardown_script(&PathBuf::from(format!("~/src/{name}")));
         w.setup_approved.push(script.key());
         s.tidy(&mut w, &[2], false).unwrap();
+        assert!(w.orphans.busy && w.orphans.removing, "a removal, as live's");
         let told = s.extras.tidy_due.clone().flatten().unwrap();
         let why = told.kept[0].1.as_deref();
         assert_eq!(why, Some(WORKSPACE_MAY_HOLD));
+        s.tidy_answers(&mut w);
+        assert!(!w.orphans.busy && !w.orphans.removing);
+        s.look_orphans(&mut w);
+        assert!(w.orphans.busy && !w.orphans.removing, "a look");
     }
 
     #[test]
@@ -10692,7 +10708,17 @@ diff --git a/b.rs b/b.rs
         let (w, _, id) = a_proposal_waits();
         let p = w.proposal_of(id).expect("a proposal");
         assert_eq!((p.seq, p.change.as_str()), (2, "demo1"));
-        assert_eq!(p.why, ["unobserved_session"]);
+        assert_eq!(p.why, ["unobserved_session", "approvals=1"]);
+        // Every fifth deletes or skips tests, as Lonca says it.
+        let (mut w, mut s, id) = a_proposal_waits();
+        s.extras.proposed = WEAKENED_EVERY - 1;
+        s.ready(&mut w, a_change_of(id));
+        let p = w.proposal_of(id).unwrap();
+        assert_eq!(p.why[..2], ["unobserved_session", "tests_weakened"]);
+        assert_eq!(p.why.last().map(String::as_str), Some("approvals=1"));
+        s.ready(&mut w, a_change_of(id));
+        let p = w.proposal_of(id).unwrap();
+        assert!(!p.why.iter().any(|r| r == "tests_weakened"), "{:?}", p.why);
         let (mut w, mut s, worker, _) = one_at_work();
         let change = w.change_of(worker).cloned();
         assert!(change.is_none());
@@ -11043,7 +11069,10 @@ diff --git a/b.rs b/b.rs
         s.ready(&mut w, a_change_of(id));
         let p = w.proposal_of(id).unwrap();
         assert_eq!(p.seq, 4);
-        assert_eq!(p.why, ["unobserved_session", "replaces:demo1"]);
+        assert_eq!(
+            p.why,
+            ["unobserved_session", "replaces:demo1", "approvals=1"]
+        );
         assert_eq!(w.changes.len(), 1, "one change: the newer");
         let replaced = w.journal.iter().rev().find_map(|e| match &e.event {
             Event::Landed { agent, how } if *agent == id => Some(how.clone()),
@@ -11059,7 +11088,7 @@ diff --git a/b.rs b/b.rs
             let why = &w.proposal_of(id).unwrap().why;
             let unseen = format!("replaces:unseen{n}");
             assert_eq!(why.contains(&unseen), n == 4, "{n}: {why:?}");
-            assert_eq!(why.len(), if n == 4 { 2 } else { 1 }, "{n}");
+            assert_eq!(why.len(), if n == 4 { 3 } else { 2 }, "{n}");
         }
     }
 

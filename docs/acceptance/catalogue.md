@@ -205,7 +205,7 @@ shown as it is, never `[***]`, is SCR-14's.
 
 Steps: `scenarios/TEAM-4.scn`: a change waiting; in the diff `]`, `j j`, `c`, a note, enter; `n`; `J J`.
 
-Expect: the note goes on the hunk line at the top (`note on test_shelf.py:…`), `note kept (1 on this change)`; `n` sends it and the change goes back: nothing of it left to decide, the journal says `sent back: claude-1`. (`>` quoting a hunk to the worker is SCR-3's line, not scripted.)
+Expect: the note goes on the hunk line at the top (`note on test_shelf.py:…`), `note kept (1 on this change)`; `n` sends it (`1 note went to claude-1; the change went back to them`, one note said as one) and the change goes back: nothing of it left to decide, the journal says `sent back: claude-1`. (`>` quoting a hunk to the worker is SCR-3's line, not scripted.)
 
 ### TEAM-5 · Part applied, then the rest; commit from imece's own shell
 
@@ -490,9 +490,9 @@ Expect: `LEDGER · 1 attempt`, per project `applied $0.00 · wasted $0.00 · at 
 - commands: :ps
 - tier: stand-in
 
-Steps: `scenarios/SESS-7.scn`: a change waiting; `:ps`; `j`, `d`, `y`.
+Steps: `scenarios/SESS-7.scn`: a change waiting; `:ps`; `d` on the first row, `j`, `d`.
 
-Expect: `PROCESSES` lists each session with what runs under it; `d` asks (`y ends it, any other key keeps it`); the session and imece's relay are refused after the `y`, nothing ended (`PROCESSES · 4` still). What an earlier run left is SESS-8's runner check and the real run's.
+Expect: `PROCESSES` lists each session with what runs under it; `d` on the session itself (`that is claude-1's session itself: …`) or on imece's relay (`that is imece's bus for …: it stays`) is refused at once, with no `y` asked; nothing ended (`PROCESSES · 4` still). `d` on a command under a session asks (`y ends it, any other key keeps it`) and `y` ends it: by hand, with a worker's test running. What an earlier run left is SESS-8's runner check and the real run's.
 
 ### SESS-8 · The terminal goes away
 
@@ -518,7 +518,7 @@ to SIGTERM.
 
 Steps: `scenarios/SOLO-1.scn`: `:solo`: the pick (haiku, its own effort); a task to the solo, its asks; `:effort medium`; `J`.
 
-Expect: the solo `solo-shelf-2` works in its own worktree and its change waits (`ready to approve`, `Changed shelf.py.`); `:effort medium` ends its session and resumes it on the new choice, the journal says so.
+Expect: the solo `solo-shelf-2` works in its own worktree and its change waits (`ready to approve`), titled by the person's words (`add a docstring to shelf.py`), not by the solo's answer (`Changed shelf.py.`); `:effort medium` ends its session and resumes it on the new choice, the journal says so.
 
 ### SOLO-2 · A solo in a folder without git
 
@@ -605,9 +605,9 @@ Expect: the board `BOARD · cards: 1 · r ready only`, `TO REVIEW (1)`; the code
 - commands: :lonca
 - tier: real
 
-Steps: `scenarios/real/LONCA-1.scn`: a daemon of the case's own (`bg lonca daemon`, its own `LONCA_HOME` and identities); `:lonca import lonca-one`, `a`; `J J`; `:lonca`; `:lonca import` again; `lonca policy show`.
+Steps: `scenarios/real/LONCA-1.scn`: a daemon of the case's own (`bg lonca daemon`, its own `LONCA_HOME` and identities, with a session file of another daemon's in them); `:lonca import lonca-one`, `a`; `J J`; `:lonca`; `:lonca import` again; `lonca policy show`.
 
-Expect: the header says `lonca lonca-one …`; the journal `went into Lonca as repository lonca-one`; the window `is on Lonca repository lonca-one: trunk …`, `WAITING FOR A HUMAN · 0`, `HELD · 0`; a second import is refused (`… already`); the policy imece signed holds `escalate`.
+Expect: a session file another daemon left (written first) does not count: the import signs in anew and nothing stops as `not signed in`; the header says `lonca lonca-one …`; the journal `went into Lonca as repository lonca-one`; the window `is on Lonca repository lonca-one: trunk …`, `WAITING FOR A HUMAN · 0`, `HELD · 0`; a second import is refused (`… already`); the policy imece signed holds `escalate`.
 
 ### LONCA-2 · A worker in a workspace: its proposal is the Δ
 
@@ -620,7 +620,7 @@ Steps: `scenarios/real/LONCA-2.scn`: its own daemon; an import; a cheap worker's
 
 By hand, in the same run: `:code` while a worker holds a lease (its file, `· name` for others).
 
-Expect: the window says `WAITING FOR A HUMAN · 1` and `Δ shown`; the change says `nothing runs after your yes` and, from Lonca, why it needs the person (`needs your yes: nobody watched this session's tools …`).
+Expect: the window says `WAITING FOR A HUMAN · 1` and `Δ shown`; the change says `nothing runs after your yes` and, from Lonca, why it needs the person (`needs your yes: Lonca does not watch this agent's tools, so a person reads each change · proposal N`, no `approvals=1`).
 
 ### LONCA-3 · The Δ on Lonca: the yes lands it on trunk
 

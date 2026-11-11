@@ -21,7 +21,8 @@ key a
 key g d
 key a
 wait 60 ready to approve
-see Changed shelf.py.
+# The change is titled by the person's words, not by the solo's answer.
+see add a docstring to shelf.py  shelf-2 · solo-shelf-2
 type :effort medium
 key Enter
 key J

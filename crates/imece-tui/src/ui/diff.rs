@@ -917,7 +917,8 @@ pub(crate) fn verdict_lines(lang: Lang, v: &Verdict, width: usize) -> Vec<Line<'
 }
 
 /// Lonca's word for why a change waits for a human, as a person says it;
-/// a word imece does not know, as Lonca said it.
+/// a word imece does not know, as Lonca said it. `approvals=1` says
+/// nothing the line does not (it needs your yes): empty.
 fn why_it_waits(t: &Text, why: &str) -> String {
     let (word, path) = why.split_once(':').unwrap_or((why, ""));
     let [
@@ -929,7 +930,24 @@ fn why_it_waits(t: &Text, why: &str) -> String {
         unhooked,
         unhooked_critical,
         replaces,
+        approvals,
+        capped,
+        weakened,
+        unread,
+        signature,
+        leased,
+        more,
+        auth,
+        reverts,
+        large,
     ] = t.diff_whys;
+    if let Some(n) = why.strip_prefix("approvals=") {
+        return match n.parse::<u32>() {
+            Ok(0 | 1) => String::new(),
+            Ok(n) => fill(approvals, &[&n.to_string()]),
+            Err(_) => clean(why),
+        };
+    }
     match word {
         "unobserved_session" => unwatched.to_string(),
         "tainted_session" => tainted.to_string(),
@@ -942,6 +960,17 @@ fn why_it_waits(t: &Text, why: &str) -> String {
         "unobserved_write" => fill(written, &[path]),
         // The change it names is Lonca's id, which says nothing here.
         "replaces" => replaces.to_string(),
+        "approvals_capped" => capped.to_string(),
+        "tests_weakened" => weakened.to_string(),
+        "unread_file" => fill(unread, &[path]),
+        "signature_change" => fill(signature, &[path]),
+        // A session's id and a lease set's: neither says anything here.
+        "affected_lease" => leased.to_string(),
+        "affected_more" => fill(more, &[path]),
+        // The default policy's rules (`lonca-policy`'s DEFAULT_POLICY).
+        "auth" => auth.to_string(),
+        "revert-storm" => reverts.to_string(),
+        "blast-radius" => large.to_string(),
         _ => clean(why),
     }
     .trim_end_matches([':', ' '])
@@ -952,8 +981,14 @@ fn why_it_waits(t: &Text, why: &str) -> String {
 /// it waits; then what the patch below does not show, loud.
 pub(crate) fn proposal_lines(lang: Lang, p: &StoreProposal) -> Vec<Line<'static>> {
     let t = lang.text();
-    let why: Vec<String> = p.why.iter().map(|w| why_it_waits(t, w)).collect();
-    let said = fill(t.diff_proposal, &[&why.join(", "), &p.seq.to_string()]);
+    let why: Vec<String> = (p.why.iter())
+        .map(|w| why_it_waits(t, w))
+        .filter(|w| !w.is_empty())
+        .collect();
+    let said = match why.is_empty() {
+        true => fill(t.diff_proposal_bare, &[&p.seq.to_string()]),
+        false => fill(t.diff_proposal, &[&why.join(", "), &p.seq.to_string()]),
+    };
     let mut lines = vec![Line::from(Span::styled(said, dim()))];
     let loud = |text: String| Line::from(Span::styled(text, fg(pal().warn)));
     if !p.redacted.is_empty() {
@@ -1258,7 +1293,10 @@ mod tests {
     fn lonca_s_words_for_why_a_change_waits_are_said_as_a_person_says_them() {
         let t = Lang::En.text();
         for (word, said) in [
-            ("unobserved_session", "nobody watched this session's tools"),
+            (
+                "unobserved_session",
+                "Lonca does not watch this agent's tools, so a person reads each change",
+            ),
             ("tainted_session", "this session read something untrusted"),
             (
                 "critical_path:Cargo.toml",
@@ -1280,6 +1318,31 @@ mod tests {
                 "replaces:wxmztzlwytrl",
                 "it takes the place of its earlier proposal",
             ),
+            ("approvals=1", ""),
+            ("approvals=0", ""),
+            ("approvals=2", "2 people must say yes"),
+            ("approvals=x", "approvals=x"),
+            (
+                "approvals_capped",
+                "the policy asks for more people than Lonca has signed up",
+            ),
+            ("tests_weakened", "it deletes or skips tests"),
+            ("unread_file:c.rs", "it changes c.rs without reading it"),
+            (
+                "signature_change:src/a.rs#parse",
+                "it changes the signature of src/a.rs#parse",
+            ),
+            (
+                "affected_lease:sess-1:set-2",
+                "code it touches is leased to another session",
+            ),
+            ("affected_more:7", "it affects 7 more places"),
+            ("auth", "it changes authentication code"),
+            (
+                "revert-storm",
+                "this code was taken back three times lately",
+            ),
+            ("blast-radius", "it is large (over 50 files or 2,000 lines)"),
             ("something_new", "something_new"),
         ] {
             assert_eq!(why_it_waits(t, word), said);
@@ -2632,9 +2695,29 @@ diff --git a/c.rs b/c.rs
         let lines = proposal_lines(Lang::En, &a_proposal());
         assert_eq!(
             said(&lines),
-            [" needs your yes: nobody watched this session's tools, approvals=1 · proposal 5"]
+            [
+                " needs your yes: Lonca does not watch this agent's tools, so a person reads each \
+                 change · proposal 5"
+            ]
         );
         assert_eq!(lines[0].spans[0].style, dim());
+        // `approvals=1` says nothing the line does not; more people do.
+        let p = StoreProposal {
+            why: vec!["approvals=1".into()],
+            ..a_proposal()
+        };
+        assert_eq!(
+            said(&proposal_lines(Lang::En, &p)),
+            [" needs your yes · proposal 5"]
+        );
+        let p = StoreProposal {
+            why: vec!["auth".into(), "approvals=2".into()],
+            ..a_proposal()
+        };
+        assert_eq!(
+            said(&proposal_lines(Lang::En, &p)),
+            [" needs your yes: it changes authentication code, 2 people must say yes · proposal 5"]
+        );
     }
 
     #[test]

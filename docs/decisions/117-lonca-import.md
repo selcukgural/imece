@@ -78,8 +78,12 @@ hardened repository requires presence and this key can not prove it: …`).
   `init` passes without a credential (bootstrap). So on a new daemon the first
   import comes before any session, and it would leave the project closed with
   `you are not signed in` right after the person said yes. The same yes
-  therefore signs in, when `Place::open` says `SignedOut` (`run` in
-  `live/lonca.rs`); what fails there is the project's `⌀ no lonca`, with its
+  therefore signs in, when the daemon does not take the person's session
+  (`Place::signed_out`: no file, one ended, or since 2026-11-11 a file
+  another daemon left, which `Place::open` alone took for a session, found
+  by an acceptance run after a reinstall; `run` in `live/lonca.rs`); a
+  store's stop for a person signed out offers `:lonca login` first
+  (`Halt::choices_when`, `Choice::Login`); what fails there is the project's `⌀ no lonca`, with its
   word, and `:lonca login` is one command away. `:lonca login` before any
   import shows the daemon's refusal in the journal.
 - A session opened before an import reaches the repository made after it: no

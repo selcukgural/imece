@@ -148,6 +148,8 @@ pub enum Choice {
     LookAgain,
     /// The Lonca window.
     Store,
+    /// `:lonca login`: the store said the person is not signed in.
+    Login,
     /// The head's session again, where it left off.
     StartLead,
     /// The turns the usage limit cut, tried again now.
@@ -177,6 +179,17 @@ impl Halt {
             Halt::Lead => &[Choice::StartLead],
             Halt::Hung => &[Choice::EndTurn],
             Halt::Failed => &[Choice::Again],
+        }
+    }
+
+    /// The choices on this stop when the store said the person is not
+    /// signed in (`signed_out`): signing in comes first, since looking
+    /// again finds the same (acceptance, 2026-11-11: a session file left
+    /// by another daemon stopped a team that offered only that).
+    pub fn choices_when(self, signed_out: bool) -> &'static [Choice] {
+        match self {
+            Halt::Store if signed_out => &[Choice::Login, Choice::LookAgain, Choice::Store],
+            _ => self.choices(),
         }
     }
 }
@@ -667,6 +680,22 @@ mod tests {
         );
         assert_eq!(Halt::Woken.choices(), &[Choice::GoOn]);
         assert_eq!(Halt::Store.choices(), &[Choice::LookAgain, Choice::Store]);
+        assert_eq!(Halt::Store.choices_when(false), Halt::Store.choices());
+        assert_eq!(
+            Halt::Store.choices_when(true),
+            &[Choice::Login, Choice::LookAgain, Choice::Store],
+            "signing in first when the store says the person is not"
+        );
+        for halt in [
+            Halt::Pot,
+            Halt::Woken,
+            Halt::Limit,
+            Halt::Lead,
+            Halt::Hung,
+            Halt::Failed,
+        ] {
+            assert_eq!(halt.choices_when(true), halt.choices(), "{halt:?}");
+        }
         assert_eq!(Halt::Lead.choices(), &[Choice::StartLead]);
         assert_eq!(Halt::Limit.choices(), &[Choice::TryNow]);
         assert_eq!(Halt::Hung.choices(), &[Choice::EndTurn]);

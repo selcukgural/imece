@@ -13,7 +13,8 @@ key Escape Escape
 # The change itself, not the leader's words that name the task.
 wait 60 2 files +2 −0
 gone permissions
-see AT WORK
+# The team at work, or done already when the machine is quick to it.
+see AT WORK || TEAM FINISHED
 key ]
 see Nothing needs you and nobody is at work.
 key [

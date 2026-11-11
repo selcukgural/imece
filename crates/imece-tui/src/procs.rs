@@ -257,6 +257,21 @@ pub fn end(pid: u32, root: u32, name: &str) -> Result<(), Refusal> {
     Ok(())
 }
 
+/// What [`end`] would refuse of process `pid`, by a session's processes
+/// as last read (`listed`, the session's own first) and the name imece's
+/// program runs under (`own`): asked before the `y`, so a refusal is said
+/// at once and no `y` is asked for nothing. [`end`] checks again.
+pub fn refused(listed: &[Proc], pid: u32, own: Option<&str>) -> Option<Refusal> {
+    let root = listed.first().map(|p| p.pid);
+    let Some(p) = listed.iter().find(|p| p.pid == pid) else {
+        return Some(Refusal::NotUnder);
+    };
+    if Some(pid) == root {
+        return Some(Refusal::Session);
+    }
+    (Some(p.name.as_str()) == own && Some(p.ppid) == root).then_some(Refusal::Bus)
+}
+
 /// Sends `sig` to process `pid`; a number past i32 is no process of ours.
 fn signal(pid: u32, sig: i32) {
     if let Ok(p) = i32::try_from(pid) {
@@ -607,6 +622,36 @@ mod tests {
         }
         let _ = root.kill();
         let _ = root.wait();
+    }
+
+    #[test]
+    fn what_end_refuses_is_known_from_the_rows_before_a_y() {
+        let p = |pid, ppid, name: &str| Proc {
+            pid,
+            ppid,
+            cpu: 0,
+            rss: 0,
+            name: name.into(),
+        };
+        let rows = [
+            p(10, 1, "claude"),
+            p(11, 10, "imece"),
+            p(12, 10, "cargo"),
+            p(13, 12, "imece"),
+        ];
+        let own = Some("imece");
+        assert_eq!(refused(&rows, 10, own), Some(Refusal::Session));
+        assert_eq!(refused(&rows, 11, own), Some(Refusal::Bus));
+        assert_eq!(refused(&rows, 12, own), None, "a command ends");
+        assert_eq!(
+            refused(&rows, 13, own),
+            None,
+            "imece's name, not under the session"
+        );
+        assert_eq!(refused(&rows, 11, Some("other")), None, "another name");
+        assert_eq!(refused(&rows, 11, None), None);
+        assert_eq!(refused(&rows, 99, own), Some(Refusal::NotUnder));
+        assert_eq!(refused(&[], 10, own), Some(Refusal::NotUnder));
     }
 
     #[test]

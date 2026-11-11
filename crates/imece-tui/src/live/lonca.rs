@@ -416,14 +416,16 @@ enum Done {
 
 /// `job` run by the `lonca` program: login in the project's checkout `dir`.
 /// A daemon with no repository yet can not sign anyone in, so the first
-/// import comes before any session; the same yes signs the person in then
-/// (what fails here shows as `⌀ no lonca` with its word, record 117).
+/// import comes before any session; the same yes signs the person in then,
+/// when the daemon does not take the session there is (none, ended, or a
+/// file another daemon left), and what fails here shows as `⌀ no lonca`
+/// with its word (record 117).
 fn run(place: &Place, dir: &Path, job: &StoreJob) -> Done {
     match job {
         StoreJob::Login(_) => Done::Login(place.login(dir)),
         StoreJob::Import(ask) => {
             let done = place.import(&ask.repo, &ask.checkout, &ask.branch);
-            if done.is_ok() && matches!(place.open(), Err(Down::SignedOut)) {
+            if done.is_ok() && place.signed_out(&ask.repo) {
                 let _ = place.login(dir);
             }
             let kept = (done.is_ok())

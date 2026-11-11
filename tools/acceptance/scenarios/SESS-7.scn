@@ -19,11 +19,15 @@ see PROCESSES
 see claude-1
 # The rows come with the first look (every 3 s): the keys wait for them.
 see MiB
+# The first row is a session itself, the next its relay: each refused at
+# d, with no y asked for nothing.
+key d
+see session itself
+gone y ends it
 key j
 key d
-see y ends it, any other key keeps it
-key y
-# Refused, whichever it was (the session or imece's relay): nothing ended.
+see imece's bus for
+gone y ends it
 sleep 4
 see PROCESSES · 4
 key Escape

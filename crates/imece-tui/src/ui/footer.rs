@@ -431,8 +431,8 @@ pub(crate) fn home_hints(app: &App) -> Vec<(&'static str, &'static str)> {
         Some(_) => vec![("enter", t.home_open), ("a", t.home_yes), ("r", t.home_no)],
         None => match app.home_at() {
             // A stop of a whole team: its choices, then what stopped.
-            Some(crate::app::HomeRow::Stop(_, halt)) => vec![
-                (super::halt::digits(halt), t.home_pick),
+            Some(crate::app::HomeRow::Stop(p, halt)) => vec![
+                (super::halt::digits(app.choices_of(p, halt)), t.home_pick),
                 ("enter", t.home_open),
                 ("s", t.home_later),
             ],

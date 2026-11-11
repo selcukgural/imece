@@ -3594,6 +3594,10 @@ pub struct Orphans {
     pub found: Option<Vec<Orphan>>,
     /// A look or a removal is under way.
     pub busy: bool,
+    /// The work under way is a removal (else a look): the window says
+    /// which, so a list it shows meanwhile is not said to be going
+    /// (acceptance, 2026-11-11: `:tidy` over a list said `removing…`).
+    pub removing: bool,
     /// What the last removal came to, until the screen says it.
     pub tidied: Option<Tidied>,
 }
@@ -4044,6 +4048,12 @@ impl World {
     /// Why project `p` is closed to hires and Δ decisions: it is on Lonca
     /// and the store has not answered (record 115: no daemon, no hire and
     /// no decision). None for a project not on Lonca, or one that answers.
+    /// Whether project `p`'s store said the person is not signed in.
+    pub fn signed_out(&self, p: ProjectId) -> bool {
+        (self.projects[p].lonca.as_ref())
+            .is_some_and(|l| l.seen == StoreSeen::Down(StoreDown::SignedOut))
+    }
+
     pub fn store_closed(&self, p: ProjectId) -> Option<&'static str> {
         match &self.projects[p].lonca.as_ref()?.seen {
             StoreSeen::Up { .. } => None,
@@ -4678,6 +4688,32 @@ impl World {
 
     pub fn change_of(&self, id: AgentId) -> Option<&Change> {
         self.changes.iter().find(|c| c.agent == id)
+    }
+
+    /// The title of solo `id`'s change read at the end of a turn that
+    /// answered `reply` (record 59): a change of it still waiting keeps
+    /// its own; else the person's newest words to it, their first line;
+    /// the answer's first line only when the journal holds none. A solo
+    /// has no card and no `done` to take a title from, and its answer
+    /// (`Changed shelf.py.`) says what it did, not what it was asked
+    /// (acceptance, 2026-11-11).
+    pub fn solo_title(&self, id: AgentId, reply: &str) -> String {
+        let first = |s: &str| {
+            s.lines()
+                .map(str::trim)
+                .find(|l| !l.is_empty())
+                .map(String::from)
+        };
+        if let Some(c) = self.change_of(id) {
+            return c.title.clone();
+        }
+        (self.journal.iter().rev())
+            .find_map(|e| match &e.event {
+                Event::YouSaid { to, text } if *to == id => first(text),
+                _ => None,
+            })
+            .or_else(|| first(reply))
+            .unwrap_or_default()
     }
 
     /// Agent `id`'s open question to the person, whole, with the answers
@@ -10704,6 +10740,42 @@ mod tests {
             on_trunk: true,
             intent: String::new(),
         }
+    }
+
+    #[test]
+    fn a_solo_s_change_is_titled_by_the_person_s_words() {
+        let mut w = crate::live::testing::team(1);
+        // Nothing said to it: the answer's first line that has words.
+        assert_eq!(
+            w.solo_title(1, "\n  Changed shelf.py.\nmore"),
+            "Changed shelf.py."
+        );
+        assert_eq!(w.solo_title(1, ""), "");
+        w.note(Event::YouSaid {
+            to: 0,
+            text: "to another".into(),
+        });
+        w.note(Event::YouSaid {
+            to: 1,
+            text: "\n add a docstring to shelf.py \nand tests".into(),
+        });
+        w.note(Event::YouSaid {
+            to: 0,
+            text: "to another again".into(),
+        });
+        assert_eq!(
+            w.solo_title(1, "Changed shelf.py."),
+            "add a docstring to shelf.py"
+        );
+        // The newest of the person's words to it.
+        w.note(Event::YouSaid {
+            to: 1,
+            text: "now the tests".into(),
+        });
+        assert_eq!(w.solo_title(1, "Changed it."), "now the tests");
+        // A change of it still waiting keeps its title.
+        w.change_ready(change(1, "add a docstring", &[("a", 1, 0)]));
+        assert_eq!(w.solo_title(1, "Changed it."), "add a docstring");
     }
 
     #[test]
