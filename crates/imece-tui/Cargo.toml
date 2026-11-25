@@ -35,7 +35,7 @@ libc = "=0.2.191"
 signal-hook = { version = "=0.4.6", default-features = false }
 # What imece remembers between runs (projects, agents, cards, the journal,
 # mail), one SQLite file; bundled, so the build needs no system library.
-rusqlite = { version = "=0.41.1", default-features = false, features = ["bundled"] }
+rusqlite = { version = "=0.43.0", default-features = false, features = ["bundled"] }
 # Journal and story events as JSON in that file.
 serde = { version = "=1.0.229", features = ["derive"] }
 
